@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Node / frontend
+node_modules/
+
+# VS Code
+.vscode/
+
+# logs
+*.log
+
+# Windows
+Thumbs.db
+
+# archivos temporales
+*.tmp

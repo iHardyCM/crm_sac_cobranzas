@@ -1,0 +1,327 @@
+body {
+    font-family: Arial;
+    background: #f4f6f9;
+    margin: 0;
+}
+
+/* CONTENEDOR */
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* TITULOS */
+h1 {
+    margin-bottom: 20px;
+}
+
+h3 {
+    margin-top: 20px;
+}
+
+/* BUSCADOR */
+.buscador {
+    margin-bottom: 20px;
+}
+
+.buscador input {
+    padding: 8px;
+    width: 250px;
+}
+
+.buscador button {
+    padding: 8px 15px;
+    cursor: pointer;
+}
+
+/* CLIENTE */
+.cliente-header {
+    background: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.cliente-header {
+    border-left: 4px solid #2c7be5;
+}
+
+/* nombre */
+.cliente-nombre {
+    font-size: 20px;
+    font-weight: 600;
+    color: #222;
+}
+
+/* línea secundaria */
+.cliente-sub {
+    margin-top: 5px;
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    gap: 15px;
+}
+
+.cliente-info {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.grid-cliente {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+/* CREDITOS */
+.contenedor-creditos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.credito-card {
+    background: transparent;
+    width: 48%;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* HEADER CREDITO */
+.credito-header {
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    /* font-weight: bold; */
+
+
+    background: #ffffff;
+    color: #333;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+}
+
+/* ESTADOS */
+.estado-verde {
+    border-left: 6px solid #51cf66;
+    background: linear-gradient(to right, #ebfbee, #ffffff);
+}
+.estado-amarillo { 
+    border-left: 6px solid #fab005; 
+    background: linear-gradient(to right, #fff3bf, #ffffff);
+}
+.estado-naranja {
+    border-left: 6px solid #ffa94d;
+    background: linear-gradient(to right, #fff4e6, #ffffff);
+}
+.estado-rojo {
+    border-left: 6px solid #ff6b6b;
+    background: linear-gradient(to right, #fff5f5, #ffffff);
+}
+.estado-negro {
+    border-left: 6px solid #343a40;
+    background: linear-gradient(to right, #f1f3f5, #ffffff);
+}
+
+.texto-verde { color: #2f9e44; font-weight: 600; }
+.texto-naranja { color: #f08c00; font-weight: 600; }
+.texto-rojo { color: #e03131; font-weight: 600; }
+.texto-negro { color: #000; font-weight: 700; }
+
+/* BADGE */
+.badge {
+    background: white;
+    color: black;
+    padding: 3px 8px;
+    border-radius: 5px;
+}
+
+.badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* CUERPO CREDITO */
+.credito-body {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 15px;
+    gap: 10px;
+}
+
+/* COLUMNAS */
+.col {
+    font-size: 14px;
+}
+
+/* EXTRA */
+.credito-extra {
+    padding: 10px;
+    background: #f8f9fa;
+    font-size: 14px;
+}
+
+/* TELEFONOS */
+.tag {
+    background: #eee;
+    padding: 5px;
+    margin: 2px;
+    border-radius: 5px;
+    display: inline-block;
+}
+
+/* COLORES TEXTO */
+.texto-rojo { color: red; font-weight: bold; }
+.texto-naranja { color: orange; font-weight: bold; }
+.texto-verde { color: green; font-weight: bold; }
+
+/* ===== NUEVO DISEÑO CLIENTE ===== */
+
+.cliente-info {
+    display: flex;
+    gap: 20px;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+/* avatar */
+.cliente-left {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar {
+    width: 80px;
+    height: 80px;
+    background: #e9ecef;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+}
+
+/* contenido */
+.cliente-right {
+    flex: 1;
+}
+
+/* filas */
+.fila {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 10px;
+}
+
+/* columnas */
+.fila > div {
+    flex: 1;
+}
+
+/* etiquetas */
+.label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+}
+
+.value {
+    font-weight: bold;
+}
+
+/* dirección ocupa más */
+.direccion {
+    flex: 2;
+}
+
+/* teléfonos */
+.telefonos div {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+
+.cuotas-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.cuota {
+    background: #eef2ff;
+    padding: 10px;
+    border-radius: 8px;
+    flex: 1;
+    text-align: center;
+}
+
+.cuota span {
+    display: block;
+    font-size: 12px;
+    color: #666;
+}
+
+.cuota b {
+    font-size: 15px;
+}
+
+/* CONTENEDOR KPIs */
+.grupo-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+/* CADA KPI */
+.kpi {
+    background: #ffffff;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+/* LABEL */
+.kpi span {
+    display: block;
+    color: #777;
+    font-size: 12px;
+}
+
+/* VALOR */
+/* .kpi b {
+    font-size: 16px;
+    font-weight: 600;
+} */
+
+.kpi b {
+    display: block;
+    margin-top: 4px;
+    line-height: 1.2;
+}
+
+/* TRAMOS */
+
+.tramo-normal { background: #2f9e44; color: white; }
+.tramo-cpp { background: #f08c00; color: white; }
+.tramo-deficiente { background: #e8590c; color: white; }
+.tramo-dudoso { background: #ff6b6b; color: white; }
+.tramo-perdida { background: #c92a2a; color: white; }
+.tramo-castigado { background: #000; color: white; }
+
+.credito-card:hover {
+    transform: translateY(-2px);
+    transition: 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}

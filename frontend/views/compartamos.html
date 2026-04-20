@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>CRM Compartamos</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+
+<div class="container">
+
+    <h1>📊 CRM - Compartamos</h1>
+
+    <div class="buscador">
+        <input id="valor" placeholder="DNI / CodCliente / Operación">
+        <button onclick="buscar()">Buscar</button>
+    </div>
+
+    <div id="loader" class="loader">⏳ Buscando...</div>
+
+    <div id="resultado"></div>
+    
+
+</div>
+
+<script src="../core/api.js"></script>
+<script src="../js/compartamos.js"></script>
+
+</body>
+</html>
