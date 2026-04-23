@@ -12,9 +12,20 @@ async function buscar() {
 
     try {
 
-        // 🔥 SOLO MANDAMOS UN PARÁMETRO
-        const res = await fetch(`http://localhost:8000/cliente/buscar?valor=${valor}`);
+        const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
+
+        const res = await fetch(`${BASE_URL}/cliente/buscar?valor=${valor}`);
+
+        // 🔥 DEBUG REAL
+        console.log("STATUS:", res.status);
+
+        if (!res.ok) {
+            throw new Error(`HTTP error ${res.status}`);
+        }
+
         const data = await res.json();
+
+        console.log("DATA:", data);
 
         document.getElementById("loader").style.display = "none";
 
@@ -26,14 +37,17 @@ async function buscar() {
         renderCliente(data.data);
 
     } catch (e) {
+        console.error("ERROR COMPLETO:", e);
+        alert(e.message);
+        console.log("DATA FINAL:", data.data);
         document.getElementById("loader").style.display = "none";
         document.getElementById("resultado").innerHTML = "⚠️ Error en la consulta";
     }
 }
 
-renderCompartamos(data.data);
 
 function verDetalle(index) {
+
     const c = window._clientes[index];
 
     document.getElementById("detalle").innerHTML = `
@@ -54,7 +68,7 @@ function verDetalle(index) {
                     color: ${c.DiasAtraso > 60 ? 'red' : c.DiasAtraso > 30 ? 'orange' : 'green'};
                     font-weight: bold;
                 ">
-                    ${c.DiasAtraso}
+                    ${c.DiasAtraso ?? "-"}
                 </span>
             </p>
         </div>
@@ -63,23 +77,14 @@ function verDetalle(index) {
             <h3>📞 Contacto</h3>
             <p>${c.Telef_01 || "-"}</p>
             <p>${c.Telef_02 || "-"}</p>
-            <button onclick="copiarTexto('${c.Telef_01}')">📋 Copiar</button>
-            function copiarTexto(texto) {
-                if (!texto) {
-                    alert("No hay número");
-                    return;
-                }
-
-                navigator.clipboard.writeText(texto);
-                alert("Número copiado");
-            }
+            <button onclick="copiarTexto('${c.Telef_01 || ""}')">📋 Copiar</button>
         </div>
 
         <div class="card segmentacion">
             <h3>🧠 Segmentación</h3>
-            <p><b>Score:</b> ${c.SCORE}</p>
-            <p><b>Segmento:</b> ${c.SEGMENTO}</p>
-            <p><b>Tramo:</b> ${c.Tramo}</p>
+            <p><b>Score:</b> ${c.SCORE || "-"}</p>
+            <p><b>Segmento:</b> ${c.SEGMENTO || "-"}</p>
+            <p><b>Tramo:</b> ${c.Tramo || "-"}</p>
         </div>
     `;
 }
@@ -88,6 +93,16 @@ function verDetalle(index) {
 function formatearNumero(valor) {
     if (!valor) return "0";
     return new Intl.NumberFormat("es-PE").format(valor);
+}
+
+function copiarTexto(texto) {
+    if (!texto) {
+        alert("No hay número");
+        return;
+    }
+
+    navigator.clipboard.writeText(texto);
+    alert("Número copiado");
 }
 
 window.onload = function () {

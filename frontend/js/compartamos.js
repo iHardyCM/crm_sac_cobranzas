@@ -5,7 +5,7 @@ function renderCliente(lista) {
         return;
     }
 
-    const esGrupo = lista.length > 1 && lista[0].CodigoGrupo;
+    const esGrupo = lista.length > 1 && lista[0].CodigoGrupo != null;
 
     let html = "";
 
@@ -252,6 +252,7 @@ function renderCreditoCard(c) {
                     <p><b>Cuotas:</b> ${safe(c.NroCuotas_Aprobadas)}</p>
                     <p><b>Atrasadas:</b> ${safe(c.Nro_CuotasAtrasadas)}</p>
                     <p><b>Vencidas:</b> ${safe(c.Nro_CuotasVencidas)}</p>
+                    <p><b>Ult Cuota Atrasada:</b> ${safe(c.Ult_CuotaAtrasada)}</p>
                 </div>
 
                 <!-- COLUMNA 4 -->
@@ -259,6 +260,7 @@ function renderCreditoCard(c) {
                     <p><b>Segmento:</b> ${safe(c.SEGMENTO)}</p>
                     <p><b>Score:</b> ${safe(c.SCORE)}</p>
                     <p><b>Calificación:</b> ${safe(c.Calificacion)}</p>
+                    <p><b>Pagos No Conta:</b> ${safe(c.Pagos_no_Contabilizados)}</p>
                 </div>
 
             </div>
@@ -305,7 +307,7 @@ function safe(v) {
     return v ?? "-";
 }
 
-function getEstadoClass(c) {
+function getEstadoClass(c = {}) {
 
     const tramo = getTramo(c).label;
 
