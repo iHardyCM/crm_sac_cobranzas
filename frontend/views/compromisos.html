@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Compromisos</title>
+    <link rel="stylesheet" href="../css/compromisos.css">
+</head>
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="title">🏦 Sistema de Gestión de Compromisos</div>
+        <div class="user">👤 <span id="usuario"></span></div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpis">
+        <div class="card hoy">
+            <h3 id="kpi_hoy">0</h3>
+            <p>Hoy</p>
+        </div>
+        <div class="card caida">
+            <h3 id="kpi_caida">0</h3>
+            <p>Caída</p>
+        </div>
+        <div class="card vigente">
+            <h3 id="kpi_vigente">0</h3>
+            <p>Vigente</p>
+        </div>
+        <div class="card cumplida">
+            <h3 id="kpi_cumplida">0</h3>
+            <p>Cumplida</p>
+        </div>
+    </div>
+
+    <!-- CARD TABLA -->
+    <div class="card-table">
+
+        <div class="table-header">
+            <h3 id="titulo_tabla"></h3>
+
+            <div class="filtros">
+
+                <input 
+                    type="text" 
+                    id="buscar" 
+                    placeholder="🔍 Buscar DNI o teléfono"
+                    onkeyup="aplicarFiltros()"
+                >
+
+                <select id="filtro_estado" onchange="aplicarFiltros()">
+                    <option value="">Estado</option>
+                    <option value="Hoy">Hoy</option>
+                    <option value="Caída">Caída</option>
+                    <option value="Vigente">Vigente</option>
+                    <option value="Cumplida">Cumplida</option>
+                </select>
+
+                <input type="date" id="filtro_fecha" onchange="aplicarFiltros()">
+
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>DNI</th>
+                    <th>Teléfono</th>
+                    <th>Monto</th>
+                    <th>Fecha</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tabla"></tbody>
+        </table>
+
+        <!-- PAGINACIÓN (FUERA DE TABLE) -->
+        <div class="paginacion">
+            <button onclick="prev()">⬅</button>
+            <span id="pagina_txt"></span>
+            <button onclick="next()">➡</button>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <span onclick="cerrarModal()" class="close">×</span>
+        <div id="detalle"></div>
+    </div>
+</div>
+
+<script src="../js/compromisos.js"></script>
+
+</body>
+</html>
