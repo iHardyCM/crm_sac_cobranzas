@@ -24,29 +24,70 @@ body {
 .kpis {
     display: flex;
     justify-content: center;
-    gap: 20px;
-    margin-bottom: 20px;
+    gap: 18px;
+    margin-bottom: 25px;
 }
 
-.card {
-    width: 130px;
-    padding: 20px;
-    border-radius: 12px;
-    text-align: center;
-    font-weight: bold;
+.kpi-content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
 
-    border-radius: 14px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.kpi-num {
+    font-size: 26px;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.kpi-label {
+    font-size: 13px;
+    color: #7f8c8d;
+}
+
+.kpi-sub {
+    font-size: 11px;
+    color: #95a5a6;
+}
+
+.hoy { background: #e74c3c; }
+.caida { background: #d35400; }
+.vigente { background: #f1c40f; }
+.cumplida { background: #27ae60; }
+
+.card {
+    width: 220px;
+    padding: 18px;
+    border-radius: 12px;
+    background: #ffffff;
+
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    border-left: 5px solid transparent;
+
+    text-align: left;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.08);
 }
 
 .card h3 {
-    font-size: 22px;
+    font-size: 26px;
+    margin: 0;
+    color: #2c3e50;
 }
 
-.hoy { background: #ff6b6b; }
-.caida { background: #ffa94d; }
-.vigente { background: #ffd43b; color: black; }
-.cumplida { background: #51cf66; }
+.card p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: #7f8c8d;
+}
+
+.card.hoy { border-left-color: #e74c3c; }
+.card.caida { border-left-color: #e67e22; }
+.card.vigente { border-left-color: #f1c40f; }
+.card.cumplida { border-left-color: #2ecc71; }
 
 /* TABLA CARD */
 .card-table {
@@ -79,32 +120,94 @@ body {
 /* TABLA */
 table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 8px; /* 🔥 separación entre filas */
+}
+
+tbody tr {
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    transition: all 0.15s ease;
+}
+
+tbody tr:hover {
+    transform: scale(1.005);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.08);
 }
 
 th {
-    background: #f0f0f0;
-    padding: 10px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+    color: #7f8c8d;
+    text-align: left;
+    padding: 8px 12px;
+
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+th:hover {
+    color: #2c3e50;
 }
 
 td {
-    padding: 10px;
-    text-align: center;
+    padding: 14px 12px;
+    font-size: 13px;
+    color: #2c3e50;
+    border-bottom: none;
+}
+
+td:first-child {
+    font-weight: 500; /* cliente más destacado */
 }
 
 tr:hover {
     background: #f9f9f9;
 }
 
+.badge-intentos {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* 🔥 semáforo */
+.intento-bajo {
+    background: #d5f5e3;
+    color: #1e8449;
+}
+
+.intento-medio {
+    background: #fcf3cf;
+    color: #b7950b;
+}
+
+.intento-alto {
+    background: #fadbd8;
+    color: #c0392b;
+}
+
 /* BADGE */
 .badge {
-    padding: 5px 10px;
-    border-radius: 8px;
+    padding: 4px 10px;
+    border-radius: 20px;
     color: white;
+    font-size: 12px;
+    font-weight: 500;
 }
+
+.badge.hoy { background: #c0392b; color: white; }
+.badge.caida { background: #a04000; color: white; }
+.badge.vigente { background: #f4d03f; color: #2c3e50; }
+.badge.cumplida { background: #27ae60; color: white; }
 
 /* BOTONES */
 button {
+    background: #f4f6f8;
     padding: 5px 10px;
     border: none;
     border-radius: 6px;
@@ -123,133 +226,350 @@ button:hover {
     gap: 10px;
 }
 
-/* BADGE */
-.badge-hoy {
-    background: red;
-    color: white;
-    padding: 5px 10px;
-    border-radius: 8px;
-    font-size: 12px;
-}
 
-/* GRID */
-.grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
-}
+/* ===== MODAL PRO REAL ===== */
 
-/* CAJA GESTIÓN */
-.box {
-    background: #f5f5f5;
-    padding: 10px;
-    border-radius: 8px;
-}
-
-/* BOTONES */
-.acciones {
-    margin-top: 15px;
-    display: flex;
-    gap: 10px;
-}
-
-.btn-yellow { background: #f1c40f; }
-.btn-blue { background: #3498db; color:white; }
-.btn-green { background: #2ecc71; color:white; }
-
-.acciones button {
-    padding: 8px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-/* MODAL */
 .modal {
     display: none;
     position: fixed;
-    z-index: 999;
-    left: 0; top: 0;
-    width: 100%; height: 100%;
-    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+    inset: 0;
+
+    backdrop-filter: blur(6px); /* 🔥 efecto glass */
+    background: rgba(0,0,0,0.35);
+
     justify-content: center;
+    align-items: center;
+
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.modal.active {
+    display: flex;
+    opacity: 1;
+}
+
+.modal-header-pro {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.badge-estado {
+    padding: 6px 14px;
+    border-radius: 999px; /* 🔥 totalmente redondo */
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    margin-right: 4px;
+}
+
+
+.modal-card-pro {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* HEADER */
+.modal-top {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
 }
 
+.modal-id {
+    font-size: 12px;
+    color: #888;
+}
+
+.modal-nombre {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.modal-estado {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* INFO */
+.modal-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+/* ANIMACIÓN DE ENTRADA */
 .modal-content {
-    background: white;
-    border-radius: 12px;
+    background: #fff;
+    border-radius: 14px;
     width: 650px;
     max-height: 90vh;
     overflow-y: auto;
-    padding: 20px;
+    padding: 20px 22px 22px 22px;
+
+    transform: translateY(20px) scale(0.96);
+    opacity: 0;
+
+    transition: all 0.25s ease;
 }
 
-/* NUEVO DISEÑO */
-.modal-card h3 {
-    margin: 0;
+/* CUANDO ABRE */
+.modal.active .modal-content {
+    transform: translateY(0) scale(1);
+    opacity: 1;
 }
 
-.modal-header {
+/* BLOQUES */
+.modal-bloque {
+    padding: 12px 0;
+    border-bottom: 1px solid #f2f2f2;
+}
+
+.bloque-titulo {
+    font-size: 12px;
+    font-weight: 700;
+    color: #7f8c8d;
+    margin-bottom: 8px;
+}
+
+.bloque-row {
+    letter-spacing: 0.5px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    background: #f1f3f5;
-    padding: 10px;
-    border-radius: 8px;
+    font-size: 13px;
+    padding: 4px 0;
 }
 
-.modal-subheader {
+/* HISTORIAL */
+.historial-box {
+    background: transparent;
+    padding: 0;
+    border-left: none;
+    padding: 12px;
+    border-radius: 10px;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    /* border-left: 4px solid #dcdfe3; */
+}
+/* BOTONES */
+.modal-actions {
     display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-    font-size: 14px;
-}
-
-.modal-section {
+    gap: 10px;
     margin-top: 15px;
 }
 
-.modal-section h4 {
-    margin-bottom: 10px;
+.modal-actions button {
+    flex: 1;
+    padding: 10px;
+
+    border-radius: 8px;
+    border: none;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    cursor: pointer;
+
+    transition: all 0.2s ease;
+}
+
+/* hover suave */
+.modal-actions button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+/* colores más sobrios */
+.btn-yellow { background: #e0b800; color: #2c3e50; }
+.btn-blue { background: #4a90e2; color: white; }
+.btn-green { background: #27ae60; color: white; }
+
+.btn-close {
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #888;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: 0.2s;
+}
+
+.btn-close:hover {
+    background: #f1f1f1;
     color: #333;
 }
 
-.grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
+/* ESTADOS */
+.estado-cumplida { background: #27ae60; color: #fff; }
+.estado-hoy { background: #c0392b; color: #fff; }
+.estado-vigente { background: #f4d03f; color: #2c3e50; }
+.estado-caida { background: #922b21; color: #fff; }
+
+.bloque-row span:first-child {
+    color: #777;
 }
 
-.box {
+
+.historial-item {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.historial-icon {
+    font-size: 18px;
+    margin-top: 2px;
+}
+
+.historial-content {
     background: #f8f9fa;
     padding: 10px;
     border-radius: 8px;
-    font-size: 14px;
+    width: 100%;
 }
 
-.badge-hoy {
-    background: red;
-    color: white;
-    padding: 5px 10px;
-    border-radius: 8px;
+.historial-header {
+    font-size: 13px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.historial-text {
+    font-size: 13px;
+    margin-top: 4px;
+    color: #555;
+}
+
+.historial-footer {
     font-size: 12px;
+    margin-top: 5px;
+    color: #888;
 }
 
-.acciones {
-    margin-top: 20px;
+.historial-label {
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: 2px;
+}
+
+.timeline-item {
     display: flex;
     gap: 10px;
+    margin-top: 14px;
+    position: relative;
 }
 
-.btn-yellow { background: #f1c40f; }
-.btn-blue { background: #3498db; color:white; }
-.btn-green { background: #2ecc71; color:white; }
+/* 🔥 LÍNEA VERTICAL */
+.timeline-item::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: -14px;
+    bottom: -14px;
+    width: 2px;
+    background: #e0e3e7;
+}
 
-.acciones button {
-    flex: 1;
-    padding: 10px;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
+/* 🔥 PRIMER ITEM (no línea arriba) */
+.timeline-item:first-child::before {
+    top: 10px;
+}
+
+/* 🔥 DOT */
+.timeline-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 10px;
+    z-index: 1;
+}
+
+.timeline-dot.gray {
+    background: #bdc3c7;
+}
+
+/* 🔥 CONTENIDO */
+.timeline-content {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* 🔥 HEADER (fecha) */
+.timeline-header {
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+/* 🔥 LABEL (tipo gestión) */
+.timeline-label {
+    font-size: 13px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+/* 🔥 TEXTO */
+.timeline-text {
+    font-size: 13px;
+    margin-top: 4px;
+    color: #444;
+}
+
+/* 🔥 FOOTER */
+.timeline-footer {
+    font-size: 12px;
+    margin-top: 5px;
+    color: #999;
+}
+
+/* 🔥 DESTACAR ÚLTIMA GESTIÓN */
+.timeline-item.actual .timeline-content {
+    border-left: 4px solid #3498db;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06); /* 🔥 */
+}
+
+/* 🔥 COMPROMISO MÁS SUAVE */
+.timeline-item.compromiso .timeline-content {
+    background: #f8f9fb;              /* gris MUY suave */
+    border-left: 4px solid #d0d5db;   /* gris */
+    opacity: 1;      
+}
+
+.timeline-label {
+    font-weight: 700;
+}
+
+/* Opcional: fecha más sutil */
+.timeline-header {
+    color: #7f8c8d;
+    font-size: 12px;
 }

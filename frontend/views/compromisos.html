@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Compromisos</title>
     <link rel="stylesheet" href="../css/compromisos.css">
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/747/747376.png">
 </head>
 <body>
 
@@ -12,26 +13,30 @@
     <!-- HEADER -->
     <div class="header">
         <div class="title">🏦 Sistema de Gestión de Compromisos</div>
-        <div class="user">👤 <span id="usuario"></span></div>
+        <div class="user"><span id="usuario"></span></div>
     </div>
 
     <!-- KPIs -->
     <div class="kpis">
         <div class="card hoy">
             <h3 id="kpi_hoy">0</h3>
-            <p>Hoy</p>
+            <p><b>Hoy</b></p>
+            <small>Promesas con fecha para hoy</small>
         </div>
         <div class="card caida">
             <h3 id="kpi_caida">0</h3>
-            <p>Caída</p>
+            <p><b>Caída</b></p>
+            <small>Promesas que no llegaron a cumplirse en la fecha acordada.</small>
         </div>
         <div class="card vigente">
             <h3 id="kpi_vigente">0</h3>
-            <p>Vigente</p>
+            <p><b>Vigente</b></p>
+            <small>Promesas de pago con fechas futuras.</small>
         </div>
         <div class="card cumplida">
             <h3 id="kpi_cumplida">0</h3>
-            <p>Cumplida</p>
+            <p><b>Cumplida</b></p>
+            <small>Promesas que se cumplieron.</small>
         </div>
     </div>
 
@@ -58,6 +63,13 @@
                     <option value="Cumplida">Cumplida</option>
                 </select>
 
+                <select id="filtro_intentos" onchange="aplicarFiltros()">
+                    <option value="">Intentos</option>
+                    <option value="0">Sin gestión</option>
+                    <option value="1-2">1 a 2</option>
+                    <option value="3+">3 o más</option>
+                </select>
+
                 <input type="date" id="filtro_fecha" onchange="aplicarFiltros()">
 
             </div>
@@ -66,12 +78,13 @@
         <table>
             <thead>
                 <tr>
-                    <th>Cliente</th>
-                    <th>DNI</th>
-                    <th>Teléfono</th>
-                    <th>Monto</th>
-                    <th>Fecha</th>
-                    <th>Estado</th>
+                    <th onclick="ordenarPor('cliente')">Cliente</th>
+                    <th onclick="ordenarPor('dni')">DNI</th>
+                    <th onclick="ordenarPor('telefono')">Teléfono</th>
+                    <th onclick="ordenarPor('monto')">Monto</th>
+                    <th onclick="ordenarPor('fecha')">Fecha</th>
+                    <th onclick="ordenarPor('estado')">Estado</th>
+                    <th onclick="ordenarPor('intentos_hoy')">Intentos Hoy</th>
                     <th>Acción</th>
                 </tr>
             </thead>
@@ -92,7 +105,7 @@
 <!-- MODAL -->
 <div id="modal" class="modal">
     <div class="modal-content">
-        <span onclick="cerrarModal()" class="close">×</span>
+        <!-- <span onclick="cerrarModal()" class="close">×</span> -->
         <div id="detalle"></div>
     </div>
 </div>

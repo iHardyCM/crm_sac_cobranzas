@@ -29,12 +29,14 @@ def obtener_compromisos(dni):
                 SELECT
                     C.IDCOMPROMISO,
                     C.FECHACOMPROMISO,
+                    C.NUMOPERACION,
                     C.MONTO,
                     C.MONEDA,
                     C.MONTOPAGADO,
                     C.TIPOPAGO,
 
                     G.DNI,
+                    G.IDCLIENTE,
                     G.TELEFONO,
                     G.GESTION,
 
@@ -65,6 +67,22 @@ def obtener_compromisos(dni):
                 "inicio_mes": inicio_mes
             }).fetchall()
 
+            # 🔥 traer intentos del día
+            query_intentos = text("""
+                SELECT
+                    G.IDCLIENTE,
+                    COUNT(1) AS intentos_hoy
+                FROM SISCOB.DBO.GESTION G WITH(NOLOCK)
+                WHERE 
+                    CAST(G.FECHA AS DATE) = CAST(GETDATE() AS DATE)
+                GROUP BY G.IDCLIENTE
+            """)
+
+            intentos_rows = conn.execute(query_intentos).fetchall()
+
+            # 🔥 mapear
+            map_intentos = {r.IDCLIENTE: r.intentos_hoy for r in intentos_rows}
+
             for r in rows:
 
                 fecha = r.FECHACOMPROMISO.date() if r.FECHACOMPROMISO else hoy
@@ -78,11 +96,15 @@ def obtener_compromisos(dni):
                 data.append({
                     "id": r.IDCOMPROMISO,
                     "cliente": r.NOMBRECLIENTE or "-",
+                    "operacion": r.NUMOPERACION,
                     "dni": r.DNI,
+                    "idcliente": r.IDCLIENTE,
                     "telefono": r.TELEFONO or "-",
                     "monto": float(r.MONTO or 0),
                     "fecha": str(fecha),
-                    "estado": estado
+                    "estado": estado,
+
+                    "intentos_hoy": map_intentos.get(r.IDCLIENTE, 0)
                 })
 
     except Exception as e:

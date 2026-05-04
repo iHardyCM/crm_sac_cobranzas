@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Supervisor</title>
+    <link rel="stylesheet" href="../css/compromisos.css">
+</head>
+
+<body onload="cargarSupervisor()">
+
+    <div class="header">
+        <h2>Panel Supervisor</h2>
+        <div id="usuario"></div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="cards">
+        <div class="card">
+            <h3 id="kpi_total">0</h3>
+            <p>Total compromisos</p>
+        </div>
+
+        <div class="card">
+            <h3 id="kpi_monto">0</h3>
+            <p>Monto total</p>
+        </div>
+
+        <div class="card">
+            <h3 id="kpi_eficacia">0%</h3>
+            <p>Eficacia</p>
+        </div>
+
+        <div class="card">
+            <h3 id="kpi_caida">0%</h3>
+            <p>Tasa caída</p>
+        </div>
+    </div>
+
+    <!-- TABLA -->
+    <table>
+        <thead>
+            <tr>
+                <th>Agente</th>
+                <th>Total</th>
+                <th>Hoy</th>
+                <th>Caída</th>
+                <th>Vigente</th>
+                <th>Cumplida</th>
+                <th>Monto</th>
+                <th>Acción</th>
+            </tr>
+        </thead>
+
+        <tbody id="tablaSupervisor"></tbody>
+    </table>
+
+</body>
+
+<script src="../js/supervisor.js"></script>
+</html>

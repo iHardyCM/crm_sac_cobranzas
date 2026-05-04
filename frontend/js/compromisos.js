@@ -15,22 +15,47 @@ const fecha = new Date();
 const mes = fecha.toLocaleString('es-PE', { month: 'long' });
 const anio = fecha.getFullYear();
 
+
+
 document.getElementById("titulo_tabla").innerText =
     `Compromisos del mes (${mes} ${anio})`;
-
-document.getElementById("usuario").innerText = `👤 ${agente}`;
 
 // 🔥 VARIABLES GLOBALES
 let dataGlobal = [];
 let pagina = 1;
 let porPagina = 10;
 
+let ordenCampo = null;
+let ordenDireccion = "asc"; // asc | desc
+
+let dataFiltrada = [];
+
 // 🔥 CARGA INICIAL
 async function cargar() {
 
     try {
 
-        const res = await fetch(`http://localhost:8000/compromisos/${dni}`);
+        const BASE_URL = `http://${window.location.hostname}:8000`;
+
+        // 🔥 DECLARAR AQUÍ
+        const agenteFiltro = localStorage.getItem("agente_filtro");
+
+        let url = "";
+
+        if (agenteFiltro) {
+
+            console.log("🔵 MODO SUPERVISOR → AGENTE:", agenteFiltro);
+
+            url = `${BASE_URL}/compromisos/agente/compromisos?agente=${encodeURIComponent(agenteFiltro)}`;
+
+        } else {
+
+            console.log("🟢 MODO AGENTE NORMAL:", dni);
+
+            url = `${BASE_URL}/compromisos/${dni}`;
+        }
+
+        const res = await fetch(url);
 
         if (!res.ok) {
             throw new Error("Error en API");
@@ -43,7 +68,14 @@ async function cargar() {
         dataGlobal = data.data || [];
 
         calcularKPIs(dataGlobal);
-        renderTabla(dataGlobal);
+        dataFiltrada = dataGlobal;
+
+        renderTabla(dataFiltrada);
+
+        // 🔥 LIMPIAR DESPUÉS DE USAR
+        if (agenteFiltro) {
+            localStorage.removeItem("agente_filtro");
+        }
 
     } catch (error) {
         console.error("ERROR CARGA:", error);
@@ -53,85 +85,208 @@ async function cargar() {
 cargar();
 
 
-// 🔍 DETALLE
+
 async function verDetalle(id) {
 
     try {
 
-        const res = await fetch(`http://localhost:8000/compromisos/detalle/${id}`);
+        const BASE_URL = `http://${window.location.hostname}:8000`;
+
+        const res = await fetch(`${BASE_URL}/compromisos/detalle/${id}`);
         const d = await res.json();
 
+        const tipoUlt = getGestionUI(d.ult_tipocontacto, d.ult_indicador);
+        const tipoComp = getGestionUI(d.contacto, d.indicador);
+
+        const fechaFormateada = d.ult_fecha 
+            ? new Date(d.ult_fecha).toLocaleString("es-PE")
+            : "-";
+
+        // 🔥 CALCULAR MONTO PENDIENTE
+        const montoPendiente = (d.monto || 0) - (d.monto_pagado || 0);
+
+        // 🔥 CALCULAR ESTADO (ya que backend no lo manda)
+        const hoy = new Date().toLocaleDateString('en-CA'); 
+        // let estado = "Vigente";
+
+        const fechaComp = (d.fecha_compromiso || "").split(" ")[0].split("T")[0];
+
+        let estado = "Vigente";
+
+        if (montoPendiente <= 0) {
+            estado = "Cumplida";
+        } else if (fechaComp === hoy) {
+            estado = "Hoy";
+        } else if (fechaComp < hoy) {
+            estado = "Caída";
+        }
+
+        const estadoColor = {
+            "Hoy": "#c0392b",
+            "Caída": "#a04000",
+            "Vigente": "#f4d03f",
+            "Cumplida": "#27ae60"
+        }[estado] || "#999";
+
+        const estadoClass = estado
+            .toLowerCase()
+            .replace("í", "i")
+            .replace("á", "a");
+
         document.getElementById("detalle").innerHTML = `
-        <div class="modal-card">
+        <div class="modal-card-pro">
 
             <!-- HEADER -->
-            <div class="modal-header">
+            <div class="modal-header-pro">
+
                 <div>
-                    <h3>Detalle del Compromiso</h3>
-                    <small>#PDP-ID: ${d.id || "-"}</small>
+                    <div class="modal-id">#PDP-ID: ${d.id}</div>
+                    <div class="modal-nombre">${d.cliente}</div>
                 </div>
-                <div class="badge-hoy">${d.estado || ""}</div>
+
+                <div class="header-right">
+                    <span class="badge-estado estado-${estadoClass}">
+                        ${estado}
+                    </span>
+
+                    <button class="btn-close" onclick="cerrarModal()">✕</button>
+                </div>
+
             </div>
 
-            <!-- CLIENTE -->
-            <div class="modal-subheader">
-                <div><b>${d.cliente || "-"}</b></div>
+            <!-- INFO RÁPIDA -->
+            <div class="modal-info">
                 <div>DNI: ${d.dni}</div>
                 <div>Tel: ${d.telefono}</div>
             </div>
 
-            <!-- RESUMEN -->
-            <div class="modal-section">
-                <h4>💰 Resumen del compromiso</h4>
-                <div class="grid">
-                    <div>Monto acordado:</div>
-                    <div><b>${d.moneda} ${d.monto}</b></div>
+            <!-- BLOQUE -->
+            <div class="modal-bloque">
+                <div class="bloque-titulo">RESUMEN DEL COMPROMISO</div>
 
-                    <div>Monto pendiente:</div>
-                    <div><b>${d.moneda} ${d.monto - (d.monto_pagado || 0)}</b></div>
+                <div class="bloque-row">
+                    <span>Num. Préstamo</span>
+                    <b>${d.operacion || "-"}</b>
+                </div>
 
-                    <div>Fecha compromiso:</div>
-                    <div>${d.fecha_compromiso}</div>
+                <div class="bloque-row">
+                    <span>Monto acordado</span>
+                    <b>${d.moneda} ${formatearMonto(d.monto)}</b>
+                </div>
 
-                    <div>Fecha creación:</div>
-                    <div>${d.fecha_generado}</div>
+                <div class="bloque-row">
+                    <span>Monto pagado</span>
+                    <b>${d.moneda} ${formatearMonto(d.monto_pagado)}</b>
+                </div>
 
-                    <div>Tipo pago:</div>
-                    <div>${d.tipo_pago || "-"}</div>
+                <div class="bloque-row">
+                    <span>Monto pendiente</span>
+                    <b>${d.moneda} ${formatearMonto(montoPendiente)}</b>
+                </div>
+
+                <div class="bloque-row">
+                    <span>Fecha compromiso</span>
+                    <span>${formatearFecha(d.fecha_compromiso)}</span>
+                </div>
+
+                <div class="bloque-row">
+                    <span>Fecha creación</span>
+                    <span>${formatearFecha(d.fecha_generado)}</span>
+                </div>
+
+                <div class="bloque-row">
+                    <span>Tipo pago</span>
+                    <span>${d.tipo_pago || "-"}</span>
                 </div>
             </div>
 
-            <!-- INFO CLIENTE -->
-            <div class="modal-section">
-                <h4>📞 Información del cliente</h4>
-                <div class="grid">
-                    <div>Teléfono:</div>
-                    <div>${d.telefono}</div>
+            <!-- CLIENTE -->
+            <div class="modal-bloque">
+                <div class="bloque-titulo">INFORMACIÓN DEL CLIENTE</div>
 
+                <div class="bloque-row">
+                    <span>Teléfono</span>
+                    <span>${d.telefono}</span>
+                </div>
+
+                <div class="bloque-row">
+                    <span>DNI</span>
+                    <span>${d.dni}</span>
                 </div>
             </div>
 
             <!-- HISTORIAL -->
-            <div class="modal-section">
-                <h4>📝 Historial / Gestión</h4>
-                <div class="box">
-                    ${d.gestion || "Sin gestión registrada"}
+            <div class="modal-bloque">
+                <div class="bloque-titulo">HISTORIAL Y NOTAS</div>
+
+                <div class="historial-item">
+
+                    <div class="historial-box">
+
+                        <!-- 🔵 ÚLTIMA GESTIÓN -->
+                        <div class="timeline-item actual">
+
+                            <div class="timeline-dot" style="background:${tipoUlt.color}"></div>
+
+                            <div class="timeline-content">
+                                <div class="timeline-header">
+                                    ${d.ult_fecha}
+                                </div>
+                                <div class="timeline-label" style="color:${tipoUlt.color}">
+                                    ${tipoUlt.label}
+                                </div>
+                                <div class="timeline-text">
+                                    ${d.ult_gestion || "-"}
+                                </div>
+                                <div class="timeline-footer">
+                                    ${d.ult_agente || ""}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🟡 GESTIÓN DEL COMPROMISO -->
+                        <div class="timeline-item compromiso">
+                            <div class="timeline-dot" style="background:${tipoComp.color}"></div>
+                            <div class="timeline-content">
+                                <div class="timeline-header">
+                                    ${d.fecha_generado}
+                                </div>
+
+                                <div class="timeline-label" style="color:${tipoComp.color}">
+                                    ${tipoComp.label}
+                                </div>
+
+                                <div class="timeline-text">
+                                    ${d.gestion || "-"}
+                                </div>
+
+                                <div class="timeline-footer">
+                                    ${d.agente || ""}
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
                 </div>
             </div>
 
-            <!-- ACCIONES -->
-            <div class="acciones">
-                <button class="btn-yellow">⏳ Re-agendar</button>
-                <button class="btn-blue" onclick="enviarWsp('${d.telefono}', ${d.monto}, '${d.fecha_compromiso}')">
-                    📲 Contactar
+            <!-- BOTONES -->
+            <div class="modal-actions">
+                <button class="btn-yellow">Re-agendar</button>
+                <button class="btn-blue"
+                    onclick="enviarWsp('${d.telefono}', ${d.monto}, '${d.fecha_compromiso}')">
+                    Contactar
                 </button>
-                <button class="btn-green">✔ Registrar pago</button>
+                <button class="btn-green">Registrar pago</button>
             </div>
 
         </div>
         `;
 
-        document.getElementById("modal").style.display = "flex";
+        document.getElementById("modal").classList.add("active");
 
     } catch (error) {
         console.error("ERROR DETALLE:", error);
@@ -141,7 +296,7 @@ async function verDetalle(id) {
 
 // 🔒 CERRAR MODAL
 function cerrarModal() {
-    document.getElementById("modal").style.display = "none";
+    document.getElementById("modal").classList.remove("active");
 }
 
 
@@ -174,28 +329,37 @@ function aplicarFiltros() {
     });
 
     pagina = 1;
-    renderTabla(filtrado);
+    dataFiltrada = filtrado;
+    renderTabla(dataFiltrada);
 }
 
 
 // 📊 TABLA
 function renderTabla(data) {
 
+    let dataLimpia = limpiarDataParaTabla(data);
+    let dataOrdenada = ordenarData(dataLimpia);
+
+    const totalPaginas = Math.max(1, Math.ceil(dataLimpia.length / porPagina));
+
+    // 🔥 FIX CLAVE
+    if (pagina > totalPaginas) {
+        pagina = totalPaginas;
+    }
+
     let inicio = (pagina - 1) * porPagina;
     let fin = inicio + porPagina;
 
-    let paginado = data.slice(inicio, fin);
+    let paginado = dataOrdenada.slice(inicio, fin);
 
     let html = "";
 
     paginado.forEach(c => {
 
-        let color = {
-            "Hoy": "#e74c3c",
-            "Caída": "#e67e22",
-            "Vigente": "#f1c40f",
-            "Cumplida": "#2ecc71"
-        }[c.estado] || "#999";
+        const estadoClass = (c.estado || "")
+            .toLowerCase()
+            .replace("í", "i")
+            .replace("á", "a");
 
         html += `
         <tr>
@@ -204,7 +368,16 @@ function renderTabla(data) {
             <td>${c.telefono || "-"}</td>
             <td>${c.monto || 0}</td>
             <td>${c.fecha || "-"}</td>
-            <td><span class="badge" style="background:${color}">${c.estado}</td>
+            <td>
+                <span class="badge ${estadoClass}">
+                    ${c.estado}
+                </span>
+            </td>
+            <td>
+                <span class="badge-intentos ${getIntentoClass(c.intentos_hoy)}">
+                    ${c.intentos_hoy}
+                </span>
+            </td>
             <td>
                 <button onclick="verDetalle(${c.id})">Ver</button>
                 <button onclick="enviarWsp('${c.telefono}', ${c.monto}, '${c.fecha}')">📲</button>
@@ -215,25 +388,29 @@ function renderTabla(data) {
     document.getElementById("tabla").innerHTML = html;
 
     document.getElementById("pagina_txt").innerText =
-        `Página ${pagina} de ${Math.max(1, Math.ceil(data.length / porPagina))}`;
+        `Página ${pagina} de ${totalPaginas}`;
 }
-
 
 // ⏭ PAGINACIÓN
 function next() {
-    if (pagina < Math.ceil(dataGlobal.length / porPagina)) {
+
+    const totalPaginas = Math.ceil(
+        limpiarDataParaTabla(dataFiltrada).length / porPagina
+    );
+
+    if (pagina < totalPaginas) {
         pagina++;
-        renderTabla(dataGlobal);
+        renderTabla(dataFiltrada);
     }
 }
 
 function prev() {
+
     if (pagina > 1) {
         pagina--;
-        renderTabla(dataGlobal);
+        renderTabla(dataFiltrada);
     }
 }
-
 function calcularKPIs(data) {
 
     let hoy = 0;
@@ -254,6 +431,154 @@ function calcularKPIs(data) {
     document.getElementById("kpi_cumplida").innerText = cumplida;
 }
 
+function formatearFecha(fecha) {
+    if (!fecha) return "-";
+
+    let f = new Date(fecha);
+
+    return f.toLocaleDateString("es-PE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+    });
+}
+
+function formatearMonto(monto) {
+    return Number(monto || 0).toFixed(2);
+}
+
+function ordenarData(data) {
+
+    if (!ordenCampo) return data;
+
+    return [...data].sort((a, b) => {
+
+        let valA = a[ordenCampo];
+        let valB = b[ordenCampo];
+
+        // 🔥 normalizaciones
+        if (ordenCampo === "monto") {
+            valA = Number(valA);
+            valB = Number(valB);
+        }
+
+        if (ordenCampo === "fecha") {
+            valA = new Date(valA);
+            valB = new Date(valB);
+        }
+
+        if (ordenCampo === "estado") {
+            const prioridad = {
+                "Hoy": 1,
+                "Caída": 2,
+                "Vigente": 3,
+                "Cumplida": 4
+            };
+            valA = prioridad[valA] || 99;
+            valB = prioridad[valB] || 99;
+        }
+
+        if (ordenCampo === "intentos_hoy") {
+            valA = Number(valA || 0);
+            valB = Number(valB || 0);
+        }
+
+        if (valA < valB) return ordenDireccion === "asc" ? -1 : 1;
+        if (valA > valB) return ordenDireccion === "asc" ? 1 : -1;
+        return 0;
+
+    });
+}
+
+function ordenarPor(campo) {
+
+    if (ordenCampo === campo) {
+        ordenDireccion = ordenDireccion === "asc" ? "desc" : "asc";
+    } else {
+        ordenCampo = campo;
+        ordenDireccion = "asc";
+    }
+
+    renderTabla(dataFiltrada);
+}
+
+function diasHabilesPasados(fechaStr) {
+
+    let fecha = new Date(fechaStr);
+    let hoy = new Date();
+
+    let dias = 0;
+
+    while (fecha < hoy) {
+        fecha.setDate(fecha.getDate() + 1);
+
+        let dia = fecha.getDay(); // 0 domingo
+
+        if (dia !== 0) { // 🔥 excluye domingo
+            dias++;
+        }
+    }
+
+    return dias;
+}
+
+function limpiarDataParaTabla(data) {
+
+    return data.filter(c => {
+
+        if (c.estado !== "Caída") return true;
+
+        const dias = diasHabilesPasados(c.fecha);
+
+        return dias <= 2; // 🔥 SOLO deja máximo 2 días hábiles
+    });
+}
+
+function getGestionUI(tipo, indicador) {
+
+    if (!tipo) return { icon: "⚪", label: "Sin gestión", color: "#999" };
+
+    tipo = tipo.toUpperCase();
+
+    // 🟢 CONTACTO EFECTIVO
+    if (tipo === "CEF") {
+        return {
+            icon: "🟢",
+            label: indicador,
+            color: "#27ae60"
+        };
+    }
+
+    // 🟡 CONTACTO NO EFECTIVO
+    if (tipo === "CNE") {
+        return {
+            icon: "🟡",
+            label: indicador || "Contacto no efectivo",
+            color: "#f39c12"
+        };
+    }
+
+    // 🔴 NO CONTACTO
+    if (tipo === "NOC") {
+        return {
+            icon: "🔴",
+            label: indicador || "No contacto",
+            color: "#c0392b"
+        };
+    }
+
+    return {
+        icon: "⚪",
+        label: indicador || tipo,
+        color: "#7f8c8d"
+    };
+}
+
+function getIntentoClass(n) {
+    if (n === 0) return "intento-bajo";
+    if (n <= 2) return "intento-medio";
+    return "intento-alto";
+}
 
 // 🧠 CLICK FUERA DEL MODAL
 window.onclick = function(event) {
