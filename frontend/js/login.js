@@ -30,6 +30,9 @@ async function login() {
         }
 
         const data = await res.json();
+        console.log("TIPO RAW:", data.user.tipo);
+        console.log("TIPO LIMPIO:", data.user.tipo?.trim().toUpperCase());
+        console.log("USER:", data.user);
 
         console.log("RESPUESTA LOGIN:", data);
 
@@ -42,11 +45,19 @@ async function login() {
         // 🔥 guardar sesión
         localStorage.setItem("dni", data.user.dni);
         localStorage.setItem("agente", data.user.agente);
+        localStorage.setItem("tipo", data.user.tipo); // 👈 NUEVO
 
         console.log("GUARDADO DNI:", localStorage.getItem("dni"));
+        console.log("TIPO:", localStorage.getItem("tipo"));
 
         // 🔥 redirigir
-        window.location.href = "compromisos.html";
+        const tipo = data.user.tipo?.trim().toUpperCase();
+
+        if (tipo === "SUPERVISOR") {
+            window.location.href = "supervisor.html";
+        } else {
+            window.location.href = "compromisos.html";
+        }
 
     } catch (error) {
         console.error("ERROR LOGIN:", error);

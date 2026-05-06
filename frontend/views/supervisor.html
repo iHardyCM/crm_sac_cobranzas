@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Supervisor</title>
-    <link rel="stylesheet" href="../css/compromisos.css">
+    <link rel="stylesheet" href="../css/supervisor.css">
 </head>
 
 <body onload="cargarSupervisor()">
@@ -11,6 +11,13 @@
     <div class="header">
         <h2>Panel Supervisor</h2>
         <div id="usuario"></div>
+    </div>
+
+    <div class="acciones-top">
+        <button class="btn-export-general"
+            onclick="exportarCartera()">
+            Exportar Compromisos
+        </button>
     </div>
 
     <!-- KPIs -->
@@ -40,13 +47,13 @@
     <table>
         <thead>
             <tr>
-                <th>Agente</th>
-                <th>Total</th>
-                <th>Hoy</th>
-                <th>Caída</th>
-                <th>Vigente</th>
-                <th>Cumplida</th>
-                <th>Monto</th>
+                <th onclick="ordenarPor('AGENTE')">Agente</th>
+                <th onclick="ordenarPor('TOTAL')">Total Promesas (PDP)</th>
+                <th onclick="ordenarPor('MONTO_TOTAL')">Total Monto (S/)</th>
+                <th onclick="ordenarPor('HOY')">PDP Hoy</th>
+                <th onclick="ordenarPor('CAIDA')">PDP Caída</th>
+                <th onclick="ordenarPor('VIGENTE')">PDP Vigente</th>
+                <th onclick="ordenarPor('CUMPLIDA')">PDP Cumplida</th>
                 <th>Acción</th>
             </tr>
         </thead>

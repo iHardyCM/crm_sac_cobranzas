@@ -1,7 +1,13 @@
+# routes_compromisos
 from fastapi import APIRouter
 from app.services.compromisos_service import obtener_compromisos
 from app.core.db_siscob import engine_siscob
 from sqlalchemy import text
+
+from fastapi.responses import StreamingResponse
+import pandas as pd
+from io import BytesIO
+from datetime import datetime
 
 router = APIRouter()
 
@@ -75,7 +81,9 @@ def detalle(id: int):
             ORDER BY G2.FECHA DESC
         ) UG
 
-        WHERE C.IDCOMPROMISO = :id
+        WHERE 1=1
+            AND C.IDCOMPROMISO = :id
+            AND C.MONTO > 0
     """)
 
     try:
@@ -131,14 +139,15 @@ def resumen_supervisor(dni: str):
 
         # 🔥 1. OBTENER CARTERA DEL SUPERVISOR
         query_cartera = text("""
-            SELECT IDCARTERA
+            SELECT IDCARTERA,TipoUsuario
             FROM SISCOB.DBO.USUARIO WITH(NOLOCK)
             WHERE LTRIM(RTRIM(USUARIO)) = LTRIM(RTRIM(:dni))
         """)
 
         with engine_siscob.connect() as conn:
+            print("🚀 DNI RECIBIDO FRONT:", dni)
             result_cartera = conn.execute(query_cartera, {"dni": dni}).fetchone()
-
+        
         if not result_cartera:
             return {"ok": False, "msg": "Supervisor no encontrado"}
 
@@ -154,50 +163,37 @@ def resumen_supervisor(dni: str):
         query = text("""
             SELECT 
                 CONCAT(U.USUARIO,' - ',U.Nombres,' ',U.Apellidos) AS AGENTE,
-
                 COUNT(*) AS TOTAL,
-
                 SUM(CASE 
                     WHEN CAST(C.FECHACOMPROMISO AS DATE) = CAST(GETDATE() AS DATE)
                     THEN 1 ELSE 0 END) AS HOY,
-
                 SUM(CASE 
                     WHEN CAST(C.FECHACOMPROMISO AS DATE) < CAST(GETDATE() AS DATE) AND ISNULL(C.MONTOPAGADO,0) = 0
                     THEN 1 ELSE 0 END) AS CAIDA,
-
                 SUM(CASE 
                     WHEN CAST(C.FECHACOMPROMISO AS DATE) > CAST(GETDATE() AS DATE) AND ISNULL(C.MONTOPAGADO,0) = 0
                     THEN 1 ELSE 0 END) AS VIGENTE,
-
                 SUM(CASE 
                     WHEN PAGADO = 'SI'
                     THEN 1 ELSE 0 END) AS CUMPLIDA,
-
                 SUM(C.MONTO) AS MONTO_TOTAL,
-
                 SUM(CASE 
                     WHEN PAGADO = 'SI'
                     THEN MONTOPAGADO ELSE 0 END) AS MONTO_PAGADO
-
             FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
-
             LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
                 ON G.IDGESTION = C.IDGESTION
-
             LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                 ON U.IDUSUARIO = G.IDUSUARIO
-
             LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
                 ON CL.IDCLIENTE = G.IDCLIENTE
-
             WHERE 
                 G.IDCARTERA = :cartera
                 AND CAST(C.FECHAGENERO AS DATE) BETWEEN 
                     DATEADD(MONTH, -1, DATEADD(DAY, 1, EOMONTH(GETDATE()))) 
                     AND GETDATE()
-
+                AND C.MONTO > 0
             GROUP BY U.USUARIO, U.Nombres, U.Apellidos
-
             ORDER BY TOTAL DESC
         """)
 
@@ -216,27 +212,51 @@ def resumen_supervisor(dni: str):
 @router.get("/agente/compromisos")
 def compromisos_agente(agente: str):
 
-    from app.core.db_siscob import engine_siscob
-    from sqlalchemy import text
+    data = obtener_compromisos(agente)
 
-    query = """
+    return {
+        "ok": True,
+        "data": data
+    }
+
+
+@router.get("/supervisor/exportar-cartera")
+def exportar_cartera(dni: str):
+
+    query = text("""
+
         SELECT
-            C.IDCOMPROMISO,
+            C.idGestion,
+            C.IdCompromiso,
+            C.FECHAGENERO,
+            CONCAT(U.USUARIO,' - ',U.Nombres,' ',U.Apellidos) AS AGENTE,
             CL.NOMBRECLIENTE AS CLIENTE,
+            CL.IDCARTERA,
             G.DNI,
             G.TELEFONO,
+            C.NUMOPERACION,
             C.MONTO,
-            C.MontoPagado,
-            CAST(C.FECHACOMPROMISO AS DATE) AS FECHA,
-
+            CAST(C.FECHACOMPROMISO AS DATE) AS FECHA_COMPROMISO,
             CASE 
                 WHEN PAGADO = 'SI' THEN 'CUMPLIDA'
-                WHEN CAST(C.FECHACOMPROMISO AS DATE) = CAST(GETDATE() AS DATE) THEN 'HOY'
-                WHEN CAST(C.FECHACOMPROMISO AS DATE) < GETDATE() THEN 'CAIDA'
+                WHEN CAST(C.FECHACOMPROMISO AS DATE) = CAST(GETDATE() AS DATE)
+                    THEN 'HOY'
+                WHEN CAST(C.FECHACOMPROMISO AS DATE) < GETDATE()
+                    THEN 'CAIDA'
                 ELSE 'VIGENTE'
             END AS ESTADO,
-
-            CONCAT(U.USUARIO,' - ',U.Nombres,' ',U.Apellidos) AS AGENTE
+            C.TIPOPAGO,
+            C.MONTOPAGADO,
+            -- 🔥 INTENTOS HOY
+            ISNULL(INTENTOS.INTENTOS_HOY,0) AS INTENTOS_HOY,
+            -- 🔥 GESTIÓN QUE GENERÓ EL COMPROMISO
+            G.GESTION AS GESTION_COMPROMISO,
+            -- 🔥 ÚLTIMA GESTIÓN
+            UG.ULT_GESTION,
+            UG.ULT_FECHA,
+            UG.ULT_TIPOCONTACTO,
+            UG.ULT_INDICADOR,
+            UG.ULT_AGENTE
         FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
 
         LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
@@ -247,18 +267,83 @@ def compromisos_agente(agente: str):
 
         LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
             ON CL.IDCLIENTE = G.IDCLIENTE
+        -- 🔥 INTENTOS DEL DÍA
+        OUTER APPLY (
+            SELECT COUNT(1) AS INTENTOS_HOY
+            FROM SISCOB.DBO.GESTION GX WITH(NOLOCK)
+            WHERE
+                GX.IDCLIENTE = G.IDCLIENTE
+                AND CAST(GX.FECHA AS DATE) = CAST(GETDATE() AS DATE)
+        ) INTENTOS
+        -- 🔥 ÚLTIMA GESTIÓN REAL
+        OUTER APPLY (
+            SELECT TOP 1
+                G2.GESTION AS ULT_GESTION,
+                G2.FECHA AS ULT_FECHA,
+                I2.TIPOCONTACTO AS ULT_TIPOCONTACTO,
+                I2.DESCRIPCIONINDICADOR AS ULT_INDICADOR,
+                CONCAT(
+                    U2.USUARIO,
+                    ' - ',
+                    U2.Nombres,
+                    ' ',
+                    U2.Apellidos
+                ) AS ULT_AGENTE
+            FROM SISCOB.DBO.GESTION G2 WITH(NOLOCK)
+            LEFT JOIN SISCOB.DBO.USUARIO U2 WITH(NOLOCK)
+                ON U2.IDUSUARIO = G2.IDUSUARIO
+            LEFT JOIN SISCOB.DBO.INDICADOR I2 WITH(NOLOCK)
+                ON I2.IDINDICADOR = G2.IDINDICADOR
+            WHERE
+                G2.IDCLIENTE = G.IDCLIENTE
+            ORDER BY G2.FECHA DESC
+        ) UG
+        WHERE 1=1
+            AND G.IDCARTERA = (
+                SELECT IDCARTERA
+                FROM SISCOB.DBO.USUARIO
+                WHERE USUARIO = :dni
+            )
+            AND C.MONTO > 0
+            AND CAST(C.FECHAGENERO AS DATE)
+                BETWEEN DATEADD(MONTH,-1,DATEADD(DAY,1,EOMONTH(GETDATE())))
+                AND GETDATE()
+        ORDER BY
+            U.USUARIO,
+            C.FECHACOMPROMISO DESC
 
-        WHERE 
-            CL.IDCARTERA IN (112,117,124,126,128,132,133,135,137,139,143,144)
-            AND CAST(C.FECHAGENERO AS DATE) BETWEEN DATEADD(MONTH, -1, DATEADD(DAY, 1, EOMONTH(GETDATE()))) AND GETDATE()
-            AND LTRIM(RTRIM(U.USUARIO)) = LTRIM(RTRIM(:agente))
-            
-        ORDER BY C.FECHACOMPROMISO DESC
-    """
+    """)
 
     with engine_siscob.connect() as conn:
-        result = conn.execute(text(query), {"agente": agente}).fetchall()
 
-    data = [dict(r._mapping) for r in result]
+        rows = conn.execute(query, {
+            "dni": dni
+        }).fetchall()
 
-    return {"ok": True, "data": data}
+    df = pd.DataFrame(rows)
+
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Cartera"
+        )
+
+    output.seek(0)
+
+    fecha_descarga = datetime.now().strftime("%Y%m%d_%H%M")
+
+    nombre_archivo = (
+        f"Compromisos_{dni}_{fecha_descarga}.xlsx"
+    )
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition":
+            f"attachment; filename={nombre_archivo}"
+        }
+    )

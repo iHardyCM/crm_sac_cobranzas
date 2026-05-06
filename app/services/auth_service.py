@@ -7,12 +7,12 @@ def validar_usuario(dni: str):
     try:
         query = text("""
             SELECT TOP 1
-                G.DNI,
-                CONCAT(U.USUARIO,' - ',U.Nombres,' ',U.Apellidos) AS AGENTE
-            FROM SISCOB.DBO.GESTION G WITH(NOLOCK)
-            LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
-                ON U.IDUSUARIO = G.IDUSUARIO
-            WHERE LEFT(U.USUARIO, 8) = :dni
+                U.USUARIO,
+                U.Nombres,
+                U.Apellidos,
+                U.TipoUsuario
+            FROM SISCOB.DBO.USUARIO U WITH(NOLOCK)
+            WHERE LTRIM(RTRIM(U.USUARIO)) = LTRIM(RTRIM(:dni))
         """)
 
         with engine_siscob.connect() as conn:
@@ -20,8 +20,9 @@ def validar_usuario(dni: str):
 
             if r:
                 return {
-                    "dni": r.DNI,
-                    "agente": r.AGENTE
+                    "dni": r.USUARIO,  # 🔥 usas usuario como clave
+                    "agente": f"{r.USUARIO} - {r.Nombres} {r.Apellidos}",
+                    "tipo": r.TipoUsuario  # 👈 ESTA ES LA CLAVE
                 }
 
     except Exception as e:

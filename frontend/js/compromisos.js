@@ -1,13 +1,19 @@
+// compromisos.js
 // 🔐 VALIDAR SESIÓN
-const agente = localStorage.getItem("agente");
+const agente =
+    localStorage.getItem("agente_filtro")
+    || localStorage.getItem("agente");
+
+console.log("AGENTE VISUAL:", agente);
 
 if (!agente) {
     alert("Sesión inválida, vuelve a iniciar sesión");
     window.location.href = "login.html";
 }
 
-// 🔥 EXTRAER DNI DESDE AGENTE (CORRECTO)
+// 🔥 EXTRAER DNI
 const dni = agente.substring(0, 8);
+
 console.log("DNI USADO:", dni);
 
 // 🔥 HEADER
@@ -15,7 +21,7 @@ const fecha = new Date();
 const mes = fecha.toLocaleString('es-PE', { month: 'long' });
 const anio = fecha.getFullYear();
 
-
+document.getElementById("nombre_agente").innerText = agente;
 
 document.getElementById("titulo_tabla").innerText =
     `Compromisos del mes (${mes} ${anio})`;
@@ -38,7 +44,11 @@ async function cargar() {
         const BASE_URL = `http://${window.location.hostname}:8000`;
 
         // 🔥 DECLARAR AQUÍ
-        const agenteFiltro = localStorage.getItem("agente_filtro");
+        const agenteCompleto = localStorage.getItem("agente_filtro");
+
+        const agenteFiltro = agenteCompleto
+            ? agenteCompleto.split(" - ")[0]
+            : null;
 
         let url = "";
 
@@ -63,18 +73,32 @@ async function cargar() {
 
         const data = await res.json();
 
+        console.log("PRIMER REGISTRO:", data.data[0]);
         console.log("DATA BACKEND:", data);
 
-        dataGlobal = data.data || [];
+        dataGlobal = (data.data || []).map(x => ({
+            id: x.IDCOMPROMISO || x.id,
+            cliente: x.CLIENTE || x.cliente || x.NOMBRECLIENTE,
+            dni: x.DNI || x.dni,
+            telefono: x.TELEFONO || x.telefono,
+            monto: x.MONTO || x.monto,
+            fecha: x.FECHA || x.fecha || x.FECHACOMPROMISO,
+            estado: x.ESTADO || x.estado,
+            intentos_hoy: x.INTENTOS_HOY ?? x.intentos_hoy ?? 0
+        }));
 
-        calcularKPIs(dataGlobal);
-        dataFiltrada = dataGlobal;
+        const dataLimpia = limpiarDataParaTabla(dataGlobal);
+
+        calcularKPIs(dataLimpia);
+
+        dataFiltrada = dataLimpia;
 
         renderTabla(dataFiltrada);
 
         // 🔥 LIMPIAR DESPUÉS DE USAR
         if (agenteFiltro) {
-            localStorage.removeItem("agente_filtro");
+            // localStorage.removeItem("agente_filtro");
+            // location.reload();
         }
 
     } catch (error) {
@@ -318,7 +342,9 @@ function aplicarFiltros() {
 
     let filtrado = dataGlobal.filter(x => {
 
-        let okEstado = estado ? x.estado === estado : true;
+        let okEstado = estado
+            ? (x.estado || "").toUpperCase() === estado.toUpperCase()
+            : true;
         let okFecha = fecha ? x.fecha === fecha : true;
 
         let okTexto =
@@ -356,6 +382,8 @@ function renderTabla(data) {
 
     paginado.forEach(c => {
 
+        const intentos = c.intentos_hoy ?? 0;
+
         const estadoClass = (c.estado || "")
             .toLowerCase()
             .replace("í", "i")
@@ -374,8 +402,8 @@ function renderTabla(data) {
                 </span>
             </td>
             <td>
-                <span class="badge-intentos ${getIntentoClass(c.intentos_hoy)}">
-                    ${c.intentos_hoy}
+                <span class="badge-intentos ${getIntentoClass(intentos)}">
+                    ${intentos}
                 </span>
             </td>
             <td>
@@ -468,14 +496,22 @@ function ordenarData(data) {
         }
 
         if (ordenCampo === "estado") {
+
+            const normalizar = (v) =>
+                (v || "")
+                    .toUpperCase()
+                    .replace("Á", "A")
+                    .replace("Í", "I");
+
             const prioridad = {
-                "Hoy": 1,
-                "Caída": 2,
-                "Vigente": 3,
-                "Cumplida": 4
+                "HOY": 1,
+                "CAIDA": 2,
+                "VIGENTE": 3,
+                "CUMPLIDA": 4
             };
-            valA = prioridad[valA] || 99;
-            valB = prioridad[valB] || 99;
+
+            valA = prioridad[normalizar(valA)] || 99;
+            valB = prioridad[normalizar(valB)] || 99;
         }
 
         if (ordenCampo === "intentos_hoy") {
@@ -507,14 +543,18 @@ function diasHabilesPasados(fechaStr) {
     let fecha = new Date(fechaStr);
     let hoy = new Date();
 
+    // 🔥 NORMALIZAR
+    fecha.setHours(0,0,0,0);
+    hoy.setHours(0,0,0,0);
+
     let dias = 0;
 
     while (fecha < hoy) {
         fecha.setDate(fecha.getDate() + 1);
 
-        let dia = fecha.getDay(); // 0 domingo
+        let dia = fecha.getDay();
 
-        if (dia !== 0) { // 🔥 excluye domingo
+        if (dia !== 0) { // sin domingo
             dias++;
         }
     }
