@@ -179,7 +179,23 @@ def resumen_supervisor(dni: str):
                 SUM(C.MONTO) AS MONTO_TOTAL,
                 SUM(CASE 
                     WHEN PAGADO = 'SI'
-                    THEN MONTOPAGADO ELSE 0 END) AS MONTO_PAGADO
+                    THEN MONTOPAGADO ELSE 0 END) AS MONTO_PAGADO,
+                -- 🔥 BASE VENCIDA AL DÍA POR MONTO
+                SUM(CASE 
+                    WHEN CAST(C.FECHACOMPROMISO AS DATE) <= CAST(GETDATE() AS DATE)
+                    THEN ISNULL(C.MONTO,0) ELSE 0 
+                END) AS MONTO_PDP_AL_DIA,
+                -- 🔥 MONTO CUMPLIDO AL DÍA
+                SUM(CASE 
+                    WHEN CAST(C.FECHACOMPROMISO AS DATE) <= CAST(GETDATE() AS DATE)
+                    THEN ISNULL(C.MONTOPAGADO,0) ELSE 0 
+                END) AS MONTO_PAGADO_AL_DIA,
+                -- 🔥 MONTO CAÍDO AL DÍA
+                SUM(CASE 
+                    WHEN CAST(C.FECHACOMPROMISO AS DATE) <= CAST(GETDATE() AS DATE)
+                    THEN ISNULL(C.MONTO,0) - ISNULL(C.MONTOPAGADO,0)
+                    ELSE 0 
+                END) AS MONTO_CAIDO_AL_DIA
             FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
             LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
                 ON G.IDGESTION = C.IDGESTION

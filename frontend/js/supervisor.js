@@ -27,15 +27,19 @@ async function cargarSupervisor() {
 
     let total = 0;
     let monto = 0;
-    let cumplida = 0;
-    let caida = 0;
+    
+    let montoPdpAlDia = 0;
+    let montoPagadoAlDia = 0;
+    let montoCaidoAlDia = 0;
 
     data.data.forEach(row => {
 
         total += row.TOTAL;
         monto += row.MONTO_TOTAL;
-        cumplida += row.CUMPLIDA;
-        caida += row.CAIDA;
+
+        montoPdpAlDia += Number(row.MONTO_PDP_AL_DIA || 0);
+        montoPagadoAlDia += Number(row.MONTO_PAGADO_AL_DIA || 0);
+        montoCaidoAlDia += Number(row.MONTO_CAIDO_AL_DIA || 0);
 
     });
 
@@ -47,17 +51,26 @@ async function cargarSupervisor() {
     document.getElementById("kpi_total").innerText = total;
 
     document.getElementById("kpi_monto").innerText =
-        `S/ ${monto.toLocaleString('es-PE')}`;
+        `S/ ${monto.toLocaleString('es-PE', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })}`;
+
+    document.getElementById("kpi_recupero").innerText =
+        `S/ ${montoPagadoAlDia.toLocaleString('es-PE', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })}`;
 
     const eficacia =
-        total
-        ? ((cumplida / total) * 100).toFixed(1)
-        : 0;
+        montoPdpAlDia
+            ? ((montoPagadoAlDia / montoPdpAlDia) * 100).toFixed(1)
+            : 0;
 
     const tasaCaida =
-        total
-        ? ((caida / total) * 100).toFixed(1)
-        : 0;
+        montoPdpAlDia
+            ? ((montoCaidoAlDia / montoPdpAlDia) * 100).toFixed(1)
+            : 0;
 
     document.getElementById("kpi_eficacia").innerText =
         `${eficacia}%`;

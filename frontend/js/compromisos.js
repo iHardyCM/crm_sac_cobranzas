@@ -339,19 +339,38 @@ function aplicarFiltros() {
     let estado = document.getElementById("filtro_estado").value;
     let fecha = document.getElementById("filtro_fecha").value;
     let texto = document.getElementById("buscar").value.toLowerCase();
+    let intentos = document.getElementById("filtro_intentos").value;
 
     let filtrado = dataGlobal.filter(x => {
 
         let okEstado = estado
             ? (x.estado || "").toUpperCase() === estado.toUpperCase()
             : true;
+
         let okFecha = fecha ? x.fecha === fecha : true;
 
         let okTexto =
-            (x.dni || "").toString().includes(texto) ||
-            (x.telefono || "").toString().includes(texto);
+            (x.dni || "").toString().toLowerCase().includes(texto) ||
+            (x.telefono || "").toString().toLowerCase().includes(texto) ||
+            (x.cliente || "").toString().toLowerCase().includes(texto);
 
-        return okEstado && okFecha && okTexto;
+        let cantIntentos = Number(x.intentos_hoy || 0);
+
+        let okIntento = true;
+
+        if (intentos === "0") {
+            okIntento = cantIntentos === 0;
+        }
+
+        if (intentos === "1_2") {
+            okIntento = cantIntentos >= 1 && cantIntentos <= 2;
+        }
+
+        if (intentos === "3_mas") {
+            okIntento = cantIntentos >= 3;
+        }
+
+        return okEstado && okFecha && okTexto && okIntento;
     });
 
     pagina = 1;
