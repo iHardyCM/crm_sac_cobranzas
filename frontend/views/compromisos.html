@@ -3,17 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <title>Compromisos</title>
-    <link rel="stylesheet" href="../css/compromisos.css">
+    <link rel="stylesheet" href="../css/compromisos.css?v=20260521b">
     <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/747/747376.png">
 </head>
 <body>
+
+<aside class="app-sidebar">
+    <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
+        <img src="logo_i_biznescob.png" alt="Biznescob">
+    </button>
+    <button class="sidebar-link" onclick="irInicio()">Inicio</button>
+</aside>
 
 <div class="container">
 
     <!-- HEADER -->
     <div class="header">
-        <div class="title">🏦 Sistema de Gestión de Compromisos</div>
-        <div class="user"><span id="nombre_agente"></span></div>
+        <div class="header-left">
+            <button class="btn-volver" onclick="volverVistaAnterior()">Volver</button>
+            <div class="title">🏦 Sistema de Gestión de Compromisos</div>
+        </div>
+        <div class="header-actions">
+            <div class="user"><span id="nombre_agente"></span></div>
+            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+        </div>
     </div>
 
     <!-- KPIs -->
@@ -110,7 +123,8 @@
     </div>
 </div>
 
-<script src="../js/compromisos.js"></script>
+<script src="../js/session.js"></script>
+<script src="../js/compromisos.js?v=20260521"></script>
 
 </body>
 </html>

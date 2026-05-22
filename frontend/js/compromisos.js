@@ -1,7 +1,9 @@
 // compromisos.js
 // 🔐 VALIDAR SESIÓN
+const paramsIniciales = new URLSearchParams(window.location.search);
 const agente =
-    localStorage.getItem("agente_filtro")
+    paramsIniciales.get("agente")
+    || localStorage.getItem("agente_filtro")
     || localStorage.getItem("agente");
 
 console.log("AGENTE VISUAL:", agente);
@@ -44,7 +46,9 @@ async function cargar() {
         const BASE_URL = `http://${window.location.hostname}:8000`;
 
         // 🔥 DECLARAR AQUÍ
-        const agenteCompleto = localStorage.getItem("agente_filtro");
+        const agenteCompleto =
+            paramsIniciales.get("agente")
+            || localStorage.getItem("agente_filtro");
 
         const agenteFiltro = agenteCompleto
             ? agenteCompleto.split(" - ")[0]
@@ -93,7 +97,7 @@ async function cargar() {
 
         dataFiltrada = dataLimpia;
 
-        renderTabla(dataFiltrada);
+        aplicarFiltrosInicialesDesdeUrl();
 
         // 🔥 LIMPIAR DESPUÉS DE USAR
         if (agenteFiltro) {
@@ -108,6 +112,23 @@ async function cargar() {
 
 cargar();
 
+
+function volverVistaAnterior() {
+    const params = new URLSearchParams(window.location.search);
+    const supervisorDni = params.get("supervisor_dni") || localStorage.getItem("dni");
+
+    if (document.referrer && history.length > 1) {
+        history.back();
+        return;
+    }
+
+    if (supervisorDni) {
+        window.location.href = `supervisor.html?dni=${encodeURIComponent(supervisorDni)}`;
+        return;
+    }
+
+    window.location.href = "login.html";
+}
 
 
 async function verDetalle(id) {
@@ -362,11 +383,11 @@ function aplicarFiltros() {
             okIntento = cantIntentos === 0;
         }
 
-        if (intentos === "1_2") {
+        if (intentos === "1-2") {
             okIntento = cantIntentos >= 1 && cantIntentos <= 2;
         }
 
-        if (intentos === "3_mas") {
+        if (intentos === "3+") {
             okIntento = cantIntentos >= 3;
         }
 
@@ -375,6 +396,37 @@ function aplicarFiltros() {
 
     pagina = 1;
     dataFiltrada = filtrado;
+    renderTabla(dataFiltrada);
+}
+
+function aplicarFiltrosInicialesDesdeUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const estado = params.get("estado");
+    const fecha = params.get("fecha");
+    const intentos = params.get("intentos");
+    const buscar = params.get("buscar");
+
+    if (estado) {
+        document.getElementById("filtro_estado").value = estado;
+    }
+
+    if (fecha) {
+        document.getElementById("filtro_fecha").value = fecha;
+    }
+
+    if (intentos) {
+        document.getElementById("filtro_intentos").value = intentos;
+    }
+
+    if (buscar) {
+        document.getElementById("buscar").value = buscar;
+    }
+
+    if (estado || fecha || intentos || buscar) {
+        aplicarFiltros();
+        return;
+    }
+
     renderTabla(dataFiltrada);
 }
 

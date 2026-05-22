@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Biznescob - Inicio</title>
+    <link rel="stylesheet" href="../css/home.css?v=20260521b">
+</head>
+<body>
+
+    <header class="home-topbar">
+        <div class="brand">
+            <img class="brand-logo-img" src="logo_i_biznescob.png" alt="Biznescob">
+            <div>
+                <h1>Biznescob</h1>
+                <p>Centro de gestion de cobranzas</p>
+            </div>
+        </div>
+
+        <div class="user-box">
+            <span id="homeUsuario">Usuario</span>
+            <button onclick="cerrarSesion()">Salir</button>
+        </div>
+    </header>
+
+    <main class="home-container">
+        <section class="hero-panel">
+            <div>
+                <span class="eyebrow" id="homePerfil">Perfil</span>
+                <h2 id="homeTitulo">Bienvenido</h2>
+                <p id="homeDescripcion">
+                    Selecciona un modulo para continuar con la gestion del dia.
+                </p>
+            </div>
+
+            <div class="today-box">
+                <span>Fecha de trabajo</span>
+                <strong id="homeFecha">--/--/----</strong>
+            </div>
+        </section>
+
+        <section class="section-head">
+            <div>
+                <h3>Modulos disponibles</h3>
+                <p>Accesos segun tu perfil de usuario</p>
+            </div>
+        </section>
+
+        <section id="modulosHome" class="module-grid"></section>
+
+        <section class="section-head roadmap-title">
+            <div>
+                <h3>Proximas funcionalidades</h3>
+                <p>Espacios reservados para la evolucion del CRM</p>
+            </div>
+        </section>
+
+        <section id="roadmapHome" class="roadmap-grid"></section>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/home.js?v=20260521b"></script>
+</body>
+</html>

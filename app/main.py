@@ -4,6 +4,9 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_compromisos import router as compromisos_router
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes_corporativo import router as corporativo_router
+
+
 app = FastAPI(title="CRM COBRANZAS")
 
 app.add_middleware(
@@ -17,3 +20,4 @@ app.add_middleware(
 app.include_router(cliente_router, prefix="/cliente")
 app.include_router(auth_router, prefix="/auth")
 app.include_router(compromisos_router, prefix="/compromisos")
+app.include_router(corporativo_router, prefix="/corporativo")

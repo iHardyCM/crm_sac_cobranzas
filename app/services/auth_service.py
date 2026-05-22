@@ -3,14 +3,14 @@ from app.core.db_siscob import engine_siscob
 
 
 def validar_usuario(dni: str):
-
     try:
         query = text("""
             SELECT TOP 1
                 U.USUARIO,
                 U.Nombres,
                 U.Apellidos,
-                U.TipoUsuario
+                U.TipoUsuario,
+                U.IDCARTERA
             FROM SISCOB.DBO.USUARIO U WITH(NOLOCK)
             WHERE LTRIM(RTRIM(U.USUARIO)) = LTRIM(RTRIM(:dni))
         """)
@@ -20,9 +20,10 @@ def validar_usuario(dni: str):
 
             if r:
                 return {
-                    "dni": r.USUARIO,  # 🔥 usas usuario como clave
+                    "dni": r.USUARIO,
                     "agente": f"{r.USUARIO} - {r.Nombres} {r.Apellidos}",
-                    "tipo": r.TipoUsuario  # 👈 ESTA ES LA CLAVE
+                    "tipo": r.TipoUsuario,
+                    "idcartera": r.IDCARTERA
                 }
 
     except Exception as e:

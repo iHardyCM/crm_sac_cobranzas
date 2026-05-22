@@ -3,14 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <title>Supervisor</title>
-    <link rel="stylesheet" href="../css/supervisor.css">
+    <link rel="stylesheet" href="../css/supervisor.css?v=20260521b">
 </head>
 
 <body onload="cargarSupervisor()">
 
+    <aside class="app-sidebar">
+        <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+        </button>
+        <button class="sidebar-link" onclick="irInicio()">Inicio</button>
+    </aside>
+
     <div class="header">
         <h2>Panel Supervisor</h2>
-        <div id="usuario"></div>
+        <div class="header-user">
+            <div id="usuario"></div>
+            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+        </div>
     </div>
 
     <div class="acciones-top">
@@ -68,5 +78,6 @@
 
 </body>
 
-<script src="../js/supervisor.js"></script>
+<script src="../js/session.js"></script>
+<script src="../js/supervisor.js?v=20260521"></script>
 </html>

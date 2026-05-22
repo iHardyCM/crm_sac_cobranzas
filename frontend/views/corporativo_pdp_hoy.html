@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>PDP Hoy - CRM Cobranzas</title>
+    <link rel="stylesheet" href="../css/corporativo.css?v=20260521c">
+</head>
+<body>
+
+    <aside class="app-sidebar">
+        <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+        </button>
+        <button class="sidebar-link" onclick="irInicio()">Inicio</button>
+    </aside>
+
+    <header class="topbar">
+        <div class="topbar-left">
+            <img class="logo-img" src="logo_i_biznescob.png" alt="Biznescob">
+
+            <div>
+                <h1>Promesas con vencimiento hoy</h1>
+                <p id="subtituloPdpHoy">Detalle por cartera</p>
+            </div>
+        </div>
+
+        <div class="cabecera-acciones">
+            <button class="btn-secundario" onclick="volverCorporativo()">
+                Volver al panel
+            </button>
+            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+        </div>
+    </header>
+
+    <main class="contenedor">
+        <section class="cards pdp-resumen">
+            <div class="card">
+                <div class="icono azul">S/</div>
+                <div>
+                    <p>Pendiente hoy</p>
+                    <h3 id="kpiPendienteHoy">S/ 0.00</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono naranja">!</div>
+                <div>
+                    <p>PDP impagas</p>
+                    <h3 id="kpiImpagas">0</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono gris">0</div>
+                <div>
+                    <p>Sin intentos</p>
+                    <h3 id="kpiSinIntentos">0</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono verde">#</div>
+                <div>
+                    <p>Prom. intentos</p>
+                    <h3 id="kpiPromIntentos">0.0</h3>
+                </div>
+            </div>
+        </section>
+
+        <section class="filtros-panel">
+            <div class="campo-filtro">
+                <label for="filtroCarteraPdp">Cartera</label>
+                <select id="filtroCarteraPdp" onchange="aplicarFiltrosPdpHoy()">
+                    <option value="">Todas las carteras</option>
+                </select>
+            </div>
+
+            <div class="campo-filtro">
+                <label for="buscarPdpHoy">Buscar</label>
+                <input type="text" id="buscarPdpHoy" placeholder="Cliente, cartera, DNI, telefono o agente" oninput="aplicarFiltrosPdpHoy()">
+            </div>
+
+            <div class="campo-filtro">
+                <label for="filtroEstadoPdp">Estado</label>
+                <select id="filtroEstadoPdp" onchange="aplicarFiltrosPdpHoy()">
+                    <option value="">Todos</option>
+                    <option value="pendiente">Pendientes</option>
+                    <option value="cumplida">Pagadas</option>
+                </select>
+            </div>
+
+            <div class="campo-filtro">
+                <label for="filtroIntentosPdp">Intentos</label>
+                <select id="filtroIntentosPdp" onchange="aplicarFiltrosPdpHoy()">
+                    <option value="">Todos</option>
+                    <option value="0">Sin gestion</option>
+                    <option value="1_2">1 a 2</option>
+                    <option value="3_mas">3 o mas</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="tabla-card">
+            <div class="tabla-header">
+                <h2 id="tituloPdpHoy">PDP Hoy</h2>
+            </div>
+
+            <div class="tabla-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><button class="th-sort" data-sort="cliente" onclick="ordenarPdpHoy('cliente')">Cliente <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="cartera" onclick="ordenarPdpHoy('cartera')">Cartera <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="dni" onclick="ordenarPdpHoy('dni')">DNI <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="telefono" onclick="ordenarPdpHoy('telefono')">Telefono <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="agente" onclick="ordenarPdpHoy('agente')">Agente <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="monto_pdp" onclick="ordenarPdpHoy('monto_pdp')">Monto PDP <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="monto_pagado" onclick="ordenarPdpHoy('monto_pagado')">Pagado <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="estado" onclick="ordenarPdpHoy('estado')">Estado <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="intentos_hoy" onclick="ordenarPdpHoy('intentos_hoy')">Intentos <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort" data-sort="ult_fecha" onclick="ordenarPdpHoy('ult_fecha')">Ultima gestion <span class="orden-icono">↕</span></button></th>
+                            <th><button class="th-sort">Accion</button></th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="tablaPdpHoy">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="modalPdpHoy" class="modal-pdp">
+        <div class="modal-pdp-card">
+            <div class="modal-pdp-header">
+                <div>
+                    <p id="modalPdpId">PDP</p>
+                    <h2 id="modalPdpCliente">Cliente</h2>
+                </div>
+                <button class="btn-cerrar-modal" onclick="cerrarModalPdpHoy()">Cerrar</button>
+            </div>
+
+            <div id="modalPdpContenido" class="modal-pdp-contenido">
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/corporativo_pdp_hoy.js?v=20260521c"></script>
+</body>
+</html>

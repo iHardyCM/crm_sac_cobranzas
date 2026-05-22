@@ -1,16 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Login</title>
+    <meta charset="UTF-8">
+    <title>Biznescob - Acceso</title>
+    <link rel="stylesheet" href="../css/styles.css">
 </head>
-<body>
+<body class="login-body">
 
-<h2>Ingreso</h2>
+    <main class="login-shell">
+        <section class="login-panel">
+            <div class="login-brand">
+                <div class="login-logo"><img src="logo_i_biznescob.png" alt="logo_i_biznescob"></div>
+                <div>
+                    <h1>Biznescob</h1>
+                    <p>Sistema de gestion de cobranzas</p>
+                </div>
+            </div>
 
-<input type="text" id="dni" placeholder="Ingresa tu DNI">
-<button onclick="login()">Ingresar</button>
+            <div class="login-card">
+                <div class="login-card-header">
+                    <span>Acceso interno</span>
+                    <h2>Ingrese sus credenciales</h2>
+                    <p>Use su DNI registrado para acceder a su panel de trabajo.</p>
+                </div>
 
-<script src="../js/login.js"></script>
+                <label for="dni">DNI</label>
+                <input
+                    type="text"
+                    id="dni"
+                    maxlength="8"
+                    inputmode="numeric"
+                    placeholder="Ingrese su DNI"
+                    onkeydown="if(event.key === 'Enter') login()"
+                    autofocus
+                >
 
+                <button class="login-button" onclick="login()">Ingresar</button>
+                <p class="login-foot">Plataforma corporativa de control y seguimiento</p>
+            </div>
+        </section>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/login.js?v=20260521b"></script>
 </body>
 </html>

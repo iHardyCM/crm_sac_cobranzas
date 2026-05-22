@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Panel Corporativo - CRM Cobranzas</title>
+
+    <link rel="stylesheet" href="../css/corporativo.css?v=20260521c">
+</head>
+<body>
+
+    <aside class="app-sidebar">
+        <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+        </button>
+        <button class="sidebar-link" onclick="irInicio()">Inicio</button>
+    </aside>
+
+    <header class="topbar">
+        <div class="topbar-left">
+            <img class="logo-img" src="logo_i_biznescob.png" alt="Biznescob">
+
+            <div>
+                <h1>Sistema de Gestión - Panel Corporativo</h1>
+                <p>Vista general de compromisos por cartera / campaña</p>
+            </div>
+        </div>
+
+        <div class="topbar-user">
+            <span id="usuario">Gerencia</span>
+            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+        </div>
+    </header>
+
+    <main class="contenedor">
+
+        <section class="cabecera-panel">
+            <div>
+                <h2 id="tituloMes">Resumen rendimiento corporativo</h2>
+                <p>Indicadores consolidados del mes actual</p>
+            </div>
+
+            <div class="cabecera-acciones">
+                <button class="btn-secundario" onclick="verPdpHoyGeneral()">
+                    PDP hoy
+                </button>
+
+                <button class="btn-descargar" onclick="descargarReporte()">
+                    Descargar reporte corporativo
+                </button>
+            </div>
+        </section>
+
+        <section class="filtros-panel">
+            <div class="campo-filtro">
+                <label for="filtroCartera">Cartera</label>
+                <select id="filtroCartera">
+                    <option value="">Todas las carteras</option>
+                </select>
+            </div>
+
+            <div class="campo-filtro">
+                <label for="fechaDesde">Desde</label>
+                <input type="date" id="fechaDesde">
+            </div>
+
+            <div class="campo-filtro">
+                <label for="fechaHasta">Hasta</label>
+                <input type="date" id="fechaHasta">
+            </div>
+
+            <div class="acciones-filtro">
+                <button class="btn-filtrar" onclick="aplicarFiltros()">Aplicar</button>
+                <button class="btn-limpiar" onclick="limpiarFiltros()">Limpiar</button>
+            </div>
+        </section>
+
+        <section class="cards">
+            <div class="card">
+                <div class="icono gris">▦</div>
+                <div>
+                    <p>Promesas totales</p>
+                    <h3 id="totalPromesas">0</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono verde-oscuro">S/</div>
+                <div>
+                    <p>Monto acordado</p>
+                    <h3 id="montoPDP">S/ 0.00</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono azul">S/</div>
+                <div>
+                    <p>Monto caído</p>
+                    <h3 id="montoCaido">S/ 0.00</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono verde">↗</div>
+                <div>
+                    <p>Cumplimiento PDP</p>
+                    <h3 id="eficacia">0%</h3>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="icono naranja">%</div>
+                <div>
+                    <p>Tasa caída</p>
+                    <h3 id="tasaCaida">0%</h3>
+                </div>
+            </div>
+        </section>
+
+        <section class="alertas-card oculto">
+            <div class="tabla-header">
+                <h2>Alertas gerenciales</h2>
+            </div>
+
+            <div class="alertas-grid" id="alertasCorporativas">
+            </div>
+        </section>
+
+        <section class="tabla-card">
+            <div class="tabla-header">
+                <h2>Rendimiento por cartera / campaña</h2>
+            </div>
+
+            <div class="tabla-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>
+                                <button class="th-sort" data-sort="cartera" onclick="ordenarTabla('cartera')">
+                                    Cartera <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="total_promesas" onclick="ordenarTabla('total_promesas')">
+                                    Total promesas <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="monto_pdp" onclick="ordenarTabla('monto_pdp')">
+                                    Monto PDP <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="monto_proyectado" onclick="ordenarTabla('monto_proyectado')">
+                                    Pendiente hoy <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="monto_pagado" onclick="ordenarTabla('monto_pagado')">
+                                    Monto pagado <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="monto_caido" onclick="ordenarTabla('monto_caido')">
+                                    Monto caído <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="calidad" onclick="ordenarTabla('calidad')">
+                                    Calidad <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="estado_semaforo" onclick="ordenarTabla('estado_semaforo')">
+                                    Semaforo <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="pdp_hoy" onclick="ordenarTabla('pdp_hoy')">
+                                    PDP hoy <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="pdp_caida" onclick="ordenarTabla('pdp_caida')">
+                                    PDP caída <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="pdp_vigente" onclick="ordenarTabla('pdp_vigente')">
+                                    PDP vigente <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                            <th>
+                                <button class="th-sort" data-sort="pdp_cumplida" onclick="ordenarTabla('pdp_cumplida')">
+                                    PDP cumplida <span class="orden-icono">↕</span>
+                                </button>
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="tablaCorporativo">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/corporativo.js"></script>
+</body>
+</html>

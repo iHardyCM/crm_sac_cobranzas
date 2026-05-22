@@ -1,6 +1,11 @@
 const supervisor =
-    localStorage.getItem("agente")
+    new URLSearchParams(window.location.search).get("agente")
+    || localStorage.getItem("agente")
     || "Supervisor";
+
+if (!exigirSesion()) {
+    throw new Error("Sesion invalida");
+}
 
 document.getElementById("usuario").innerText =
     `👤 Supervisor: ${supervisor}`;
@@ -13,7 +18,8 @@ const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`
 
 async function cargarSupervisor() {
 
-    const dni = localStorage.getItem("dni");
+    const params = new URLSearchParams(window.location.search);
+    const dni = params.get("dni") || localStorage.getItem("dni");
 
     const res = await fetch(`${BASE_URL}/compromisos/supervisor/resumen?dni=${dni}`);
     const data = await res.json();
@@ -85,7 +91,22 @@ function verAgente(agente) {
 
     localStorage.setItem("agente_filtro", agente);
 
-    window.location.href = "compromisos.html";
+    const params = new URLSearchParams(window.location.search);
+    const supervisorDni = params.get("dni") || localStorage.getItem("dni") || "";
+
+    window.location.href =
+        `compromisos.html?agente=${encodeURIComponent(agente)}&supervisor_dni=${encodeURIComponent(supervisorDni)}`;
+}
+
+function verAgenteEstado(agenteCodificado, estado) {
+    const agente = decodeURIComponent(agenteCodificado);
+    const params = new URLSearchParams(window.location.search);
+    const supervisorDni = params.get("dni") || localStorage.getItem("dni") || "";
+
+    localStorage.setItem("agente_filtro", agente);
+
+    window.location.href =
+        `compromisos.html?agente=${encodeURIComponent(agente)}&estado=${encodeURIComponent(estado)}&supervisor_dni=${encodeURIComponent(supervisorDni)}`;
 }
 
 function renderTablaSupervisor(data){
@@ -105,9 +126,11 @@ function renderTablaSupervisor(data){
             </td>
 
             <td>
-                <span class="badge badge-red">
+                <button class="badge badge-red badge-click"
+                    onclick="verAgenteEstado('${encodeURIComponent(row.AGENTE)}', 'Hoy')"
+                    title="Ver PDP de hoy del agente">
                     ${row.HOY}
-                </span>
+                </button>
             </td>
 
             <td>
@@ -177,7 +200,8 @@ function ordenarPor(campo){
 
 function exportarCartera(){
 
-    const dni = localStorage.getItem("dni");
+    const params = new URLSearchParams(window.location.search);
+    const dni = params.get("dni") || localStorage.getItem("dni");
 
     window.open(
         `${BASE_URL}/compromisos/supervisor/exportar-cartera?dni=${dni}`

@@ -43,10 +43,7 @@ def obtener_compromisos(dni):
 
                     CL.NOMBRECLIENTE,
 
-                    CASE 
-                        WHEN C.MONTOPAGADO > 0 THEN 'SI'
-                        ELSE 'NO'
-                    END AS PAGADO
+                    C.PAGADO
 
                 FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
 
@@ -69,26 +66,21 @@ def obtener_compromisos(dni):
                 "inicio_mes": inicio_mes
             }).fetchall()
 
-            # 🔥 traer intentos del día
+            # Intentos del dia por cliente. No se filtra por agente para reflejar
+            # si el cliente ya tuvo gestion hoy, aunque la haya hecho otro usuario.
             query_intentos = text("""
                 SELECT
                     G.IDCLIENTE,
                     COUNT(1) AS intentos_hoy
                 FROM SISCOB.DBO.GESTION G WITH(NOLOCK)
 
-                LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
-                    ON U.IDUSUARIO = G.IDUSUARIO
-
                 WHERE 
                     CAST(G.FECHA AS DATE) = CAST(GETDATE() AS DATE)
-                    AND U.USUARIO = :dni
 
                 GROUP BY G.IDCLIENTE
             """)
 
-            intentos_rows = conn.execute(query_intentos, {
-                "dni": dni
-            }).fetchall()
+            intentos_rows = conn.execute(query_intentos).fetchall()
 
             # 🔥 mapear
             map_intentos = {r.IDCLIENTE: r.intentos_hoy for r in intentos_rows}
