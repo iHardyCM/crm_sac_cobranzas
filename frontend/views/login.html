@@ -2,46 +2,67 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Acceso</title>
     <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/login.css?v=20260527a">
 </head>
 <body class="login-body">
 
     <main class="login-shell">
         <section class="login-panel">
             <div class="login-brand">
-                <div class="login-logo"><img src="logo_i_biznescob.png" alt="logo_i_biznescob"></div>
-                <div>
-                    <h1>Biznescob</h1>
-                    <p>Sistema de gestion de cobranzas</p>
+                <div class="brand-top">
+                    <div class="login-logo"><img src="logo_i_biznescob.png" alt="Biznescob"></div>
+                    <div>
+                        <h1>Biznescob</h1>
+                        <p>CRM - Cobranzas</p>
+                    </div>
+                </div>
+
+                <div class="brand-copy">
+                    <span>Plataforma operativa</span>
+                    <h2>Gestion, control e inteligencia para cobranzas.</h2>
+                    <p>Consulta compromisos, pagos, metas, canales alternos y seguimiento gerencial desde un solo entorno.</p>
+                </div>
+
+                <div class="brand-pills">
+                    <span>Compromisos</span>
+                    <span>Pagos BI</span>
+                    <span>Metas</span>
+                    <span>Canales Alternos</span>
                 </div>
             </div>
 
             <div class="login-card">
                 <div class="login-card-header">
                     <span>Acceso interno</span>
-                    <h2>Ingrese sus credenciales</h2>
-                    <p>Use su DNI registrado para acceder a su panel de trabajo.</p>
+                    <h2>Inicia sesion</h2>
+                    <p>Ingresa tu DNI registrado para abrir tu panel de trabajo.</p>
                 </div>
 
-                <label for="dni">DNI</label>
-                <input
-                    type="text"
-                    id="dni"
-                    maxlength="8"
-                    inputmode="numeric"
-                    placeholder="Ingrese su DNI"
-                    onkeydown="if(event.key === 'Enter') login()"
-                    autofocus
-                >
+                <div class="login-field">
+                    <label for="dni">DNI</label>
+                    <input
+                        type="text"
+                        id="dni"
+                        maxlength="8"
+                        inputmode="numeric"
+                        placeholder="Ingrese su DNI"
+                        onkeydown="if(event.key === 'Enter') login()"
+                        autofocus
+                    >
+                </div>
+
+                <div id="loginMensaje" class="login-message oculto"></div>
 
                 <button class="login-button" onclick="login()">Ingresar</button>
-                <p class="login-foot">Plataforma corporativa de control y seguimiento</p>
+                <p class="login-foot">Acceso autorizado para usuarios Biznescob.</p>
             </div>
         </section>
     </main>
 
     <script src="../js/session.js"></script>
-    <script src="../js/login.js?v=20260521b"></script>
+    <script src="../js/login.js?v=20260527a"></script>
 </body>
 </html>

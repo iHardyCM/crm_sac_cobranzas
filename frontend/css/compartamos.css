@@ -1,0 +1,1312 @@
+:root {
+    --clientes-blue: #0f4c81;
+    --clientes-blue-dark: #0b2f55;
+    --clientes-border: #d8e2ee;
+    --clientes-muted: #5f6f86;
+    --clientes-bg: #eef4f9;
+    --clientes-card: #ffffff;
+    --clientes-green: #16a34a;
+    --clientes-red: #dc2626;
+    --clientes-orange: #ea580c;
+    --clientes-yellow: #ca8a04;
+}
+
+body {
+    color: #061b33;
+}
+
+.clientes-page {
+    padding: 22px;
+    background: var(--clientes-bg);
+    min-height: calc(100vh - 76px);
+}
+
+.clientes-hero,
+.clientes-search-card,
+.resultado-panel {
+    max-width: 1320px;
+    margin: 0 auto 18px;
+}
+
+.clientes-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: center;
+    background: var(--clientes-card);
+    border: 1px solid var(--clientes-border);
+    border-radius: 10px;
+    padding: 22px 24px;
+    box-shadow: 0 10px 28px rgba(15, 76, 129, 0.08);
+}
+
+.clientes-eyebrow,
+.section-kicker {
+    display: block;
+    color: #4d6581;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.clientes-hero h2 {
+    margin: 6px 0;
+    font-size: 30px;
+    color: #061b33;
+}
+
+.clientes-hero p,
+.search-copy p {
+    margin: 0;
+    color: var(--clientes-muted);
+    line-height: 1.45;
+}
+
+.clientes-hero-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.clientes-hero-tags span,
+.tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #edf6ff;
+    color: #0f4c81;
+    border: 1px solid #cfe3f8;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.clientes-search-card {
+    background: var(--clientes-card);
+    border: 1px solid var(--clientes-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(15, 76, 129, 0.08);
+    padding: 20px 22px;
+}
+
+.search-copy {
+    margin-bottom: 16px;
+}
+
+.search-copy h3 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    color: #061b33;
+}
+
+.clientes-search-form {
+    margin: 0;
+}
+
+.clientes-search-form label {
+    display: block;
+    margin-bottom: 7px;
+    color: #4d6581;
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.clientes-search-row {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.clientes-search-row input {
+    width: 100%;
+    height: 44px;
+    border: 1px solid #c6d4e3;
+    border-radius: 8px;
+    padding: 0 13px;
+    font-size: 15px;
+    box-sizing: border-box;
+}
+
+.clientes-search-row input:focus {
+    border-color: var(--clientes-blue);
+    outline: 3px solid rgba(15, 76, 129, 0.16);
+}
+
+.btn-primary,
+.btn-secondary {
+    height: 44px;
+    border-radius: 8px;
+    padding: 0 18px;
+    font-weight: 900;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-primary {
+    border: 1px solid var(--clientes-blue);
+    color: #ffffff;
+    background: var(--clientes-blue);
+}
+
+.btn-primary:hover {
+    background: #0b3f6d;
+}
+
+.btn-secondary {
+    border: 1px solid #c6d4e3;
+    color: var(--clientes-blue);
+    background: #ffffff;
+}
+
+.btn-secondary:hover {
+    background: #f4f8fc;
+}
+
+.loader {
+    display: none;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: #edf6ff;
+    color: #0f4c81;
+    border: 1px solid #cfe3f8;
+    font-weight: 800;
+}
+
+.resultado-panel {
+    min-height: 240px;
+}
+
+.clientes-empty {
+    display: grid;
+    gap: 6px;
+    background: var(--clientes-card);
+    border: 1px dashed #bdd0e4;
+    border-radius: 10px;
+    padding: 34px;
+    color: #061b33;
+    box-shadow: 0 10px 28px rgba(15, 76, 129, 0.06);
+}
+
+.clientes-empty strong {
+    font-size: 19px;
+}
+
+.clientes-empty span {
+    color: var(--clientes-muted);
+}
+
+.clientes-empty-error {
+    border-color: #fecaca;
+    background: #fff7f7;
+}
+
+.clientes-empty-warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+}
+
+.cliente-header,
+.cliente-info,
+.credito-card,
+.kpi {
+    background: var(--clientes-card);
+    border: 1px solid var(--clientes-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(15, 76, 129, 0.08);
+}
+
+.cliente-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+}
+
+.cliente-nombre {
+    margin-top: 6px;
+    color: #061b33;
+    font-size: 25px;
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.cliente-sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    color: var(--clientes-muted);
+}
+
+.cliente-sub span {
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #f2f6fb;
+    border: 1px solid #dce7f2;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.cliente-info {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 18px;
+    padding: 20px 22px;
+    margin-bottom: 18px;
+}
+
+.cliente-left {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f4c81, #1872bd);
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 900;
+}
+
+.cliente-right {
+    display: grid;
+    gap: 14px;
+}
+
+.fila {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.fila .direccion {
+    grid-column: span 4;
+}
+
+.telefonos {
+    grid-column: 1 / -1;
+}
+
+.telefonos div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 5px;
+}
+
+.label,
+.kpi span,
+.extra-grid span {
+    display: block;
+    color: #60748e;
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.value,
+.kpi b,
+.extra-grid b {
+    display: block;
+    margin-top: 4px;
+    color: #061b33;
+    font-weight: 900;
+}
+
+.muted {
+    color: var(--clientes-muted);
+}
+
+.section-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin: 8px 0 12px;
+}
+
+.titulo-creditos {
+    margin: 4px 0 0;
+    color: #061b33;
+    font-size: 20px;
+}
+
+.grupo-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.kpi {
+    padding: 16px;
+}
+
+.kpi b {
+    font-size: 20px;
+}
+
+.contenedor-creditos {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.credito-card {
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.credito-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(15, 76, 129, 0.12);
+}
+
+.credito-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 15px 16px;
+    background: #f7fafc;
+    border-bottom: 1px solid #e3ebf4;
+}
+
+.credito-header strong {
+    display: block;
+    margin-top: 3px;
+    font-size: 18px;
+    color: #061b33;
+}
+
+.badge {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.credito-body {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    padding: 16px;
+}
+
+.col {
+    display: grid;
+    gap: 9px;
+    min-width: 0;
+}
+
+.col p {
+    margin: 0;
+}
+
+.col b {
+    display: block;
+    color: #60748e;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.col span {
+    display: block;
+    margin-top: 3px;
+    color: #061b33;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.credito-extra {
+    padding: 14px 16px 16px;
+    background: #f8fbfe;
+    border-top: 1px solid #e3ebf4;
+}
+
+.cuotas-box,
+.extra-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.cuotas-box {
+    margin-bottom: 12px;
+}
+
+.cuota {
+    padding: 11px;
+    border: 1px solid #d7e7f8;
+    border-radius: 8px;
+    background: #edf6ff;
+}
+
+.cuota span {
+    display: block;
+    color: #60748e;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.cuota b {
+    display: block;
+    margin-top: 4px;
+    color: var(--clientes-blue);
+}
+
+.extra-grid div {
+    min-width: 0;
+}
+
+.tramo-normal {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.tramo-cpp {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.tramo-deficiente,
+.tramo-dudoso {
+    background: #ffedd5;
+    color: #9a3412;
+}
+
+.tramo-perdida {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.tramo-castigado {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.estado-verde {
+    border-left: 5px solid var(--clientes-green);
+}
+
+.estado-amarillo {
+    border-left: 5px solid #facc15;
+}
+
+.estado-naranja {
+    border-left: 5px solid var(--clientes-orange);
+}
+
+.estado-rojo {
+    border-left: 5px solid var(--clientes-red);
+}
+
+.estado-negro {
+    border-left: 5px solid #111827;
+}
+
+.texto-verde {
+    color: var(--clientes-green) !important;
+}
+
+.texto-naranja {
+    color: var(--clientes-orange) !important;
+}
+
+.texto-rojo {
+    color: var(--clientes-red) !important;
+}
+
+.texto-negro {
+    color: #111827 !important;
+}
+
+@media (max-width: 1180px) {
+    .contenedor-creditos,
+    .grupo-kpis {
+        grid-template-columns: 1fr;
+    }
+
+    .credito-body {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .clientes-page {
+        padding: 14px;
+    }
+
+    .clientes-hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .clientes-hero-tags {
+        justify-content: flex-start;
+    }
+
+    .clientes-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .cliente-info {
+        grid-template-columns: 1fr;
+    }
+
+    .cliente-left {
+        justify-content: flex-start;
+    }
+
+    .fila,
+    .credito-body,
+    .cuotas-box,
+    .extra-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .fila .direccion {
+        grid-column: auto;
+    }
+}
+
+/* Ajuste de la version operativa: una sola portada util y tarjetas amplias. */
+.clientes-search-card-main {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(420px, 1.35fr);
+    gap: 18px 26px;
+    align-items: end;
+}
+
+.clientes-search-card-main .search-copy {
+    margin-bottom: 0;
+}
+
+.clientes-search-card-main .search-copy h2 {
+    margin: 6px 0;
+    color: #061b33;
+    font-size: 25px;
+    line-height: 1.12;
+}
+
+.clientes-search-card-main .clientes-hero-tags,
+.clientes-search-card-main .loader {
+    grid-column: 1 / -1;
+}
+
+.clientes-search-card-main .clientes-hero-tags {
+    justify-content: flex-start;
+}
+
+.grupo-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.section-title-row {
+    margin: 30px 0 18px;
+    padding-top: 6px;
+}
+
+.contenedor-creditos {
+    grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+    align-items: start;
+    gap: 22px;
+}
+
+.credito-header > div {
+    min-width: 0;
+}
+
+.credito-header strong {
+    overflow-wrap: anywhere;
+}
+
+.badge {
+    flex: 0 0 auto;
+}
+
+.credito-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 18px;
+}
+
+.col {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid #e3ebf4;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.col span {
+    font-size: 14px;
+    font-weight: 900;
+    word-break: normal;
+}
+
+.cuotas-box,
+.extra-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.extra-grid b {
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 1380px) {
+    .credito-body {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1180px) {
+    .clientes-search-card-main {
+        grid-template-columns: 1fr;
+    }
+
+    .contenedor-creditos {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .credito-body {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 860px) {
+    .fila {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fila .direccion {
+        grid-column: 1 / -1;
+    }
+}
+
+/* Normalizacion final del workspace Compartamos. */
+body.crm-shell .clientes-page {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    padding: 24px clamp(28px, 3vw, 44px) 34px;
+}
+
+body.crm-shell .clientes-search-card,
+body.crm-shell .resultado-panel {
+    width: 100%;
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+}
+
+body.crm-shell .cliente-header,
+body.crm-shell .cliente-info,
+body.crm-shell .grupo-kpis,
+body.crm-shell .section-title-row,
+body.crm-shell .contenedor-creditos {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.clientes-search-card-main {
+    grid-template-columns: minmax(360px, 0.95fr) minmax(460px, 1.05fr);
+}
+
+.grupo-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.section-title-row {
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.contenedor-creditos {
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+    gap: 24px;
+}
+
+.credito-card {
+    min-width: 0;
+    container-type: inline-size;
+}
+
+.credito-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.col {
+    min-height: 146px;
+    align-content: start;
+}
+
+@media (max-width: 1380px) {
+    .contenedor-creditos {
+        grid-template-columns: 1fr;
+    }
+
+    .credito-body {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1100px) {
+    body.crm-shell .clientes-page {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .clientes-search-card-main {
+        grid-template-columns: 1fr;
+    }
+
+    .credito-body {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    body.crm-shell .clientes-page {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .credito-body {
+        grid-template-columns: 1fr;
+    }
+}
+
+@container (max-width: 560px) {
+    .credito-body {
+        grid-template-columns: 1fr;
+    }
+
+    .col {
+        min-height: auto;
+    }
+}
+
+/* Rediseño definitivo de operaciones: ficha compacta, sin columnas angostas heredadas. */
+.contenedor-creditos {
+    grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)) !important;
+    gap: 20px !important;
+}
+
+.credito-card-v2 {
+    display: flex;
+    flex-direction: column;
+    min-height: auto;
+    overflow: hidden;
+}
+
+.credito-card-v2 .credito-header {
+    padding: 16px 18px;
+    background: #ffffff;
+}
+
+.credito-card-v2 .credito-header strong {
+    font-size: 18px;
+    line-height: 1.18;
+    max-width: 100%;
+}
+
+.credito-body-v2 {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border-top: 1px solid #e3ebf4;
+    background: #ffffff;
+}
+
+.metric-item {
+    min-width: 0;
+    padding: 14px 16px;
+    border-right: 1px solid #e7eef5;
+    border-bottom: 1px solid #e7eef5;
+}
+
+.metric-item:nth-child(4n) {
+    border-right: none;
+}
+
+.metric-item span {
+    display: block;
+    margin-bottom: 6px;
+    color: #526987;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.metric-item b {
+    display: block;
+    color: #001b3d;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.metric-item.money b {
+    color: #0f4c81;
+}
+
+.metric-item.texto-rojo b,
+.metric-item.texto-rojo {
+    color: var(--clientes-red) !important;
+}
+
+.metric-item.wide {
+    grid-column: span 2;
+}
+
+.credito-card-v2 .credito-extra {
+    padding: 16px 18px 18px;
+}
+
+.credito-card-v2 .cuotas-box {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.credito-card-v2 .extra-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+@media (max-width: 1500px) {
+    .contenedor-creditos {
+        grid-template-columns: 1fr !important;
+    }
+
+    .credito-body-v2 {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 980px) {
+    .credito-body-v2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .metric-item:nth-child(4n) {
+        border-right: 1px solid #e7eef5;
+    }
+
+    .metric-item:nth-child(2n) {
+        border-right: none;
+    }
+}
+
+@media (max-width: 620px) {
+    .contenedor-creditos {
+        grid-template-columns: 1fr !important;
+    }
+
+    .credito-body-v2,
+    .credito-card-v2 .cuotas-box {
+        grid-template-columns: 1fr !important;
+    }
+
+    .metric-item,
+    .metric-item.wide {
+        grid-column: auto;
+        border-right: none;
+    }
+}
+
+/* Ajuste compacto final para tarjetas de operacion. */
+.creditos-lista .credito-header {
+    min-height: 48px;
+    padding: 10px 16px;
+}
+
+.creditos-lista .credito-header strong {
+    font-size: 16px;
+}
+
+.creditos-lista .badge {
+    min-height: 24px;
+    padding: 2px 9px;
+}
+
+.creditos-lista .metric-item {
+    min-height: 48px;
+    padding: 8px 13px;
+}
+
+.creditos-lista .metric-item span {
+    margin-bottom: 3px;
+}
+
+.creditos-lista .metric-item b,
+.creditos-lista .metric-item.money b {
+    font-size: 13.5px;
+}
+
+.creditos-lista .credito-extra {
+    padding: 10px 14px 12px;
+}
+
+.creditos-lista .cuotas-box {
+    margin-bottom: 8px;
+}
+
+.creditos-lista .cuota {
+    padding: 7px 9px;
+}
+
+.creditos-lista .cuota b {
+    margin-top: 2px;
+    font-size: 13px;
+}
+
+.creditos-lista .extra-grid {
+    gap: 7px 12px;
+}
+
+.creditos-lista .extra-grid span {
+    font-size: 10px;
+}
+
+.creditos-lista .extra-grid b {
+    margin-top: 2px;
+    font-size: 13px;
+}
+
+.metric-item.tramo-normal,
+.metric-item.tramo-cpp,
+.metric-item.tramo-deficiente,
+.metric-item.tramo-dudoso,
+.metric-item.tramo-perdida,
+.metric-item.tramo-castigado {
+    background: #ffffff;
+}
+
+.metric-item.tramo-normal b { color: #166534; }
+.metric-item.tramo-cpp b { color: #92400e; }
+.metric-item.tramo-deficiente b,
+.metric-item.tramo-dudoso b { color: #9a3412; }
+.metric-item.tramo-perdida b { color: #991b1b; }
+.metric-item.tramo-castigado b { color: #111827; }
+
+/* Escala mas contenida para Consulta Compartamos. */
+.clientes-page,
+.clientes-page input,
+.clientes-page button {
+    font-size: 12px;
+}
+
+.clientes-search-card-main .search-copy h2 {
+    font-size: 22px;
+}
+
+.clientes-eyebrow,
+.section-kicker,
+.label,
+.kpi span,
+.extra-grid span,
+.metric-item span {
+    font-size: 10px;
+}
+
+.cliente-nombre {
+    font-size: 22px;
+}
+
+.cliente-sub span,
+.clientes-hero-tags span,
+.tag {
+    font-size: 11px;
+}
+
+.value,
+.kpi b {
+    font-size: 13px;
+}
+
+.titulo-creditos {
+    font-size: 17px;
+}
+
+.creditos-lista .credito-header strong {
+    font-size: 15px;
+}
+
+.creditos-lista .metric-item b,
+.creditos-lista .metric-item.money b,
+.creditos-lista .extra-grid b {
+    font-size: 12px;
+}
+
+/* Las busquedas por grupo tienen muchas operaciones; se muestran como lista ancha. */
+.contenedor-creditos.creditos-grupo {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+    max-width: 980px;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+.creditos-grupo .credito-card-v2 {
+    width: 100%;
+}
+
+.creditos-grupo .credito-body-v2 {
+    grid-template-columns: 1.35fr .9fr .9fr 1.15fr !important;
+}
+
+.creditos-grupo .metric-item.wide {
+    grid-column: auto;
+}
+
+.creditos-grupo .credito-card-v2 .cuotas-box {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.creditos-individual {
+    max-width: 980px;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+@media (max-width: 1220px) {
+    .contenedor-creditos.creditos-grupo,
+    .creditos-individual {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 900px) {
+    .creditos-grupo .credito-body-v2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .creditos-grupo .metric-item.wide {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 620px) {
+    .creditos-grupo .credito-body-v2,
+    .creditos-grupo .credito-card-v2 .cuotas-box {
+        grid-template-columns: 1fr !important;
+    }
+
+    .creditos-grupo .metric-item.wide {
+        grid-column: auto;
+    }
+}
+
+/* Estandar final: el detalle financiero se ve igual por cliente, operacion o grupo. */
+.contenedor-creditos.creditos-lista {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+    width: 100%;
+    max-width: 1040px;
+    margin: 0;
+}
+
+.creditos-lista .credito-card-v2 {
+    width: 100%;
+    border-left-width: 6px;
+}
+
+.creditos-lista .credito-header {
+    min-height: 72px;
+    padding: 16px 20px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.creditos-lista .credito-header strong {
+    font-size: 19px;
+    letter-spacing: .01em;
+}
+
+.creditos-lista .credito-body-v2 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.creditos-lista .metric-item {
+    min-height: 72px;
+    padding: 15px 18px;
+}
+
+.creditos-lista .metric-item.wide {
+    grid-column: auto;
+}
+
+.creditos-lista .metric-item b {
+    font-size: 15px;
+}
+
+.creditos-lista .metric-item.money b {
+    font-size: 16px;
+}
+
+.creditos-lista .credito-extra {
+    padding: 16px 20px 18px;
+    background: #f8fbfe;
+}
+
+.creditos-lista .cuotas-box {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px;
+}
+
+.creditos-lista .extra-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+@media (max-width: 1160px) {
+    .contenedor-creditos.creditos-lista {
+        max-width: 100%;
+    }
+
+    .creditos-lista .credito-body-v2,
+    .creditos-lista .extra-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .creditos-lista .credito-body-v2,
+    .creditos-lista .cuotas-box,
+    .creditos-lista .extra-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Variante compacta para ver dos operaciones por fila sin perder lectura. */
+.contenedor-creditos.creditos-lista {
+    max-width: 1280px;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)) !important;
+    gap: 16px !important;
+}
+
+.creditos-lista .credito-card-v2 {
+    border-left-width: 5px;
+}
+
+.creditos-lista .credito-header {
+    min-height: 58px;
+    padding: 13px 16px;
+}
+
+.creditos-lista .credito-header strong {
+    font-size: 17px;
+    line-height: 1.12;
+}
+
+.creditos-lista .badge {
+    min-height: 26px;
+    padding: 3px 9px;
+    font-size: 11px;
+}
+
+.creditos-lista .credito-body-v2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.creditos-lista .metric-item {
+    min-height: 54px;
+    padding: 10px 13px;
+}
+
+.creditos-lista .metric-item span {
+    margin-bottom: 4px;
+    font-size: 10px;
+}
+
+.creditos-lista .metric-item b,
+.creditos-lista .metric-item.money b {
+    font-size: 14px;
+    line-height: 1.14;
+}
+
+.creditos-lista .credito-extra {
+    padding: 12px 14px 14px;
+}
+
+.creditos-lista .cuotas-box {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.creditos-lista .cuota {
+    padding: 9px;
+}
+
+.creditos-lista .cuota span {
+    font-size: 11px;
+}
+
+.creditos-lista .extra-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px 12px;
+}
+
+@media (max-width: 1320px) {
+    .contenedor-creditos.creditos-lista {
+        grid-template-columns: 1fr !important;
+        max-width: 900px;
+    }
+
+    .creditos-lista .credito-body-v2 {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .creditos-lista .credito-body-v2,
+    .creditos-lista .extra-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 620px) {
+    .contenedor-creditos.creditos-lista {
+        grid-template-columns: 1fr !important;
+    }
+
+    .creditos-lista .credito-body-v2,
+    .creditos-lista .cuotas-box,
+    .creditos-lista .extra-grid {
+        grid-template-columns: 1fr !important;
+    }
+}

@@ -2,29 +2,54 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CRM Compartamos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta Compartamos</title>
     <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+    <link rel="stylesheet" href="../css/compartamos.css?v=20260527j">
 </head>
 <body>
 
-<div class="container">
+<main class="clientes-page">
+    <section class="clientes-search-card clientes-search-card-main">
+        <div class="search-copy">
+            <span class="clientes-eyebrow">Base diaria Compartamos</span>
+            <h2>Informacion actualizada de cartera</h2>
+            <p>Consulta datos complementarios enviados por Compartamos: capital, deuda, dias de mora, cuotas de cancelacion y estado de las operaciones activas.</p>
+        </div>
 
-    <h1>📊 CRM - Compartamos</h1>
+        <form class="buscador clientes-search-form" onsubmit="event.preventDefault(); buscar();">
+            <label for="valor">DNI, codigo de cliente, operacion o grupo</label>
+            <div class="clientes-search-row">
+                <input id="valor" placeholder="Ejemplo: 60895420 / 5884029 / 00000000000018616702" autocomplete="off">
+                <button class="btn-primary" type="submit">Buscar</button>
+                <button class="btn-secondary" type="button" onclick="limpiarBusqueda()">Limpiar</button>
+            </div>
+        </form>
 
-    <div class="buscador">
-        <input id="valor" placeholder="DNI / CodCliente / Operación">
-        <button onclick="buscar()">Buscar</button>
-    </div>
+        <div class="clientes-hero-tags" aria-label="Informacion disponible">
+            <span>Capitales</span>
+            <span>Deudas</span>
+            <span>Dias mora</span>
+            <span>Cuotas</span>
+            <span>Castigo/Vigente</span>
+        </div>
 
-    <div id="loader" class="loader">⏳ Buscando...</div>
+        <div id="loader" class="loader">Buscando informacion del cliente...</div>
+    </section>
 
-    <div id="resultado"></div>
-    
+    <section id="resultado" class="resultado-panel">
+        <div class="clientes-empty">
+            <strong>Realiza una busqueda para empezar.</strong>
+            <span>Los resultados apareceran aqui con la ultima informacion diaria enviada por Compartamos para clientes activos.</span>
+        </div>
+    </section>
+</main>
 
-</div>
-
+<script src="../js/session.js"></script>
 <script src="../core/api.js"></script>
-<script src="../js/compartamos.js"></script>
+<script src="../js/app_layout.js?v=20260527b"></script>
+<script src="../js/compartamos.js?v=20260527j"></script>
 
 </body>
 </html>

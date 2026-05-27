@@ -28,6 +28,8 @@ document.getElementById("nombre_agente").innerText = agente;
 document.getElementById("titulo_tabla").innerText =
     `Compromisos del mes (${mes} ${anio})`;
 
+configurarBotonVolver();
+
 // 🔥 VARIABLES GLOBALES
 let dataGlobal = [];
 let pagina = 1;
@@ -111,6 +113,15 @@ async function cargar() {
 }
 
 cargar();
+
+function configurarBotonVolver() {
+    const btnVolver = document.getElementById("btn_volver_compromisos");
+    if (!btnVolver) return;
+
+    const vieneDeSupervisor = paramsIniciales.get("supervisor_dni");
+
+    btnVolver.style.display = vieneDeSupervisor ? "inline-flex" : "none";
+}
 
 
 function volverVistaAnterior() {

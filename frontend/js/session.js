@@ -21,6 +21,11 @@ function esSupervisor(tipo) {
     return normalizarTipoUsuario(tipo || localStorage.getItem("tipo")) === "SUPERVISOR";
 }
 
+function esCarteraCompartamos(idcartera) {
+    const cartera = String(idcartera || localStorage.getItem("idcartera") || "").trim();
+    return ["124", "126", "128", "133", "139", "144"].includes(cartera);
+}
+
 function puedeVerPdpHoy(tipo) {
     return puedeVerCorporativo(tipo) || esSupervisor(tipo);
 }
@@ -82,5 +87,6 @@ function exigirAccesoPdpHoy() {
 
 function cerrarSesion() {
     localStorage.clear();
+    sessionStorage.clear();
     window.location.href = "login.html";
 }

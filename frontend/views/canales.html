@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Biznescob - Canales Alternos</title>
+    <link rel="stylesheet" href="../css/canales.css?v=20260527b">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand-side">
+            <strong>CRM COBRANZAS</strong>
+            <span>Canales Alternos</span>
+        </div>
+        <button onclick="irInicio()">Inicio</button>
+        <button>Clientes</button>
+        <button>Gestiones</button>
+        <button>Compromisos</button>
+        <button>Pagos</button>
+        <button class="active">Canales Alternos</button>
+        <button>Reportes</button>
+        <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
+    </aside>
+
+    <header class="topbar">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="user-box">
+            <b id="usuarioVista">Usuario</b>
+            <span id="perfilVista">CRM</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="page-title">
+            <div>
+                <h1>Canales Alternos</h1>
+                <p>Inicio / Canales Alternos / Importaciones</p>
+            </div>
+        </section>
+
+        <section class="top-grid">
+            <article class="panel">
+                <div class="panel-title">Nueva Importación</div>
+                <form id="formCanales" class="form-grid">
+                    <div class="field">
+                        <label for="canal">Canal *</label>
+                        <select id="canal" name="canal" required>
+                            <option value="">Seleccionar canal</option>
+                            <option value="SMS">SMS</option>
+                            <option value="WAPI">WAPI</option>
+                            <option value="EMAIL">EMAIL</option>
+                            <option value="IVR">IVR</option>
+                            <option value="BOT">BOT</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="carteraSelect">Cartera *</label>
+                        <select id="carteraSelect" required>
+                            <option value="">Cargando carteras...</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="usuarioCarga">Usuario carga *</label>
+                        <input id="usuarioCarga" type="text" readonly>
+                    </div>
+
+                    <div class="field file-field">
+                        <label for="archivoCanal">Archivo Excel *</label>
+                        <div class="file-control">
+                            <label for="archivoCanal">Seleccionar archivo</label>
+                            <span id="nombreArchivo">Ningún archivo seleccionado</span>
+                            <input id="archivoCanal" name="archivo" type="file" accept=".xlsx,.xls" required>
+                        </div>
+                        <small>Formatos aceptados: .xlsx, .xls</small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-light" onclick="limpiarFormulario()">Limpiar</button>
+                        <button type="submit" class="btn-primary" id="btnImportar">Importar</button>
+                    </div>
+                </form>
+            </article>
+
+            <article class="panel">
+                <div class="panel-title">Resumen Última Importación</div>
+                <div class="summary-grid">
+                    <div class="summary-card blue">
+                        <b id="resTotal">0</b>
+                        <span>Total Registros</span>
+                    </div>
+                    <div class="summary-card green">
+                        <b id="resValidos">0</b>
+                        <span>Válidos</span>
+                    </div>
+                    <div class="summary-card orange">
+                        <b id="resErrores">0</b>
+                        <span>Con Error</span>
+                    </div>
+                    <div class="summary-card purple">
+                        <b id="resFecha">-</b>
+                        <span>Fecha Carga</span>
+                    </div>
+                </div>
+                <div id="mensajeResultado" class="result-message oculto"></div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="history-head">
+                <div>
+                    <h2>Historial de Importaciones</h2>
+                    <p>Últimas cargas registradas por canal y cartera.</p>
+                </div>
+                <input id="buscarHistorial" type="search" placeholder="Buscar por archivo, canal, cartera...">
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID carga</th>
+                            <th>Fecha carga</th>
+                            <th>Canal</th>
+                            <th>Cartera</th>
+                            <th>Archivo</th>
+                            <th>Usuario</th>
+                            <th>Total</th>
+                            <th>Válidos</th>
+                            <th>Errores</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaHistorial"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="modalDetalle" class="modal oculto">
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2 id="modalTitulo">Detalle de Importación</h2>
+                    <p id="modalMeta">-</p>
+                </div>
+                <button onclick="cerrarDetalle()">×</button>
+            </div>
+            <div class="table-wrap modal-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Documento</th>
+                            <th>Teléfono</th>
+                            <th>Email</th>
+                            <th>Mensaje</th>
+                            <th>Estado</th>
+                            <th>Observación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaDetalle"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-light" type="button">Descargar Errores</button>
+                <button class="btn-primary" type="button" onclick="cerrarDetalle()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/app_layout.js?v=20260527a"></script>
+    <script src="../js/canales.js?v=20260527a"></script>
+</body>
+</html>

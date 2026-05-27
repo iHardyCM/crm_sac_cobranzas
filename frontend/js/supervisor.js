@@ -14,6 +14,9 @@ let dataGlobal = [];
 let ordenCampo = null;
 let ordenDireccion = "desc";
 
+document.getElementById("usuario").innerText =
+    `Supervisor: ${supervisor}`;
+
 const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
 
 async function cargarSupervisor() {

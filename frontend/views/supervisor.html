@@ -2,82 +2,86 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Supervisor</title>
-    <link rel="stylesheet" href="../css/supervisor.css?v=20260521b">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compromisos supervisor</title>
+    <link rel="stylesheet" href="../css/supervisor.css?v=20260527c">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+    <link rel="icon" href="logo_i_biznescob.png">
 </head>
 
 <body onload="cargarSupervisor()">
 
-    <aside class="app-sidebar">
-        <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
-            <img src="logo_i_biznescob.png" alt="Biznescob">
+<main class="supervisor-page">
+    <section class="supervisor-hero">
+        <div>
+            <p class="eyebrow">Cartera asignada</p>
+            <h2>Compromisos supervisor</h2>
+            <p id="usuario" class="supervisor-context">Supervisor: -</p>
+        </div>
+
+        <button class="btn-export-general" type="button" onclick="exportarCartera()">
+            Exportar compromisos
         </button>
-        <button class="sidebar-link" onclick="irInicio()">Inicio</button>
-    </aside>
+    </section>
 
-    <div class="header">
-        <h2>Panel Supervisor</h2>
-        <div class="header-user">
-            <div id="usuario"></div>
-            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
-        </div>
-    </div>
+    <section class="cards" aria-label="Indicadores supervisor">
+        <article class="card total">
+            <span>Total compromisos</span>
+            <strong id="kpi_total">0</strong>
+        </article>
 
-    <div class="acciones-top">
-        <button class="btn-export-general"
-            onclick="exportarCartera()">
-            Exportar Compromisos
-        </button>
-    </div>
+        <article class="card monto">
+            <span>Monto generado</span>
+            <strong id="kpi_monto">0</strong>
+        </article>
 
-    <!-- KPIs -->
-    <div class="cards">
-        <div class="card">
-            <h3 id="kpi_total">0</h3>
-            <p>Total compromisos</p>
-        </div>
+        <article class="card recupero">
+            <span>Monto recuperado</span>
+            <strong id="kpi_recupero">0</strong>
+        </article>
 
-        <div class="card">
-            <h3 id="kpi_monto">0</h3>
-            <p>Monto Generado</p>
-        </div>
+        <article class="card eficacia">
+            <span>Cumplimiento PDP</span>
+            <strong id="kpi_eficacia">0%</strong>
+        </article>
 
-        <div class="card">
-            <h3 id="kpi_recupero">0</h3>
-            <p>Monto Recuperado</p>
-        </div>
+        <article class="card caida">
+            <span>Tasa caída</span>
+            <strong id="kpi_caida">0%</strong>
+        </article>
+    </section>
 
-        <div class="card">
-            <h3 id="kpi_eficacia">0%</h3>
-            <p>Cumplimiento PDP</p>
+    <section class="supervisor-table-card">
+        <div class="table-title">
+            <div>
+                <h3>Compromisos por agente</h3>
+                <p>Ordena por agente, monto, estado de PDP o cumplimiento.</p>
+            </div>
         </div>
 
-        <div class="card">
-            <h3 id="kpi_caida">0%</h3>
-            <p>Tasa caída</p>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="ordenarPor('AGENTE')">Agente</th>
+                        <th onclick="ordenarPor('TOTAL')">Total promesas</th>
+                        <th onclick="ordenarPor('MONTO_TOTAL')">Total monto</th>
+                        <th onclick="ordenarPor('HOY')">PDP hoy</th>
+                        <th onclick="ordenarPor('CAIDA')">PDP caída</th>
+                        <th onclick="ordenarPor('VIGENTE')">PDP vigente</th>
+                        <th onclick="ordenarPor('CUMPLIDA')">PDP cumplida</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tablaSupervisor"></tbody>
+            </table>
         </div>
-    </div>
-
-    <!-- TABLA -->
-    <table>
-        <thead>
-            <tr>
-                <th onclick="ordenarPor('AGENTE')">Agente</th>
-                <th onclick="ordenarPor('TOTAL')">Total Promesas (PDP)</th>
-                <th onclick="ordenarPor('MONTO_TOTAL')">Total Monto (S/)</th>
-                <th onclick="ordenarPor('HOY')">PDP Hoy</th>
-                <th onclick="ordenarPor('CAIDA')">PDP Caída</th>
-                <th onclick="ordenarPor('VIGENTE')">PDP Vigente</th>
-                <th onclick="ordenarPor('CUMPLIDA')">PDP Cumplida</th>
-                <th>Acción</th>
-            </tr>
-        </thead>
-
-        <tbody id="tablaSupervisor"></tbody>
-    </table>
-
-</body>
+    </section>
+</main>
 
 <script src="../js/session.js"></script>
-<script src="../js/supervisor.js?v=20260521"></script>
+<script src="../js/app_layout.js?v=20260527a"></script>
+<script src="../js/supervisor.js?v=20260527b"></script>
+</body>
 </html>

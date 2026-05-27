@@ -2,11 +2,12 @@ async function login() {
     const dniInput = document.getElementById("dni").value.trim();
 
     if (!dniInput) {
-        alert("Ingresa DNI");
+        mostrarLoginMensaje("Ingresa tu DNI para continuar.");
         return;
     }
 
     try {
+        mostrarLoginMensaje("Validando credenciales...", "info");
         localStorage.clear();
 
         const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -26,7 +27,7 @@ async function login() {
         const data = await res.json();
 
         if (!data.ok) {
-            alert(data.msg || "Usuario no encontrado");
+            mostrarLoginMensaje(data.msg || "Usuario no encontrado.");
             return;
         }
 
@@ -39,6 +40,13 @@ async function login() {
 
     } catch (error) {
         console.error("ERROR LOGIN:", error);
-        alert("No se pudo conectar con el servidor");
+        mostrarLoginMensaje("No se pudo conectar con el servidor.");
     }
+}
+
+function mostrarLoginMensaje(texto, tipo = "error") {
+    const mensaje = document.getElementById("loginMensaje");
+    if (!mensaje) return;
+    mensaje.textContent = texto;
+    mensaje.className = `login-message ${tipo}`;
 }

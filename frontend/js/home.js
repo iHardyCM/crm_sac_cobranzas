@@ -57,8 +57,19 @@ function pintarModulos() {
 
 function obtenerModulosPorPerfil(tipo) {
     const modulos = [];
+    const compartamos = esCarteraCompartamos();
 
     if (tipo !== "SUPERVISOR" && !puedeVerCorporativo(tipo)) {
+        if (compartamos) {
+            modulos.push({
+                sigla: "CL",
+                titulo: "Consulta Compartamos",
+                descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
+                ruta: "compartamos.html",
+                destacado: false
+            });
+        }
+
         modulos.push({
             sigla: "PD",
             titulo: "Mis compromisos",
@@ -72,9 +83,16 @@ function obtenerModulosPorPerfil(tipo) {
         const idcartera = localStorage.getItem("idcartera");
 
         modulos.unshift(
+            ...(compartamos ? [{
+                sigla: "CL",
+                titulo: "Consulta Compartamos",
+                descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
+                ruta: "compartamos.html",
+                destacado: false
+            }] : []),
             {
                 sigla: "SU",
-                titulo: "Panel supervisor",
+                titulo: "Compromisos supervisor",
                 descripcion: "Seguimiento de agentes, promesas por estado y reporte de cartera.",
                 ruta: "supervisor.html",
                 destacado: true
@@ -86,6 +104,20 @@ function obtenerModulosPorPerfil(tipo) {
                 ruta: idcartera
                     ? `corporativo_pdp_hoy.html?idcartera=${encodeURIComponent(idcartera)}`
                     : "corporativo_pdp_hoy.html",
+                destacado: false
+            },
+            {
+                sigla: "PA",
+                titulo: "Pagos del negocio",
+                descripcion: "Validacion y publicacion de pagos normalizados para BI.",
+                ruta: "pagos.html",
+                destacado: false
+            },
+            {
+                sigla: "CA",
+                titulo: "Canales alternos",
+                descripcion: "Carga y validacion de archivos para SMS, WAPI, Email, IVR y Bot.",
+                ruta: "canales.html",
                 destacado: false
             }
         );
@@ -105,6 +137,34 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Promesas con vencimiento hoy",
                 descripcion: "Vista global de PDP hoy para seguimiento por cartera y agente.",
                 ruta: "corporativo_pdp_hoy.html",
+                destacado: false
+            },
+            {
+                sigla: "CL",
+                titulo: "Consulta Compartamos",
+                descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
+                ruta: "compartamos.html",
+                destacado: false
+            },
+            {
+                sigla: "PA",
+                titulo: "Importacion de pagos",
+                descripcion: "Validacion y publicacion de pagos normalizados para BI.",
+                ruta: "pagos.html",
+                destacado: false
+            },
+            {
+                sigla: "CA",
+                titulo: "Canales alternos",
+                descripcion: "Carga y validacion de archivos para SMS, WAPI, Email, IVR y Bot.",
+                ruta: "canales.html",
+                destacado: false
+            },
+            {
+                sigla: "ME",
+                titulo: "Seguimiento de metas",
+                descripcion: "Control de metas mensuales, avance, brecha y timing por cartera.",
+                ruta: "metas.html",
                 destacado: false
             }
         );

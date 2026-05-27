@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Biznescob - Seguimiento de Metas</title>
+    <link rel="stylesheet" href="../css/metas.css?v=20260527c">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+</head>
+<body>
+    <aside class="meta-sidebar">
+        <button class="side-icon" onclick="irInicio()" title="Inicio">I</button>
+        <button class="side-icon" title="Clientes">C</button>
+        <button class="side-icon" title="Compromisos">P</button>
+        <button class="side-icon active" title="Seguimiento de Metas">M</button>
+        <button class="side-icon" title="Reportes">R</button>
+        <button class="side-icon" title="Administracion">A</button>
+    </aside>
+
+    <header class="meta-topbar">
+        <div class="brand">
+            <button class="menu-button" onclick="toggleSidebar()" title="Menu">☰</button>
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+            <div>
+                <h1>Seguimiento de Metas</h1>
+                <p>Monitorea el avance de metas mensuales por cartera.</p>
+            </div>
+        </div>
+
+        <div class="top-actions">
+            <div class="field field-month">
+                <label for="filtroCodmes">Mes</label>
+                <select id="filtroCodmes"></select>
+            </div>
+            <div class="refresh-info">
+                <span>Ultima actualizacion</span>
+                <b id="ultimaActualizacion">-</b>
+            </div>
+            <button class="btn-secondary" onclick="cargarMetas(true)">Actualizar</button>
+        </div>
+    </header>
+
+    <div id="toastMetas" class="toast oculto"></div>
+
+    <main class="metas-container">
+        <section class="filters-panel">
+            <div class="field">
+                <label for="filtroGrupo">Grupo de cartera</label>
+                <select id="filtroGrupo">
+                    <option value="">Todos</option>
+                    <option value="MIBANCO">MiBanco</option>
+                    <option value="INTERBANK">Interbank</option>
+                    <option value="FINANCIERA_OH">Financiera OH</option>
+                    <option value="COMPARTAMOS_VIGENTE">Compartamos vigente</option>
+                    <option value="COMPARTAMOS_CASTIGO">Compartamos castigo</option>
+                    <option value="COMPARTAMOS">Todo Compartamos</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroTipo">Tipo de medicion</label>
+                <select id="filtroTipo">
+                    <option value="">Todos</option>
+                    <option value="RECUPERO">Recupero</option>
+                    <option value="CONTENCION">Contencion</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroVista">Vista</label>
+                <select id="filtroVista">
+                    <option value="ejecutiva">Ejecutiva</option>
+                    <option value="detallada">Detallada</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroEstado">Estado</label>
+                <select id="filtroEstado">
+                    <option value="">Todos</option>
+                    <option value="CRITICO">Critico</option>
+                    <option value="RIESGO">Riesgo</option>
+                    <option value="EN META">En meta</option>
+                    <option value="SUPERADO">Superado</option>
+                </select>
+            </div>
+            <button class="btn-export" type="button">Exportar</button>
+        </section>
+
+        <section class="kpi-grid">
+            <article>
+                <span>Meta total del mes</span>
+                <b id="kpiMetaTotal">S/ 0.00</b>
+                <small>Metas visibles segun filtros</small>
+            </article>
+            <article>
+                <span>Avance actual</span>
+                <b id="kpiAvance">S/ 0.00</b>
+                <small id="kpiAvancePct">0.00% del total</small>
+            </article>
+            <article>
+                <span>Cumplimiento actual</span>
+                <b id="kpiCumplimiento" class="text-green">0.00%</b>
+                <small>% real a la fecha</small>
+            </article>
+            <article>
+                <span>Proyeccion cierre</span>
+                <b id="kpiProyeccion" class="text-blue">S/ 0.00</b>
+                <small>Estimado al cierre del mes</small>
+            </article>
+            <article>
+                <span>Cumplimiento estimado</span>
+                <b id="kpiCumplimientoEstimado" class="text-green">0.00%</b>
+                <small>Estimado al cierre</small>
+            </article>
+            <article>
+                <span>Brecha proyectada</span>
+                <b id="kpiBrechaProyectada" class="text-red">S/ 0.00</b>
+                <small id="kpiBrechaTexto">Por cubrir</small>
+            </article>
+        </section>
+
+        <section class="middle-grid">
+            <article class="panel timing-panel">
+                <div class="panel-title">
+                    <h2>Timing del mes</h2>
+                    <p>Control del avance vs. lo esperado a la fecha</p>
+                </div>
+                <div class="timing-grid">
+                    <div>
+                        <span>Dias habiles transcurridos</span>
+                        <b id="tDiaActual">0</b>
+                        <small id="tDiasMes">de 0 dias habiles</small>
+                    </div>
+                    <div>
+                        <span>Avance esperado</span>
+                        <b id="tEsperado" class="text-blue">0.00%</b>
+                        <div class="bar"><i id="barEsperado"></i></div>
+                        <small>Esperado a la fecha</small>
+                    </div>
+                    <div>
+                        <span>Cumplimiento actual</span>
+                        <b id="tActual" class="text-green">0.00%</b>
+                        <div class="bar"><i id="barActual"></i></div>
+                        <small>Real a la fecha</small>
+                    </div>
+                    <div>
+                        <span>Cumplimiento estimado</span>
+                        <b id="tEstimado" class="text-blue">0.00%</b>
+                        <div class="bar"><i id="barEstimado"></i></div>
+                        <small>Proyectado al cierre</small>
+                    </div>
+                    <div>
+                        <span>Desvio vs. esperado</span>
+                        <b id="tDesvio" class="text-red">0.00 p.p.</b>
+                        <small id="tDesvioTexto">-</small>
+                    </div>
+                </div>
+                <div class="timing-footer">
+                    <span>Necesario diario para cumplir la meta: <b id="tNecesario">S/ 0.00</b></span>
+                    <span>Dias habiles restantes: <b id="tRestantes">0</b></span>
+                </div>
+            </article>
+
+            <article class="panel distribution-panel">
+                <div class="panel-title">
+                    <h2>Comparativo por tipo de medicion</h2>
+                    <p>Meta, avance y proyeccion por tipo</p>
+                </div>
+                <div class="tipo-comparativo" id="comparativoTipo"></div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="panel-title table-title">
+                <div>
+                    <h2>Avance de metas por cartera</h2>
+                    <p>Detalle del cumplimiento por cartera y tipo de medicion</p>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr id="tablaMetasHead"></tr>
+                    </thead>
+                    <tbody id="tablaMetas"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="note">
+            Los montos de RECUPERO corresponden a pagos reales. Los montos de CONTENCION corresponden a capital contenido.
+        </section>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/app_layout.js?v=20260527a"></script>
+    <script src="../js/metas.js?v=20260527c"></script>
+</body>
+</html>

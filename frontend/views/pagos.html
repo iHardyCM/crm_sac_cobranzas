@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Biznescob - Importación de Pagos</title>
+    <link rel="stylesheet" href="../css/pagos.css?v=20260527e">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+</head>
+<body>
+
+    <aside class="app-sidebar">
+        <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+            <span>Biznescob</span>
+            <small>CRM - Cobranzas</small>
+        </button>
+        <nav class="sidebar-nav">
+            <button class="sidebar-link" onclick="irInicio()">Inicio</button>
+            <button class="sidebar-link">Clientes</button>
+            <button class="sidebar-link">Compromisos</button>
+            <button class="sidebar-link">Panel Corporativo</button>
+            <button class="sidebar-link">Seguimiento de Metas</button>
+            <button class="sidebar-link active">Pagos del Negocio</button>
+            <button class="sidebar-link">Reportes</button>
+            <button class="sidebar-link">Administración</button>
+        </nav>
+        <button class="sidebar-logout" onclick="cerrarSesion()">Cerrar sesión</button>
+    </aside>
+
+    <header class="topbar">
+        <div class="brand">
+            <button class="menu-toggle" onclick="toggleSidebar()" title="Menú">☰</button>
+            <img src="logo_i_biznescob.png" alt="Biznescob">
+            <div class="subtitulos">
+                <h1>Pagos del Negocio</h1>
+                <p>Carga, validación y publicación de pagos para BI, dashboards y metas.</p>
+            </div>
+        </div>
+
+        <div class="topbar-actions">
+            <div class="refresh-info">
+                <span>Última actualización</span>
+                <b id="ultimaActualizacion">-</b>
+            </div>
+            <button class="btn-secundario" onclick="actualizarHistorial()">Actualizar</button>
+        </div>
+    </header>
+
+    <div id="toastPagos" class="toast oculto"></div>
+
+    <main class="pagos-container">
+        <div class="pagos-main-grid">
+        <section class="panel panel-importacion">
+            <div class="panel-header">
+                <div class="subtitulos">
+                    <h2>Nueva importación</h2>
+                    <p>Selecciona el formato y archivo antes de validar la información.</p>
+                </div>
+            </div>
+
+            <form id="formPagos" class="form-grid">
+                <div class="field">
+                    <label for="formatoPago">Formato</label>
+                    <select id="formatoPago" name="formato" required>
+                        <option value="">Seleccionar formato</option>
+                        <option value="MIBANCO">MIBANCO</option>
+                        <option value="INTERBANK">INTERBANK</option>
+                        <option value="FINANCIERA_OH">FINANCIERA OH</option>
+                        <option value="COMPARTAMOS_VIGENTE">COMPARTAMOS VIGENTE</option>
+                        <option value="COMPARTAMOS_CASTIGO">COMPARTAMOS CASTIGO</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="archivoPago">Archivo</label>
+                    <div class="file-control">
+                        <label for="archivoPago" class="file-button">Seleccionar archivo</label>
+                        <span id="nombreArchivoPago" class="file-name">Ningún archivo seleccionado</span>
+                        <input id="archivoPago" name="archivo" type="file" required>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" id="btnValidar">Validar archivo</button>
+                </div>
+            </form>
+
+            <div class="info-note">
+                La importación no se publica directamente. Primero se valida y luego se confirma.
+            </div>
+        </section>
+
+        <section id="resumenPanel" class="panel oculto">
+            <div class="panel-header">
+                <div class="subtitulos">
+                    <h2>Resumen previo</h2>
+                    <p>Revisa los resultados antes de publicar.</p>
+                </div>
+            </div>
+
+            <div class="summary-grid">
+                <article><span>Formato</span><b id="rFormato">-</b></article>
+                <article><span>Archivo</span><b id="rArchivo">-</b></article>
+                <article><span>Codmes</span><b id="rCodmes">-</b></article>
+                <article><span>Fecha corte</span><b id="rFechaCorte">-</b></article>
+                <article><span>Filas totales</span><b id="rFilas">0</b></article>
+                <article class="kpi-ok"><span>Válidas</span><b id="rValidas">0</b></article>
+                <article class="kpi-error"><span>Errores</span><b id="rErrores">0</b></article>
+                <article class="kpi-money"><span>Monto pago</span><b id="rMonto">S/ 0.00</b></article>
+                <article class="kpi-money"><span>Capital contenido</span><b id="rCapital">S/ 0.00</b></article>
+            </div>
+
+            <div class="tabla-card">
+                <div class="tabla-title">Resumen por cartera</div>
+                <table class="tabla-resumen">
+                    <thead>
+                        <tr>
+                            <th>Cartera</th>
+                            <th>ID cartera</th>
+                            <th>Filas</th>
+                            <th>Válidas</th>
+                            <th>Errores</th>
+                            <th>Monto pago</th>
+                            <th>Capital contenido</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaResumenCartera"></tbody>
+                </table>
+            </div>
+
+            <div class="warning-strip">
+                <span>!</span>
+                <p>Esta importación reemplazará el corte activo anterior del mismo formato, período y cartera. Los cortes anteriores quedarán disponibles para auditoría.</p>
+            </div>
+
+            <div class="resumen-actions">
+                <button class="btn-cancelar" onclick="cancelarResumen()">Cancelar</button>
+                <button id="btnConfirmar" class="btn-publicar" onclick="confirmarImportacion()">
+                    Confirmar importación
+                </button>
+            </div>
+        </section>
+
+        </div>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div class="subtitulos">
+                    <h2>Cortes activos del mes</h2>
+                    <p id="historialSubtitulo">Importaciones publicadas vigentes para el período actual.</p>
+                </div>
+                <div class="historial-actions">
+                    <button id="btnHistorialActivos" class="btn-filtro activo" onclick="cambiarModoHistorial('activos')">Activos del mes</button>
+                    <button id="btnHistorialTodos" class="btn-filtro" onclick="cambiarModoHistorial('todos')">Auditoría</button>
+                </div>
+            </div>
+
+            <div id="estadoFormatos" class="format-status"></div>
+
+            <div class="tabla-card historial-scroll">
+                <table class="tabla-historial">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fecha carga</th>
+                            <th>Formato</th>
+                            <th>Archivo</th>
+                            <th>Codmes</th>
+                            <th>Fecha corte</th>
+                            <th>Usuario carga</th>
+                            <th>Filas</th>
+                            <th>Válidas</th>
+                            <th>Errores</th>
+                            <th>Monto pago</th>
+                            <th>Capital contenido</th>
+                            <th>Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaHistorial"></tbody>
+                </table>
+            </div>
+            <div class="paginacion-historial">
+                <span id="historialConteo">Mostrando 0 registros</span>
+                <div>
+                    <button id="btnPaginaAnterior" class="btn-pagina" onclick="cambiarPaginaHistorial(-1)">Anterior</button>
+                    <span id="historialPagina">1 / 1</span>
+                    <button id="btnPaginaSiguiente" class="btn-pagina" onclick="cambiarPaginaHistorial(1)">Siguiente</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div class="subtitulos">
+                    <h2>Resumen BI activo</h2>
+                    <p>Cortes activos publicados por cartera para el período actual.</p>
+                </div>
+            </div>
+
+            <div class="bi-kpi-grid">
+                <article>
+                    <span>Total recupero activo</span>
+                    <b id="biTotalPago">S/ 0.00</b>
+                </article>
+                <article>
+                    <span>Total contención activa</span>
+                    <b id="biTotalCapital">S/ 0.00</b>
+                </article>
+                <article>
+                    <span>Carteras activas cargadas</span>
+                    <b id="biFormatosActivos">0</b>
+                </article>
+                <article>
+                    <span>Último corte cargado</span>
+                    <b id="biUltimoCorte">-</b>
+                </article>
+            </div>
+
+            <div class="tabla-card">
+                <table class="tabla-bi">
+                    <thead>
+                        <tr>
+                            <th>Cartera</th>
+                            <th>Tipo medición</th>
+                            <th>Codmes</th>
+                            <th>Registros</th>
+                            <th>Pago</th>
+                            <th>Capital contenido</th>
+                            <th>Último corte</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaBIActivo"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/app_layout.js?v=20260527a"></script>
+    <script src="../js/pagos.js?v=20260526c"></script>
+</body>
+</html>

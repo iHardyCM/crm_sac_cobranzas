@@ -1,75 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compromisos</title>
-    <link rel="stylesheet" href="../css/compromisos.css?v=20260521b">
-    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/747/747376.png">
+    <link rel="stylesheet" href="../css/compromisos.css?v=20260527c">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+    <link rel="icon" href="logo_i_biznescob.png">
 </head>
 <body>
 
-<aside class="app-sidebar">
-    <button class="sidebar-logo" onclick="irInicio()" title="Inicio">
-        <img src="logo_i_biznescob.png" alt="Biznescob">
-    </button>
-    <button class="sidebar-link" onclick="irInicio()">Inicio</button>
-</aside>
-
-<div class="container">
-
-    <!-- HEADER -->
-    <div class="header">
-        <div class="header-left">
-            <button class="btn-volver" onclick="volverVistaAnterior()">Volver</button>
-            <div class="title">🏦 Sistema de Gestión de Compromisos</div>
+<main class="compromisos-page">
+    <section class="compromisos-hero">
+        <div>
+            <p class="eyebrow">Gestión mensual</p>
+            <h2 id="titulo_tabla">Compromisos del mes</h2>
+            <p class="agent-context">
+                Agente: <strong id="nombre_agente">-</strong>
+            </p>
         </div>
-        <div class="header-actions">
-            <div class="user"><span id="nombre_agente"></span></div>
-            <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
-        </div>
-    </div>
+        <button class="btn-secondary" id="btn_volver_compromisos" type="button" onclick="volverVistaAnterior()">Volver</button>
+    </section>
 
-    <!-- KPIs -->
-    <div class="kpis">
-        <div class="card hoy">
-            <h3 id="kpi_hoy">0</h3>
-            <p><b>Hoy</b></p>
+    <section class="kpis" aria-label="Indicadores de compromisos">
+        <article class="card hoy">
+            <span class="kpi-label">Hoy</span>
+            <strong id="kpi_hoy">0</strong>
             <small>Promesas con fecha para hoy</small>
-        </div>
-        <div class="card caida">
-            <h3 id="kpi_caida">0</h3>
-            <p><b>Caída</b></p>
-            <small>Promesas que no llegaron a cumplirse en la fecha acordada.</small>
-        </div>
-        <div class="card vigente">
-            <h3 id="kpi_vigente">0</h3>
-            <p><b>Vigente</b></p>
-            <small>Promesas de pago con fechas futuras.</small>
-        </div>
-        <div class="card cumplida">
-            <h3 id="kpi_cumplida">0</h3>
-            <p><b>Cumplida</b></p>
-            <small>Promesas que se cumplieron.</small>
-        </div>
-    </div>
+        </article>
 
-    <!-- CARD TABLA -->
-    <div class="card-table">
+        <article class="card caida">
+            <span class="kpi-label">Caída</span>
+            <strong id="kpi_caida">0</strong>
+            <small>No llegaron a cumplirse en fecha</small>
+        </article>
 
+        <article class="card vigente">
+            <span class="kpi-label">Vigente</span>
+            <strong id="kpi_vigente">0</strong>
+            <small>Promesas con fechas futuras</small>
+        </article>
+
+        <article class="card cumplida">
+            <span class="kpi-label">Cumplida</span>
+            <strong id="kpi_cumplida">0</strong>
+            <small>Promesas cumplidas</small>
+        </article>
+    </section>
+
+    <section class="card-table">
         <div class="table-header">
-            <h3 id="titulo_tabla"></h3>
+            <div>
+                <h3>Detalle de compromisos</h3>
+                <p>Filtra, ordena y revisa el estado de las promesas del agente.</p>
+            </div>
 
             <div class="filtros">
-
-                <input 
-                    type="text" 
-                    id="buscar" 
-                    placeholder="🔍 Buscar DNI o teléfono"
+                <input
+                    type="text"
+                    id="buscar"
+                    placeholder="Buscar DNI, teléfono o cliente"
                     onkeyup="aplicarFiltros()"
                 >
 
                 <select id="filtro_estado" onchange="aplicarFiltros()">
-                    <option value="">Estado</option>
+                    <option value="">Todos los estados</option>
                     <option value="Hoy">Hoy</option>
                     <option value="Caída">Caída</option>
                     <option value="Vigente">Vigente</option>
@@ -77,53 +72,50 @@
                 </select>
 
                 <select id="filtro_intentos" onchange="aplicarFiltros()">
-                    <option value="">Intentos</option>
+                    <option value="">Todos los intentos</option>
                     <option value="0">Sin gestión</option>
                     <option value="1-2">1 a 2</option>
                     <option value="3+">3 o más</option>
                 </select>
 
                 <input type="date" id="filtro_fecha" onchange="aplicarFiltros()">
-
             </div>
         </div>
 
-        <table>
-            <thead>
-                <tr>
-                    <th onclick="ordenarPor('cliente')">Cliente</th>
-                    <th onclick="ordenarPor('dni')">DNI</th>
-                    <th onclick="ordenarPor('telefono')">Teléfono</th>
-                    <th onclick="ordenarPor('monto')">Monto</th>
-                    <th onclick="ordenarPor('fecha')">Fecha</th>
-                    <th onclick="ordenarPor('estado')">Estado</th>
-                    <th onclick="ordenarPor('intentos_hoy')">Intentos Hoy</th>
-                    <th>Acción</th>
-                </tr>
-            </thead>
-            <tbody id="tabla"></tbody>
-        </table>
-
-        <!-- PAGINACIÓN (FUERA DE TABLE) -->
-        <div class="paginacion">
-            <button onclick="prev()">⬅</button>
-            <span id="pagina_txt"></span>
-            <button onclick="next()">➡</button>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="ordenarPor('cliente')">Cliente</th>
+                        <th onclick="ordenarPor('dni')">DNI</th>
+                        <th onclick="ordenarPor('telefono')">Teléfono</th>
+                        <th onclick="ordenarPor('monto')">Monto</th>
+                        <th onclick="ordenarPor('fecha')">Fecha</th>
+                        <th onclick="ordenarPor('estado')">Estado</th>
+                        <th onclick="ordenarPor('intentos_hoy')">Intentos Hoy</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="tabla"></tbody>
+            </table>
         </div>
 
-    </div>
+        <div class="paginacion">
+            <button type="button" onclick="prev()">Anterior</button>
+            <span id="pagina_txt"></span>
+            <button type="button" onclick="next()">Siguiente</button>
+        </div>
+    </section>
+</main>
 
-</div>
-
-<!-- MODAL -->
 <div id="modal" class="modal">
     <div class="modal-content">
-        <!-- <span onclick="cerrarModal()" class="close">×</span> -->
         <div id="detalle"></div>
     </div>
 </div>
 
 <script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260527a"></script>
 <script src="../js/compromisos.js?v=20260521"></script>
 
 </body>
