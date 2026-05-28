@@ -34,7 +34,13 @@ async function login() {
         localStorage.setItem("dni", data.user.dni);
         localStorage.setItem("agente", data.user.agente);
         localStorage.setItem("tipo", data.user.tipo);
-        localStorage.setItem("idcartera", data.user.idcartera || "");
+
+        const idcarteras = Array.isArray(data.user.idcarteras)
+            ? data.user.idcarteras.filter(Boolean)
+            : [data.user.idcartera].filter(Boolean);
+
+        localStorage.setItem("idcartera", data.user.idcartera || idcarteras[0] || "");
+        localStorage.setItem("idcarteras", idcarteras.join(","));
 
         window.location.href = "home.html";
 

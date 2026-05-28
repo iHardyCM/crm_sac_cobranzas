@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Horario de Gestion y Recupero</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260528b">
+    <link rel="stylesheet" href="../css/control_horario.css?v=20260528d">
+</head>
+<body>
+
+<main class="control-page">
+    <section class="control-toolbar">
+        <div>
+            <span class="control-eyebrow">Control operativo</span>
+            <h2>Control Horario de Gestion y Recupero</h2>
+            <p id="subtituloControl">Seguimiento operativo en tiempo real.</p>
+        </div>
+
+        <div class="control-actions">
+            <button class="btn-secondary" type="button" onclick="limpiarFiltrosControl()">Limpiar filtros</button>
+            <button class="btn-secondary" type="button" onclick="exportarControlHorario()">Exportar</button>
+            <button class="btn-primary" type="button" onclick="cargarControlHorario()">Actualizar</button>
+        </div>
+    </section>
+
+    <section class="control-filtros card">
+        <div class="field">
+            <label for="filtroFecha">Fecha</label>
+            <input id="filtroFecha" type="date" onchange="cargarControlHorario()">
+        </div>
+        <div class="field">
+            <label for="filtroCartera">Cartera</label>
+            <select id="filtroCartera" onchange="aplicarFiltroCartera()">
+                <option value="">Todas las carteras</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="filtroAgente">Agente</label>
+            <select id="filtroAgente" onchange="aplicarFiltroAgente()">
+                <option value="">Todos los agentes</option>
+            </select>
+        </div>
+    </section>
+
+    <div id="controlToast" class="control-toast"></div>
+
+    <section class="kpi-grid" id="kpiControlHorario"></section>
+
+    <section class="control-grid">
+        <div class="main-stack">
+            <article id="resumenCarterasCard" class="card">
+                <div class="section-head">
+                    <div>
+                        <h3>Resumen por cartera</h3>
+                        <p>Selecciona una cartera para revisar agentes y cortes horarios.</p>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('cartera')">Cartera</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('gestiones')">Gestiones</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('cef')">CEF</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('pct_cef')">%CEF</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('pdp_generado')">Generado</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('proyectado')">Proyectado</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('pago')">Pago</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('avance')">Avance</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('pendiente')">Pendiente</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarResumen('criticos')">Criticos</button></th>
+                                <th>Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaResumenCarteras"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article id="detalleAgentesCard" class="card hidden">
+                <div class="section-head">
+                    <div>
+                        <h3 id="tituloDetalleAgentes">Detalle de agentes</h3>
+                        <p>Vista simplificada de gestion, avance y pendiente.</p>
+                    </div>
+                    <button class="btn-secondary" type="button" onclick="volverResumenCarteras()">Volver al resumen</button>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('agente')">Agente</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('gestiones')">Gestiones</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('cef')">CEF</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('pct_cef')">% CEF</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('pdp')">PDP Gen</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('proyectado')">Proyectado</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('pago')">Pago</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('avance')">Avance</button></th>
+                                <th><button class="sort-btn" type="button" onclick="ordenarAgentes('pendiente')">Pendiente</button></th>
+                                <th>Accion</th>
+                                <th>Detalle</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaDetalleControl"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="card">
+                <div class="section-head">
+                    <div>
+                        <h3>Corte por hora</h3>
+                        <p id="subtituloHoras">Tendencia operativa por tramo horario.</p>
+                    </div>
+                    <div class="chart-switch">
+                        <button type="button" class="active" data-metrica="gestiones" onclick="cambiarMetricaHora('gestiones')">Gestiones</button>
+                        <button type="button" data-metrica="cef" onclick="cambiarMetricaHora('cef')">CEF</button>
+                        <button type="button" data-metrica="pdp" onclick="cambiarMetricaHora('pdp')">PDP</button>
+                    </div>
+                </div>
+                <div id="graficoHoras" class="hour-chart"></div>
+            </article>
+        </div>
+
+        <aside class="panel-lateral">
+            <article class="card side-card">
+                <h3 id="tituloTopAvance">Top 5 avance</h3>
+                <div id="topAvanceControl" class="mini-list"></div>
+            </article>
+
+            <article class="card side-card">
+                <h3 id="tituloPendientes">Pendientes criticos</h3>
+                <div id="pendientesControl" class="mini-list"></div>
+            </article>
+
+            <article class="card side-card">
+                <h3>Alertas del corte</h3>
+                <div id="alertasControl" class="alert-list"></div>
+            </article>
+        </aside>
+    </section>
+</main>
+
+<div id="modalHoraControl" class="control-modal" onclick="cerrarModalHora(event)">
+    <div class="control-modal-card">
+        <div class="section-head">
+            <div>
+                <h3 id="tituloDrillHora">Detalle agente/hora</h3>
+                <p>Drilldown del corte seleccionado.</p>
+            </div>
+            <button class="btn-secondary" type="button" onclick="cerrarModalHora()">Cerrar</button>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('agente')">Agente</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('gestiones')">Gestiones</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('cef')">CEF</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('pct_cef')">% CEF</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('q_pdp')">Q PDP</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('pdp')">PDP Gen</button></th>
+                        <th><button class="sort-btn no-arrow" type="button" onclick="ordenarAgenteHora('tc')">TC</button></th>
+                    </tr>
+                </thead>
+                <tbody id="tablaAgenteHoraControl"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="modalAgenteControl" class="control-modal" onclick="cerrarModalAgente(event)">
+    <div class="control-modal-card">
+        <div class="section-head">
+            <div>
+                <h3 id="tituloModalAgente">Detalle de agente</h3>
+                <p id="subtituloModalAgente">Resumen y corte horario del agente.</p>
+            </div>
+            <button class="btn-secondary" type="button" onclick="cerrarModalAgente()">Cerrar</button>
+        </div>
+        <section id="modalAgenteKpis" class="agent-modal-kpis"></section>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Gestiones</th>
+                        <th>CEF</th>
+                        <th>% CEF</th>
+                        <th>Q PDP</th>
+                        <th>PDP Gen</th>
+                        <th>TC</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaModalAgenteHoras"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260528b"></script>
+<script src="../js/control_horario.js?v=20260528d"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mantenimiento de Supervisores</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260528b">
+    <link rel="stylesheet" href="../css/admin_supervisores.css?v=20260528a">
+</head>
+<body>
+
+<main class="admin-super-page">
+    <section class="admin-hero">
+        <div>
+            <span>Configuracion operativa</span>
+            <h2>Mantenimiento de supervisores</h2>
+            <p>Define que carteras puede visualizar cada supervisor en Gestion y Recupero.</p>
+        </div>
+        <button class="btn-primary" type="button" onclick="cargarAdminSupervisores()">Actualizar</button>
+    </section>
+
+    <div id="adminSuperToast" class="admin-toast"></div>
+
+    <section class="admin-grid">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Asignar carteras</h3>
+                    <p>Selecciona un supervisor y marca las carteras que podra consultar.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="supervisorSelect">Supervisor</label>
+                <select id="supervisorSelect" onchange="seleccionarSupervisorAdmin()">
+                    <option value="">Seleccionar supervisor</option>
+                </select>
+            </div>
+
+            <div id="carterasChecklist" class="cartera-checks"></div>
+
+            <div class="actions">
+                <button class="btn-secondary" type="button" onclick="limpiarAdminSupervisores()">Limpiar</button>
+                <button class="btn-primary" type="button" onclick="guardarAdminSupervisores()">Guardar cambios</button>
+            </div>
+        </article>
+
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Asignaciones vigentes</h3>
+                    <p>Carteras adicionales registradas para supervisores.</p>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Supervisor</th>
+                            <th>Cartera</th>
+                            <th>Actualizado por</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaAsignacionesSupervisor"></tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+
+    <section class="note-card">
+        <strong>Importante:</strong>
+        La cartera base del supervisor sigue viniendo de <code>SISCOB.dbo.USUARIO.IDCARTERA</code>.
+        Aqui se administran carteras adicionales o una lista completa de visibilidad para Gestion y Recupero.
+    </section>
+</main>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260528b"></script>
+<script src="../js/admin_supervisores.js?v=20260528a"></script>
+</body>
+</html>

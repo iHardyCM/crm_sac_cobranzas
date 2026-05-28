@@ -118,6 +118,8 @@ function renderGrupo(lista) {
 
 function renderCreditoCard(c) {
     const tramo = getTramo(c);
+    const metricasCondicion = getMetricasCondicion(c);
+
     return `
         <article class="credito-card credito-card-v2 ${getEstadoClass(c)}">
             <header class="credito-header">
@@ -139,8 +141,8 @@ function renderCreditoCard(c) {
                 ${metricItem("Atrasadas", c.Nro_CuotasAtrasadas)}
                 ${metricItem("Vencidas", c.Nro_CuotasVencidas)}
                 ${metricItem("Segmento", c.SEGMENTO, "wide")}
-                ${metricItem("Score", c.SCORE)}
-                ${metricItem("Calificacion", tramo.label, tramo.class)}
+                ${metricItem(metricasCondicion.primera.label, metricasCondicion.primera.value)}
+                ${metricItem(metricasCondicion.segunda.label, metricasCondicion.segunda.value, metricasCondicion.segunda.class)}
             </div>
 
             ${renderExtra(c)}
@@ -148,12 +150,41 @@ function renderCreditoCard(c) {
     `;
 }
 
+function getMetricasCondicion(c) {
+    const condicion = String(c.Condicion || c.CONDICION || "").trim().toUpperCase();
+
+    if (condicion.includes("CASTIGADO")) {
+        return {
+            primera: {
+                label: "Score",
+                value: valorCampo(c, ["SCORE", "Score", "score"])
+            },
+            segunda: {
+                label: "Calificacion",
+                value: valorCampo(c, ["Calificacion", "CALIFICACION", "calificacion"]),
+                class: "tramo-castigado"
+            }
+        };
+    }
+
+    return {
+        primera: {
+            label: "Monto cuota",
+            value: money(valorCampo(c, ["MTOCUOTA", "MtoCuota", "mto_cuota", "Mto_Cuota", "MontoCuota"]))
+        },
+        segunda: {
+            label: "Ult. cuota atrasada",
+            value: valorCampo(c, ["ULT_CUOTAATRASADA", "Ult_CuotaAtrasada", "ult_cuotaatrasada", "UltCuotaAtrasada"])
+        }
+    };
+}
+
 function renderExtra(c) {
     const cuota1Raw = numberValue(c.CT1) + numberValue(c.CT11) + numberValue(c.CT12) + numberValue(c.CT13) + numberValue(c.CT14) + numberValue(c.CT15);
     const cuota2Raw = numberValue(c.CT2) + numberValue(c.CT21) + numberValue(c.CT22) + numberValue(c.CT23) + numberValue(c.CT24) + numberValue(c.CT25);
     const cuota3Raw = numberValue(c.CT3) + numberValue(c.CT31) + numberValue(c.CT32) + numberValue(c.CT33) + numberValue(c.CT34) + numberValue(c.CT35);
 
-    const condicion = String(c.Condicion || "").toUpperCase();
+    const condicion = String(c.Condicion || c.CONDICION || "").toUpperCase();
     const mostrarCuotas = !condicion.includes("CASTIGADO")
         && !condicion.includes("JUDICIAL")
         && (cuota1Raw > 0 || cuota2Raw > 0 || cuota3Raw > 0);
@@ -201,7 +232,7 @@ function limpiarBusqueda() {
 
 function getTramo(c) {
     const dias = numberValue(c.DiasAtraso);
-    const condicion = String(c.Condicion || "").toUpperCase();
+    const condicion = String(c.Condicion || c.CONDICION || "").toUpperCase();
 
     if (condicion === "CASTIGADO") {
         return { label: "CASTIGADO", class: "tramo-castigado", descripcion: "Operacion castigada" };
@@ -279,6 +310,16 @@ function numberValue(value) {
 
 function safe(v) {
     return v ?? "-";
+}
+
+function valorCampo(item, campos) {
+    for (const campo of campos) {
+        if (item[campo] !== undefined && item[campo] !== null && item[campo] !== "") {
+            return item[campo];
+        }
+    }
+
+    return "-";
 }
 
 function h(value) {

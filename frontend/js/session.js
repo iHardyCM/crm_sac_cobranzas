@@ -21,9 +21,37 @@ function esSupervisor(tipo) {
     return normalizarTipoUsuario(tipo || localStorage.getItem("tipo")) === "SUPERVISOR";
 }
 
+function obtenerIdCarterasSesion() {
+    const ids = [
+        ...(localStorage.getItem("idcarteras") || "").split(","),
+        localStorage.getItem("idcartera")
+    ]
+        .map(x => String(x || "").trim())
+        .filter(Boolean);
+
+    return [...new Set(ids)];
+}
+
+function obtenerQueryCarterasSesion() {
+    const ids = obtenerIdCarterasSesion();
+
+    if (ids.length > 1) {
+        return `idcarteras=${encodeURIComponent(ids.join(","))}`;
+    }
+
+    if (ids.length === 1) {
+        return `idcartera=${encodeURIComponent(ids[0])}`;
+    }
+
+    return "";
+}
+
 function esCarteraCompartamos(idcartera) {
-    const cartera = String(idcartera || localStorage.getItem("idcartera") || "").trim();
-    return ["124", "126", "128", "133", "139", "144"].includes(cartera);
+    const carteras = idcartera
+        ? [String(idcartera).trim()]
+        : obtenerIdCarterasSesion();
+
+    return carteras.some(cartera => ["124", "126", "128", "133", "139", "144"].includes(cartera));
 }
 
 function puedeVerPdpHoy(tipo) {

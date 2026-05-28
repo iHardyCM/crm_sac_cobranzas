@@ -17,23 +17,33 @@ document.addEventListener("DOMContentLoaded", () => {
 async function cargarPdpHoy() {
     const params = new URLSearchParams(window.location.search);
     let idcartera = params.get("idcartera");
+    let idcarteras = params.get("idcarteras");
 
     if (esSupervisor()) {
-        const carteraSupervisor = localStorage.getItem("idcartera");
+        const carterasSupervisor = obtenerCarterasSupervisor();
 
-        if (!carteraSupervisor) {
-            alert("No se encontro cartera asignada para el supervisor.");
+        if (!carterasSupervisor.length) {
+            alert("No se encontraron carteras asignadas para el supervisor.");
             irInicio();
             return;
         }
 
-        if (idcartera !== carteraSupervisor) {
-            window.location.href = `corporativo_pdp_hoy.html?idcartera=${encodeURIComponent(carteraSupervisor)}`;
+        const idsUrl = obtenerCarterasUrl(idcartera, idcarteras);
+        const idsPermitidos = idsUrl.filter(id => carterasSupervisor.includes(id));
+
+        if (!idsPermitidos.length || idsPermitidos.length !== idsUrl.length) {
+            const querySupervisor = construirQueryCarteras(carterasSupervisor);
+            window.location.href = `corporativo_pdp_hoy.html?${querySupervisor}`;
             return;
         }
+
+        idcartera = idsPermitidos.length === 1 ? idsPermitidos[0] : null;
+        idcarteras = idsPermitidos.length > 1 ? idsPermitidos.join(",") : null;
     }
 
-    const query = idcartera ? `?idcartera=${encodeURIComponent(idcartera)}` : "";
+    const query = idcarteras
+        ? `?idcarteras=${encodeURIComponent(idcarteras)}`
+        : (idcartera ? `?idcartera=${encodeURIComponent(idcartera)}` : "");
 
     try {
         const response = await fetch(`${BASE_URL}/corporativo/pdp-hoy${query}`);
@@ -47,7 +57,7 @@ async function cargarPdpHoy() {
         dataPdpHoyFiltrada = [...dataPdpHoy];
 
         pintarFiltroCartera(dataPdpHoy);
-        pintarCabecera(dataPdpHoy, idcartera);
+        pintarCabecera(dataPdpHoy, idcartera, idcarteras);
         aplicarFiltrosIniciales();
         renderTablaPdpHoy();
 
@@ -55,6 +65,36 @@ async function cargarPdpHoy() {
         console.error("ERROR PDP HOY:", error);
         alert("No se pudo cargar el detalle de PDP hoy.");
     }
+}
+
+function obtenerCarterasSupervisor() {
+    if (typeof obtenerIdCarterasSesion === "function") {
+        return obtenerIdCarterasSesion();
+    }
+
+    return [
+        ...(localStorage.getItem("idcarteras") || "").split(","),
+        localStorage.getItem("idcartera")
+    ]
+        .map(x => String(x || "").trim())
+        .filter(Boolean)
+        .filter((x, index, arr) => arr.indexOf(x) === index);
+}
+
+function obtenerCarterasUrl(idcartera, idcarteras) {
+    const ids = [
+        idcartera,
+        ...(idcarteras || "").split(",")
+    ]
+        .map(x => String(x || "").trim())
+        .filter(Boolean);
+
+    return [...new Set(ids)];
+}
+
+function construirQueryCarteras(ids) {
+    if (ids.length > 1) return `idcarteras=${encodeURIComponent(ids.join(","))}`;
+    return `idcartera=${encodeURIComponent(ids[0])}`;
 }
 
 function pintarFiltroCartera(data) {
@@ -73,7 +113,8 @@ function pintarFiltroCartera(data) {
         select.appendChild(option);
     });
 
-    const idcartera = new URLSearchParams(window.location.search).get("idcartera");
+    const params = new URLSearchParams(window.location.search);
+    const idcartera = params.get("idcartera");
     if (idcartera) {
         select.value = idcartera;
     }
@@ -117,10 +158,10 @@ function normalizarFila(x) {
     };
 }
 
-function pintarCabecera(data, idcartera) {
+function pintarCabecera(data, idcartera, idcarteras) {
     const cartera = idcartera
         ? (data[0]?.cartera || `ID Cartera: ${idcartera}`)
-        : "Todas las carteras";
+        : (idcarteras ? "Carteras asignadas" : "Todas las carteras");
     const total = data.length;
 
     document.getElementById("tituloPdpHoy").innerText =

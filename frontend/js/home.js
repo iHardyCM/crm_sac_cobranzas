@@ -80,7 +80,9 @@ function obtenerModulosPorPerfil(tipo) {
     }
 
     if (tipo === "SUPERVISOR") {
-        const idcartera = localStorage.getItem("idcartera");
+        const queryCarteras = typeof obtenerQueryCarterasSesion === "function"
+            ? obtenerQueryCarterasSesion()
+            : "";
 
         modulos.unshift(
             ...(compartamos ? [{
@@ -100,10 +102,17 @@ function obtenerModulosPorPerfil(tipo) {
             {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",
-                descripcion: "PDP de hoy filtradas por la cartera asignada al supervisor.",
-                ruta: idcartera
-                    ? `corporativo_pdp_hoy.html?idcartera=${encodeURIComponent(idcartera)}`
+                descripcion: "PDP de hoy filtradas por las carteras asignadas al supervisor.",
+                ruta: queryCarteras
+                    ? `corporativo_pdp_hoy.html?${queryCarteras}`
                     : "corporativo_pdp_hoy.html",
+                destacado: false
+            },
+            {
+                sigla: "GR",
+                titulo: "Gestion y recupero",
+                descripcion: "Seguimiento operativo de gestiones, PDP y recupero por corte horario.",
+                ruta: "control_horario.html",
                 destacado: false
             },
             {
@@ -165,6 +174,20 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Seguimiento de metas",
                 descripcion: "Control de metas mensuales, avance, brecha y timing por cartera.",
                 ruta: "metas.html",
+                destacado: false
+            },
+            {
+                sigla: "GR",
+                titulo: "Gestion y recupero",
+                descripcion: "Seguimiento operativo de gestiones, PDP y recupero por corte horario.",
+                ruta: "control_horario.html",
+                destacado: false
+            },
+            {
+                sigla: "SV",
+                titulo: "Supervisores",
+                descripcion: "Mantenimiento de carteras visibles por supervisor.",
+                ruta: "admin_supervisores.html",
                 destacado: false
             }
         );

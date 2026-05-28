@@ -15,6 +15,21 @@ from app.services.corporativo_service import (
 router = APIRouter()
 
 
+def parse_idcarteras(idcartera: Optional[int] = None, idcarteras: Optional[str] = None):
+    ids = []
+
+    if idcartera is not None:
+        ids.append(int(idcartera))
+
+    if idcarteras:
+        for valor in idcarteras.split(","):
+            valor = valor.strip()
+            if valor:
+                ids.append(int(valor))
+
+    return sorted(set(ids)) or None
+
+
 def calcular_estado_semaforo(calidad, tasa_caida):
     """
     Regla gerencial simple basada en montos caidos:
@@ -39,12 +54,15 @@ def calcular_estado_semaforo(calidad, tasa_caida):
 def resumen_corporativo(
     fecha_desde: Optional[date] = Query(default=None),
     fecha_hasta: Optional[date] = Query(default=None),
-    idcartera: Optional[int] = Query(default=None)
+    idcartera: Optional[int] = Query(default=None),
+    idcarteras: Optional[str] = Query(default=None)
 ):
+    filtro_carteras = parse_idcarteras(idcartera=idcartera, idcarteras=idcarteras)
+
     data = obtener_resumen_corporativo(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        idcartera=idcartera
+        idcartera=filtro_carteras
     )
 
     detalle = []
@@ -164,10 +182,13 @@ def filtros_corporativo():
 
 @router.get("/pdp-hoy")
 def pdp_hoy_corporativo(
-    idcartera: Optional[int] = Query(default=None)
+    idcartera: Optional[int] = Query(default=None),
+    idcarteras: Optional[str] = Query(default=None)
 ):
+    filtro_carteras = parse_idcarteras(idcartera=idcartera, idcarteras=idcarteras)
+
     data = obtener_matriz_compromisos_corporativo(
-        idcartera=idcartera,
+        idcartera=filtro_carteras,
         solo_hoy=True
     )
 
@@ -182,12 +203,16 @@ def pdp_hoy_corporativo(
 def exportar_corporativo(
     fecha_desde: Optional[date] = Query(default=None),
     fecha_hasta: Optional[date] = Query(default=None),
-    idcartera: Optional[int] = Query(default=None)
+    idcartera: Optional[int] = Query(default=None),
+    idcarteras: Optional[str] = Query(default=None)
 ):
+    filtro_carteras = parse_idcarteras(idcartera=idcartera, idcarteras=idcarteras)
+
     data = resumen_corporativo(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        idcartera=idcartera
+        idcartera=None,
+        idcarteras=",".join(str(x) for x in filtro_carteras) if filtro_carteras else None
     )
 
     resumen = data.get("resumen", {})
@@ -196,7 +221,7 @@ def exportar_corporativo(
     matriz = obtener_matriz_compromisos_corporativo(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
-        idcartera=idcartera
+        idcartera=filtro_carteras
     )
 
     df_resumen = pd.DataFrame([{

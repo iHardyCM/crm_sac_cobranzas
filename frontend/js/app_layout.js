@@ -25,6 +25,16 @@
             title: "Seguimiento de Metas",
             subtitle: "Avance de metas mensuales por cartera"
         },
+        "control_horario.html": {
+            key: "control_horario",
+            title: "Gestion y Recupero",
+            subtitle: "Seguimiento operativo en tiempo real"
+        },
+        "admin_supervisores.html": {
+            key: "supervisores_admin",
+            title: "Mantenimiento de Supervisores",
+            subtitle: "Asignacion de carteras por supervisor"
+        },
         "compromisos.html": {
             key: "compromisos",
             title: "Compromisos",
@@ -61,7 +71,8 @@
             title: "Control Gerencial",
             items: [
                 { key: "corporativo", label: "Panel Corporativo", href: "corporativo.html", icon: iconDashboard() },
-                { key: "metas", label: "Seguimiento de Metas", href: "metas.html", icon: iconTarget() }
+                { key: "metas", label: "Seguimiento de Metas", href: "metas.html", icon: iconTarget() },
+                { key: "control_horario", label: "Gestion y Recupero", href: "control_horario.html", icon: iconClock() }
             ]
         },
         {
@@ -84,6 +95,13 @@
             ]
         }
     ];
+
+    NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
+        key: "supervisores_admin",
+        label: "Supervisores",
+        href: "admin_supervisores.html",
+        icon: iconUsers()
+    });
 
     document.addEventListener("DOMContentLoaded", initCrmLayout);
 
@@ -180,11 +198,28 @@
 
     function getPdpHoyHref() {
         const tipo = String(localStorage.getItem("tipo") || "").toUpperCase();
-        const idcartera = localStorage.getItem("idcartera");
-        if (tipo.includes("SUPERVISOR") && idcartera) {
-            return `corporativo_pdp_hoy.html?idcartera=${encodeURIComponent(idcartera)}`;
+        const query = typeof obtenerQueryCarterasSesion === "function"
+            ? obtenerQueryCarterasSesion()
+            : queryCarterasLocal();
+
+        if (tipo.includes("SUPERVISOR") && query) {
+            return `corporativo_pdp_hoy.html?${query}`;
         }
         return "corporativo_pdp_hoy.html";
+    }
+
+    function queryCarterasLocal() {
+        const ids = [
+            ...(localStorage.getItem("idcarteras") || "").split(","),
+            localStorage.getItem("idcartera")
+        ]
+            .map(x => String(x || "").trim())
+            .filter(Boolean);
+        const unicos = [...new Set(ids)];
+
+        if (unicos.length > 1) return `idcarteras=${encodeURIComponent(unicos.join(","))}`;
+        if (unicos.length === 1) return `idcartera=${encodeURIComponent(unicos[0])}`;
+        return "";
     }
 
     function getCompromisosKey() {
@@ -217,6 +252,7 @@
                 "gestiones",
                 "compromisos",
                 "pdp_hoy",
+                "control_horario",
                 "pagos",
                 "canales",
                 ...(compartamos ? ["clientes"] : [])
@@ -307,6 +343,10 @@
 
     function iconTarget() {
         return svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 2v4M22 12h-4M12 22v-4M2 12h4"/>');
+    }
+
+    function iconClock() {
+        return svg('<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>');
     }
 
     function iconUpload() {

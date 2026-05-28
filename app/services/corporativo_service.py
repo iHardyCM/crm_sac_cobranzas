@@ -21,12 +21,40 @@ CARTERA_CASE = """
 """
 
 
+def normalizar_idcarteras(idcartera=None):
+    if idcartera is None:
+        return []
+
+    valores = idcartera if isinstance(idcartera, (list, tuple, set)) else [idcartera]
+    ids = []
+
+    for valor in valores:
+        if valor in (None, ""):
+            continue
+        ids.append(int(valor))
+
+    return sorted(set(ids))
+
+
+def construir_filtro_carteras(idcartera=None):
+    ids = normalizar_idcarteras(idcartera)
+
+    if not ids:
+        return "", {}
+
+    params = {f"idcartera_{i}": valor for i, valor in enumerate(ids)}
+    placeholders = ", ".join(f":idcartera_{i}" for i in range(len(ids)))
+
+    return f" AND G.IDCARTERA IN ({placeholders})", params
+
+
 def obtener_resumen_corporativo(fecha_desde=None, fecha_hasta=None, idcartera=None):
 
     data = []
 
     try:
         with engine_siscob.connect() as conn:
+            filtro_carteras, params_carteras = construir_filtro_carteras(idcartera)
 
             query = text(f"""
                 WITH BASE AS (
@@ -69,7 +97,7 @@ def obtener_resumen_corporativo(fecha_desde=None, fecha_hasta=None, idcartera=No
                         AND G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125,119, 127, 121, 120,130, 98, 122)
                         AND C.MONTO > 0
                         AND G.IDCARTERA IS NOT NULL
-                        AND (:idcartera IS NULL OR G.IDCARTERA = :idcartera)
+                        {filtro_carteras}
                 )
 
                 SELECT
@@ -118,9 +146,9 @@ def obtener_resumen_corporativo(fecha_desde=None, fecha_hasta=None, idcartera=No
 
             params = {
                 "fecha_desde": fecha_desde,
-                "fecha_hasta": fecha_hasta,
-                "idcartera": idcartera
+                "fecha_hasta": fecha_hasta
             }
+            params.update(params_carteras)
 
             rows = conn.execute(query, params).fetchall()
 
@@ -197,6 +225,8 @@ def obtener_matriz_compromisos_corporativo(
 
     try:
         with engine_siscob.connect() as conn:
+            filtro_carteras, params_carteras = construir_filtro_carteras(idcartera)
+
             query = text(f"""
                 SELECT
                     C.IDGESTION AS idgestion,
@@ -300,7 +330,7 @@ def obtener_matriz_compromisos_corporativo(
                     AND G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)
                     AND C.MONTO > 0
                     AND G.IDCARTERA IS NOT NULL
-                    AND (:idcartera IS NULL OR G.IDCARTERA = :idcartera)
+                    {filtro_carteras}
                     AND (:solo_hoy = 0 OR CAST(C.FECHACOMPROMISO AS DATE) = CAST(GETDATE() AS DATE))
 
                 ORDER BY
@@ -312,8 +342,8 @@ def obtener_matriz_compromisos_corporativo(
             rows = conn.execute(query, {
                 "fecha_desde": fecha_desde,
                 "fecha_hasta": fecha_hasta,
-                "idcartera": idcartera,
-                "solo_hoy": 1 if solo_hoy else 0
+                "solo_hoy": 1 if solo_hoy else 0,
+                **params_carteras
             }).fetchall()
 
             data = [dict(r._mapping) for r in rows]
