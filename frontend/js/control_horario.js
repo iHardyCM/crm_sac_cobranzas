@@ -18,7 +18,7 @@ let ordenResumen = { campo: "gestiones", direccion: "desc" };
 let ordenAgentes = { campo: "cef", direccion: "desc" };
 let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
 
-const CACHE_CONTROL_HORARIO = "controlHorarioCacheV3";
+const CACHE_CONTROL_HORARIO = "controlHorarioCacheV5";
 
 const CAMPOS = {
     idcartera: ["IDCARTERA", "IdCartera", "idcartera", "ID_CARTERA"],
@@ -49,7 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const fecha = document.getElementById("filtroFecha");
     if (fecha && !fecha.value) {
-        fecha.value = new Date().toISOString().slice(0, 10);
+        fecha.value = fechaLocalInput();
     }
 
     cargarCacheControlHorario();
@@ -58,12 +58,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function cargarControlHorario() {
     const fecha = document.getElementById("filtroFecha")?.value;
-    const idcartera = document.getElementById("filtroCartera")?.value;
 
     try {
         mostrarToast("Actualizando control horario...", "info");
 
-        const data = await obtenerDataControlHorario(fecha, idcartera);
+        const data = await obtenerDataControlHorario(fecha);
         procesarDataControlHorario(data);
         guardarCacheControlHorario(fecha || "");
         mostrarToast("Control horario actualizado.", "ok");
@@ -73,14 +72,11 @@ async function cargarControlHorario() {
     }
 }
 
-async function obtenerDataControlHorario(fecha, idcartera) {
+async function obtenerDataControlHorario(fecha) {
     const idsSupervisor = carterasPermitidasSupervisor();
-    const idSeleccionado = String(idcartera || "").trim();
 
     if (idsSupervisor.length) {
-        const idsConsulta = idSeleccionado && /^\d+$/.test(idSeleccionado)
-            ? idsSupervisor.filter(id => id === idSeleccionado)
-            : idsSupervisor;
+        const idsConsulta = idsSupervisor;
 
         if (!idsConsulta.length) {
             return dataVaciaControlHorario();
@@ -90,7 +86,7 @@ async function obtenerDataControlHorario(fecha, idcartera) {
         return unirRespuestasControlHorario(respuestas);
     }
 
-    return fetchControlHorario(fecha, /^\d+$/.test(idSeleccionado) ? idSeleccionado : "");
+    return fetchControlHorario(fecha, "");
 }
 
 async function fetchControlHorario(fecha, idcartera) {
@@ -183,6 +179,13 @@ function maxHoraTexto(a, b) {
     if (!a) return b || "";
     if (!b) return a || "";
     return String(a) > String(b) ? a : b;
+}
+
+function fechaLocalInput(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
 }
 
 function carterasPermitidasSupervisor() {
@@ -477,14 +480,28 @@ function construirResumenCarteras(detalle) {
     });
 
     return [...map.values()]
-        .map(item => ({
-            ...item,
-            agentes: Number((dataControlHorario.dotacion_grupos || {})[item.idcartera] || item.agentes_activos || 0),
-            agentes_activos: item._agentesActivos ? item._agentesActivos.size : 0,
-            pct_cef: item.gestiones > 0 ? item.cef / item.gestiones : 0,
-            avance: item.proyectado > 0 ? item.pago / item.proyectado : 0
-        }))
+        .map(item => {
+            const agentesActivos = item._agentesActivos ? item._agentesActivos.size : 0;
+            const agentesAsignados = carterasPermitidasSupervisor().length
+                ? agentesActivos
+                : Number((dataControlHorario.dotacion_grupos || {})[item.idcartera] || agentesActivos || 0);
+
+            return {
+                ...item,
+                agentes: agentesAsignados,
+                agentes_activos: agentesActivos,
+                pct_cef: item.gestiones > 0 ? item.cef / item.gestiones : 0,
+                avance: item.proyectado > 0 ? item.pago / item.proyectado : 0
+            };
+        })
         .sort((a, b) => b.pendiente - a.pendiente);
+}
+
+function textoAgentesCartera(row) {
+    if (Number(row.agentes || 0) === Number(row.agentes_activos || 0)) {
+        return `${num(row.agentes_activos)} agentes activos`;
+    }
+    return `${num(row.agentes)} agentes | ${num(row.agentes_activos)} activos`;
 }
 
 function resumenDeCartera(idcartera) {
@@ -559,7 +576,7 @@ function renderResumenCarteras(data) {
         <tr>
             <td class="left cartera-cell">
                 <strong>${h(row.cartera)}</strong>
-                <small>${num(row.agentes)} agentes | ${num(row.agentes_activos)} activos</small>
+                <small>${textoAgentesCartera(row)}</small>
             </td>
             <td>
                 <strong>${num(row.gestiones)}</strong>
@@ -722,18 +739,31 @@ function alertasActuales() {
 }
 
 function horasActuales() {
-    if (!carteraSeleccionada) return ordenarPorHora(dataControlHorario.horas || []);
+    const agenteHora = agenteHoraFiltrado();
+    if (agenteHora.length) {
+        const filtrado = carteraSeleccionada
+            ? agenteHora.filter(row => String(getIdCartera(row)) === carteraSeleccionada)
+            : agenteHora;
 
-    const agenteHora = agenteHoraFiltrado()
+        return agruparHoras(filtrado);
+    }
+
+    if (!carteraSeleccionada) return agruparHoras(dataControlHorario.horas || []);
+
+    const horas = (dataControlHorario.horas || [])
         .filter(row => String(getIdCartera(row)) === carteraSeleccionada);
 
-    if (!agenteHora.length) return [];
+    return agruparHoras(horas);
+}
 
+function agruparHoras(data) {
     const map = new Map();
-    agenteHora.forEach(row => {
-        const hora = String(valor(row, CAMPOS.hora, "-"));
+    (data || []).forEach(row => {
+        const orden = horaOrden(row);
+        const hora = rangoHora(row);
         const item = map.get(hora) || {
-            HORA: hora,
+            HORA_CORTE: orden,
+            RANGO_HORA: hora,
             GESTIONES: 0,
             CEF: 0,
             Q_PDP: 0,
@@ -747,6 +777,20 @@ function horasActuales() {
 
         map.set(hora, item);
     });
+
+    for (let hora = 6; hora <= 20; hora += 1) {
+        const rango = rangoHoraDesdeNumero(hora);
+        if (!map.has(rango)) {
+            map.set(rango, {
+                HORA_CORTE: hora,
+                RANGO_HORA: rango,
+                GESTIONES: 0,
+                CEF: 0,
+                Q_PDP: 0,
+                PDP_GENERADO: 0
+            });
+        }
+    }
 
     return ordenarPorHora([...map.values()]);
 }
@@ -1161,16 +1205,30 @@ function getCartera(row, idcartera) {
 }
 
 function getHora(row) {
-    return valor(row, ["RANGO_HORA", "rango_hora"], valor(row, CAMPOS.hora, "-"));
+    return rangoHora(row);
 }
 
 function horaOrden(row) {
     const directo = valor(row, ["HORA_CORTE", "hora_corte"], null);
     if (directo !== null && directo !== undefined && directo !== "") return Number(directo);
 
-    const texto = String(getHora(row) || "");
+    const texto = String(valor(row, CAMPOS.hora, "") || "");
     const match = texto.match(/\d{1,2}/);
     return match ? Number(match[0]) : 999;
+}
+
+function rangoHoraDesdeNumero(orden) {
+    return `${String(orden).padStart(2, "0")}:00 - ${String(orden + 1).padStart(2, "0")}:00`;
+}
+
+function rangoHora(row) {
+    const rango = valor(row, ["RANGO_HORA", "rango_hora"], "");
+    if (rango) return rango;
+
+    const orden = horaOrden(row);
+    if (orden === 999) return "-";
+
+    return rangoHoraDesdeNumero(orden);
 }
 
 function ordenarPorHora(data) {
