@@ -163,6 +163,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "IC",
+                titulo: "Importacion de cartera",
+                descripcion: "Analisis previo de archivos de asignacion contra tablas destino.",
+                ruta: "importacion.html",
+                destacado: false
+            },
+            {
                 sigla: "CA",
                 titulo: "Canales alternos",
                 descripcion: "Carga y validacion de archivos para SMS, WAPI, Email, IVR y Bot.",

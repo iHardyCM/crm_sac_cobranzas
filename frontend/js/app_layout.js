@@ -30,6 +30,11 @@
             title: "Gestion y Recupero",
             subtitle: "Seguimiento operativo en tiempo real"
         },
+        "importacion.html": {
+            key: "importacion",
+            title: "Importacion de Cartera",
+            subtitle: "Analisis previo de archivos de asignacion"
+        },
         "admin_supervisores.html": {
             key: "supervisores_admin",
             title: "Mantenimiento de Supervisores",
@@ -78,6 +83,7 @@
         {
             title: "Importaciones",
             items: [
+                { key: "importacion", label: "Importacion de Cartera", href: "importacion.html", icon: iconUpload() },
                 { key: "pagos", label: "Pagos del Negocio", href: "pagos.html", icon: iconUpload() },
                 { key: "canales", label: "Canales Alternos", href: "canales.html", icon: iconSend() }
             ]

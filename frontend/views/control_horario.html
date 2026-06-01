@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Horario de Gestion y Recupero</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260528b">
-    <link rel="stylesheet" href="../css/control_horario.css?v=20260528e">
+    <link rel="stylesheet" href="../css/control_horario.css?v=20260601e">
 </head>
 <body>
 
@@ -33,6 +33,13 @@
             <label for="filtroCartera">Cartera</label>
             <select id="filtroCartera" onchange="aplicarFiltroCartera()">
                 <option value="">Todas las carteras</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="filtroVistaCartera">Vista cartera</label>
+            <select id="filtroVistaCartera" onchange="cambiarVistaCartera()">
+                <option value="AGRUPADO">Agrupado</option>
+                <option value="DETALLADO">Detallado</option>
             </select>
         </div>
         <div class="field">
@@ -204,6 +211,6 @@
 
 <script src="../js/session.js"></script>
 <script src="../js/app_layout.js?v=20260528b"></script>
-<script src="../js/control_horario.js?v=20260528e"></script>
+<script src="../js/control_horario.js?v=20260601f"></script>
 </body>
 </html>

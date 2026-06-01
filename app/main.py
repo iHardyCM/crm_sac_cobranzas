@@ -10,6 +10,7 @@ from app.api.routes_corporativo import router as corporativo_router
 from app.api.routes_control_horario import router as control_horario_router
 from app.api.routes_metas import router as metas_router
 from app.api.routes_pagos import router as pagos_router
+from app.api.routes_importacion import router as importacion_router
 
 
 app = FastAPI(title="CRM COBRANZAS")
@@ -31,6 +32,7 @@ app.include_router(cliente_router, prefix="/cliente", tags=["Cliente"])
 app.include_router(compromisos_router, prefix="/compromisos", tags=["Compromisos"])
 app.include_router(corporativo_router, prefix="/corporativo", tags=["Corporativo"])
 app.include_router(control_horario_router, prefix="/control-horario", tags=["Control Horario"])
+app.include_router(importacion_router, prefix="/importacion", tags=["Importacion de Cartera"])
 app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"])
 app.include_router(metas_router, prefix="/metas", tags=["Metas"])
 

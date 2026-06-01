@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biznescob - Importacion de Cartera</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260528b">
+    <link rel="stylesheet" href="../css/importacion.css?v=20260601b">
+</head>
+<body>
+
+<main class="import-page">
+    <section class="import-hero card">
+        <div>
+            <span class="eyebrow">Base operativa</span>
+            <h2>Importacion de Cartera</h2>
+            <p>Analiza archivos de asignacion contra la estructura destino antes de cargar informacion al CRM.</p>
+        </div>
+        <div class="hero-status">
+            <span>Modo actual</span>
+            <strong>Analisis previo</strong>
+        </div>
+    </section>
+
+    <nav class="import-tabs" aria-label="Secciones de importacion">
+        <button class="active" type="button" data-tab="cartera" onclick="cambiarTabImportacion('cartera')">Cartera</button>
+        <button type="button" data-tab="metas" onclick="cambiarTabImportacion('metas')">Metas</button>
+        <button type="button" data-tab="saldos" onclick="cambiarTabImportacion('saldos')">Saldos</button>
+        <button type="button" data-tab="cierre" onclick="cambiarTabImportacion('cierre')">Cierre historico</button>
+        <button type="button" data-tab="historial" onclick="cambiarTabImportacion('historial')">Historial</button>
+        <button type="button" data-tab="configuracion" onclick="cambiarTabImportacion('configuracion')">Configuracion</button>
+    </nav>
+
+    <div id="toastImportacion" class="import-toast"></div>
+
+    <section id="tab-cartera" class="tab-panel active">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Nueva revision de archivo</h3>
+                    <p>Selecciona la configuracion, periodo y archivo Excel para comparar columnas.</p>
+                </div>
+            </div>
+
+            <form id="formImportacion" class="import-form">
+                <div class="field span-2">
+                    <label for="configImportacion">Configuracion de cartera/producto</label>
+                    <select id="configImportacion" required>
+                        <option value="">Cargando configuraciones...</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="periodoImportacion">Periodo</label>
+                    <input id="periodoImportacion" type="text" inputmode="numeric" maxlength="6" placeholder="YYYYMM" required>
+                </div>
+
+                <div class="field">
+                    <label for="tipoCargaImportacion">Tipo de carga</label>
+                    <select id="tipoCargaImportacion" required>
+                        <option value="CARGA_INICIAL_MENSUAL">Carga inicial mensual</option>
+                        <option value="AGREGAR_ACTUALIZAR">Agregar + actualizar</option>
+                        <option value="REEMPLAZAR_ACTIVA">Reemplazar asignacion activa</option>
+                        <option value="ACTUALIZACION_DIARIA_DEPURACION">Actualizacion diaria con depuracion</option>
+                        <option value="NUEVA_CARTERA_ARCHIVO">Nueva cartera desde archivo</option>
+                    </select>
+                </div>
+
+                <div class="field span-2 file-field">
+                    <label for="archivoImportacion">Archivo Excel</label>
+                    <div class="file-control">
+                        <label for="archivoImportacion" class="file-button">Seleccionar archivo</label>
+                        <span id="nombreArchivoImportacion" class="file-name">Ningun archivo seleccionado</span>
+                        <input id="archivoImportacion" type="file" accept=".xlsx,.xls" required>
+                    </div>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button class="btn-secondary" type="button" onclick="limpiarAnalisisImportacion()">Limpiar</button>
+                    <button id="btnAnalizarImportacion" class="btn-primary" type="submit">Analizar archivo</button>
+                </div>
+            </form>
+        </article>
+
+        <section id="resultadoAnalisis" class="analysis-result hidden">
+            <article class="kpi-grid" id="kpisAnalisis"></article>
+
+            <article class="card impact-card">
+                <div class="section-head">
+                    <div>
+                        <h3>Impacto contra tabla destino</h3>
+                        <p>Simulacion de registros nuevos, existentes y observados. No se inserta informacion en esta fase.</p>
+                    </div>
+                </div>
+                <div id="kpisImpacto" class="impact-grid"></div>
+                <div id="diagnosticoCruce" class="debug-panel"></div>
+            </article>
+
+            <div class="analysis-grid">
+                <article class="card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Validacion de columnas</h3>
+                            <p>Se muestran solo columnas con accion requerida o generadas.</p>
+                        </div>
+                        <button id="btnCoincidentes" class="btn-secondary compact" type="button" onclick="toggleCoincidentesImportacion()">
+                            Ver columnas coincidentes
+                        </button>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Columna</th>
+                                    <th>Estado</th>
+                                    <th>Observacion</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaColumnasAnalisis"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Alertas</h3>
+                            <p>Mensajes detectados durante el analisis.</p>
+                        </div>
+                    </div>
+                    <div id="alertasAnalisis" class="alert-list"></div>
+                </article>
+            </div>
+
+            <div class="preview-toggle-row">
+                <button id="btnTogglePreview" class="btn-secondary" type="button" onclick="togglePreviewImportacion()">
+                    Ver preview de datos
+                </button>
+            </div>
+
+            <article id="previewAnalisisCard" class="card hidden">
+                <div class="section-head">
+                    <div>
+                        <h3>Preview de datos</h3>
+                        <p>Primeras 20 filas leidas del archivo.</p>
+                    </div>
+                    <div class="quick-filters" id="filtrosPreview">
+                        <button class="active" type="button" data-estado="TODOS" onclick="filtrarPreviewImportacion('TODOS')">Todos</button>
+                        <button type="button" data-estado="NUEVO" onclick="filtrarPreviewImportacion('NUEVO')">Nuevos</button>
+                        <button type="button" data-estado="EXISTENTE" onclick="filtrarPreviewImportacion('EXISTENTE')">Existentes</button>
+                        <button type="button" data-estado="DUPLICADO_ARCHIVO" onclick="filtrarPreviewImportacion('DUPLICADO_ARCHIVO')">Duplicados</button>
+                        <button type="button" data-estado="CLAVE_INCOMPLETA" onclick="filtrarPreviewImportacion('CLAVE_INCOMPLETA')">Clave incompleta</button>
+                    </div>
+                </div>
+                <div class="table-wrap preview-wrap">
+                    <table id="tablaPreviewAnalisis"></table>
+                </div>
+            </article>
+
+            <article id="panelConfirmarCarga" class="card confirm-load-panel hidden">
+                <div class="section-head">
+                    <div>
+                        <h3>Confirmar carga</h3>
+                        <p>Aplica los registros nuevos y existentes sobre la tabla destino actual.</p>
+                    </div>
+                    <button id="btnConfirmarCarga" class="btn-primary" type="button" onclick="abrirConfirmacionCarga()">
+                        Confirmar carga
+                    </button>
+                </div>
+                <div id="mensajeConfirmarCarga" class="load-message"></div>
+            </article>
+
+            <article id="resultadoConfirmacionCarga" class="card analysis-result hidden">
+                <div class="section-head">
+                    <div>
+                        <h3>Resultado de carga</h3>
+                        <p>Resumen del lote registrado.</p>
+                    </div>
+                </div>
+                <div id="detalleConfirmacionCarga" class="cierre-grid"></div>
+            </article>
+        </section>
+    </section>
+
+    <section id="tab-historial" class="tab-panel">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Historial de lotes</h3>
+                    <p>Procesos registrados en importacion_lotes.</p>
+                </div>
+                <button class="btn-secondary" type="button" onclick="cargarLotesImportacion(true)">Actualizar</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID lote</th>
+                            <th>Cartera</th>
+                            <th>Producto</th>
+                            <th>Periodo</th>
+                            <th>Tipo proceso</th>
+                            <th>Archivo</th>
+                            <th>Total</th>
+                            <th>Insertados</th>
+                            <th>Actualizados</th>
+                            <th>Rechazados</th>
+                            <th>Estado</th>
+                            <th>Fecha inicio</th>
+                            <th>Fecha fin</th>
+                            <th>Observacion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaLotesImportacion"></tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+
+    <section id="tab-cierre" class="tab-panel">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Cierre historico mensual</h3>
+                    <p>Copia la tabla activa consolidada hacia la tabla historica oficial del periodo.</p>
+                </div>
+            </div>
+
+            <form id="formCierreHistorico" class="import-form">
+                <div class="field span-2">
+                    <label for="configCierreImportacion">Configuracion de cartera/producto</label>
+                    <select id="configCierreImportacion" required>
+                        <option value="">Cargando configuraciones...</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="periodoCierreImportacion">Periodo a cerrar</label>
+                    <input id="periodoCierreImportacion" type="text" inputmode="numeric" maxlength="6" placeholder="YYYYMM" required>
+                </div>
+
+                <div class="form-actions">
+                    <button id="btnValidarCierre" class="btn-primary" type="submit">Validar cierre</button>
+                </div>
+            </form>
+        </article>
+
+        <section id="resultadoCierre" class="analysis-result hidden">
+            <article class="card">
+                <div class="section-head">
+                    <div>
+                        <h3>Validacion del cierre</h3>
+                        <p>Revisa origen, historico y registros existentes antes de ejecutar.</p>
+                    </div>
+                </div>
+                <div id="resumenCierre" class="cierre-grid"></div>
+                <div id="alertasCierre" class="alert-list"></div>
+                <div id="accionesCierre" class="cierre-actions"></div>
+            </article>
+        </section>
+
+        <section id="resultadoEjecucionCierre" class="analysis-result hidden">
+            <article class="card">
+                <div class="section-head">
+                    <div>
+                        <h3>Resultado del cierre</h3>
+                        <p>Registro generado en importacion_cierres_historicos.</p>
+                    </div>
+                </div>
+                <div id="detalleEjecucionCierre" class="cierre-grid"></div>
+            </article>
+        </section>
+    </section>
+
+    <section id="tab-metas" class="tab-panel"><article class="card empty-tab">Metas: Proximamente.</article></section>
+    <section id="tab-saldos" class="tab-panel"><article class="card empty-tab">Saldos: Proximamente.</article></section>
+    <section id="tab-configuracion" class="tab-panel"><article class="card empty-tab">Configuracion avanzada: Proximamente.</article></section>
+</main>
+
+<div id="modalConfirmacionCierre" class="confirm-backdrop hidden" aria-hidden="true">
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacionCierre">
+        <div class="confirm-icon" id="iconoConfirmacionCierre">!</div>
+        <div class="confirm-copy">
+            <span class="eyebrow">Confirmacion requerida</span>
+            <h3 id="tituloConfirmacionCierre">Ejecutar cierre historico</h3>
+            <p id="mensajeConfirmacionCierre">Confirma la operacion para continuar.</p>
+            <div id="detalleConfirmacionCierre" class="confirm-detail"></div>
+        </div>
+        <div class="confirm-actions">
+            <button id="btnCancelarConfirmacionCierre" class="btn-secondary" type="button">Cancelar</button>
+            <button id="btnAceptarConfirmacionCierre" class="btn-primary" type="button">Confirmar</button>
+        </div>
+    </section>
+</div>
+
+<div id="modalConfirmacionCarga" class="confirm-backdrop hidden" aria-hidden="true">
+    <section class="confirm-modal wide" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacionCarga">
+        <div class="confirm-icon warn">!</div>
+        <div class="confirm-copy">
+            <span class="eyebrow">Confirmacion requerida</span>
+            <h3 id="tituloConfirmacionCarga">Confirmar carga activa</h3>
+            <p>Esta accion modificara la tabla destino actual con modalidad Agregar + actualizar.</p>
+            <div id="detalleModalConfirmacionCarga" class="confirm-detail"></div>
+            <div class="confirm-warning">No se eliminaran registros, no se crearan columnas nuevas y no se ejecutara cierre historico.</div>
+        </div>
+        <div class="confirm-actions">
+            <button id="btnCancelarConfirmacionCarga" class="btn-secondary" type="button">Cancelar</button>
+            <button id="btnAceptarConfirmacionCarga" class="btn-primary" type="button">Confirmar carga</button>
+        </div>
+    </section>
+</div>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260528b"></script>
+<script src="../js/importacion.js?v=20260601b"></script>
+</body>
+</html>

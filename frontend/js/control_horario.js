@@ -11,14 +11,39 @@ let dataControlHorario = {
 };
 
 let resumenCarteras = [];
+let resumenOpcionesCarteras = [];
 let carteraSeleccionada = null;
+let carteraFiltroControl = null;
+let idsFiltroCarteraControl = [];
+let etiquetaFiltroCarteraControl = "";
 let agenteSeleccionado = null;
 let metricaHoraActual = "gestiones";
 let ordenResumen = { campo: "gestiones", direccion: "desc" };
 let ordenAgentes = { campo: "cef", direccion: "desc" };
 let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
+let vistaCarteraControl = "AGRUPADO";
 
 const CACHE_CONTROL_HORARIO = "controlHorarioCacheV5";
+
+const CARTERAS_CONTROL = {
+    112: "MIBANCO 1",
+    143: "MIBANCO 2",
+    135: "MIBANCO VIGENTE",
+    124: "COMPARTAMOS CASTIGO INDIVIDUAL",
+    144: "COMPARTAMOS CASTIGO GRUPAL",
+    126: "COMPARTAMOS VIGENTE INDIVIDUAL",
+    128: "COMPARTAMOS VIGENTE CCM",
+    133: "COMPARTAMOS VIGENTE GRUPAL / CSM",
+    117: "INTERBANK",
+    132: "FINANCIERA OH",
+    137: "INTERBANK CEDIDA"
+};
+
+const GRUPOS_CARTERA_CONTROL = [
+    { key: "MIBANCO", cartera: "MIBANCO", ids: ["112", "143", "135"] },
+    { key: "COMPARTAMOS_VIGENTE", cartera: "COMPARTAMOS VIGENTE", ids: ["126", "128", "133"] },
+    { key: "COMPARTAMOS_CASTIGO", cartera: "COMPARTAMOS CASTIGO", ids: ["124", "144"] }
+];
 
 const CAMPOS = {
     idcartera: ["IDCARTERA", "IdCartera", "idcartera", "ID_CARTERA"],
@@ -46,6 +71,12 @@ const CAMPOS = {
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
+
+    const vistaCartera = document.getElementById("filtroVistaCartera");
+    if (vistaCartera) {
+        vistaCartera.value = vistaCarteraControl;
+        vistaCartera.addEventListener("change", cambiarVistaCartera);
+    }
 
     const fecha = document.getElementById("filtroFecha");
     if (fecha && !fecha.value) {
@@ -214,9 +245,55 @@ function grupoPermitidoParaSupervisor(item, idsSupervisor) {
     return idsGrupo.some(id => idsSupervisor.includes(id)) || idsSupervisor.includes(String(item.idcartera));
 }
 
+function definirGrupoCartera(row) {
+    const id = String(getIdCarteraBase(row) || "").trim();
+    if (!id) return null;
+
+    if (modoVistaCarteraActual() === "AGRUPADO") {
+        const grupo = GRUPOS_CARTERA_CONTROL.find(item => item.ids.includes(id));
+        if (grupo) {
+            return {
+                idcartera: grupo.key,
+                cartera: grupo.cartera,
+                ids: grupo.ids
+            };
+        }
+    }
+
+    return {
+        idcartera: id,
+        cartera: CARTERAS_CONTROL[id] || getCartera(row, id),
+        ids: [id]
+    };
+}
+
+function modoVistaCarteraActual() {
+    const select = document.getElementById("filtroVistaCartera");
+    vistaCarteraControl = select?.value || vistaCarteraControl || "AGRUPADO";
+    return vistaCarteraControl;
+}
+
+function idsCarteraSeleccionada() {
+    if (carteraSeleccionada) {
+        const resumen = resumenDeCartera(carteraSeleccionada);
+        if (resumen?.ids?.length) return resumen.ids.map(String);
+        return String(carteraSeleccionada).split(",").map(id => id.trim()).filter(Boolean);
+    }
+
+    return idsFiltroCarteraControl.map(String);
+}
+
+function rowPerteneceACarteraSeleccionada(row) {
+    const ids = idsCarteraSeleccionada();
+    if (!ids.length) return true;
+    return ids.includes(String(getIdCarteraBase(row)));
+}
+
 function procesarDataControlHorario(data) {
     dataControlHorario = data || {};
-    resumenCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    modoVistaCarteraActual();
+    resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    resumenCarteras = construirResumenVisible();
     poblarFiltros();
     renderVista();
 }
@@ -253,16 +330,49 @@ function guardarCacheControlHorario(fecha) {
 }
 
 function aplicarFiltroCartera() {
-    const idcartera = document.getElementById("filtroCartera")?.value || "";
-    carteraSeleccionada = idcartera || null;
+    modoVistaCarteraActual();
+    const select = document.getElementById("filtroCartera");
+    const idcartera = select?.value || "";
+    if (!idcartera || idcartera === "__FILTRO_ACTUAL__") {
+        if (!idcartera) limpiarFiltroCarteraControl();
+    } else {
+        const resumen = resumenOpcionesCarteras.find(item => String(item.idcartera) === String(idcartera));
+        carteraFiltroControl = idcartera;
+        idsFiltroCarteraControl = resumen?.ids?.map(String) || [String(idcartera)];
+        etiquetaFiltroCarteraControl = resumen?.cartera || select?.selectedOptions?.[0]?.textContent || String(idcartera);
+    }
+
+    carteraSeleccionada = null;
+    resumenCarteras = construirResumenVisible();
+    poblarFiltroCarteras();
     poblarFiltroAgentes();
     renderVista();
 }
 
 function aplicarFiltroAgente() {
+    modoVistaCarteraActual();
     agenteSeleccionado = document.getElementById("filtroAgente")?.value || null;
-    resumenCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    resumenCarteras = construirResumenVisible();
     renderVista();
+}
+
+function cambiarVistaCartera() {
+    modoVistaCarteraActual();
+    carteraSeleccionada = null;
+    resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    resumenCarteras = construirResumenVisible();
+    poblarFiltros();
+    renderVista();
+}
+
+function construirResumenVisible() {
+    const detalle = detalleFiltradoPorAgente(dataControlHorario.detalle || []);
+    const scoped = idsFiltroCarteraControl.length
+        ? detalle.filter(row => idsFiltroCarteraControl.includes(String(getIdCarteraBase(row))))
+        : detalle;
+
+    return construirResumenCarteras(scoped);
 }
 
 function poblarFiltros() {
@@ -272,34 +382,42 @@ function poblarFiltros() {
 
 function poblarFiltroCarteras() {
     const select = document.getElementById("filtroCartera");
-    const actual = select.value;
+    modoVistaCarteraActual();
+    const actual = carteraFiltroControl || select.value;
     const idsSupervisor = carterasPermitidasSupervisor();
 
-    const opciones = resumenCarteras
+    const opciones = resumenOpcionesCarteras
         .filter(item => !idsSupervisor.length || grupoPermitidoParaSupervisor(item, idsSupervisor))
-        .map(item => ({ id: item.idcartera, texto: `${item.idcartera} - ${item.cartera}` }))
+        .map(item => ({ id: item.idcartera, texto: item.ids?.length > 1 ? item.cartera : `${item.idcartera} - ${item.cartera}` }))
         .sort((a, b) => String(a.texto).localeCompare(String(b.texto), "es"));
+    const existeActual = opciones.some(item => String(item.id) === String(actual));
+    const opcionFiltroActual = idsFiltroCarteraControl.length && !existeActual && !select.value
+        ? `<option value="__FILTRO_ACTUAL__">Filtro actual: ${h(etiquetaFiltroCarteraControl || idsFiltroCarteraControl.join(", "))}</option>`
+        : "";
 
-    select.innerHTML = `<option value="">Todas las carteras</option>` + opciones.map(item =>
+    select.innerHTML = `<option value="">${vistaCarteraControl === "AGRUPADO" ? "Todas las carteras agrupadas" : "Todas las carteras detalladas"}</option>` + opcionFiltroActual + opciones.map(item =>
         `<option value="${h(item.id)}">${h(item.texto)}</option>`
     ).join("");
 
-    select.value = opciones.some(item => String(item.id) === String(actual)) ? actual : "";
-    select.disabled = idsSupervisor.length === 1;
+    select.value = existeActual ? actual : (opcionFiltroActual ? "__FILTRO_ACTUAL__" : "");
+    carteraFiltroControl = select.value && select.value !== "__FILTRO_ACTUAL__" ? select.value : carteraFiltroControl;
+    select.disabled = idsSupervisor.length === 1 && vistaCarteraControl === "DETALLADO";
     if (idsSupervisor.length === 1 && opciones.length === 1) {
         select.value = opciones[0].id;
-        carteraSeleccionada = opciones[0].id;
+        carteraFiltroControl = opciones[0].id;
+        idsFiltroCarteraControl = resumenOpcionesCarteras.find(item => String(item.idcartera) === String(opciones[0].id))?.ids?.map(String) || [String(opciones[0].id)];
+        etiquetaFiltroCarteraControl = opciones[0].texto;
     }
 }
 
 function poblarFiltroAgentes() {
     const select = document.getElementById("filtroAgente");
     const actual = select.value;
-    const carteraFiltro = document.getElementById("filtroCartera")?.value;
+    const idsFiltro = idsFiltroCarteraControl.map(String);
 
     const agentes = new Map();
     (dataControlHorario.detalle || []).forEach(row => {
-        if (carteraFiltro && String(getIdCartera(row)) !== String(carteraFiltro)) return;
+        if (idsFiltro.length && !idsFiltro.includes(String(getIdCarteraBase(row)))) return;
 
         const idusuario = valor(row, CAMPOS.idusuario, "");
         const agente = valor(row, CAMPOS.agente, "");
@@ -321,6 +439,13 @@ function poblarFiltroAgentes() {
 }
 
 function renderVista() {
+    modoVistaCarteraActual();
+    resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
+    resumenCarteras = construirResumenVisible();
+    if (carteraSeleccionada && !resumenDeCartera(carteraSeleccionada)) {
+        carteraSeleccionada = null;
+    }
+
     const detalle = detalleActual();
     const resumen = carteraSeleccionada ? resumenDeCartera(carteraSeleccionada) : null;
 
@@ -342,6 +467,12 @@ function volverResumenCarteras() {
     renderVista();
 }
 
+function limpiarFiltroCarteraControl() {
+    carteraFiltroControl = null;
+    idsFiltroCarteraControl = [];
+    etiquetaFiltroCarteraControl = "";
+}
+
 function actualizarContexto() {
     const resumenCard = document.getElementById("resumenCarterasCard");
     const detalleCard = document.getElementById("detalleAgentesCard");
@@ -353,7 +484,7 @@ function actualizarContexto() {
         resumenCard.classList.add("compact-mode");
         detalleCard.classList.remove("hidden");
         document.getElementById("tituloDetalleAgentes").innerText =
-            `Detalle de agentes - Cartera ${carteraSeleccionada}`;
+            `Detalle de agentes - ${cartera?.cartera || carteraSeleccionada}`;
         setSubtituloControl(cartera
             ? `Cartera seleccionada: ${cartera.cartera}`
             : `Cartera seleccionada: ${carteraSeleccionada}`);
@@ -365,8 +496,12 @@ function actualizarContexto() {
 
     resumenCard.classList.remove("compact-mode");
     detalleCard.classList.add("hidden");
-    setSubtituloControl("Seguimiento operativo en tiempo real.");
-    subtituloHoras.innerText = "Gestion y generacion por tramo horario.";
+    setSubtituloControl(idsFiltroCarteraControl.length
+        ? `Filtro cartera: ${etiquetaFiltroCarteraControl || idsFiltroCarteraControl.join(", ")}`
+        : "Seguimiento operativo en tiempo real.");
+    subtituloHoras.innerText = idsFiltroCarteraControl.length
+        ? "Corte horario filtrado por la cartera seleccionada."
+        : "Gestion y generacion por tramo horario.";
     document.getElementById("tituloTopAvance").innerText = "Top 5 carteras con mejor avance";
     document.getElementById("tituloPendientes").innerText = "Top 5 carteras con mayor pendiente";
 }
@@ -379,8 +514,9 @@ function setSubtituloControl(texto) {
 
 function detalleActual() {
     const detalle = detalleFiltradoPorAgente(dataControlHorario.detalle || []);
-    if (!carteraSeleccionada) return detalle;
-    return detalle.filter(row => String(getIdCartera(row)) === carteraSeleccionada);
+    const ids = idsCarteraSeleccionada();
+    if (!ids.length) return detalle;
+    return detalle.filter(rowPerteneceACarteraSeleccionada);
 }
 
 function agruparDetalleAgentes(detalle) {
@@ -444,14 +580,15 @@ function construirResumenCarteras(detalle) {
     const map = new Map();
 
     detalle.forEach(row => {
-        const idcartera = getIdCartera(row);
-        if (!idcartera) return;
+        const grupo = definirGrupoCartera(row);
+        if (!grupo) return;
 
-        const key = String(idcartera);
+        const key = String(grupo.idcartera);
         const actual = map.get(key) || {
             idcartera: key,
-            cartera: getCartera(row, key),
-            ids_cartera: valor(row, ["IDS_CARTERA_GRUPO", "ids_cartera_grupo"], key),
+            cartera: grupo.cartera,
+            ids: grupo.ids,
+            ids_cartera: grupo.ids.join(","),
             gestiones: 0,
             clientes_mes: 0,
             cef: 0,
@@ -482,9 +619,11 @@ function construirResumenCarteras(detalle) {
     return [...map.values()]
         .map(item => {
             const agentesActivos = item._agentesActivos ? item._agentesActivos.size : 0;
+            const dotacion = (item.ids || [item.idcartera]).reduce((total, id) =>
+                total + Number((dataControlHorario.dotacion_grupos || {})[id] || 0), 0);
             const agentesAsignados = carterasPermitidasSupervisor().length
                 ? agentesActivos
-                : Number((dataControlHorario.dotacion_grupos || {})[item.idcartera] || agentesActivos || 0);
+                : Number(dotacion || agentesActivos || 0);
 
             return {
                 ...item,
@@ -563,9 +702,10 @@ function renderKpis(kpis) {
 
 function renderResumenCarteras(data) {
     const tbody = document.getElementById("tablaResumenCarteras");
-    const visible = carteraSeleccionada
-        ? data.filter(row => String(row.idcartera) === carteraSeleccionada)
-        : ordenarFilas(data, ordenResumen, valorOrdenResumen);
+    const base = carteraSeleccionada
+        ? data.filter(row => String(row.idcartera) === String(carteraSeleccionada))
+        : data;
+    const visible = ordenarFilas(base, ordenResumen, valorOrdenResumen);
 
     if (!visible.length) {
         tbody.innerHTML = emptyRow(11, "No hay carteras para el filtro seleccionado.");
@@ -645,10 +785,11 @@ function abrirDetalleAgente(index) {
 
     const idusuario = String(valor(row, CAMPOS.idusuario, ""));
     const agente = valor(row, CAMPOS.agente, "Agente");
+    const cartera = resumenDeCartera(carteraSeleccionada);
 
     document.getElementById("tituloModalAgente").innerText = agente;
     document.getElementById("subtituloModalAgente").innerText =
-        `Cartera ${carteraSeleccionada || "-"} | Ultima gestion: ${formatDateTime(valor(row, CAMPOS.ultimaGestion, ""))}`;
+        `${cartera?.cartera || "Cartera"} | Ultima gestion: ${formatDateTime(valor(row, CAMPOS.ultimaGestion, ""))}`;
 
     document.getElementById("modalAgenteKpis").innerHTML = [
         ["Gestiones", num(numeroCampo(row, CAMPOS.gestiones)), "phone"],
@@ -668,7 +809,9 @@ function abrirDetalleAgente(index) {
     `).join("");
 
     const horas = agruparHorasAgente(
-        agenteHoraFiltrado().filter(item => String(valor(item, CAMPOS.idusuario, "")) === idusuario)
+        agenteHoraFiltrado().filter(item =>
+            String(valor(item, CAMPOS.idusuario, "")) === idusuario && rowPerteneceACarteraSeleccionada(item)
+        )
     );
 
     renderTablaHorasAgente(horas);
@@ -732,26 +875,28 @@ function renderAlertas(data) {
 
 function alertasActuales() {
     const alertas = dataControlHorario.alertas || [];
-    if (!carteraSeleccionada) return alertas;
+    const ids = idsCarteraSeleccionada();
+    if (!ids.length) return alertas;
 
-    const filtradas = alertas.filter(row => String(getIdCartera(row)) === carteraSeleccionada);
+    const filtradas = alertas.filter(row => ids.includes(String(getIdCartera(row))));
     return filtradas.length ? filtradas : alertas;
 }
 
 function horasActuales() {
     const agenteHora = agenteHoraFiltrado();
+    const ids = idsCarteraSeleccionada();
     if (agenteHora.length) {
-        const filtrado = carteraSeleccionada
-            ? agenteHora.filter(row => String(getIdCartera(row)) === carteraSeleccionada)
+        const filtrado = ids.length
+            ? agenteHora.filter(rowPerteneceACarteraSeleccionada)
             : agenteHora;
 
         return agruparHoras(filtrado);
     }
 
-    if (!carteraSeleccionada) return agruparHoras(dataControlHorario.horas || []);
+    if (!ids.length) return agruparHoras(dataControlHorario.horas || []);
 
     const horas = (dataControlHorario.horas || [])
-        .filter(row => String(getIdCartera(row)) === carteraSeleccionada);
+        .filter(rowPerteneceACarteraSeleccionada);
 
     return agruparHoras(horas);
 }
@@ -858,9 +1003,10 @@ function renderGraficoHoras(data) {
 }
 
 function filtrarHora(hora) {
+    const ids = idsCarteraSeleccionada();
     const data = agenteHoraFiltrado().filter(row => {
         const mismaHora = String(getHora(row)) === String(hora) || String(horaOrden(row)) === String(hora);
-        const mismaCartera = carteraSeleccionada ? String(getIdCartera(row)) === carteraSeleccionada : true;
+        const mismaCartera = ids.length ? rowPerteneceACarteraSeleccionada(row) : true;
         return mismaHora && mismaCartera;
     });
 
@@ -1121,9 +1267,11 @@ function cerrarModalAgente(event) {
 function limpiarFiltrosControl() {
     document.getElementById("filtroCartera").value = "";
     document.getElementById("filtroAgente").value = "";
+    limpiarFiltroCarteraControl();
     carteraSeleccionada = null;
     agenteSeleccionado = null;
-    resumenCarteras = construirResumenCarteras(dataControlHorario.detalle || []);
+    resumenOpcionesCarteras = construirResumenCarteras(dataControlHorario.detalle || []);
+    resumenCarteras = construirResumenVisible();
     poblarFiltroAgentes();
     renderVista();
 }
@@ -1198,6 +1346,10 @@ function exportarControlHorario() {
 
 function getIdCartera(row) {
     return valor(row, CAMPOS.idcartera, "");
+}
+
+function getIdCarteraBase(row) {
+    return valor(row, ["IDCARTERA_ORIGINAL", "idcartera_original", "IDCARTERA_BASE", "idcartera_base"], getIdCartera(row));
 }
 
 function getCartera(row, idcartera) {

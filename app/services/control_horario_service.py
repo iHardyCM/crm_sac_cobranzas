@@ -104,10 +104,12 @@ def obtener_dotacion_grupos(cursor):
 
     for idcartera, agentes in cursor.fetchall():
         try:
-            grupo = obtener_grupo_cartera(int(idcartera))
+            cartera = int(idcartera)
+            grupo = obtener_grupo_cartera(cartera)
         except (TypeError, ValueError):
             continue
 
+        dotacion[str(cartera)] = dotacion.get(str(cartera), 0) + int(agentes or 0)
         dotacion[grupo["id"]] = dotacion.get(grupo["id"], 0) + int(agentes or 0)
 
     return dotacion
