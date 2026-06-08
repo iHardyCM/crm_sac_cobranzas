@@ -385,6 +385,93 @@ body.crm-shell > .container .filtros {
     justify-content: flex-end;
 }
 
+.crm-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: rgba(6, 27, 53, .36);
+}
+
+.crm-dialog {
+    width: min(460px, 100%);
+    border: 1px solid #d5e4f2;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 26px 80px rgba(6, 27, 53, .24);
+    padding: 22px;
+}
+
+.crm-dialog-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #eef6ff;
+    color: #0f558c;
+    font-size: 20px;
+    font-weight: 900;
+    margin-bottom: 13px;
+}
+
+.crm-dialog-content h3 {
+    margin: 0;
+    color: #061b35;
+    font-size: 18px;
+}
+
+.crm-dialog-content p {
+    margin: 9px 0 0;
+    color: #52677f;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.crm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.crm-dialog-btn {
+    min-width: 104px;
+    height: 38px;
+    border-radius: 8px;
+    padding: 0 16px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.crm-dialog-btn.primary {
+    border: 1px solid #0f558c;
+    background: #0f558c;
+    color: #ffffff;
+}
+
+.crm-dialog-btn.secondary {
+    border: 1px solid #c9d8e8;
+    background: #ffffff;
+    color: #0f558c;
+}
+
+.crm-dialog-overlay.danger .crm-dialog-icon {
+    background: #fff0f0;
+    color: #b91c1c;
+}
+
+.crm-dialog-overlay.danger .crm-dialog-btn.primary {
+    border-color: #b91c1c;
+    background: #b91c1c;
+}
+
+.oculto {
+    display: none !important;
+}
+
 @media (max-width: 780px) {
     body.crm-shell,
     body.crm-shell.crm-sidebar-collapsed,

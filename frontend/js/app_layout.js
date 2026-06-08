@@ -54,6 +54,11 @@
             key: "clientes",
             title: "Consulta Compartamos",
             subtitle: "Informacion diaria de clientes activos, deuda, capital y cuotas"
+        },
+        "ia_feedback.html": {
+            key: "ia_feedback",
+            title: "Analisis IA",
+            subtitle: "Feedback operativo de llamadas para supervision"
         }
     };
 
@@ -91,6 +96,7 @@
         {
             title: "Análisis",
             items: [
+                { key: "ia_feedback", label: "Analisis IA", href: "ia_feedback.html", icon: iconIa() },
                 { key: "reportes", label: "Reportes", disabled: true, icon: iconChart() }
             ]
         },
@@ -134,7 +140,90 @@
 
         document.body.insertAdjacentHTML("afterbegin", renderTopbar(meta));
         document.body.insertAdjacentHTML("afterbegin", renderSidebar(activeKey));
+        asegurarCrmDialog();
     }
+
+    function asegurarCrmDialog() {
+        if (document.getElementById("crmDialogOverlay")) return;
+
+        document.body.insertAdjacentHTML("beforeend", `
+            <div id="crmDialogOverlay" class="crm-dialog-overlay oculto" role="presentation">
+                <section class="crm-dialog" role="dialog" aria-modal="true" aria-labelledby="crmDialogTitle">
+                    <div class="crm-dialog-icon" id="crmDialogIcon">!</div>
+                    <div class="crm-dialog-content">
+                        <h3 id="crmDialogTitle">Confirmar accion</h3>
+                        <p id="crmDialogMessage">Confirma para continuar.</p>
+                    </div>
+                    <div class="crm-dialog-actions">
+                        <button id="crmDialogCancel" class="crm-dialog-btn secondary" type="button">Cancelar</button>
+                        <button id="crmDialogAccept" class="crm-dialog-btn primary" type="button">Aceptar</button>
+                    </div>
+                </section>
+            </div>
+        `);
+    }
+
+    window.crmConfirm = function ({
+        title = "Confirmar accion",
+        message = "Confirma para continuar.",
+        acceptText = "Aceptar",
+        cancelText = "Cancelar",
+        tone = "primary"
+    } = {}) {
+        asegurarCrmDialog();
+
+        return new Promise(resolve => {
+            const overlay = document.getElementById("crmDialogOverlay");
+            const titleEl = document.getElementById("crmDialogTitle");
+            const messageEl = document.getElementById("crmDialogMessage");
+            const accept = document.getElementById("crmDialogAccept");
+            const cancel = document.getElementById("crmDialogCancel");
+            const icon = document.getElementById("crmDialogIcon");
+
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            accept.textContent = acceptText;
+            cancel.textContent = cancelText;
+            cancel.classList.toggle("oculto", !cancelText);
+            icon.textContent = tone === "danger" ? "!" : "?";
+            overlay.className = `crm-dialog-overlay ${tone}`;
+            overlay.classList.remove("oculto");
+
+            const cerrar = value => {
+                overlay.classList.add("oculto");
+                accept.onclick = null;
+                cancel.onclick = null;
+                overlay.onclick = null;
+                document.onkeydown = null;
+                resolve(value);
+            };
+
+            accept.onclick = () => cerrar(true);
+            cancel.onclick = () => cerrar(false);
+            overlay.onclick = event => {
+                if (event.target === overlay) cerrar(false);
+            };
+            document.onkeydown = event => {
+                if (event.key === "Escape") cerrar(false);
+                if (event.key === "Enter") cerrar(true);
+            };
+        });
+    };
+
+    window.crmAlert = function ({
+        title = "Aviso",
+        message = "",
+        acceptText = "Entendido",
+        tone = "primary"
+    } = {}) {
+        return window.crmConfirm({
+            title,
+            message,
+            acceptText,
+            cancelText: "",
+            tone
+        });
+    };
 
     function renderSidebar(activeKey) {
         const grupos = filtrarGruposPorRol();
@@ -259,6 +348,7 @@
                 "compromisos",
                 "pdp_hoy",
                 "control_horario",
+                "ia_feedback",
                 "pagos",
                 "canales",
                 ...(compartamos ? ["clientes"] : [])
@@ -365,6 +455,10 @@
 
     function iconChart() {
         return svg('<path d="M5 19V9M12 19V5M19 19v-7"/><path d="M3 19h18"/>');
+    }
+
+    function iconIa() {
+        return svg('<path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.9 4.9 7 7"/><path d="m17 17 2.1 2.1"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m4.9 19.1 2.1-2.1"/><path d="m17 7 2.1-2.1"/><circle cx="12" cy="12" r="4"/><path d="M10.5 12h3"/><path d="M12 10.5v3"/>');
     }
 
     function iconSettings() {

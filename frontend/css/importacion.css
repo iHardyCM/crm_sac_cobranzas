@@ -353,7 +353,8 @@ select,
 }
 
 .load-final-message,
-.load-errors {
+.load-errors,
+.load-timings {
     grid-column: 1 / -1;
     border-radius: 8px;
     padding: 13px 14px;
@@ -379,6 +380,43 @@ select,
     gap: 8px;
     border: 1px solid #fecdd3;
     background: #fff1f2;
+}
+
+.load-timings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    border: 1px solid #d7e3ef;
+    background: #f8fbfe;
+}
+
+.load-timings h4 {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #415a77;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.load-timings div {
+    border: 1px solid #d7e3ef;
+    border-radius: 7px;
+    background: #ffffff;
+    padding: 8px 10px;
+}
+
+.load-timings span {
+    display: block;
+    color: #52677f;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.load-timings strong {
+    display: block;
+    margin-top: 4px;
+    color: #0f4c81;
 }
 
 .load-errors h4 {
@@ -795,6 +833,17 @@ tbody tr:hover {
     display: block;
     margin-top: 5px;
     overflow-wrap: anywhere;
+}
+
+.confirm-detail .danger-note {
+    grid-column: 1 / -1;
+    border-color: #fecaca;
+    background: #fff1f2;
+}
+
+.confirm-detail .danger-note span,
+.confirm-detail .danger-note strong {
+    color: #991b1b;
 }
 
 .confirm-warning {

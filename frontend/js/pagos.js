@@ -109,7 +109,18 @@ async function confirmarImportacion() {
         return;
     }
 
-    if (!confirm("Confirmar publicación de la importación validada?")) {
+    if (window.crmConfirm) {
+        const confirmado = await crmConfirm({
+            title: "Publicar importacion validada",
+            message: "Se publicaran los pagos validados para BI y quedaran como corte activo del negocio. Deseas continuar?",
+            acceptText: "Publicar",
+            cancelText: "Cancelar",
+            tone: "primary"
+        });
+        if (!confirmado) {
+            return;
+        }
+    } else if (!confirm("Confirmar publicación de la importación validada?")) {
         return;
     }
 

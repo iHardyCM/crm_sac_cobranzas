@@ -11,10 +11,10 @@ from app.api.routes_control_horario import router as control_horario_router
 from app.api.routes_metas import router as metas_router
 from app.api.routes_pagos import router as pagos_router
 from app.api.routes_importacion import router as importacion_router
-
+from app.api.routes_score_telefonico import router as score_telefonico_router
+from app.api.routes_ia_feedback import router as ia_feedback_router
 
 app = FastAPI(title="CRM COBRANZAS")
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,7 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(admin_supervisores_router, prefix="/admin-supervisores", tags=["Administracion Supervisores"])
 app.include_router(canales_router, prefix="/canales", tags=["Canales Alternos"])
@@ -33,9 +32,10 @@ app.include_router(compromisos_router, prefix="/compromisos", tags=["Compromisos
 app.include_router(corporativo_router, prefix="/corporativo", tags=["Corporativo"])
 app.include_router(control_horario_router, prefix="/control-horario", tags=["Control Horario"])
 app.include_router(importacion_router, prefix="/importacion", tags=["Importacion de Cartera"])
+app.include_router(ia_feedback_router, prefix="/ia-feedback", tags=["Analisis IA"])
 app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"])
 app.include_router(metas_router, prefix="/metas", tags=["Metas"])
-
+app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"])
 
 @app.get("/")
 def healthcheck():

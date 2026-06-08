@@ -406,7 +406,8 @@ function renderAccionesConfirmacionCarga(data) {
 
     const errores = data.errores_bloqueantes || [];
     const tipoCarga = document.getElementById("tipoCargaImportacion")?.value || data.tipo_carga || "";
-    const tipoPermitido = tipoCarga === "AGREGAR_ACTUALIZAR" || String(tipoCarga).toLowerCase().includes("agregar");
+    const tipoNormalizado = normalizarTipoCargaImportacion(tipoCarga);
+    const tipoPermitido = ["AGREGAR_ACTUALIZAR", "CARGA_INICIAL_MENSUAL"].includes(tipoNormalizado);
     panel.classList.remove("hidden");
     document.getElementById("resultadoConfirmacionCarga")?.classList.add("hidden");
 
@@ -424,17 +425,25 @@ function renderAccionesConfirmacionCarga(data) {
     }
     if (!tipoPermitido) {
         btn.disabled = true;
-        mensaje.innerHTML = `<div class="load-message warn">Por seguridad, por ahora solo se implementa Agregar + actualizar.</div>`;
+        mensaje.innerHTML = `<div class="load-message warn">Por seguridad, este tipo de carga aun no esta implementado.</div>`;
         return;
     }
 
     btn.disabled = false;
-    mensaje.innerHTML = `
-        <div class="load-message info">
-            Se preparan ${numero(data.impacto?.registros_a_insertar || 0)} registros para insertar y
-            ${numero(data.impacto?.registros_a_actualizar || 0)} para actualizar.
-        </div>
-    `;
+    if (tipoNormalizado === "CARGA_INICIAL_MENSUAL") {
+        mensaje.innerHTML = `
+            <div class="load-message warn">
+                Se reemplazara la cartera activa actual de esta configuracion y se insertaran ${numero(data.total_filas || 0)} filas del archivo.
+            </div>
+        `;
+    } else {
+        mensaje.innerHTML = `
+            <div class="load-message info">
+                Se preparan ${numero(data.impacto?.registros_a_insertar || 0)} registros para insertar y
+                ${numero(data.impacto?.registros_a_actualizar || 0)} para actualizar.
+            </div>
+        `;
+    }
 }
 
 function abrirConfirmacionCarga() {
@@ -466,18 +475,21 @@ function abrirConfirmacionCarga() {
     }
 
     const impacto = ultimoAnalisis.impacto || {};
+    const tipoCarga = normalizarTipoCargaImportacion(document.getElementById("tipoCargaImportacion")?.value || ultimoAnalisis.tipo_carga);
+    const esCargaInicial = tipoCarga === "CARGA_INICIAL_MENSUAL";
     detalle.innerHTML = `
         <div><span>Cartera</span><strong>${h(ultimoAnalisis.cartera || "-")}</strong></div>
         <div><span>Producto</span><strong>${h(ultimoAnalisis.producto || "-")}</strong></div>
         <div><span>Periodo</span><strong>${h(ultimoAnalisis.periodo || "-")}</strong></div>
-        <div><span>Tipo carga</span><strong>Agregar + actualizar</strong></div>
+        <div><span>Tipo carga</span><strong>${esCargaInicial ? "Reemplazar cartera activa del mes" : "Agregar + actualizar"}</strong></div>
         <div><span>Tabla destino</span><strong>${h(ultimoAnalisis.tabla_destino || "-")}</strong></div>
-        <div><span>A insertar</span><strong>${numero(impacto.registros_a_insertar)}</strong></div>
-        <div><span>A actualizar</span><strong>${numero(impacto.registros_a_actualizar)}</strong></div>
+        <div><span>A insertar</span><strong>${numero(esCargaInicial ? ultimoAnalisis.total_filas : impacto.registros_a_insertar)}</strong></div>
+        <div><span>A actualizar</span><strong>${numero(esCargaInicial ? 0 : impacto.registros_a_actualizar)}</strong></div>
         <div><span>Rechazados previos</span><strong>${numero((impacto.duplicados_archivo || 0) + (impacto.clave_incompleta || 0))}</strong></div>
         <div><span>Generadas</span><strong>${h((ultimoAnalisis.columnas_generadas || []).map(x => x.columna || x).join(", ") || "-")}</strong></div>
         <div><span>Omitidas</span><strong>${numero(ultimoAnalisis.columnas_nuevas_en_archivo?.length || 0)} columnas nuevas</strong></div>
         <div><span>Faltantes no criticas</span><strong>${numero(ultimoAnalisis.columnas_faltantes_en_archivo?.length || 0)}</strong></div>
+        ${esCargaInicial ? `<div class="danger-note"><span>Accion</span><strong>Se eliminara la tabla activa actual antes de insertar el archivo.</strong></div>` : ""}
     `;
 
     const cerrar = () => {
@@ -516,7 +528,7 @@ async function confirmarCargaImportacion() {
     const formData = new FormData();
     formData.set("id_config", ultimoAnalisis.id_config);
     formData.set("periodo", ultimoAnalisis.periodo);
-    formData.set("tipo_carga", "AGREGAR_ACTUALIZAR");
+    formData.set("tipo_carga", normalizarTipoCargaImportacion(ultimoAnalisis.tipo_carga || document.getElementById("tipoCargaImportacion")?.value));
     formData.set("usuario", usuarioActualImportacion());
     formData.set("hoja_usada", ultimoAnalisis.hoja_usada || "");
     formData.set("archivo", archivo);
@@ -536,6 +548,7 @@ async function confirmarCargaImportacion() {
         console.log("Resultado confirmar", json);
 
         analisisConfirmado = true;
+        ultimoAnalisis = null;
         renderResultadoConfirmacionCarga(json);
         await cargarLotesImportacion(false);
         toastImportacion(
@@ -544,6 +557,7 @@ async function confirmarCargaImportacion() {
         );
     } catch (error) {
         analisisConfirmado = true;
+        ultimoAnalisis = null;
         renderResultadoConfirmacionCarga({
             ok: false,
             id_lote: "-",
@@ -566,7 +580,8 @@ async function confirmarCargaImportacion() {
 }
 
 function renderResultadoConfirmacionCarga(data) {
-    document.getElementById("panelConfirmarCarga")?.classList.add("hidden");
+    const panelConfirmar = document.getElementById("panelConfirmarCarga");
+    panelConfirmar?.classList.add("hidden", "confirmacion-finalizada");
     const panel = document.getElementById("resultadoConfirmacionCarga");
     const detalle = document.getElementById("detalleConfirmacionCarga");
     panel?.classList.remove("hidden");
@@ -580,11 +595,24 @@ function renderResultadoConfirmacionCarga(data) {
         ["Insertados", numero(data.insertados)],
         ["Actualizados", numero(data.actualizados)],
         ["Rechazados", numero(data.rechazados)],
+        ["Activos reemplazados", numero(data.total_registros_reemplazados || 0)],
         ["Periodo", data.periodo || "-"],
         ["Tabla destino", data.tabla_destino || "-"],
         ["Omitidas", numero(data.columnas_omitidas?.length || 0)],
         ["Generadas", (data.columnas_generadas || []).join(", ") || "-"]
     ];
+    const tiempos = data.tiempos || data.debug?.tiempos || {};
+    const tiemposHtml = Object.keys(tiempos).length ? `
+        <div class="load-timings">
+            <h4>Tiempos del proceso</h4>
+            ${Object.entries(tiempos).map(([label, value]) => `
+                <div>
+                    <span>${h(etiquetaTiempoCarga(label))}</span>
+                    <strong>${h(formatoSegundos(value))}</strong>
+                </div>
+            `).join("")}
+        </div>
+    ` : "";
     const errores = data.errores_preview || data.motivo_rechazo_primeras_10 || [];
     const erroresHtml = errores.length ? `
         <div class="load-errors">
@@ -610,6 +638,7 @@ function renderResultadoConfirmacionCarga(data) {
             <span>Para volver a cargar, analiza nuevamente el archivo.</span>
             <button class="btn-secondary" type="button" onclick="nuevoAnalisisImportacion()">Nuevo analisis</button>
         </div>
+        ${tiemposHtml}
         ${erroresHtml}
     `;
 
@@ -619,7 +648,36 @@ function renderResultadoConfirmacionCarga(data) {
     if (mensaje) {
         mensaje.innerHTML = `<div class="load-message info">Para volver a cargar, analiza nuevamente el archivo.</div>`;
     }
+    const archivo = document.getElementById("archivoImportacion");
+    if (archivo) archivo.value = "";
+    actualizarNombreArchivoImportacion();
     panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function etiquetaTiempoCarga(label) {
+    const etiquetas = {
+        lectura_excel: "Lectura Excel",
+        clasificacion: "Clasificacion",
+        crear_lote: "Crear lote",
+        limpiar_destino: "Limpiar destino",
+        preparar_staging: "Preparar staging",
+        cargar_staging: "Cargar staging",
+        insertar_destino: "Insertar destino",
+        procesar_filas: "Procesar filas",
+        total: "Total"
+    };
+    return etiquetas[label] || label.replaceAll("_", " ");
+}
+
+function formatoSegundos(value) {
+    const numeroValor = Number(value || 0);
+    if (!Number.isFinite(numeroValor)) return "-";
+    if (numeroValor >= 60) {
+        const minutos = Math.floor(numeroValor / 60);
+        const segundos = Math.round(numeroValor % 60);
+        return `${minutos}m ${segundos}s`;
+    }
+    return `${numeroValor.toFixed(2)}s`;
 }
 
 function claseResultadoCarga(estado) {
@@ -834,6 +892,17 @@ function usuarioActualImportacion() {
         || localStorage.getItem("agente")
         || localStorage.getItem("usuario")
         || "SIN_USUARIO";
+}
+
+function normalizarTipoCargaImportacion(value) {
+    const texto = String(value || "").trim().toUpperCase().replace(/\s+/g, "_");
+    if (texto.includes("CARGA_INICIAL") || texto.includes("REEMPLAZAR_CARTERA_ACTIVA")) {
+        return "CARGA_INICIAL_MENSUAL";
+    }
+    if (texto.includes("AGREGAR") && texto.includes("ACTUALIZAR")) {
+        return "AGREGAR_ACTUALIZAR";
+    }
+    return texto;
 }
 
 function confirmarCierreHistorico(modo, data) {

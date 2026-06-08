@@ -116,6 +116,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "IA",
+                titulo: "Analisis IA",
+                descripcion: "Feedback operativo de llamadas para seguimiento del supervisor.",
+                ruta: "ia_feedback.html",
+                destacado: false
+            },
+            {
                 sigla: "PA",
                 titulo: "Pagos del negocio",
                 descripcion: "Validacion y publicacion de pagos normalizados para BI.",
@@ -188,6 +195,13 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Gestion y recupero",
                 descripcion: "Seguimiento operativo de gestiones, PDP y recupero por corte horario.",
                 ruta: "control_horario.html",
+                destacado: false
+            },
+            {
+                sigla: "IA",
+                titulo: "Analisis IA",
+                descripcion: "Carga audios de llamadas y genera feedback operativo para supervision.",
+                ruta: "ia_feedback.html",
                 destacado: false
             },
             {

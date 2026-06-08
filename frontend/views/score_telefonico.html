@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Score Telefonico - Generador de Base</title>
+    <link rel="stylesheet" href="../css/score_telefonico.css?v=layout-base-20260603" />
+</head>
+<body>
+    <main class="score-page">
+        <header class="score-header">
+            <div class="score-title">
+                <div class="score-logo">TEL</div>
+                <div>
+                    <span class="eyebrow">Generador operativo</span>
+                    <h1>Score Telefónico - Generador de Base</h1>
+                    <p>Priorización inteligente de clientes y teléfonos</p>
+                </div>
+            </div>
+            <div class="score-actions">
+                <span id="ultimaActualizacionScore" class="last-update">Última actualización: -</span>
+                <button class="btn secondary" type="button" data-action="limpiar">Limpiar filtros</button>
+                <button class="btn primary" type="button" data-action="exportar">Exportar</button>
+            </div>
+        </header>
+
+        <section class="score-layout">
+            <aside class="filter-panel">
+                <div class="filter-head">
+                    <h3>Filtros de base</h3>
+                    <p>Segmenta clientes y teléfonos.</p>
+                </div>
+
+                <div class="score-static-top">
+                    <label>
+                        <span>CARTERA / ID CARTERA</span>
+                        <select id="filtroCarteraScore"><option value="">Cargando carteras...</option></select>
+                    </label>
+                </div>
+
+                <div class="score-segment-nav" id="scoreSegmentNav"></div>
+                <div class="score-segment-body" id="scoreSegmentBody"></div>
+                <button class="btn secondary save-view" type="button" data-action="guardar">Guardar vista</button>
+                <div class="filter-note">
+                    <strong>Base sugerida para gestión del día</strong>
+                    <span>Los resultados consideran los criterios seleccionados en los filtros y el modelo de scoring actual.</span>
+                </div>
+            </aside>
+
+            <section class="score-main">
+                <div class="kpi-row">
+                    <article class="kpi-card blue">
+                        <span class="kpi-icon">CLI</span>
+                        <small>Clientes seleccionados</small>
+                        <strong id="kpiClientesScore">0</strong>
+                        <em id="kpiClientesSubScore">Base filtrada actual</em>
+                    </article>
+                    <article class="kpi-card green">
+                        <span class="kpi-icon">TEL</span>
+                        <small>Teléfonos seleccionados</small>
+                        <strong id="kpiTelefonosScore">0</strong>
+                        <em>Registros priorizados</em>
+                    </article>
+                    <article class="kpi-card green">
+                        <span class="kpi-icon">WA</span>
+                        <small>% WhatsApp válido</small>
+                        <strong id="kpiWhatsappScore">0.0%</strong>
+                        <em id="kpiWhatsappSubScore">0 de 0</em>
+                    </article>
+                    <article class="kpi-card amber">
+                        <span class="kpi-icon">TIM</span>
+                        <small>% Timbrado 3-4</small>
+                        <strong id="kpiTimbradoScore">0.0%</strong>
+                        <em id="kpiTimbradoSubScore">0 de 0</em>
+                    </article>
+                    <article class="kpi-card gold">
+                        <span class="kpi-icon">S/</span>
+                        <small>Capital total</small>
+                        <strong id="kpiCapitalScore">S/ 0.00</strong>
+                        <em>Capital seleccionado</em>
+                    </article>
+                    <article class="criteria-card">
+                        <h2>Criterios de selección</h2>
+                        <ul>
+                            <li>Mayor score = mayor prioridad</li>
+                            <li>Penaliza teléfonos fallados</li>
+                            <li>Prioriza WhatsApp + Timbrado</li>
+                            <li>Excluye equivocados repetidos</li>
+                        </ul>
+                    </article>
+                </div>
+
+                <section class="results-card">
+                    <div class="results-toolbar">
+                    <div class="results-heading">
+                        <h2 id="tituloResultadosScore">Resultados (0 teléfonos)</h2>
+                        <p id="subtituloResultadosScore">Mostrando teléfonos priorizados para gestión.</p>
+                        <div id="activeFiltersScore" class="active-filters-bar"></div>
+                    </div>
+                        <div class="toolbar-actions">
+                            <div class="search-box">
+                                <input id="busquedaScoreInput" type="search" placeholder="Buscar por DNI, IDCliente o Teléfono..." />
+                                <button type="button" data-action="buscar">Buscar</button>
+                            </div>
+                            <button class="btn secondary" type="button" data-action="columnas">Columnas</button>
+                            <button class="btn secondary" type="button" data-action="filtrar">Filtrar tabla</button>
+                            <span class="sort-text">Ordenado por: <strong>SCORE_FINAL</strong></span>
+                            <button class="icon-btn" type="button" data-action="acciones">⋮</button>
+                        </div>
+                    </div>
+                    <div id="chipCarteraActivaScore" class="active-score-chip">Cartera activa: -</div>
+                    <div class="table-shell">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>DNI</th>
+                                    <th>IDCLIENTE</th>
+                                    <th>TELÉFONO</th>
+                                    <th>CAPITAL</th>
+                                    <th>SCORE_FINAL</th>
+                                    <th>ETIQUETA_SCORE</th>
+                                    <th>TIMBRADO</th>
+                                    <th>WHATSAPP</th>
+                                    <th>OSIPTEL</th>
+                                    <th>INTENTOS_RECIENTES</th>
+                                    <th>MEJOR_RESULTADO</th>
+                                    <th>ORDEN</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scoreTableBody"></tbody>
+                        </table>
+                    </div>
+
+                    <footer class="table-footer">
+                        <span id="resumenPaginacionScore">Mostrando 0 registros</span>
+                        <label>Registros por página
+                            <select id="pageSizeScore">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                        <nav class="pagination">
+                            <button id="prevScorePage" type="button">‹</button>
+                            <button id="currentScorePage" type="button" class="active">1</button>
+                            <span id="totalScorePages">/ 1</span>
+                            <button id="nextScorePage" type="button">›</button>
+                        </nav>
+                    </footer>
+                </section>
+
+                <footer class="method-footer">
+                    <div>
+                        <strong>Base sugerida para gestión del día</strong>
+                        <span>Los resultados consideran los criterios seleccionados en los filtros y el modelo de scoring actual.</span>
+                    </div>
+                    <button type="button" data-action="metodologia">Ver metodología del score</button>
+                </footer>
+            </section>
+        </section>
+    </main>
+
+    <div id="scoreToast" class="toast"></div>
+    <script src="../js/session.js"></script>
+    <script src="../js/score_telefonico.js?v=catalogos-reales-20260605-03"></script>
+</body>
+</html>

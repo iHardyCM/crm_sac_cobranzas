@@ -27,6 +27,6 @@ connection_string = (
 
 engine_siscob = create_engine(
     f"mssql+pyodbc:///?odbc_connect={quote_plus(connection_string)}",
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    fast_executemany=True,
 )
-

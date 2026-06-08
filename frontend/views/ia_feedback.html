@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biznescob - Analisis IA</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260604a">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260605a">
+</head>
+<body>
+    <main class="ia-page">
+        <section class="ia-hero">
+            <div>
+                <span class="eyebrow">Asistente de supervision</span>
+                <h2>Analisis IA para llamadas</h2>
+                <p>Sube audios de gestion para obtener resumen, alertas y recomendaciones de feedback operativo.</p>
+            </div>
+            <div class="ia-hero-badge">
+                <strong id="modoIaTitulo">Calidad operativa</strong>
+                <span id="modoIaDetalle">Analisis, trazabilidad y feedback</span>
+            </div>
+        </section>
+
+        <section class="ia-kpis">
+            <article class="kpi-card blue">
+                <span>Audios analizados</span>
+                <strong id="kpiAnalizados">0</strong>
+            </article>
+            <article class="kpi-card amber">
+                <span>Pendientes</span>
+                <strong id="kpiPendientes">0</strong>
+            </article>
+            <article class="kpi-card red">
+                <span>Con puntos criticos</span>
+                <strong id="kpiCriticos">0</strong>
+            </article>
+            <article class="kpi-card purple">
+                <span>Oportunidad alta</span>
+                <strong id="kpiAlta">0</strong>
+            </article>
+        </section>
+
+        <section class="ia-grid">
+            <article class="ia-panel upload-panel">
+                <div class="panel-head">
+                    <div>
+                        <h3>Nueva llamada</h3>
+                        <p>Carga un audio y metadata basica para generar feedback.</p>
+                    </div>
+                    <span id="estadoProceso" class="status-badge badge-pendiente">PENDIENTE</span>
+                </div>
+
+                <form id="formIaFeedback" class="ia-form">
+                    <div class="field file-field">
+                        <label for="audioIa">Audio de llamada *</label>
+                        <div class="file-control">
+                            <label for="audioIa">Seleccionar audio</label>
+                            <span id="nombreAudioIa">Ningun archivo seleccionado</span>
+                            <input id="audioIa" name="archivo" type="file" accept=".mp3,.wav,.m4a,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg" required>
+                        </div>
+                        <small id="ayudaAudioIa">Formatos permitidos: MP3, WAV, M4A, OGG. Maximo 25 MB.</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="carteraIa">Cartera</label>
+                            <select id="carteraIa">
+                                <option value="">Cargando carteras...</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="fechaIa">Fecha llamada</label>
+                            <input id="fechaIa" type="datetime-local">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="dniIa">DNI cliente</label>
+                            <input id="dniIa" type="text" placeholder="Opcional">
+                        </div>
+                        <div class="field">
+                            <label for="telefonoIa">Telefono</label>
+                            <input id="telefonoIa" type="text" placeholder="Opcional">
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="comentarioIa">Comentario del supervisor</label>
+                        <textarea id="comentarioIa" rows="3" placeholder="Ejemplo: llamada con cliente que solicita descuento; revisar si el asesor aplico negociacion escalonada y cerro las 3C."></textarea>
+                    </div>
+
+                    <button id="btnAnalizarIa" class="btn-primary" type="submit">Analizar llamada con IA</button>
+                </form>
+                <div id="mensajeIa" class="ia-message oculto"></div>
+            </article>
+
+            <article class="ia-panel result-panel">
+                <div class="panel-head">
+                    <div>
+                        <h3>Resultado del analisis</h3>
+                        <p>Resumen ejecutivo para feedback del supervisor.</p>
+                    </div>
+                    <span id="resultadoNivelIa" class="level-badge">-</span>
+                </div>
+
+                <div id="resultadoVacioIa" class="empty-state">
+                    Selecciona un audio o abre un analisis del historial.
+                </div>
+
+                <div id="resultadoContenidoIa" class="resultado-contenido oculto">
+                    <section class="trace-box">
+                        <h4>Trazabilidad</h4>
+                        <div class="mini-grid trace-grid">
+                            <div>
+                                <span>Audio</span>
+                                <strong id="trazaAudioIa">-</strong>
+                            </div>
+                            <div>
+                                <span>Supervisor</span>
+                                <strong id="trazaSupervisorIa">-</strong>
+                            </div>
+                            <div>
+                                <span>Revision</span>
+                                <strong id="trazaRevisionIa">PENDIENTE</strong>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h4>Resumen</h4>
+                        <p id="resumenIa">-</p>
+                    </section>
+
+                    <div class="mini-grid">
+                        <div>
+                            <span>Tipo contacto</span>
+                            <strong id="tipoContactoIa">-</strong>
+                        </div>
+                        <div>
+                            <span>Resultado gestion</span>
+                            <strong id="resultadoGestionIa">-</strong>
+                        </div>
+                        <div>
+                            <span>Objecion principal</span>
+                            <strong id="objecionIa">-</strong>
+                        </div>
+                        <div>
+                            <span>Calidad IA</span>
+                            <strong id="scoreCalidadIa">-</strong>
+                        </div>
+                    </div>
+
+                    <section>
+                        <div class="section-title-row">
+                            <h4>Resumen por segmento</h4>
+                            <button class="btn-light btn-small" type="button" onclick="toggleDetalleCalidadIa()">Ver detalle de evaluacion</button>
+                        </div>
+                        <div id="resumenSegmentosIa" class="segment-summary"></div>
+                        <div id="detalleCalidadIa" class="table-wrap quality-wrap oculto">
+                            <table class="quality-table">
+                                <thead>
+                                    <tr>
+                                        <th>Segmento</th>
+                                        <th>Item</th>
+                                        <th>Peso</th>
+                                        <th>Nota</th>
+                                        <th>Resultado</th>
+                                        <th>Hallazgo</th>
+                                        <th>Evidencia</th>
+                                        <th>Recomendacion</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="evaluacionCalidadIa"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h4>Fortalezas del agente</h4>
+                        <ul id="fortalezasIa" class="ia-list"></ul>
+                    </section>
+
+                    <section>
+                        <h4>Puntos criticos</h4>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Segmento</th>
+                                        <th>Categoria</th>
+                                        <th>Hallazgo</th>
+                                        <th>Evidencia</th>
+                                        <th>Impacto</th>
+                                        <th>Recomendacion</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="puntosCriticosIa"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="feedback-box">
+                        <h4>Recomendacion para feedback</h4>
+                        <p id="recomendacionIa">-</p>
+                    </section>
+
+                    <section class="script-box">
+                        <h4>Guion sugerido</h4>
+                        <p id="guionIa">-</p>
+                    </section>
+
+                    <section>
+                        <h4>Alertas</h4>
+                        <ul id="alertasIa" class="ia-list alert-list"></ul>
+                    </section>
+
+                    <section class="review-box">
+                        <div>
+                            <h4>Cierre del supervisor</h4>
+                            <p>Asocia el agente solo si ya fue identificado y guarda el feedback que se bajara al equipo.</p>
+                        </div>
+                        <form id="formRevisionIa" class="review-form">
+                            <input id="feedbackIdActualIa" type="hidden">
+                            <div class="form-row">
+                                <div class="field">
+                                    <label for="agenteRevisionIa">Agente identificado</label>
+                                    <input id="agenteRevisionIa" type="text" placeholder="Opcional: DNI - Nombre del agente">
+                                </div>
+                                <div class="field">
+                                    <label for="estadoRevisionIa">Estado revision</label>
+                                    <select id="estadoRevisionIa">
+                                        <option value="REVISADO">Revisado</option>
+                                        <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
+                                        <option value="CERRADO">Cerrado</option>
+                                        <option value="PENDIENTE">Pendiente</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label for="comentarioFeedbackIa">Feedback final</label>
+                                <textarea id="comentarioFeedbackIa" rows="3" placeholder="Comentario final del supervisor para el agente."></textarea>
+                            </div>
+                            <button id="btnGuardarRevisionIa" class="btn-primary" type="submit">Guardar revision</button>
+                        </form>
+                    </section>
+                </div>
+            </article>
+        </section>
+
+        <section class="ia-panel">
+            <div class="history-head">
+                <div>
+                    <h3>Historial de analisis</h3>
+                    <p>Ultimos audios cargados para feedback operativo.</p>
+                </div>
+                <button class="btn-light" type="button" onclick="cargarHistorialIa()">Actualizar</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Audio</th>
+                            <th>Agente</th>
+                            <th>Cartera</th>
+                            <th>Resultado</th>
+                            <th>Puntos criticos</th>
+                            <th>Calidad</th>
+                            <th>Revision</th>
+                            <th>Estado</th>
+                            <th>Accion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historialIaBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="panelPromptIa" class="ia-panel prompt-panel oculto">
+            <div class="history-head">
+                <div>
+                    <h3>Prompt IA por cartera</h3>
+                    <p>Configuracion por cartera con fallback al prompt general. Solo perfiles gerenciales pueden modificarla.</p>
+                </div>
+                <button class="btn-light" type="button" onclick="abrirPromptIa()">Configurar prompt</button>
+            </div>
+        </section>
+
+        <div id="modalPromptIa" class="modal-overlay oculto">
+            <div class="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="tituloModalPromptIa">
+                <div class="modal-head">
+                    <div>
+                        <h3 id="tituloModalPromptIa">Configuracion de prompt IA</h3>
+                        <p>Selecciona una cartera y ajusta el prompt que usara la IA en los proximos analisis.</p>
+                    </div>
+                    <button class="modal-close" type="button" onclick="cerrarPromptIa()">X</button>
+                </div>
+                <div class="prompt-sections">
+                    <button class="prompt-tab active" type="button" data-section="promptContextIa" onclick="mostrarSeccionPromptIa('promptContextIa')">Cartera</button>
+                    <button class="prompt-tab" type="button" data-section="promptEditorIa" onclick="mostrarSeccionPromptIa('promptEditorIa')">Prompt actual</button>
+                    <button class="prompt-tab" type="button" data-section="promptGuideIa" onclick="mostrarSeccionPromptIa('promptGuideIa')">Guia</button>
+                </div>
+                <section id="promptContextIa" class="prompt-section">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="promptCarteraIa">Cartera</label>
+                            <select id="promptCarteraIa" onchange="cargarPromptIa()">
+                                <option value="">Prompt general</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Origen actual</label>
+                            <div id="promptOrigenIa" class="prompt-origin">Sistema</div>
+                        </div>
+                    </div>
+                    <p class="prompt-note">
+                        Si una cartera no tiene prompt propio, usara el prompt general. Si tampoco existe prompt general, usara el prompt base del sistema.
+                    </p>
+                </section>
+                <section id="promptEditorIa" class="prompt-section oculto">
+                    <div class="field">
+                        <label for="promptBaseIa">Prompt actual</label>
+                        <textarea id="promptBaseIa" rows="14"></textarea>
+                        <small id="promptMetaIa">Sin prompt personalizado.</small>
+                    </div>
+                    <button id="btnGuardarPromptIa" class="btn-primary" type="button" onclick="guardarPromptIa()">Guardar prompt</button>
+                </section>
+                <section id="promptGuideIa" class="prompt-section oculto">
+                    <div class="prompt-guide-grid">
+                        <article><strong>Negociacion</strong><span>Escalonada: deuda total o monto alto, capital y descuento/campaña como ultima alternativa.</span></article>
+                        <article><strong>Cierre</strong><span>Validar las 3C: cuanto paga, donde paga y como pagara.</span></article>
+                        <article><strong>Filosofia Biznescob</strong><span>Sin insultos, sarcasmos, presion indebida o trato despectivo.</span></article>
+                        <article><strong>Salida JSON</strong><span>Mantener evaluacion_calidad, puntos_criticos, fortalezas, alertas y recomendacion.</span></article>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/app_layout.js?v=20260604a"></script>
+    <script src="../js/ia_feedback.js?v=20260608a"></script>
+</body>
+</html>
