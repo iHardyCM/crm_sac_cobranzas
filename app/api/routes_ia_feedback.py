@@ -15,6 +15,7 @@ from app.services.ia_audio_service import (
     listar_feedback,
     obtener_configuracion_audio,
     obtener_feedback,
+    obtener_reporteria_calidad,
     registrar_audio_feedback,
 )
 
@@ -170,6 +171,34 @@ def listar_ia_feedback(
         return {"data": listar_feedback(limit=limit, supervisor=supervisor_filtro)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error listando analisis IA: {exc}")
+
+
+@router.get("/reporteria")
+def reporteria_ia_feedback(
+    limit: int = Query(default=300, ge=1, le=1000),
+    supervisor: str | None = Query(default=None),
+    perfil: str | None = Query(default=None),
+):
+    try:
+        if perfil_puede_editar_prompt(perfil):
+            supervisor_filtro = None
+        else:
+            if not supervisor:
+                return {
+                    "total_audios": 0,
+                    "score_promedio": None,
+                    "items_nota_cero": 0,
+                    "segmentos": [],
+                    "brechas": [],
+                    "carteras": [],
+                    "agentes": [],
+                    "semanas": [],
+                    "detalle": [],
+                }
+            supervisor_filtro = supervisor
+        return obtener_reporteria_calidad(limit=limit, supervisor=supervisor_filtro)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo reporteria IA: {exc}")
 
 
 @router.get("/{id_feedback}")

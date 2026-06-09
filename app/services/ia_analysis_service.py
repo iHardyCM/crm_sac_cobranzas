@@ -163,6 +163,10 @@ Evalua con esta matriz ponderada:
   - 5.3 Diccion: 3 puntos.
   - 5.4 Manejo de la llamada: 5 puntos. Penaliza insultos, sarcasmos, presion indebida,
     trato despectivo, ironias o cualquier frase que deteriore la experiencia del cliente.
+    Si el asesor usa insultos, amenazas o frases fuera de lugar como "debes ir presa",
+    "te vas a ir a la carcel", "conchuda" u otras expresiones ofensivas, este item debe
+    recibir nota 0, el nivel_oportunidad_mejora debe ser "ALTA" y debe agregarse una
+    alerta critica visible.
 
 Reglas:
 - Basa cada hallazgo en algo observable de la transcripcion.
@@ -176,6 +180,8 @@ Reglas:
 - La recomendacion debe ser concreta, entrenable y aplicable en la siguiente llamada.
 - Incluye maximo 4 fortalezas, maximo 4 puntos criticos y maximo 3 alertas.
 - El campo evidencia debe ser una referencia breve a lo ocurrido, no una cita extensa.
+- No toleres ni suavices insultos, amenazas de carcel, agresiones verbales, sarcasmos o
+  trato humillante del asesor. Deben quedar marcados como punto critico y alerta.
 
 Segmentos permitidos para puntos criticos:
 - Inicio de llamada

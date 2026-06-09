@@ -5,43 +5,95 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Analisis IA</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260604a">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260605a">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260609d">
 </head>
 <body>
     <main class="ia-page">
+        <aside class="ia-sidebar oculto">
+            <div class="ia-sidebar-logo">IA</div>
+            <nav class="ia-sidebar-nav" aria-label="Navegacion de calidad IA">
+                <button class="active" type="button" data-view="reporte" onclick="toggleReporteriaIa()">Resumen</button>
+                <button type="button" data-view="evaluaciones" onclick="toggleHistorialIa()">Evaluaciones</button>
+                <button type="button" data-view="agentes" onclick="toggleReporteriaIa()">Agentes</button>
+                <button type="button" data-view="carteras" onclick="toggleReporteriaIa()">Carteras</button>
+                <button type="button" data-view="alertas" onclick="toggleReporteriaIa()">Alertas</button>
+                <button type="button" data-view="coaching" onclick="toggleReporteriaIa()">Coaching</button>
+            </nav>
+            <div class="ia-sidebar-user">
+                <strong id="usuarioSidebarIa">Supervisor</strong>
+                <span id="perfilSidebarIa">Calidad operativa</span>
+            </div>
+        </aside>
+
+        <section class="ia-workspace">
         <section class="ia-hero">
             <div>
-                <span class="eyebrow">Asistente de supervision</span>
-                <h2>Analisis IA para llamadas</h2>
-                <p>Sube audios de gestion para obtener resumen, alertas y recomendaciones de feedback operativo.</p>
+                <h2>Centro de Calidad IA</h2>
+                <p>Feedback y reportería de calidad para priorizar coaching, cartera y alertas operativas.</p>
             </div>
-            <div class="ia-hero-badge">
-                <strong id="modoIaTitulo">Calidad operativa</strong>
-                <span id="modoIaDetalle">Analisis, trazabilidad y feedback</span>
+            <div class="ia-hero-actions">
+                <div class="last-update">
+                    <span>Ultima actualizacion</span>
+                    <strong id="ultimaActualizacionIa">-</strong>
+                </div>
+                <div class="ia-hero-badge">
+                    <strong id="modoIaTitulo">Calidad operativa</strong>
+                    <span id="modoIaDetalle">Analisis, trazabilidad y feedback</span>
+                </div>
+                <button class="btn-light" type="button" onclick="toggleHistorialIa()">Evaluaciones</button>
+                <button class="btn-light" type="button" onclick="exportarReporteIa()">Exportar reporte</button>
+                <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluacion</button>
             </div>
         </section>
 
-        <section class="ia-kpis">
-            <article class="kpi-card blue">
-                <span>Audios analizados</span>
-                <strong id="kpiAnalizados">0</strong>
-            </article>
-            <article class="kpi-card amber">
-                <span>Pendientes</span>
-                <strong id="kpiPendientes">0</strong>
-            </article>
-            <article class="kpi-card red">
-                <span>Con puntos criticos</span>
-                <strong id="kpiCriticos">0</strong>
-            </article>
-            <article class="kpi-card purple">
-                <span>Oportunidad alta</span>
-                <strong id="kpiAlta">0</strong>
-            </article>
+        <section id="filtrosReporteIa" class="report-filters">
+            <div class="field">
+                <label for="filtroFechaIa">Fecha de evaluacion</label>
+                <input id="filtroFechaIa" type="text" placeholder="dd/mm/aaaa - dd/mm/aaaa">
+            </div>
+            <div class="field">
+                <label for="filtroCarteraIa">Cartera</label>
+                <select id="filtroCarteraIa">
+                    <option value="">Todas</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroSupervisorIa">Supervisor</label>
+                <select id="filtroSupervisorIa">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroAgenteIa">Agente</label>
+                <input id="filtroAgenteIa" type="text" placeholder="Buscar agente">
+            </div>
+            <div class="field">
+                <label for="filtroRiesgoIa">Nivel de riesgo</label>
+                <select id="filtroRiesgoIa">
+                    <option value="">Todos</option>
+                    <option>Alto</option>
+                    <option>Medio</option>
+                    <option>Bajo</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroResultadoIa">Resultado IA</label>
+                <select id="filtroResultadoIa">
+                    <option value="">Todos</option>
+                    <option>Excelente</option>
+                    <option>Aceptable</option>
+                    <option>Con observacion</option>
+                    <option>Deficiente</option>
+                </select>
+            </div>
+            <div class="filter-actions">
+                <button class="btn-light" type="button" onclick="limpiarFiltrosReporteIa()">Limpiar</button>
+                <button class="btn-primary btn-action" type="button" onclick="cargarReporteriaIa()">Actualizar</button>
+            </div>
         </section>
 
         <section class="ia-grid">
-            <article class="ia-panel upload-panel">
+            <article id="panelCargaIa" class="ia-panel upload-panel">
                 <div class="panel-head">
                     <div>
                         <h3>Nueva llamada</h3>
@@ -95,13 +147,18 @@
                 <div id="mensajeIa" class="ia-message oculto"></div>
             </article>
 
-            <article class="ia-panel result-panel">
+            <article id="panelResultadoIa" class="ia-panel result-panel">
                 <div class="panel-head">
                     <div>
                         <h3>Resultado del analisis</h3>
                         <p>Resumen ejecutivo para feedback del supervisor.</p>
                     </div>
-                    <span id="resultadoNivelIa" class="level-badge">-</span>
+                    <div class="result-actions">
+                        <span id="resultadoNivelIa" class="level-badge">-</span>
+                        <button id="btnNuevaLlamadaIa" class="btn-light btn-small oculto" type="button" onclick="nuevaLlamadaIa()">Nueva llamada</button>
+                        <button class="btn-light btn-small" type="button" onclick="toggleHistorialIa()">Historial</button>
+                        <button class="btn-light btn-small" type="button" onclick="toggleReporteriaIa()">Reporteria</button>
+                    </div>
                 </div>
 
                 <div id="resultadoVacioIa" class="empty-state">
@@ -248,7 +305,7 @@
             </article>
         </section>
 
-        <section class="ia-panel">
+        <section id="historialPanelIa" class="ia-panel">
             <div class="history-head">
                 <div>
                     <h3>Historial de analisis</h3>
@@ -275,6 +332,191 @@
                     <tbody id="historialIaBody"></tbody>
                 </table>
             </div>
+        </section>
+
+        <section id="reporteriaPanelIa" class="report-view oculto">
+            <div class="report-head">
+                <div>
+                    <h3>Resumen ejecutivo de calidad</h3>
+                    <p>Indicadores para decidir donde reforzar coaching por cartera, agente, segmento e item.</p>
+                </div>
+                <div class="result-actions">
+                    <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluacion</button>
+                    <button id="btnVolverResultadoIa" class="btn-light oculto" type="button" onclick="volverResultadoIa()">Volver al resultado</button>
+                    <button class="btn-light" type="button" onclick="toggleHistorialIa()">Historial</button>
+                    <button class="btn-light" type="button" onclick="cargarReporteriaIa()">Actualizar</button>
+                </div>
+            </div>
+            <div class="report-grid">
+                <article class="metric-card blue">
+                    <span>Evaluaciones realizadas</span>
+                    <strong id="repTotalIa">0</strong>
+                    <small>Audios evaluados por IA</small>
+                </article>
+                <article class="metric-card green">
+                    <span>Score promedio IA</span>
+                    <strong id="repPromedioIa">-</strong>
+                    <small>Promedio de calidad</small>
+                </article>
+                <article class="metric-card amber">
+                    <span>% llamadas observadas</span>
+                    <strong id="repObservadasIa">-</strong>
+                    <small>Con alertas o brechas</small>
+                </article>
+                <article class="metric-card red">
+                    <span>Alertas criticas</span>
+                    <strong id="repCerosIa">0</strong>
+                    <small>Items con nota cero</small>
+                </article>
+                <article class="metric-card purple">
+                    <span>Agentes evaluados</span>
+                    <strong id="repAgentesEvaluadosIa">0</strong>
+                    <small>Con al menos una evaluacion</small>
+                </article>
+                <article class="metric-card cyan">
+                    <span>Pendiente coaching</span>
+                    <strong id="repPendienteCoachingIa">0</strong>
+                    <small>Priorizados por riesgo</small>
+                </article>
+            </div>
+
+            <section class="report-card stats-cube-card">
+                <div class="section-title-row">
+                    <div>
+                        <h4>Evaluaciones por cartera y semana</h4>
+                        <p>Volumen del periodo, promedio de calidad y desglose semanal.</p>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table id="repCarteraSemanaIa" class="stats-table"></table>
+                </div>
+            </section>
+
+            <div class="stat-charts">
+                <section class="report-card">
+                    <h4>Precision por cartera</h4>
+                    <div id="repPrecisionCarteraIa" class="stat-bars"></div>
+                </section>
+                <section class="report-card">
+                    <h4>Evolucion semanal del score</h4>
+                    <div id="repTendenciaSemanalIa" class="trend-lines"></div>
+                </section>
+                <section class="report-card pareto-card">
+                    <h4>Pareto de oportunidades</h4>
+                    <div id="repParetoIa" class="pareto-bars"></div>
+                </section>
+            </div>
+
+            <div class="report-dashboard">
+                <section class="report-card quality-distribution">
+                    <h4>Distribucion de calidad</h4>
+                    <div class="quality-ring">
+                        <div>
+                            <strong id="repTotalCentroIa">0</strong>
+                            <span>Evaluaciones</span>
+                        </div>
+                    </div>
+                    <div id="repDistribucionIa" class="quality-legend"></div>
+                    <p id="repInsightIa" class="report-insight">Sin datos suficientes para generar insight.</p>
+                </section>
+
+                <section class="report-card wide-card">
+                    <h4>Alertas notorias detectadas por IA</h4>
+                    <div class="table-wrap compact-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Alerta</th>
+                                    <th>Cantidad</th>
+                                    <th>Severidad</th>
+                                    <th>Accion sugerida</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repAlertasTablaIa"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="report-card risk-panel">
+                    <h4>Riesgo operativo IA</h4>
+                    <div class="risk-gauge">
+                        <span id="repRiesgoIa">MEDIO</span>
+                        <small>Indice de riesgo</small>
+                    </div>
+                    <div class="risk-list">
+                        <p><span>Cartera mas sensible</span><strong id="repCarteraSensibleIa">-</strong></p>
+                        <p><span>Agente con mayor reincidencia</span><strong id="repAgenteRiesgoIa">-</strong></p>
+                        <p><span>Falla mas repetida</span><strong id="repFallaRepetidaIa">-</strong></p>
+                    </div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Top agentes destacados</h4>
+                    <div id="repTopAgentesIa" class="mini-table"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Agentes priorizados para acompanamiento</h4>
+                    <div id="repAgentesPrioridadIa" class="mini-table"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Principales reincidencias</h4>
+                    <div id="repReincidenciasIa" class="mini-table"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Score promedio por cartera</h4>
+                    <div id="repCarterasIa" class="report-bars"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Comparativo por cartera</h4>
+                    <div id="repComparativoCarterasIa" class="mini-table"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Evolucion del score IA</h4>
+                    <div id="repSemanasIa" class="week-trend"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Brechas por segmento</h4>
+                    <div id="repSegmentosIa" class="report-bars"></div>
+                </section>
+
+                <section class="report-card">
+                    <h4>Principales items a corregir</h4>
+                    <div id="repBrechasIa" class="report-bars"></div>
+                </section>
+            </div>
+            <section class="report-card report-detail-card">
+                <div class="section-title-row">
+                    <div>
+                        <h4>Detalle de evaluaciones</h4>
+                        <p id="repConteoDetalleIa">Mostrando 0 evaluaciones</p>
+                    </div>
+                    <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar vista</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="report-detail-table">
+                        <thead>
+                            <tr>
+                                <th>ID llamada</th>
+                                <th>Audio</th>
+                                <th>Agente</th>
+                                <th>Supervisor</th>
+                                <th>Cartera</th>
+                                <th>Notas por segmento</th>
+                                <th>Score final</th>
+                                <th>Observacion supervisor</th>
+                                <th>Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="repDetalleBodyIa"></tbody>
+                    </table>
+                </div>
+            </section>
         </section>
 
         <section id="panelPromptIa" class="ia-panel prompt-panel oculto">
@@ -336,10 +578,11 @@
                 </section>
             </div>
         </div>
+        </section>
     </main>
 
     <script src="../js/session.js"></script>
     <script src="../js/app_layout.js?v=20260604a"></script>
-    <script src="../js/ia_feedback.js?v=20260608a"></script>
+    <script src="../js/ia_feedback.js?v=20260609d"></script>
 </body>
 </html>

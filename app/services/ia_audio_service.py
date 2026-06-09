@@ -232,6 +232,176 @@ def listar_feedback(limit: int = 100, supervisor: Optional[str] = None) -> List[
     return [preparar_resumen(dict(row)) for row in rows]
 
 
+def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = None) -> Dict:
+    ensure_tabla_feedback()
+    filtros = ["estado = 'FINALIZADO'"]
+    params = {"limit": limit}
+    if limpiar_texto(supervisor):
+        filtros.append("LTRIM(RTRIM(ISNULL(supervisor, ''))) = :supervisor")
+        params["supervisor"] = limpiar_texto(supervisor)
+
+    query = text("""
+        SELECT TOP (:limit)
+            id_feedback, archivo_nombre, cartera, supervisor, agente, score_calidad,
+            evaluacion_calidad, fecha_creacion, fecha_llamada, comentario_supervisor,
+            comentario_feedback, resultado_gestion, nivel_oportunidad_mejora,
+            puntos_criticos, estado_revision
+        FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
+        WHERE {where_sql}
+        ORDER BY fecha_creacion DESC, id_feedback DESC
+    """.format(where_sql=" AND ".join(filtros)))
+
+    with engine_siscob.connect() as conn:
+        rows = conn.execute(query, params).mappings().all()
+
+    total = len(rows)
+    scores = [float(row.get("score_calidad") or 0) for row in rows if row.get("score_calidad") is not None]
+    segmentos = {}
+    items = {}
+    carteras = {}
+    agentes = {}
+    semanas = {}
+    detalle = []
+    total_ceros = 0
+
+    for row in rows:
+        score = float(row.get("score_calidad") or 0)
+        cartera = str(row.get("cartera") or "Sin cartera")
+        agente = str(row.get("agente") or "Sin agente asociado")
+        supervisor_row = str(row.get("supervisor") or "Sin supervisor")
+        semana = clave_semana(row.get("fecha_creacion"))
+        acumular_score(carteras, cartera, "cartera", score)
+        acumular_score(agentes, agente, "agente", score)
+        acumular_score(semanas, semana, "semana", score)
+        evaluacion = cargar_json_lista(row.get("evaluacion_calidad"))
+        notas_segmento = resumir_notas_segmento(evaluacion)
+        puntos_criticos = cargar_json_lista(row.get("puntos_criticos"))
+        detalle.append({
+            "id_feedback": row.get("id_feedback"),
+            "fecha_creacion": serializar({"fecha": row.get("fecha_creacion")}).get("fecha"),
+            "fecha_llamada": serializar({"fecha": row.get("fecha_llamada")}).get("fecha"),
+            "archivo_nombre": row.get("archivo_nombre"),
+            "cartera": cartera,
+            "agente": agente,
+            "supervisor": supervisor_row,
+            "notas_segmento": notas_segmento,
+            "score_calidad": score,
+            "resultado_gestion": row.get("resultado_gestion"),
+            "nivel_oportunidad_mejora": row.get("nivel_oportunidad_mejora"),
+            "total_puntos_criticos": len(puntos_criticos),
+            "observacion_supervisor": row.get("comentario_feedback") or row.get("comentario_supervisor"),
+            "estado_revision": row.get("estado_revision"),
+        })
+
+        for item in evaluacion:
+            if not isinstance(item, dict):
+                continue
+            segmento = str(item.get("segmento") or "Sin segmento")
+            nombre_item = str(item.get("item") or "Sin item")
+            peso = float(item.get("peso") or 0)
+            nota = float(item.get("nota") or 0)
+
+            seg = segmentos.setdefault(segmento, {"segmento": segmento, "peso": 0.0, "nota": 0.0, "total_items": 0, "ceros": 0})
+            seg["peso"] += peso
+            seg["nota"] += nota
+            seg["total_items"] += 1
+
+            key = f"{segmento}::{nombre_item}"
+            actual = items.setdefault(key, {"segmento": segmento, "item": nombre_item, "peso": 0.0, "nota": 0.0, "total": 0, "ceros": 0})
+            actual["peso"] += peso
+            actual["nota"] += nota
+            actual["total"] += 1
+
+            if nota == 0:
+                seg["ceros"] += 1
+                actual["ceros"] += 1
+                total_ceros += 1
+                carteras[cartera]["ceros"] += 1
+                agentes[agente]["ceros"] += 1
+                semanas[semana]["ceros"] += 1
+
+    segmentos_lista = [agregar_porcentaje(item) for item in segmentos.values()]
+    brechas_lista = [agregar_porcentaje(item) for item in items.values()]
+    carteras_lista = [finalizar_score(item) for item in carteras.values()]
+    agentes_lista = [finalizar_score(item) for item in agentes.values()]
+    semanas_lista = [finalizar_score(item) for item in semanas.values()]
+    brechas_lista.sort(key=lambda item: (item.get("ceros", 0), 100 - item.get("porcentaje", 0)), reverse=True)
+    segmentos_lista.sort(key=lambda item: item.get("porcentaje", 0))
+    carteras_lista.sort(key=lambda item: (item.get("score_promedio") or 0))
+    agentes_lista.sort(key=lambda item: (item.get("score_promedio") or 0))
+    semanas_lista.sort(key=lambda item: item.get("semana") or "")
+
+    return {
+        "total_audios": total,
+        "score_promedio": round(sum(scores) / len(scores), 2) if scores else None,
+        "items_nota_cero": total_ceros,
+        "segmentos": segmentos_lista,
+        "brechas": brechas_lista[:12],
+        "carteras": carteras_lista,
+        "agentes": agentes_lista[:20],
+        "semanas": semanas_lista,
+        "detalle": detalle,
+    }
+
+
+def agregar_porcentaje(item: Dict) -> Dict:
+    peso = float(item.get("peso") or 0)
+    nota = float(item.get("nota") or 0)
+    item["porcentaje"] = round((nota / peso) * 100, 2) if peso else 0
+    item["peso"] = round(peso, 2)
+    item["nota"] = round(nota, 2)
+    return item
+
+
+def acumular_score(destino: Dict, clave: str, campo: str, score: float):
+    item = destino.setdefault(clave, {
+        campo: clave,
+        "total_audios": 0,
+        "score_total": 0.0,
+        "ceros": 0,
+    })
+    item["total_audios"] += 1
+    item["score_total"] += score
+
+
+def finalizar_score(item: Dict) -> Dict:
+    total = int(item.get("total_audios") or 0)
+    score_total = float(item.pop("score_total", 0) or 0)
+    item["score_promedio"] = round(score_total / total, 2) if total else None
+    return item
+
+
+def resumir_notas_segmento(items: List) -> Dict:
+    segmentos: Dict[str, Dict] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        segmento = str(item.get("segmento") or "Sin segmento")
+        actual = segmentos.setdefault(segmento, {"nota": 0.0, "peso": 0.0})
+        actual["nota"] += float(item.get("nota") or 0)
+        actual["peso"] += float(item.get("peso") or 0)
+    return {
+        segmento: {
+            "nota": round(data["nota"], 2),
+            "peso": round(data["peso"], 2),
+            "porcentaje": round((data["nota"] / data["peso"]) * 100, 2) if data["peso"] else 0,
+        }
+        for segmento, data in segmentos.items()
+    }
+
+
+def clave_semana(value) -> str:
+    if isinstance(value, datetime):
+        fecha = value
+    else:
+        try:
+            fecha = datetime.fromisoformat(str(value))
+        except Exception:
+            fecha = datetime.now()
+    iso = fecha.isocalendar()
+    return f"{iso.year}-S{iso.week:02d}"
+
+
 def obtener_feedback(id_feedback: int) -> Dict:
     ensure_tabla_feedback()
     query = text("""
