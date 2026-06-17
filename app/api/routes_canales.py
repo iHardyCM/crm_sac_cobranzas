@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.services.canales_service import (
     CanalesColumnError,
@@ -39,7 +40,8 @@ async def importar_archivo_canales(
 ):
     try:
         contenido = await archivo.read()
-        return importar_canales(
+        return await run_in_threadpool(
+            importar_canales,
             canal=canal,
             idcartera=idcartera,
             cartera=cartera,

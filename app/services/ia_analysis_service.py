@@ -134,60 +134,111 @@ def ia_real_configurada() -> bool:
 
 
 def prompt_base_sistema() -> str:
+    return prompt_copc_cobranza()
+
+
+def prompt_copc_cobranza() -> str:
     return """
 Analiza esta transcripcion de llamada de cobranza y devuelve exclusivamente un JSON valido.
 
-La finalidad es ayudar al supervisor a dar feedback operativo al agente.
-No es un informe oficial de auditoria ni scoring legal, pero si debe servir como evaluacion
-operativa consistente.
+Marco de evaluacion: COPC adaptado a cobranza telefonica.
+El objetivo es evaluar calidad de gestion, cumplimiento del proceso, experiencia del cliente
+y efectividad de cobranza. La calidad no debe verse como "hablar bonito"; debe relacionarse
+con contacto efectivo, diagnostico, negociacion, cierre verificable y trato adecuado.
 
-Evalua con esta matriz ponderada:
-- Presentacion 10%:
-  - 1.1 Saludo: 4 puntos.
-  - 1.2 Informacion de la deuda: 6 puntos.
-- Sondeo 10%:
-  - 2.1 Motivo de atraso: 5 puntos.
-  - 2.2 Situacion actual: 5 puntos.
-- Negociacion 35%:
-  - 3.1 Negociacion escalonada: 15 puntos. Debe iniciar desde deuda total o importe alto,
-    luego capital y finalmente campana/descuento; no debe iniciar por el monto mas bajo.
-  - 3.2 Manejo de objeciones: 12 puntos.
-  - 3.3 Beneficios: 8 puntos.
-- Cierre 30%:
-  - 4.1 Uso de las 3C: 15 puntos. Las 3C son cuanto paga, donde paga y como pagara.
-  - 4.2 Consecuencias: 10 puntos.
-  - 4.3 Despedida: 5 puntos.
-- Filosofia Biznescob 15%:
-  - 5.1 El personaje: 3 puntos.
-  - 5.2 Tono de voz: 4 puntos.
-  - 5.3 Diccion: 3 puntos.
-  - 5.4 Manejo de la llamada: 5 puntos. Penaliza insultos, sarcasmos, presion indebida,
-    trato despectivo, ironias o cualquier frase que deteriore la experiencia del cliente.
-    Si el asesor usa insultos, amenazas o frases fuera de lugar como "debes ir presa",
-    "te vas a ir a la carcel", "conchuda" u otras expresiones ofensivas, este item debe
-    recibir nota 0, el nivel_oportunidad_mejora debe ser "ALTA" y debe agregarse una
-    alerta critica visible.
+Principios COPC aplicados:
+- Evaluar solo conductas observables en la llamada.
+- Diferenciar errores criticos de oportunidades de mejora.
+- Conectar calidad con resultado de negocio: contacto, promesa, cierre 3C y recupero.
+- Usar criterios consistentes para calibracion entre supervisores.
+- El feedback debe ser accionable, especifico y entrenable.
 
-Reglas:
-- Basa cada hallazgo en algo observable de la transcripcion.
+Matriz COPC Cobranza 100 puntos:
+
+1. Cumplimiento y control de contacto 15 puntos:
+  - 1.1 Apertura e identificacion: 4 puntos. Saluda, se identifica y comunica empresa/motivo.
+  - 1.2 Validacion de titularidad y datos: 5 puntos. Verifica identidad antes de exponer deuda.
+    Cuenta como validacion si el asesor pregunta por titularidad o identidad con frases naturales como
+    "hablo con la titular", "usted es la titular", "es la tt/titular" y el cliente confirma afirmativamente.
+  - 1.3 Informacion correcta de deuda/gestion: 4 puntos. Explica deuda, producto, PDP o situacion sin confundir.
+  - 1.4 Registro y trazabilidad verbal: 2 puntos. Deja claro el motivo o siguiente paso.
+
+2. Diagnostico y escucha 15 puntos:
+  - 2.1 Identificacion del motivo de atraso: 5 puntos.
+  - 2.2 Situacion economica actual/capacidad de pago: 5 puntos.
+  - 2.3 Escucha activa y control de conversacion: 3 puntos.
+  - 2.4 Confirmacion de entendimiento: 2 puntos.
+
+3. Negociacion de cobranza 30 puntos:
+  - 3.1 Negociacion escalonada: 10 puntos. Inicia por deuda total o importe alto, luego capital,
+    y deja descuento/campana como ultima alternativa. No debe partir por el monto mas bajo.
+  - 3.2 Manejo de objeciones: 7 puntos. Reconoce la objecion, indaga causa y responde sin confrontar.
+  - 3.3 Propuesta de alternativas viables: 5 puntos. Ofrece opciones segun capacidad y politica.
+  - 3.4 Argumentacion de beneficios y consecuencias: 4 puntos. Explica beneficios de pagar y consecuencias reales
+    sin amenazas ni informacion falsa.
+  - 3.5 Orientacion a resultado: 4 puntos. Busca compromiso concreto, no solo informar.
+
+4. Cierre y compromiso 25 puntos:
+  - 4.1 Cierre 3C: 10 puntos. Confirma cuanto paga, donde paga y como pagara.
+  - 4.2 Fecha/hora o plazo verificable: 5 puntos. El compromiso debe tener fecha clara.
+  - 4.3 Confirmacion y recapitulacion: 5 puntos. Repite acuerdo y valida aceptacion del cliente.
+  - 4.4 Siguiente accion si no hay pago: 3 puntos. Define seguimiento o alternativa.
+  - 4.5 Despedida profesional: 2 puntos.
+
+5. Experiencia, conducta y riesgo critico (Filosofia Biznescob) 15 puntos:
+  - 5.1 Tono profesional y empatico: 4 puntos.
+  - 5.2 Lenguaje claro, diccion y orden: 3 puntos.
+  - 5.3 Manejo emocional de la llamada: 3 puntos. No interrumpe, no ridiculiza, no escala conflicto.
+  - 5.4 Cumplimiento etico/no abuso: 5 puntos. No usa insultos, sarcasmo, humillacion, amenazas,
+    presion indebida, informacion falsa ni frases fuera de lugar.
+  Este segmento representa la Filosofia Biznescob: cobranza firme, responsable, respetuosa y orientada
+  a solucionar sin maltrato ni presion indebida.
+
+Errores criticos COPC Cobranza:
+- Amenazas o intimidacion: "te vas a ir a la carcel", "debes ir presa", similares.
+- Insultos, lenguaje ofensivo o despectivo: "conchuda" u otros agravios.
+- Exponer deuda a tercero sin validacion de titularidad.
+- Dar informacion falsa, legalmente riesgosa o no verificable.
+- Presion indebida, humillacion, burla o sarcasmo.
+- Compromiso inventado o cierre no aceptado por el cliente.
+
+Faltas anulantes automaticas:
+- Si el asesor insulta, amenaza, humilla, discrimina, expone deuda a un tercero sin validar,
+  inventa una consecuencia legal grave o usa presion abusiva, la llamada debe calificarse con
+  score_calidad = 0 aunque otros items parezcan correctos.
+- En una falta anulante debes indicar la frase textual exacta o lo mas literal posible, y el minuto/segundo
+  donde se detecto si la transcripcion trae marcas de tiempo. Si no hay marca de tiempo, usa "No disponible".
+- Otras faltas pueden ser "GRAVE", "MEDIA" o "LEVE" segun impacto, siempre con evidencia.
+
+Reglas de scoring:
 - Si la transcripcion no evidencia un punto, usa resultado "No evidenciado" y nota 0.
 - La nota de cada item debe estar entre 0 y su peso maximo.
-- La evaluacion_calidad debe incluir obligatoriamente los 12 items de la matriz.
-- La suma de notas debe reflejar la calidad general. Buen tono sin negociacion ni cierre
-  no debe producir una nota alta.
-- Diferencia fortalezas de oportunidades de mejora.
-- El resumen debe mencionar cliente/contexto, objetivo de la llamada y resultado.
-- La recomendacion debe ser concreta, entrenable y aplicable en la siguiente llamada.
-- Incluye maximo 4 fortalezas, maximo 4 puntos criticos y maximo 3 alertas.
-- El campo evidencia debe ser una referencia breve a lo ocurrido, no una cita extensa.
-- No toleres ni suavices insultos, amenazas de carcel, agresiones verbales, sarcasmos o
-  trato humillante del asesor. Deben quedar marcados como punto critico y alerta.
+- La evaluacion_calidad debe incluir obligatoriamente los 22 items de la matriz COPC Cobranza.
+- La suma de notas es el score_calidad final sobre 100.
+- Si hay error critico, el item 5.4 debe ser 0, nivel_oportunidad_mejora debe ser "ALTA",
+  debe existir una alerta explicita y debe aparecer en puntos_criticos.
+- Si hay falta anulante, todo score_calidad debe ser 0, falta_anulante debe ser true y
+  nivel_oportunidad_mejora debe ser "ALTA".
+- Una llamada cordial sin negociacion ni cierre verificable no puede tener nota alta.
+- Una llamada con promesa de pago sin 3C completa no debe calificarse como cierre robusto.
+- Primero identifica el objetivo de la llamada. Si la llamada es de confirmacion o seguimiento de PDP/pago
+  ya pactado, no castigues al agente por no explicar toda la deuda ni por no hacer negociacion escalonada
+  desde cero. En esos casos evalua si confirma el acuerdo previo, monto, fecha, canal, estado del pago,
+  motivo de incumplimiento si aplica y siguiente accion.
+- Para llamadas de confirmacion de PDP, el item 1.3 puede cumplir con una explicacion breve del contexto
+  de pago/promesa, y los items de negociacion deben evaluarse segun pertinencia del seguimiento, no como
+  una venta inicial de alternativas.
+- Basa cada hallazgo en evidencia breve de la llamada; no inventes hechos.
+- El resumen debe mencionar objetivo, cliente/contexto si existe, resultado y riesgo principal.
+- La recomendacion debe servir para coaching del agente.
+- Incluye maximo 4 fortalezas, maximo 5 puntos criticos y maximo 4 alertas.
 
 Segmentos permitidos para puntos criticos:
-- Inicio de llamada
-- Desarrollo
-- Manejo de objecion
+- Cumplimiento
+- Diagnostico
+- Negociacion
 - Cierre
+- Experiencia y riesgo
 
 Estructura exacta requerida:
 {
@@ -197,22 +248,34 @@ Estructura exacta requerida:
   "objecion_principal": "texto o No evidenciada",
   "evaluacion_calidad": [
     {
-      "segmento": "Presentacion | Sondeo | Negociacion | Cierre | Filosofia Biznescob",
-      "item": "1.1 Saludo",
+      "segmento": "Cumplimiento | Diagnostico | Negociacion | Cierre | Experiencia y riesgo",
+      "item": "1.1 Apertura e identificacion",
       "peso": 4,
       "nota": 0,
       "resultado": "Cumple | Parcial | No cumple | No evidenciado",
       "hallazgo": "texto",
       "evidencia": "referencia breve de la llamada",
+      "momento": "mm:ss o No disponible",
+      "recomendacion": "texto"
+    }
+  ],
+  "habilidades_blandas": [
+    {
+      "habilidad": "Actitud conciliadora | Empatia | Escucha activa | Vocalizacion y claridad | Manejo emocional",
+      "nivel": "Alto | Medio | Bajo",
+      "evidencia": "referencia breve",
       "recomendacion": "texto"
     }
   ],
   "fortalezas_agente": ["texto"],
   "puntos_criticos": [
     {
-      "segmento": "Inicio de llamada | Desarrollo | Manejo de objecion | Cierre",
+      "segmento": "Cumplimiento | Diagnostico | Negociacion | Cierre | Experiencia y riesgo",
       "categoria": "texto",
+      "severidad": "ANULANTE | GRAVE | MEDIA | LEVE",
       "hallazgo": "texto",
+      "frase_textual": "frase del asesor o No disponible",
+      "momento": "mm:ss o No disponible",
       "evidencia": "referencia breve de la llamada",
       "impacto": "texto",
       "recomendacion": "texto"
@@ -221,6 +284,9 @@ Estructura exacta requerida:
   "recomendacion_feedback_supervisor": "texto accionable",
   "guion_sugerido": "texto breve que el agente podria usar",
   "alertas": ["texto"],
+  "falta_anulante": false,
+  "frase_anulante": "frase textual o No aplica",
+  "momento_falta_anulante": "mm:ss o No aplica",
   "nivel_oportunidad_mejora": "BAJA | MEDIA | ALTA"
 }
 """.strip()
@@ -238,18 +304,59 @@ def transcribir_audio_real(ruta_audio: str) -> str:
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     with ruta.open("rb") as audio_file:
-        result = client.audio.transcriptions.create(
-            model=TRANSCRIPTION_MODEL,
-            file=audio_file,
-        )
+        try:
+            result = client.audio.transcriptions.create(
+                model=TRANSCRIPTION_MODEL,
+                file=audio_file,
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
+        except Exception:
+            audio_file.seek(0)
+            result = client.audio.transcriptions.create(
+                model=TRANSCRIPTION_MODEL,
+                file=audio_file,
+            )
 
     text = getattr(result, "text", None)
     if not text and isinstance(result, dict):
         text = result.get("text")
 
+    segments = getattr(result, "segments", None)
+    if segments is None and isinstance(result, dict):
+        segments = result.get("segments")
+    texto_segmentado = construir_texto_con_timestamps(segments)
+    if texto_segmentado:
+        return texto_segmentado
+
     if not text:
         raise RuntimeError("La transcripcion no devolvio texto.")
     return text.strip()
+
+
+def construir_texto_con_timestamps(segments) -> Optional[str]:
+    if not isinstance(segments, list) or not segments:
+        return None
+
+    lineas = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        texto = str(segment.get("text") or "").strip()
+        if not texto:
+            continue
+        inicio = segment.get("start")
+        lineas.append(f"[{formatear_timestamp(inicio)}] {texto}")
+    return "\n".join(lineas).strip() or None
+
+
+def formatear_timestamp(value) -> str:
+    try:
+        segundos = max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return "No disponible"
+    minutos, segundos = divmod(segundos, 60)
+    return f"{minutos:02d}:{segundos:02d}"
 
 
 def analizar_transcripcion_real(
@@ -297,100 +404,18 @@ def construir_prompt_analisis_calidad(
         config = obtener_prompt_configuracion(cartera)
     except Exception:
         config = {}
-    if config.get("prompt_base"):
-        return f"""
-{config["prompt_base"]}
+    prompt_personalizado = config.get("prompt_personalizado") or ""
+    ajustes = f"""
 
-Comentario del supervisor:
-{comentario_supervisor or "-"}
+Ajustes adicionales por cartera o configuracion interna:
+{prompt_personalizado}
 
-Transcripcion:
-{transcripcion}
-""".strip()
+Estos ajustes pueden complementar el analisis, pero no reemplazan ni reducen la matriz COPC Cobranza.
+""" if prompt_personalizado else ""
 
     return f"""
-Analiza esta transcripcion de llamada de cobranza y devuelve exclusivamente un JSON valido.
-
-La finalidad es ayudar al supervisor a dar feedback operativo al agente.
-No es un informe oficial de auditoria ni scoring legal, pero si debe servir como evaluacion
-operativa consistente.
-
-Evalua con esta matriz ponderada:
-- Presentacion 10%:
-  - 1.1 Saludo: 4 puntos.
-  - 1.2 Informacion de la deuda: 6 puntos.
-- Sondeo 10%:
-  - 2.1 Motivo de atraso: 5 puntos.
-  - 2.2 Situacion actual: 5 puntos.
-- Negociacion 35%:
-  - 3.1 Negociacion escalonada: 15 puntos. Debe iniciar desde deuda total o importe alto,
-    luego capital y finalmente campana/descuento; no debe iniciar por el monto mas bajo.
-  - 3.2 Manejo de objeciones: 12 puntos.
-  - 3.3 Beneficios: 8 puntos.
-- Cierre 30%:
-  - 4.1 Uso de las 3C: 15 puntos. Las 3C son cuanto paga, donde paga y como pagara.
-  - 4.2 Consecuencias: 10 puntos.
-  - 4.3 Despedida: 5 puntos.
-- Filosofia Biznescob 15%:
-  - 5.1 El personaje: 3 puntos.
-  - 5.2 Tono de voz: 4 puntos.
-  - 5.3 Diccion: 3 puntos.
-  - 5.4 Manejo de la llamada: 5 puntos. Penaliza insultos, sarcasmos, presion indebida,
-    trato despectivo, ironias o cualquier frase que deteriore la experiencia del cliente.
-
-Reglas:
-- Basa cada hallazgo en algo observable de la transcripcion.
-- Si la transcripcion no evidencia un punto, usa resultado "No evidenciado" y nota 0.
-- La nota de cada item debe estar entre 0 y su peso maximo.
-- La evaluacion_calidad debe incluir obligatoriamente los 12 items de la matriz.
-- La suma de notas debe reflejar la calidad general. Buen tono sin negociacion ni cierre
-  no debe producir una nota alta.
-- Diferencia fortalezas de oportunidades de mejora.
-- El resumen debe mencionar cliente/contexto, objetivo de la llamada y resultado.
-- La recomendacion debe ser concreta, entrenable y aplicable en la siguiente llamada.
-- Incluye maximo 4 fortalezas, maximo 4 puntos criticos y maximo 3 alertas.
-- El campo evidencia debe ser una referencia breve a lo ocurrido, no una cita extensa.
-
-Segmentos permitidos para puntos criticos:
-- Inicio de llamada
-- Desarrollo
-- Manejo de objecion
-- Cierre
-
-Estructura exacta requerida:
-{{
-  "resumen": "texto breve",
-  "tipo_contacto": "Contacto efectivo | Contacto no efectivo | Tercero | Buzon | Cortada | Otro",
-  "resultado_gestion": "Compromiso confirmado | Compromiso pendiente | Sin compromiso | Informativo | Otro",
-  "objecion_principal": "texto o No evidenciada",
-  "evaluacion_calidad": [
-    {{
-      "segmento": "Presentacion | Sondeo | Negociacion | Cierre | Filosofia Biznescob",
-      "item": "1.1 Saludo",
-      "peso": 4,
-      "nota": 0,
-      "resultado": "Cumple | Parcial | No cumple | No evidenciado",
-      "hallazgo": "texto",
-      "evidencia": "referencia breve de la llamada",
-      "recomendacion": "texto"
-    }}
-  ],
-  "fortalezas_agente": ["texto"],
-  "puntos_criticos": [
-    {{
-      "segmento": "Inicio de llamada | Desarrollo | Manejo de objecion | Cierre",
-      "categoria": "texto",
-      "hallazgo": "texto",
-      "evidencia": "referencia breve de la llamada",
-      "impacto": "texto",
-      "recomendacion": "texto"
-    }}
-  ],
-  "recomendacion_feedback_supervisor": "texto accionable",
-  "guion_sugerido": "texto breve que el agente podria usar",
-  "alertas": ["texto"],
-  "nivel_oportunidad_mejora": "BAJA | MEDIA | ALTA"
-}}
+{prompt_copc_cobranza()}
+{ajustes}
 
 Comentario del supervisor:
 {comentario_supervisor or "-"}
@@ -474,13 +499,37 @@ def normalizar_analisis(data: Dict) -> Dict:
     alertas = data.get("alertas")
     if not isinstance(alertas, list):
         alertas = []
+    habilidades = data.get("habilidades_blandas")
+    if not isinstance(habilidades, list):
+        habilidades = []
 
     evaluacion = normalizar_evaluacion_calidad(data.get("evaluacion_calidad"))
     score_calidad = round(sum(item["nota"] for item in evaluacion), 2)
+    falta_anulante = bool(data.get("falta_anulante"))
 
     nivel = str(data.get("nivel_oportunidad_mejora") or "MEDIA").upper()
     if nivel not in {"BAJA", "MEDIA", "ALTA"}:
         nivel = "MEDIA"
+
+    puntos_normalizados = [
+        {
+            "segmento": str(item.get("segmento") or "-"),
+            "categoria": str(item.get("categoria") or "-"),
+            "severidad": normalizar_severidad(item.get("severidad")),
+            "hallazgo": str(item.get("hallazgo") or "-"),
+            "frase_textual": str(item.get("frase_textual") or "No disponible"),
+            "momento": str(item.get("momento") or "No disponible"),
+            "evidencia": str(item.get("evidencia") or "-"),
+            "impacto": str(item.get("impacto") or "-"),
+            "recomendacion": str(item.get("recomendacion") or "-"),
+        }
+        for item in puntos
+        if isinstance(item, dict)
+    ]
+    falta_anulante = falta_anulante or any(item["severidad"] == "ANULANTE" for item in puntos_normalizados)
+    if falta_anulante:
+        score_calidad = 0
+        nivel = "ALTA"
 
     return {
         "resumen": str(data.get("resumen") or "-"),
@@ -489,22 +538,15 @@ def normalizar_analisis(data: Dict) -> Dict:
         "objecion_principal": str(data.get("objecion_principal") or "-"),
         "score_calidad": score_calidad,
         "evaluacion_calidad": evaluacion,
+        "habilidades_blandas": normalizar_habilidades_blandas(habilidades, evaluacion),
         "fortalezas_agente": [str(x) for x in fortalezas],
-        "puntos_criticos": [
-            {
-                "segmento": str(item.get("segmento") or "-"),
-                "categoria": str(item.get("categoria") or "-"),
-                "hallazgo": str(item.get("hallazgo") or "-"),
-                "evidencia": str(item.get("evidencia") or "-"),
-                "impacto": str(item.get("impacto") or "-"),
-                "recomendacion": str(item.get("recomendacion") or "-"),
-            }
-            for item in puntos
-            if isinstance(item, dict)
-        ],
+        "puntos_criticos": puntos_normalizados,
         "recomendacion_feedback_supervisor": str(data.get("recomendacion_feedback_supervisor") or "-"),
         "guion_sugerido": str(data.get("guion_sugerido") or "-"),
         "alertas": [str(x) for x in alertas],
+        "falta_anulante": falta_anulante,
+        "frase_anulante": str(data.get("frase_anulante") or ("No aplica" if not falta_anulante else "No disponible")),
+        "momento_falta_anulante": str(data.get("momento_falta_anulante") or ("No aplica" if not falta_anulante else "No disponible")),
         "nivel_oportunidad_mejora": nivel,
     }
 
@@ -528,10 +570,71 @@ def normalizar_evaluacion_calidad(value) -> List[Dict]:
             "resultado": str(item.get("resultado") or "-"),
             "hallazgo": str(item.get("hallazgo") or "-"),
             "evidencia": str(item.get("evidencia") or "-"),
+            "momento": str(item.get("momento") or "No disponible"),
             "recomendacion": str(item.get("recomendacion") or "-"),
         })
 
     return normalizada
+
+
+def normalizar_severidad(value) -> str:
+    severidad = str(value or "MEDIA").strip().upper()
+    return severidad if severidad in {"ANULANTE", "GRAVE", "MEDIA", "LEVE"} else "MEDIA"
+
+
+def normalizar_habilidades_blandas(value, evaluacion: List[Dict]) -> List[Dict]:
+    if value:
+        habilidades = []
+        for item in value[:6]:
+            if not isinstance(item, dict):
+                continue
+            habilidades.append({
+                "habilidad": str(item.get("habilidad") or "-"),
+                "nivel": normalizar_nivel_habilidad(item.get("nivel")),
+                "evidencia": str(item.get("evidencia") or "-"),
+                "recomendacion": str(item.get("recomendacion") or "-"),
+            })
+        if habilidades:
+            return habilidades
+
+    return habilidades_desde_evaluacion(evaluacion)
+
+
+def normalizar_nivel_habilidad(value) -> str:
+    nivel = str(value or "Medio").strip().capitalize()
+    return nivel if nivel in {"Alto", "Medio", "Bajo"} else "Medio"
+
+
+def habilidades_desde_evaluacion(evaluacion: List[Dict]) -> List[Dict]:
+    referencias = [
+        ("Actitud conciliadora", ("3.2", "5.1"), "Refuerza una postura colaborativa ante objeciones."),
+        ("Empatia", ("5.1", "5.3"), "Validar la situacion del cliente antes de insistir."),
+        ("Escucha activa", ("2.3", "2.4"), "Evitar interrupciones y confirmar entendimiento."),
+        ("Vocalizacion y claridad", ("5.2",), "Mantener lenguaje claro, ordenado y facil de seguir."),
+        ("Manejo emocional", ("5.3", "5.4"), "Sostener calma, respeto y control durante toda la llamada."),
+    ]
+    salida = []
+    for habilidad, prefijos, recomendacion in referencias:
+        relacionados = [
+            item for item in evaluacion
+            if any(str(item.get("item") or "").startswith(prefijo) for prefijo in prefijos)
+        ]
+        if not relacionados:
+            nivel = "Medio"
+            evidencia = "No hay evidencia suficiente para calificar con precision."
+        else:
+            peso = sum(float(item.get("peso") or 0) for item in relacionados)
+            nota = sum(float(item.get("nota") or 0) for item in relacionados)
+            porcentaje = (nota / peso) * 100 if peso else 0
+            nivel = "Alto" if porcentaje >= 80 else "Medio" if porcentaje >= 55 else "Bajo"
+            evidencia = "; ".join(str(item.get("hallazgo") or "-") for item in relacionados[:2])
+        salida.append({
+            "habilidad": habilidad,
+            "nivel": nivel,
+            "evidencia": evidencia,
+            "recomendacion": recomendacion,
+        })
+    return salida
 
 
 def numero_en_rango(value, minimo: float, maximo: float) -> float:
@@ -559,6 +662,19 @@ def generar_transcripcion_mock(metadata: Optional[Dict] = None) -> str:
     )
 
 
+def item_copc(segmento: str, item: str, peso: float, nota: float, resultado: str, hallazgo: str) -> Dict:
+    return {
+        "segmento": segmento,
+        "item": item,
+        "peso": peso,
+        "nota": nota,
+        "resultado": resultado,
+        "hallazgo": hallazgo,
+        "evidencia": "Transcripcion simulada de cobranza.",
+        "recomendacion": "Reforzar este criterio en coaching operativo bajo matriz COPC Cobranza.",
+    }
+
+
 def analizar_transcripcion_mock(
     transcripcion: str,
     comentario_supervisor: Optional[str] = None,
@@ -566,15 +682,15 @@ def analizar_transcripcion_mock(
     """Devuelve una estructura de analisis compatible con una futura respuesta IA."""
     puntos_criticos: List[Dict] = [
         {
-            "segmento": "Validacion de capacidad de pago",
-            "categoria": "Sondeo",
+            "segmento": "Diagnostico",
+            "categoria": "Capacidad de pago",
             "hallazgo": "El agente identifica la objecion, pero no profundiza en monto disponible ni fecha exacta.",
             "evidencia": "La llamada queda en una alternativa preliminar sin validar capacidad real.",
             "impacto": "Puede generar compromisos poco firmes o de baja probabilidad de cumplimiento.",
             "recomendacion": "Preguntar por ingreso esperado, fecha de disponibilidad y monto realista antes de cerrar.",
         },
         {
-            "segmento": "Cierre de compromiso",
+            "segmento": "Cierre",
             "categoria": "Cierre",
             "hallazgo": "El cierre queda como acuerdo preliminar y no como compromiso confirmado.",
             "evidencia": "No se confirma monto, fecha y canal como compromiso final.",
@@ -585,7 +701,7 @@ def analizar_transcripcion_mock(
 
     if comentario_supervisor:
         puntos_criticos.append({
-            "segmento": "Observacion del supervisor",
+            "segmento": "Experiencia y riesgo",
             "categoria": "Contexto",
             "hallazgo": comentario_supervisor.strip(),
             "evidencia": "Comentario ingresado por el supervisor.",
@@ -603,51 +719,53 @@ def analizar_transcripcion_mock(
         "resultado_gestion": "Compromiso preliminar",
         "objecion_principal": "Falta de liquidez inmediata",
         "evaluacion_calidad": [
-            {
-                "segmento": "Presentacion",
-                "item": "1.1 Saludo",
-                "peso": 4,
-                "nota": 3,
-                "resultado": "Parcial",
-                "hallazgo": "Saludo correcto, aunque podria reforzar identificacion y motivo.",
-                "evidencia": "Transcripcion simulada con saludo inicial.",
-                "recomendacion": "Abrir con saludo, nombre, empresa y motivo en una frase clara.",
-            },
-            {
-                "segmento": "Negociacion",
-                "item": "3.1 Negociacion escalonada",
-                "peso": 15,
-                "nota": 6,
-                "resultado": "Parcial",
-                "hallazgo": "Propone alternativa, pero no escala desde deuda total a opciones menores.",
-                "evidencia": "La llamada queda en una fecha tentativa.",
-                "recomendacion": "Partir por deuda total o monto alto y reducir solo ante negativa del cliente.",
-            },
-            {
-                "segmento": "Cierre",
-                "item": "4.1 Uso de las 3C",
-                "peso": 15,
-                "nota": 5,
-                "resultado": "Parcial",
-                "hallazgo": "No confirma claramente cuanto paga, donde paga y como pagara.",
-                "evidencia": "El acuerdo queda preliminar.",
-                "recomendacion": "Cerrar confirmando monto, lugar/canal y forma de pago.",
-            },
-            {
-                "segmento": "Filosofia Biznescob",
-                "item": "5.4 Manejo de la llamada",
-                "peso": 5,
-                "nota": 4,
-                "resultado": "Parcial",
-                "hallazgo": "Mantiene trato adecuado, sin evidencias de sarcasmo o agresion.",
-                "evidencia": "La transcripcion simulada mantiene tono cordial.",
-                "recomendacion": "Sostener tono profesional y evitar cualquier expresion ironica o despectiva.",
-            },
+            item_copc("Cumplimiento", "1.1 Apertura e identificacion", 4, 3, "Parcial", "Saluda y explica el motivo, pero puede ordenar mejor la apertura."),
+            item_copc("Cumplimiento", "1.2 Validacion de titularidad y datos", 5, 3, "Parcial", "La validacion queda basica y debe reforzarse antes de exponer informacion."),
+            item_copc("Cumplimiento", "1.3 Informacion correcta de deuda/gestion", 4, 3, "Parcial", "Explica motivo de contacto sin suficiente detalle verificable."),
+            item_copc("Cumplimiento", "1.4 Registro y trazabilidad verbal", 2, 1, "Parcial", "No deja totalmente claro el siguiente paso registrado."),
+            item_copc("Diagnostico", "2.1 Identificacion del motivo de atraso", 5, 3, "Parcial", "Identifica falta de liquidez, pero no profundiza la causa."),
+            item_copc("Diagnostico", "2.2 Situacion economica actual/capacidad de pago", 5, 2, "Parcial", "No valida monto disponible ni fecha exacta."),
+            item_copc("Diagnostico", "2.3 Escucha activa y control de conversacion", 3, 2, "Parcial", "Escucha la objecion y mantiene control general."),
+            item_copc("Diagnostico", "2.4 Confirmacion de entendimiento", 2, 1, "Parcial", "No confirma claramente que entendio la situacion del cliente."),
+            item_copc("Negociacion", "3.1 Negociacion escalonada", 10, 4, "Parcial", "Propone alternativa sin escalar desde deuda total o importe alto."),
+            item_copc("Negociacion", "3.2 Manejo de objeciones", 7, 4, "Parcial", "Reconoce la objecion, pero necesita indagar mejor."),
+            item_copc("Negociacion", "3.3 Propuesta de alternativas viables", 5, 3, "Parcial", "Ofrece una alternativa preliminar."),
+            item_copc("Negociacion", "3.4 Argumentacion de beneficios y consecuencias", 4, 2, "Parcial", "Refuerza importancia de pagar, pero con poca argumentacion."),
+            item_copc("Negociacion", "3.5 Orientacion a resultado", 4, 2, "Parcial", "Busca compromiso, aunque queda sujeto a confirmacion."),
+            item_copc("Cierre", "4.1 Cierre 3C", 10, 3, "Parcial", "No confirma cuanto paga, donde paga y como pagara."),
+            item_copc("Cierre", "4.2 Fecha/hora o plazo verificable", 5, 2, "Parcial", "La fecha queda tentativa."),
+            item_copc("Cierre", "4.3 Confirmacion y recapitulacion", 5, 2, "Parcial", "No recapitula el acuerdo de forma verificable."),
+            item_copc("Cierre", "4.4 Siguiente accion si no hay pago", 3, 1, "Parcial", "El seguimiento no queda claramente definido."),
+            item_copc("Cierre", "4.5 Despedida profesional", 2, 2, "Cumple", "Cierra sin trato inadecuado."),
+            item_copc("Experiencia y riesgo", "5.1 Tono profesional y empatico", 4, 3, "Parcial", "Mantiene tono correcto."),
+            item_copc("Experiencia y riesgo", "5.2 Lenguaje claro, diccion y orden", 3, 2, "Parcial", "La gestion es comprensible, con oportunidad de ordenar mejor."),
+            item_copc("Experiencia y riesgo", "5.3 Manejo emocional de la llamada", 3, 3, "Cumple", "No se evidencian interrupciones agresivas."),
+            item_copc("Experiencia y riesgo", "5.4 Cumplimiento etico/no abuso", 5, 5, "Cumple", "No se evidencian insultos, amenazas ni presion indebida."),
         ],
         "fortalezas_agente": [
             "Mantiene trato cordial y ordenado.",
             "Explica el motivo de contacto sin confrontar.",
             "Reconoce la objecion del cliente antes de proponer alternativa.",
+        ],
+        "habilidades_blandas": [
+            {
+                "habilidad": "Actitud conciliadora",
+                "nivel": "Alto",
+                "evidencia": "El agente reconoce la objecion sin confrontar.",
+                "recomendacion": "Mantener lenguaje colaborativo al negociar alternativas.",
+            },
+            {
+                "habilidad": "Vocalizacion y claridad",
+                "nivel": "Medio",
+                "evidencia": "La explicacion es comprensible, pero puede ordenar mejor el cierre.",
+                "recomendacion": "Cerrar con una frase breve que repita monto, fecha y canal.",
+            },
+            {
+                "habilidad": "Escucha activa",
+                "nivel": "Medio",
+                "evidencia": "Escucha la falta de liquidez, pero no confirma capacidad exacta.",
+                "recomendacion": "Parafrasear la objecion y validar entendimiento antes de proponer.",
+            },
         ],
         "puntos_criticos": puntos_criticos,
         "recomendacion_feedback_supervisor": (

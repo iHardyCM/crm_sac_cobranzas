@@ -9,3 +9,8 @@ pyxlsb
 xlrd
 python-multipart
 openai
+requests
+soundcard
+sounddevice
+numpy
+scipy

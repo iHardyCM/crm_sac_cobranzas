@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("filtroTipo").addEventListener("change", () => cargarMetas(false));
     document.getElementById("filtroVista").addEventListener("change", renderDetalleActual);
     document.getElementById("filtroEstado").addEventListener("change", renderDetalleActual);
+    document.getElementById("formImportarMetasMibanco")?.addEventListener("submit", importarMetasMibanco);
     cargarMetas(false);
 });
 
@@ -52,6 +53,59 @@ async function cargarMetas(mostrarToastOk = false) {
     } catch (error) {
         console.error("ERROR METAS:", error);
         mostrarToast(error.message || "No se pudo cargar seguimiento de metas.", "error");
+    }
+}
+
+async function importarMetasMibanco(event) {
+    event.preventDefault();
+
+    const codmes = document.getElementById("filtroCodmes").value;
+    const archivo = document.getElementById("archivoMetasMibanco")?.files?.[0];
+    const btn = document.getElementById("btnImportarMetasMibanco");
+    const resultado = document.getElementById("resultadoImportarMetas");
+
+    if (!codmes || !archivo) {
+        mostrarToast("Selecciona mes y archivo de metas MiBanco.", "error");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.set("codmes", codmes);
+    formData.set("usuario", localStorage.getItem("dni") || localStorage.getItem("usuario") || "SIN_USUARIO");
+    formData.set("archivo", archivo);
+
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Importando...";
+        }
+        if (resultado) resultado.innerHTML = `<span>Procesando archivo...</span>`;
+
+        const res = await fetch(`${BASE_URL}/metas/importar/mibanco`, {
+            method: "POST",
+            body: formData,
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.detail || "No se pudo importar metas MiBanco.");
+
+        if (resultado) {
+            resultado.innerHTML = `
+                <span class="ok">Metas importadas: ${numero(json.filas_validas)} filas, total ${soles(json.total_meta)}.</span>
+                ${(json.detalle_por_cartera || []).map(item => `
+                    <b>${texto(item.cartera)}: ${soles(item.meta_mensual)}</b>
+                `).join("")}
+            `;
+        }
+        document.getElementById("archivoMetasMibanco").value = "";
+        await cargarMetas(true);
+    } catch (error) {
+        if (resultado) resultado.innerHTML = `<span class="error">${texto(error.message)}</span>`;
+        mostrarToast(error.message || "No se pudo importar metas MiBanco.", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Importar MiBanco";
+        }
     }
 }
 
@@ -154,6 +208,10 @@ function columnasDetalladas() {
     return [
         col("Cartera", item => carteraCell(item)),
         col("Tipo medicion", item => texto(item.tipo_medicion)),
+        col("Funcionario", item => texto(item.funcionario)),
+        col("Cluster", item => texto(item.cluster_meta || item.segmentacion)),
+        col("Ant. castigo", item => texto(item.ant_castigo)),
+        col("Rango ticket", item => texto(item.ran_ticket)),
         col("Meta mensual", item => soles(item.meta_mensual), "text-right"),
         col("Avance actual", item => soles(item.avance_actual), "text-right"),
         col("Cumpl. actual", item => porcentaje(item.cumplimiento_pct), item => `text-center cumplimiento ${claseCumplimiento(item.estado)}`),

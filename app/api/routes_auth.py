@@ -9,7 +9,7 @@ router = APIRouter()
 def login(payload: dict):
     dni = (payload.get("dni") or "").strip()
 
-    if not dni or len(dni) != 8:
+    if not dni or len(dni) != 8 or not dni.isdigit():
         return {"ok": False, "msg": "DNI invalido"}
 
     user = validar_usuario(dni)

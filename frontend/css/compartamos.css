@@ -1310,3 +1310,30 @@ body.crm-shell .contenedor-creditos {
         grid-template-columns: 1fr !important;
     }
 }
+
+/* Alineacion con el layout CRM compartido.
+   Esta vista nacio antes del shell comun y tenia tarjetas centradas con
+   max-width propio; eso generaba un vacio visible junto al sidebar. */
+body.crm-shell .clientes-page {
+    width: min(100%, var(--crm-content-max, 1740px)) !important;
+    max-width: var(--crm-content-max, 1740px) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding: var(--crm-content-pad-y, 20px) var(--crm-content-pad-x, 32px) 32px !important;
+}
+
+body.crm-shell .clientes-search-card,
+body.crm-shell .resultado-panel,
+body.crm-shell .cliente-header,
+body.crm-shell .cliente-info,
+body.crm-shell .grupo-kpis,
+body.crm-shell .section-title-row,
+body.crm-shell .contenedor-creditos {
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+body.crm-shell .clientes-search-card-main {
+    width: 100%;
+}

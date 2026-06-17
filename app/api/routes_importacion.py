@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.services.importacion_service import (
     analizar_archivo_importacion,
@@ -42,7 +43,8 @@ async def analizar_importacion(
 ):
     try:
         contenido = await archivo.read()
-        return analizar_archivo_importacion(
+        return await run_in_threadpool(
+            analizar_archivo_importacion,
             id_config=id_config,
             periodo=periodo,
             tipo_carga=tipo_carga,
@@ -86,7 +88,8 @@ async def confirmar_importacion(
 ):
     try:
         contenido = await archivo.read()
-        return confirmar_carga_importacion(
+        return await run_in_threadpool(
+            confirmar_carga_importacion,
             id_config=id_config,
             periodo=periodo,
             tipo_carga=tipo_carga,

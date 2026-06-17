@@ -53,6 +53,11 @@ const FILTROS_SCORE_CONFIG = [
 ];
 document.addEventListener("DOMContentLoaded", () => {
     if (typeof exigirSesion === "function" && !exigirSesion()) return;
+    if (typeof puedeVerCorporativo === "function" && !puedeVerCorporativo(localStorage.getItem("tipo"))) {
+        sessionStorage.setItem("homeMensaje", "Score Telefonico esta reservado para usuarios de gestion gerencial.");
+        window.location.href = "home.html";
+        return;
+    }
 
     document.addEventListener("click", event => {
         document.querySelectorAll(".dropdown-filter.open").forEach(filter => {

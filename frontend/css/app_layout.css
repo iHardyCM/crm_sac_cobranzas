@@ -2,6 +2,9 @@ body.crm-shell {
     --crm-sidebar-open: 260px;
     --crm-sidebar-rail: 76px;
     --crm-topbar-height: 68px;
+    --crm-content-max: 1740px;
+    --crm-content-pad-x: clamp(20px, 2vw, 32px);
+    --crm-content-pad-y: 20px;
     padding-left: var(--crm-sidebar-open) !important;
     padding-top: var(--crm-topbar-height) !important;
     transition: padding-left .2s ease;
@@ -16,6 +19,7 @@ body.crm-shell.crm-sidebar-collapsed:has(.crm-sidebar:hover) {
 }
 
 .crm-sidebar {
+    box-sizing: border-box;
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 1000;
@@ -189,6 +193,7 @@ body.crm-sidebar-collapsed .crm-sidebar:not(:hover) .crm-logout {
 }
 
 .crm-topbar {
+    box-sizing: border-box;
     position: fixed;
     inset: 0 0 auto var(--crm-sidebar-open);
     z-index: 999;
@@ -301,7 +306,30 @@ body.crm-shell .contenedor,
 body.crm-shell .pagos-container,
 body.crm-shell .container,
 body.crm-shell .metas-container {
-    max-width: none;
+    box-sizing: border-box;
+    max-width: var(--crm-content-max);
+}
+
+body.crm-shell > main:not(.ia-page),
+body.crm-shell > .contenedor,
+body.crm-shell > .pagos-container,
+body.crm-shell > .container,
+body.crm-shell > .metas-container {
+    width: min(100%, var(--crm-content-max));
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding: var(--crm-content-pad-y) var(--crm-content-pad-x) 32px !important;
+}
+
+body.crm-shell > main.ia-page {
+    width: min(100%, var(--crm-content-max));
+    max-width: var(--crm-content-max);
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+body.crm-shell .ia-workspace {
+    padding: var(--crm-content-pad-y) var(--crm-content-pad-x) 32px !important;
 }
 
 body.crm-shell > .acciones-top,
@@ -360,9 +388,10 @@ body.crm-shell > table tbody tr td:last-child {
 }
 
 body.crm-shell > .container {
-    width: auto;
-    margin: 0;
-    padding: 22px 24px 28px;
+    width: min(100%, var(--crm-content-max));
+    max-width: var(--crm-content-max);
+    margin: 0 auto;
+    padding: var(--crm-content-pad-y) var(--crm-content-pad-x) 32px;
 }
 
 body.crm-shell > .container .kpis {

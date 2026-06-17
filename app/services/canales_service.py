@@ -180,6 +180,7 @@ def actualizar_cabecera(conn, id_carga, total, validos, errores, estado):
 
 def insertar_detalle(conn, id_carga, canal, idcartera, df, columnas) -> Dict:
     total = validos = errores = 0
+    filas_insert = []
 
     for _idx, row in df.iterrows():
         total += 1
@@ -190,14 +191,7 @@ def insertar_detalle(conn, id_carga, canal, idcartera, df, columnas) -> Dict:
         else:
             errores += 1
 
-        conn.execute(text("""
-            INSERT INTO CobAuto.dbo.canales_carga_detalle
-                (id_carga, documento, cliente, telefono, email, num_operacion, moneda, monto,
-                 fecha_compromiso, mensaje, canal, idcartera, estado_registro, observacion, fecha_registro)
-            VALUES
-                (:id_carga, :documento, :cliente, :telefono, :email, :num_operacion, :moneda, :monto,
-                 :fecha_compromiso, :mensaje, :canal, :idcartera, :estado_registro, :observacion, GETDATE())
-        """), {
+        filas_insert.append({
             "id_carga": id_carga,
             "documento": normalizado.get("documento"),
             "cliente": normalizado.get("cliente"),
@@ -213,6 +207,16 @@ def insertar_detalle(conn, id_carga, canal, idcartera, df, columnas) -> Dict:
             "estado_registro": estado,
             "observacion": " | ".join(observaciones) if observaciones else None,
         })
+
+    if filas_insert:
+        conn.execute(text("""
+            INSERT INTO CobAuto.dbo.canales_carga_detalle
+                (id_carga, documento, cliente, telefono, email, num_operacion, moneda, monto,
+                 fecha_compromiso, mensaje, canal, idcartera, estado_registro, observacion, fecha_registro)
+            VALUES
+                (:id_carga, :documento, :cliente, :telefono, :email, :num_operacion, :moneda, :monto,
+                 :fecha_compromiso, :mensaje, :canal, :idcartera, :estado_registro, :observacion, GETDATE())
+        """), filas_insert)
 
     return {
         "total_registros": total,

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Biznescob - Seguimiento de Metas</title>
-    <link rel="stylesheet" href="../css/metas.css?v=20260527c">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260527b">
+    <link rel="stylesheet" href="../css/metas.css?v=20260615a">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
 </head>
 <body>
     <aside class="meta-sidebar">
@@ -81,6 +81,21 @@
                 </select>
             </div>
             <button class="btn-export" type="button">Exportar</button>
+        </section>
+
+        <section class="panel import-panel">
+            <div class="panel-title">
+                <h2>Importar metas MiBanco</h2>
+                <p>Formato esperado: FUNCIONARIO, ANT_CASTIGO, RAN TICKET, CLUST y MONTO META.</p>
+            </div>
+            <form id="formImportarMetasMibanco" class="import-form">
+                <div class="field">
+                    <label for="archivoMetasMibanco">Archivo</label>
+                    <input id="archivoMetasMibanco" type="file" accept=".xlsx,.xls,.csv,.txt" required>
+                </div>
+                <button id="btnImportarMetasMibanco" class="btn-secondary" type="submit">Importar MiBanco</button>
+                <div id="resultadoImportarMetas" class="import-result"></div>
+            </form>
         </section>
 
         <section class="kpi-grid">
@@ -191,6 +206,6 @@
 
     <script src="../js/session.js"></script>
     <script src="../js/app_layout.js?v=20260528b"></script>
-    <script src="../js/metas.js?v=20260527c"></script>
+    <script src="../js/metas.js?v=20260615a"></script>
 </body>
 </html>

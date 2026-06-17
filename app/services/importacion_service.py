@@ -326,26 +326,7 @@ def confirmar_carga_importacion(
         raise ValueError(f"La tabla destino no existe o no tiene columnas: {tabla_destino}")
 
     inicio_lectura = time.perf_counter()
-    if es_carga_inicial:
-        df, hoja_usada = leer_dataframe_importacion(contenido, archivo_nombre, hoja)
-    else:
-        analisis = analizar_archivo_importacion(
-            id_config=id_config,
-            periodo=periodo,
-            tipo_carga=tipo_normalizado,
-            archivo_nombre=archivo_nombre,
-            contenido=contenido,
-            hoja=hoja,
-        )
-        if analisis.get("errores_bloqueantes"):
-            return {
-                "ok": False,
-                "estado": "ERROR",
-                "mensaje": "La carga no puede confirmarse porque existen errores bloqueantes.",
-                "detalle": "; ".join(item.get("observacion") or item.get("mensaje") or "-" for item in analisis["errores_bloqueantes"]),
-            }
-
-        df, hoja_usada = leer_dataframe_importacion(contenido, archivo_nombre, hoja)
+    df, hoja_usada = leer_dataframe_importacion(contenido, archivo_nombre, hoja)
     marcar_tiempo("lectura_excel", inicio_lectura)
     columnas_archivo = [str(col) for col in df.columns]
     mapa_archivo = mapa_normalizado(columnas_archivo)
@@ -360,17 +341,32 @@ def confirmar_carga_importacion(
         for col in columnas_destino
         if col.get("is_identity")
     }
+    campo_periodo = config.get("campo_periodo_actual")
+    campo_periodo_norm = normalizar_columna(campo_periodo) if campo_periodo else ""
+    valor_periodo = valor_periodo_configurado(config, periodo)
 
     claves = parsear_claves(config.get("clave_cruce"))
     if not claves:
         raise ValueError("No existe clave_cruce configurada para confirmar la carga.")
 
     claves_destino = []
+    claves_archivo_faltantes = []
     for clave in claves:
         clave_destino = mapa_destino.get(normalizar_columna(clave))
         if not clave_destino:
             raise ValueError(f"La clave_cruce '{clave}' no existe en la tabla destino.")
         claves_destino.append(clave_destino)
+        clave_norm = normalizar_columna(clave)
+        if clave_norm not in mapa_archivo and not (
+            campo_periodo_norm and clave_norm == campo_periodo_norm
+        ):
+            claves_archivo_faltantes.append(clave)
+
+    if claves_archivo_faltantes:
+        raise ValueError(
+            "Faltan columnas clave en el archivo: "
+            + ", ".join(claves_archivo_faltantes)
+        )
 
     inicio_impacto = time.perf_counter()
     if es_carga_inicial:
@@ -401,9 +397,6 @@ def confirmar_carga_importacion(
     total_duplicado = estados.count("DUPLICADO_ARCHIVO")
     total_incompleta = estados.count("CLAVE_INCOMPLETA")
 
-    campo_periodo = config.get("campo_periodo_actual")
-    campo_periodo_norm = normalizar_columna(campo_periodo) if campo_periodo else ""
-    valor_periodo = valor_periodo_configurado(config, periodo)
     columnas_generadas: List[str] = []
 
     columnas_archivo_validas: List[Tuple[str, str, Dict[str, Any]]] = []
@@ -569,44 +562,57 @@ def confirmar_carga_importacion(
                     marcar_tiempo("insertar_destino", inicio_insert_final)
 
             inicio_proceso_fila = time.perf_counter()
-            for idx, row in (() if es_carga_inicial else df.iterrows()):
-                estado = estados[idx] if idx < len(estados) else "CLAVE_INCOMPLETA"
-                fila_excel = idx + 2
-
-                if estado in ("DUPLICADO_ARCHIVO", "CLAVE_INCOMPLETA"):
-                    rechazados += 1
-                    agregar_motivo_rechazo(
-                        motivos_rechazo, fila_excel, "clave_cruce", estado
-                    )
-                    registrar_error_importacion(
-                        conn=conn,
-                        id_lote=lote_id,
-                        fila_excel=fila_excel,
-                        columna="clave_cruce",
-                        valor=clave_fila_texto(row, claves, mapa_archivo, config, periodo),
-                        error=estado,
-                    )
-                    continue
-
-                valores_insert = valores_insert_importacion(
-                    row=row,
-                    columnas_archivo_validas=columnas_archivo_validas,
-                    columnas_generadas=columnas_generadas,
-                    valor_periodo=valor_periodo,
-                )
-                where_sql, where_params = construir_where_clave_importacion(
-                    row=row,
-                    claves_destino=claves_destino,
-                    mapa_archivo=mapa_archivo,
-                    config=config,
-                    periodo=periodo,
+            if not es_carga_inicial:
+                columnas_staging = list(columnas_insert_usadas)
+                staging_sql = asegurar_staging_importacion(
+                    conn=conn,
+                    id_config=int(config["id_config"]),
+                    columnas=columnas_staging,
                     columnas_destino_por_nombre=columnas_destino_por_nombre,
                 )
+                conn.execute(
+                    text(f"DELETE FROM {staging_sql} WHERE [__id_lote] = :id_lote"),
+                    {"id_lote": lote_id},
+                )
 
-                print("UPDATE where:", ",".join(claves_destino))
-                print("Fila estado:", estado)
+                filas_staging_batch = []
+                staged_nuevos = 0
+                staged_existentes = 0
+                for idx, row in df.iterrows():
+                    estado = estados[idx] if idx < len(estados) else "CLAVE_INCOMPLETA"
+                    fila_excel = idx + 2
 
-                if estado == "NUEVO":
+                    if estado in ("DUPLICADO_ARCHIVO", "CLAVE_INCOMPLETA"):
+                        rechazados += 1
+                        agregar_motivo_rechazo(
+                            motivos_rechazo, fila_excel, "clave_cruce", estado
+                        )
+                        registrar_error_importacion(
+                            conn=conn,
+                            id_lote=lote_id,
+                            fila_excel=fila_excel,
+                            columna="clave_cruce",
+                            valor=clave_fila_texto(row, claves, mapa_archivo, config, periodo),
+                            error=estado,
+                        )
+                        continue
+
+                    if estado not in ("NUEVO", "EXISTENTE"):
+                        rechazados += 1
+                        agregar_motivo_rechazo(
+                            motivos_rechazo, fila_excel, "estado_carga", f"Estado no cargable: {estado}"
+                        )
+                        registrar_error_importacion(
+                            conn, lote_id, fila_excel, "estado_carga", estado, f"Estado no cargable: {estado}"
+                        )
+                        continue
+
+                    valores_insert = valores_insert_importacion(
+                        row=row,
+                        columnas_archivo_validas=columnas_archivo_validas,
+                        columnas_generadas=columnas_generadas,
+                        valor_periodo=valor_periodo,
+                    )
                     if not valores_insert:
                         rechazados += 1
                         agregar_motivo_rechazo(
@@ -617,91 +623,89 @@ def confirmar_carga_importacion(
                             "No hay columnas compatibles para insertar."
                         )
                         continue
-                    columnas_sql = ", ".join(quote_identificador(col) for col in valores_insert)
-                    params_sql = {f"v{i}": valor for i, valor in enumerate(valores_insert.values())}
-                    values_sql = ", ".join(f":v{i}" for i in range(len(valores_insert)))
-                    conn.execute(text(f"""
-                        INSERT INTO {destino_sql} ({columnas_sql})
-                        VALUES ({values_sql})
-                    """), params_sql)
-                    insertados += 1
-                    total_inserts_ejecutados += 1
-                elif estado == "EXISTENTE":
-                    valores_update = valores_update_importacion(
-                        row=row,
-                        columnas_archivo_validas=columnas_archivo_validas,
-                        columnas_generadas=columnas_generadas,
-                        valor_periodo=valor_periodo,
-                        claves_destino=claves_destino,
-                    )
-                    if not valores_update:
-                        raise ValueError("No hay columnas validas para actualizar.")
-                    count_previo = int(conn.execute(
-                        text(f"SELECT COUNT(1) FROM {destino_sql} WHERE {where_sql}"),
-                        where_params,
-                    ).scalar() or 0)
-                    set_parts = []
-                    params_sql = dict(where_params)
-                    for i, (columna, valor) in enumerate(valores_update.items()):
-                        param_name = f"u{i}"
-                        set_parts.append(f"{quote_identificador(columna)} = :{param_name}")
-                        params_sql[param_name] = valor
-                    update_sql = f"""
-                            UPDATE {destino_sql}
-                            SET {", ".join(set_parts)}
-                            WHERE {where_sql}
-                        """
-                    try:
-                        result = conn.execute(text(update_sql), params_sql)
-                    except Exception as update_exc:
-                        print("Error update:", update_exc)
-                        raise
-                    rowcount = int(result.rowcount or 0)
-                    if len(debug_updates) < 5:
-                        debug_updates.append({
-                            "fila_excel": fila_excel,
-                            "where_sql_usado": where_sql,
-                            "params_where_usados": dict(where_params),
-                            "select_count_previo_update": count_previo,
-                            "update_sql_usado": " ".join(update_sql.split()),
-                            "columnas_set_usadas": list(valores_update.keys()),
-                            "rowcount_update": rowcount,
-                        })
-                    if count_previo <= 0:
-                        rechazados += 1
-                        total_updates_sin_afectar_filas += 1
-                        agregar_motivo_rechazo(
-                            motivos_rechazo,
-                            fila_excel,
-                            "clave_cruce",
-                            "UPDATE no afecto filas. Revisar clave de cruce.",
-                        )
-                        registrar_error_importacion(
+
+                    filas_staging_batch.append({
+                        "fila_excel": fila_excel,
+                        "estado_fila": estado,
+                        "valores": valores_insert,
+                    })
+                    if estado == "NUEVO":
+                        staged_nuevos += 1
+                    elif estado == "EXISTENTE":
+                        staged_existentes += 1
+                    if len(filas_staging_batch) >= 1000:
+                        insertar_filas_staging_importacion(
                             conn=conn,
+                            staging_sql=staging_sql,
                             id_lote=lote_id,
-                            fila_excel=fila_excel,
-                            columna="clave_cruce",
-                            valor=clave_fila_texto(row, claves, mapa_archivo, config, periodo),
-                            error=(
-                                "UPDATE no afecto filas. Revisar clave de cruce. "
-                                f"COUNT={count_previo}; WHERE={where_sql}; PARAMS={where_params}"
-                            ),
+                            filas=filas_staging_batch,
+                            columnas=columnas_staging,
                         )
-                        continue
-                    if rowcount == 0:
-                        total_updates_sin_afectar_filas += 1
-                    filas_sql_afectadas = rowcount if rowcount > 0 else count_previo
-                    actualizados += 1
-                    total_updates_ejecutados += filas_sql_afectadas
-                else:
-                    rechazados += 1
-                    agregar_motivo_rechazo(
-                        motivos_rechazo, fila_excel, "estado_carga", f"Estado no cargable: {estado}"
+                        filas_staging_batch = []
+
+                if filas_staging_batch:
+                    insertar_filas_staging_importacion(
+                        conn=conn,
+                        staging_sql=staging_sql,
+                        id_lote=lote_id,
+                        filas=filas_staging_batch,
+                        columnas=columnas_staging,
                     )
-                    registrar_error_importacion(
-                        conn, lote_id, fila_excel, "estado_carga", estado, f"Estado no cargable: {estado}"
+
+                if total_existente > 0:
+                    if not columnas_update_usadas:
+                        raise ValueError("No hay columnas validas para actualizar.")
+                    inicio_update_lote = time.perf_counter()
+                    join_sql = construir_join_staging_destino(
+                        claves_destino=claves_destino,
+                        columnas_destino_por_nombre=columnas_destino_por_nombre,
+                        alias_destino="D",
+                        alias_staging="S",
+                        config=config,
                     )
-            if not es_carga_inicial:
+                    set_sql = ", ".join(
+                        f"D.{quote_identificador(columna)} = COALESCE(S.{quote_identificador(columna)}, D.{quote_identificador(columna)})"
+                        for columna in columnas_update_usadas
+                    )
+                    update_sql = f"""
+                        UPDATE D
+                        SET {set_sql}
+                        FROM {destino_sql} AS D WITH(ROWLOCK)
+                        INNER JOIN {staging_sql} AS S
+                            ON {join_sql}
+                        WHERE S.[__id_lote] = :id_lote
+                          AND S.[__estado_fila] = 'EXISTENTE'
+                    """
+                    result = conn.execute(text(update_sql), {"id_lote": lote_id})
+                    filas_sql_update = rowcount_o_esperado(result.rowcount, staged_existentes)
+                    actualizados = staged_existentes
+                    total_updates_ejecutados = filas_sql_update
+                    total_updates_sin_afectar_filas = max(staged_existentes - filas_sql_update, 0)
+                    debug_updates.append({
+                        "modo": "UPDATE_SET_BASED",
+                        "claves_destino": claves_destino,
+                        "columnas_set_usadas": list(columnas_update_usadas),
+                        "rowcount_update": filas_sql_update,
+                        "filas_archivo_existentes": staged_existentes,
+                    })
+                    marcar_tiempo("actualizar_destino_lote", inicio_update_lote)
+
+                if total_nuevo > 0:
+                    inicio_insert_lote = time.perf_counter()
+                    columnas_sql = ", ".join(quote_identificador(col) for col in columnas_staging)
+                    select_sql = ", ".join(f"S.{quote_identificador(col)}" for col in columnas_staging)
+                    result = conn.execute(text(f"""
+                        INSERT INTO {destino_sql} ({columnas_sql})
+                        SELECT {select_sql}
+                        FROM {staging_sql} AS S
+                        WHERE S.[__id_lote] = :id_lote
+                          AND S.[__estado_fila] = 'NUEVO'
+                    """), {"id_lote": lote_id})
+                    filas_sql_insert = rowcount_o_esperado(result.rowcount, staged_nuevos)
+                    insertados = staged_nuevos
+                    total_inserts_ejecutados = filas_sql_insert
+                    marcar_tiempo("insertar_destino_lote", inicio_insert_lote)
+
                 marcar_tiempo("procesar_filas", inicio_proceso_fila)
 
             total_procesado = insertados + actualizados + rechazados
@@ -1894,7 +1898,7 @@ def insertar_filas_staging_importacion(
         payload.append((
             id_lote,
             fila["fila_excel"],
-            "VALIDO",
+            fila.get("estado_fila") or "VALIDO",
             *(valores.get(columna) for columna in columnas),
         ))
 
@@ -1911,6 +1915,61 @@ def insertar_filas_staging_importacion(
         cursor.executemany(insert_sql, payload)
     finally:
         cursor.close()
+
+
+def construir_join_staging_destino(
+    claves_destino: List[str],
+    columnas_destino_por_nombre: Dict[str, Dict[str, Any]],
+    alias_destino: str,
+    alias_staging: str,
+    config: Dict[str, Any],
+) -> str:
+    campo_periodo = config.get("campo_periodo_actual")
+    campo_periodo_norm = normalizar_columna(campo_periodo) if campo_periodo else ""
+    partes = []
+
+    for clave_destino in claves_destino:
+        clave_norm = normalizar_columna(clave_destino)
+        tipo_columna = str(
+            columnas_destino_por_nombre.get(clave_destino, {}).get("data_type") or ""
+        ).lower()
+
+        destino_col = f"{alias_destino}.{quote_identificador(clave_destino)}"
+        staging_col = f"{alias_staging}.{quote_identificador(clave_destino)}"
+
+        if campo_periodo_norm and clave_norm == campo_periodo_norm and es_periodo_fecha(config):
+            partes.append(f"CAST({destino_col} AS DATE) = CAST({staging_col} AS DATE)")
+            continue
+
+        destino_expr = expresion_clave_normalizada_sql_alias(alias_destino, clave_destino, tipo_columna)
+        staging_expr = expresion_clave_normalizada_sql_alias(alias_staging, clave_destino, tipo_columna)
+        if clave_norm in ("cod_pre", "codcli", "cod_cli", "operacion", "num_operacion"):
+            partes.append(
+                f"({destino_expr} = {staging_expr} "
+                f"OR TRY_CONVERT(DECIMAL(38, 0), {destino_expr}) = TRY_CONVERT(DECIMAL(38, 0), {staging_expr}))"
+            )
+        else:
+            partes.append(f"{destino_expr} = {staging_expr}")
+
+    return " AND ".join(partes)
+
+
+def expresion_clave_normalizada_sql_alias(alias: str, columna: str, tipo_columna: str = "") -> str:
+    columna_sql = f"{alias}.{quote_identificador(columna)}"
+    if tipo_columna in ("int", "bigint", "smallint", "tinyint", "numeric", "decimal", "float", "real", "money", "smallmoney"):
+        return (
+            "REPLACE(LTRIM(RTRIM(CONVERT(VARCHAR(100), "
+            f"CONVERT(DECIMAL(38, 0), {columna_sql})))), CHAR(160), '')"
+        )
+    return f"REPLACE(LTRIM(RTRIM(CAST({columna_sql} AS VARCHAR(100)))), CHAR(160), '')"
+
+
+def rowcount_o_esperado(rowcount: Any, esperado: int) -> int:
+    try:
+        value = int(rowcount)
+    except (TypeError, ValueError):
+        value = -1
+    return value if value >= 0 else int(esperado or 0)
 
 
 def marcar_lote_error(id_lote: int, observacion: str) -> None:

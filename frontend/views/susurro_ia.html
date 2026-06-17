@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biznescob - Susurro IA</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/susurro_ia.css?v=20260616a">
+</head>
+<body>
+    <main class="whisper-page">
+        <section class="whisper-hero">
+            <div>
+                <span class="eyebrow">Asistencia en vivo</span>
+                <h2>Susurro IA</h2>
+                <p>Detecta intenciones del cliente, alerta riesgos y sugiere la siguiente mejor frase durante la llamada.</p>
+            </div>
+            <div class="hero-actions">
+                <div class="live-pill" id="estadoSesionSusurro">SIN SESION</div>
+                <button class="btn-light" type="button" onclick="limpiarSusurro()">Limpiar</button>
+                <button class="btn-primary" type="button" onclick="crearSesionSusurro()">Nueva sesion</button>
+            </div>
+        </section>
+
+        <section class="whisper-grid">
+            <article class="assist-panel">
+                <div class="panel-head">
+                    <div>
+                        <h3>Sugerencia actual</h3>
+                        <p id="detalleSesionSusurro">Modo demo listo para recibir fragmentos.</p>
+                    </div>
+                    <span id="prioridadSusurro" class="priority-badge baja">BAJA</span>
+                </div>
+
+                <div id="sugerenciaVaciaSusurro" class="empty-assist">
+                    Esperando audio o texto del cliente.
+                </div>
+
+                <div id="sugerenciaActivaSusurro" class="assist-content oculto">
+                    <span id="intencionSusurro" class="intent-label">-</span>
+                    <h4 id="tituloSusurro">-</h4>
+                    <p id="textoSugerenciaSusurro">-</p>
+                    <div class="objective-box">
+                        <strong>Objetivo del agente</strong>
+                        <span id="objetivoSusurro">-</span>
+                    </div>
+                    <div class="next-step">
+                        <strong>Siguiente paso</strong>
+                        <span id="siguientePasoSusurro">-</span>
+                    </div>
+                </div>
+            </article>
+
+            <article class="call-panel">
+                <div class="panel-head compact">
+                    <div>
+                        <h3>Entrada en vivo</h3>
+                        <p>Usa esta caja para simular transcripcion mientras conectamos captura real.</p>
+                    </div>
+                </div>
+
+                <div class="speaker-toggle" role="group" aria-label="Hablante">
+                    <button id="btnClienteSusurro" class="active" type="button" onclick="setSpeakerSusurro('cliente')">Cliente</button>
+                    <button id="btnAgenteSusurro" type="button" onclick="setSpeakerSusurro('agente')">Agente</button>
+                </div>
+
+                <textarea id="fragmentoSusurro" rows="4" placeholder="Ejemplo cliente: no puedo pagar hoy porque estoy sin trabajo"></textarea>
+                <div class="input-actions">
+                    <button class="btn-light" type="button" onclick="cargarEjemploSusurro()">Ejemplo</button>
+                    <button class="btn-primary" type="button" onclick="enviarFragmentoSusurro()">Enviar fragmento</button>
+                </div>
+
+                <div class="capture-note">
+                    Captura real: retorno por loopback y microfono ya fueron validados en la laptop. Esta pantalla queda lista para recibir esos fragmentos por API.
+                </div>
+            </article>
+
+            <article class="metrics-panel">
+                <h3>Checklist de llamada</h3>
+                <div class="check-grid">
+                    <div id="checkSaludo"><span></span> Saludo</div>
+                    <div id="checkMonto"><span></span> Monto/deuda</div>
+                    <div id="checkFecha"><span></span> Fecha</div>
+                    <div id="checkCanal"><span></span> Canal</div>
+                    <div id="check3c"><span></span> Cierre 3C</div>
+                </div>
+                <div class="mini-metrics">
+                    <div><span>Cliente</span><strong id="metClienteSusurro">0</strong></div>
+                    <div><span>Agente</span><strong id="metAgenteSusurro">0</strong></div>
+                    <div><span>Alertas altas</span><strong id="metAltaSusurro">0</strong></div>
+                </div>
+            </article>
+
+            <article class="alerts-panel">
+                <h3>Alertas</h3>
+                <div id="alertasSusurro" class="alerts-list">
+                    <div class="empty-row">Sin alertas activas.</div>
+                </div>
+            </article>
+        </section>
+
+        <section class="history-panel">
+            <div class="panel-head compact">
+                <div>
+                    <h3>Transcripcion y decisiones</h3>
+                    <p>Ultimos fragmentos analizados por la IA de susurro.</p>
+                </div>
+                <span id="totalFragmentosSusurro">0 fragmentos</span>
+            </div>
+            <div id="historialSusurro" class="timeline">
+                <div class="empty-row">Aun no hay fragmentos.</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="../js/session.js"></script>
+    <script src="../js/app_layout.js?v=20260604a"></script>
+    <script src="../js/susurro_ia.js?v=20260616a"></script>
+</body>
+</html>

@@ -9,6 +9,7 @@ let mostrarCoincidentes = false;
 let filtroPreviewEstado = "TODOS";
 let previewVisible = false;
 let analisisConfirmado = false;
+let progresoConfirmacionTimer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
@@ -534,12 +535,24 @@ async function confirmarCargaImportacion() {
     formData.set("archivo", archivo);
 
     const btn = document.getElementById("btnConfirmarCarga");
+    const mensaje = document.getElementById("mensajeConfirmarCarga");
+    const totalInsertar = ultimoAnalisis.impacto?.registros_a_insertar || 0;
+    const totalActualizar = ultimoAnalisis.impacto?.registros_a_actualizar || 0;
+    const inicioConfirmacion = Date.now();
     try {
         cargaEnEjecucion = true;
         if (btn) {
             btn.disabled = true;
             btn.textContent = "Confirmando...";
         }
+        iniciarProgresoConfirmacion({
+            mensaje,
+            inicio: inicioConfirmacion,
+            totalInsertar,
+            totalActualizar,
+            periodo: ultimoAnalisis.periodo,
+            cartera: ultimoAnalisis.cartera,
+        });
         const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/confirmar`, {
             method: "POST",
             body: formData
@@ -571,11 +584,58 @@ async function confirmarCargaImportacion() {
         });
         toastImportacion(error.message, "error");
     } finally {
+        detenerProgresoConfirmacion();
         cargaEnEjecucion = false;
         if (btn) {
             btn.disabled = true;
             btn.textContent = "Confirmar carga";
         }
+    }
+}
+
+function iniciarProgresoConfirmacion({ mensaje, inicio, totalInsertar, totalActualizar, periodo, cartera }) {
+    detenerProgresoConfirmacion();
+    const render = async () => {
+        const segundos = Math.max(1, Math.round((Date.now() - inicio) / 1000));
+        const textoTiempo = segundos < 60
+            ? `${segundos}s`
+            : `${Math.floor(segundos / 60)}m ${String(segundos % 60).padStart(2, "0")}s`;
+        let detalleLote = "";
+
+        try {
+            const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/lotes?limit=5`, { cache: "no-store" });
+            const json = await res.json();
+            const lote = (json.data || []).find(item =>
+                String(item.periodo || "") === String(periodo || "") &&
+                (!cartera || String(item.cartera || "").toUpperCase() === String(cartera || "").toUpperCase()) &&
+                ["EN_PROCESO", "PROCESANDO"].includes(String(item.estado || "").toUpperCase())
+            );
+            if (lote) {
+                detalleLote = ` Lote ${h(lote.id_lote)} en proceso desde ${h(fechaHora(lote.fecha_inicio))}.`;
+            }
+        } catch (_) {
+            detalleLote = "";
+        }
+
+        if (mensaje) {
+            mensaje.innerHTML = `
+                <div class="load-message info">
+                    Confirmando carga... tiempo transcurrido ${h(textoTiempo)}.
+                    Se procesan ${numero(totalInsertar)} registros para insertar y ${numero(totalActualizar)} para actualizar.
+                    ${detalleLote || "La carga sigue ejecutandose en segundo plano."}
+                </div>
+            `;
+        }
+    };
+
+    render();
+    progresoConfirmacionTimer = setInterval(render, 5000);
+}
+
+function detenerProgresoConfirmacion() {
+    if (progresoConfirmacionTimer) {
+        clearInterval(progresoConfirmacionTimer);
+        progresoConfirmacionTimer = null;
     }
 }
 

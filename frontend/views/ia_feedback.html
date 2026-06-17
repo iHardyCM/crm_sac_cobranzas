@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Analisis IA</title>
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260604a">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260609d">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260617a">
 </head>
 <body>
     <main class="ia-page">
@@ -40,6 +40,7 @@
                     <strong id="modoIaTitulo">Calidad operativa</strong>
                     <span id="modoIaDetalle">Analisis, trazabilidad y feedback</span>
                 </div>
+                <button class="btn-light" type="button" onclick="toggleReporteriaIa()">Resumen</button>
                 <button class="btn-light" type="button" onclick="toggleHistorialIa()">Evaluaciones</button>
                 <button class="btn-light" type="button" onclick="exportarReporteIa()">Exportar reporte</button>
                 <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluacion</button>
@@ -139,7 +140,7 @@
 
                     <div class="field">
                         <label for="comentarioIa">Comentario del supervisor</label>
-                        <textarea id="comentarioIa" rows="3" placeholder="Ejemplo: llamada con cliente que solicita descuento; revisar si el asesor aplico negociacion escalonada y cerro las 3C."></textarea>
+                        <textarea id="comentarioIa" rows="3" placeholder="Ejemplo: revisar bajo COPC cobranza si hubo diagnostico, negociacion escalonada, cierre 3C y algun riesgo critico."></textarea>
                     </div>
 
                     <button id="btnAnalizarIa" class="btn-primary" type="submit">Analizar llamada con IA</button>
@@ -157,7 +158,7 @@
                         <span id="resultadoNivelIa" class="level-badge">-</span>
                         <button id="btnNuevaLlamadaIa" class="btn-light btn-small oculto" type="button" onclick="nuevaLlamadaIa()">Nueva llamada</button>
                         <button class="btn-light btn-small" type="button" onclick="toggleHistorialIa()">Historial</button>
-                        <button class="btn-light btn-small" type="button" onclick="toggleReporteriaIa()">Reporteria</button>
+                        <button class="btn-light btn-small" type="button" onclick="toggleReporteriaIa()">Resumen</button>
                     </div>
                 </div>
 
@@ -206,12 +207,16 @@
                             <span>Calidad IA</span>
                             <strong id="scoreCalidadIa">-</strong>
                         </div>
+                        <div>
+                            <span>Recalibracion</span>
+                            <strong id="estadoRecalibracionIa">SIN APELACION</strong>
+                        </div>
                     </div>
 
                     <section>
                         <div class="section-title-row">
                             <h4>Resumen por segmento</h4>
-                            <button class="btn-light btn-small" type="button" onclick="toggleDetalleCalidadIa()">Ver detalle de evaluacion</button>
+                            <button id="btnDetalleCalidadIa" class="btn-light btn-small" type="button" onclick="toggleDetalleCalidadIa()">Ver detalle de evaluacion</button>
                         </div>
                         <div id="resumenSegmentosIa" class="segment-summary"></div>
                         <div id="detalleCalidadIa" class="table-wrap quality-wrap oculto">
@@ -224,6 +229,7 @@
                                         <th>Nota</th>
                                         <th>Resultado</th>
                                         <th>Hallazgo</th>
+                                        <th>Momento</th>
                                         <th>Evidencia</th>
                                         <th>Recomendacion</th>
                                     </tr>
@@ -231,6 +237,11 @@
                                 <tbody id="evaluacionCalidadIa"></tbody>
                             </table>
                         </div>
+                    </section>
+
+                    <section>
+                        <h4>Habilidades blandas</h4>
+                        <div id="habilidadesBlandasIa" class="soft-skills-grid"></div>
                     </section>
 
                     <section>
@@ -246,6 +257,9 @@
                                     <tr>
                                         <th>Segmento</th>
                                         <th>Categoria</th>
+                                        <th>Severidad</th>
+                                        <th>Momento</th>
+                                        <th>Frase textual</th>
                                         <th>Hallazgo</th>
                                         <th>Evidencia</th>
                                         <th>Impacto</th>
@@ -275,7 +289,7 @@
                     <section class="review-box">
                         <div>
                             <h4>Cierre del supervisor</h4>
-                            <p>Asocia el agente solo si ya fue identificado y guarda el feedback que se bajara al equipo.</p>
+                            <p>La nota IA no se edita desde supervision. Si discrepas, solicita recalibracion con motivo y trazabilidad.</p>
                         </div>
                         <form id="formRevisionIa" class="review-form">
                             <input id="feedbackIdActualIa" type="hidden">
@@ -298,7 +312,10 @@
                                 <label for="comentarioFeedbackIa">Feedback final</label>
                                 <textarea id="comentarioFeedbackIa" rows="3" placeholder="Comentario final del supervisor para el agente."></textarea>
                             </div>
-                            <button id="btnGuardarRevisionIa" class="btn-primary" type="submit">Guardar revision</button>
+                            <div class="review-actions">
+                                <button id="btnGuardarRevisionIa" class="btn-primary" type="submit">Guardar revision</button>
+                                <button class="btn-light" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibracion</button>
+                            </div>
                         </form>
                     </section>
                 </div>
@@ -380,6 +397,41 @@
                 </article>
             </div>
 
+            <section class="report-card quality-workbench">
+                <div class="section-title-row">
+                    <div>
+                        <h4>Indicadores y fichas COPC</h4>
+                        <p>Accesos del flujo de calidad inspirado en monitor, supervisor, ficha y calibracion.</p>
+                    </div>
+                </div>
+                <div class="quality-workbench-grid">
+                    <article class="quality-action-card" data-quality-action="monitor">
+                        <span>Indicador monitor</span>
+                        <strong>Control operativo</strong>
+                        <p id="copcMonitorResumenIa">Vista para revisar precision por cartera, alertas, Pareto y brechas por item.</p>
+                        <button class="btn-light btn-small" type="button" data-quality-scroll="repParetoIa">Ver indicador</button>
+                    </article>
+                    <article class="quality-action-card" data-quality-action="supervisor">
+                        <span>Indicador supervisor</span>
+                        <strong>Gestion del equipo</strong>
+                        <p id="copcSupervisorResumenIa">Seguimiento de agentes, reincidencias, coaching pendiente y evolucion semanal.</p>
+                        <button class="btn-light btn-small" type="button" data-quality-scroll="repAgenteSemanaCardIa">Ver indicador</button>
+                    </article>
+                    <article class="quality-action-card" data-quality-action="ficha">
+                        <span>Ficha de calidad</span>
+                        <strong>PDF de evaluacion</strong>
+                        <p id="copcFichaResumenIa">Ficha final con datos editables, nota IA, evidencia, feedback y trazabilidad.</p>
+                        <button class="btn-light btn-small" type="button" data-quality-scroll="repDetalleBodyIa">Preparar ficha</button>
+                    </article>
+                    <article class="quality-action-card" data-quality-action="calibracion">
+                        <span>Ficha de calibracion</span>
+                        <strong>Criterio compartido</strong>
+                        <p id="copcCalibracionResumenIa">Comparacion entre IA, supervisor y calidad para aprobar o ajustar criterios.</p>
+                        <button class="btn-light btn-small" type="button" data-quality-scroll="repPrecisionCarteraIa">Preparar calibracion</button>
+                    </article>
+                </div>
+            </section>
+
             <section class="report-card stats-cube-card">
                 <div class="section-title-row">
                     <div>
@@ -389,6 +441,44 @@
                 </div>
                 <div class="table-wrap">
                     <table id="repCarteraSemanaIa" class="stats-table"></table>
+                </div>
+            </section>
+
+            <section id="repAgenteSemanaCardIa" class="report-card stats-cube-card agent-week-card">
+                <div class="section-title-row">
+                    <div>
+                        <h4>Evaluaciones por agente y semana</h4>
+                        <p id="repAgenteSemanaSubIa">Haz click en una cartera o usa los filtros para revisar agentes evaluados.</p>
+                    </div>
+                    <div class="agent-week-actions">
+                        <select id="repAgenteCarteraIa" aria-label="Filtrar agentes por cartera">
+                            <option value="">Todas las carteras</option>
+                        </select>
+                        <input id="repAgenteBusquedaIa" type="search" placeholder="Buscar agente">
+                        <select id="repAgenteOrdenIa" aria-label="Ordenar agentes">
+                            <option value="riesgo">Riesgo primero</option>
+                            <option value="total">Mas evaluaciones</option>
+                            <option value="score_desc">Mejor score</option>
+                            <option value="score_asc">Menor score</option>
+                        </select>
+                        <select id="repAgentePageSizeIa" aria-label="Agentes por pagina">
+                            <option value="8">8</option>
+                            <option value="12">12</option>
+                            <option value="20">20</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="repAgenteCarteraActivaIa" class="agent-week-active">Vista consolidada de agentes evaluados.</div>
+                <div class="table-wrap">
+                    <table id="repAgenteSemanaIa" class="stats-table agent-week-table"></table>
+                </div>
+                <div class="detail-pagination agent-week-pagination">
+                    <span id="repAgenteConteoIa">Mostrando 0 agentes</span>
+                    <div>
+                        <button id="repAgentePrevIa" class="btn-light btn-small" type="button">Anterior</button>
+                        <span id="repAgentePaginaIa">Pagina 1 de 1</span>
+                        <button id="repAgenteNextIa" class="btn-light btn-small" type="button">Siguiente</button>
+                    </div>
                 </div>
             </section>
 
@@ -496,7 +586,15 @@
                         <h4>Detalle de evaluaciones</h4>
                         <p id="repConteoDetalleIa">Mostrando 0 evaluaciones</p>
                     </div>
-                    <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar vista</button>
+                    <div class="detail-actions">
+                        <label for="pageSizeDetalleIa">Mostrar</label>
+                        <select id="pageSizeDetalleIa">
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20">20</option>
+                        </select>
+                        <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar vista</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table class="report-detail-table">
@@ -515,6 +613,11 @@
                         </thead>
                         <tbody id="repDetalleBodyIa"></tbody>
                     </table>
+                </div>
+                <div class="detail-pagination">
+                    <button id="prevDetalleIa" class="btn-light btn-small" type="button">Anterior</button>
+                    <span id="detallePaginaIa">Pagina 1 de 1</span>
+                    <button id="nextDetalleIa" class="btn-light btn-small" type="button">Siguiente</button>
                 </div>
             </section>
         </section>
@@ -570,11 +673,59 @@
                 </section>
                 <section id="promptGuideIa" class="prompt-section oculto">
                     <div class="prompt-guide-grid">
-                        <article><strong>Negociacion</strong><span>Escalonada: deuda total o monto alto, capital y descuento/campaña como ultima alternativa.</span></article>
-                        <article><strong>Cierre</strong><span>Validar las 3C: cuanto paga, donde paga y como pagara.</span></article>
-                        <article><strong>Filosofia Biznescob</strong><span>Sin insultos, sarcasmos, presion indebida o trato despectivo.</span></article>
+                        <article><strong>COPC Cobranza</strong><span>Evaluar cumplimiento, diagnostico, negociacion, cierre y experiencia/riesgo.</span></article>
+                        <article><strong>Cierre 3C</strong><span>Validar cuanto paga, donde paga y como pagara, con fecha o plazo verificable.</span></article>
+                        <article><strong>Error critico</strong><span>Amenazas, insultos, exposicion indebida de deuda, informacion falsa o presion abusiva.</span></article>
                         <article><strong>Salida JSON</strong><span>Mantener evaluacion_calidad, puntos_criticos, fortalezas, alertas y recomendacion.</span></article>
                     </div>
+                </section>
+            </div>
+        </div>
+        <div id="modalRecalibracionIa" class="modal-overlay oculto">
+            <div class="prompt-modal recalibration-modal" role="dialog" aria-modal="true" aria-labelledby="tituloModalRecalibracionIa">
+                <div class="modal-head">
+                    <div>
+                        <h3 id="tituloModalRecalibracionIa">Solicitud de recalibracion</h3>
+                        <p>Registra una apelacion sin modificar la nota IA inicial.</p>
+                    </div>
+                    <button class="modal-close" type="button" onclick="cerrarRecalibracionIa()">X</button>
+                </div>
+                <section class="prompt-section">
+                    <div class="recalibration-summary">
+                        <article><span>Evaluacion</span><strong id="recalibracionIdIa">-</strong></article>
+                        <article><span>Nota IA inicial</span><strong id="recalibracionNotaIa">-</strong></article>
+                        <article><span>Riesgo IA</span><strong id="recalibracionNivelIa">-</strong></article>
+                    </div>
+                    <form id="formRecalibracionIa" class="review-form">
+                        <div class="form-row">
+                            <div class="field">
+                                <label for="itemRecalibracionIa">Item cuestionado</label>
+                                <input id="itemRecalibracionIa" type="text" placeholder="Ejemplo: 4.1 Cierre 3C">
+                            </div>
+                            <div class="field">
+                                <label for="scoreSugeridoIa">Nota sugerida</label>
+                                <input id="scoreSugeridoIa" type="number" min="0" max="100" step="0.1" placeholder="0 a 100">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="nivelSugeridoIa">Nivel sugerido</label>
+                            <select id="nivelSugeridoIa">
+                                <option value="">Sin cambio sugerido</option>
+                                <option value="BAJA">BAJA</option>
+                                <option value="MEDIA">MEDIA</option>
+                                <option value="ALTA">ALTA</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="motivoRecalibracionIa">Motivo de discrepancia *</label>
+                            <textarea id="motivoRecalibracionIa" rows="3" placeholder="Explica por que discrepas con el criterio IA."></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="evidenciaRecalibracionIa">Evidencia del supervisor</label>
+                            <textarea id="evidenciaRecalibracionIa" rows="3" placeholder="Minuto, frase o contexto que justifica la apelacion."></textarea>
+                        </div>
+                        <button id="btnEnviarRecalibracionIa" class="btn-primary" type="submit">Enviar solicitud</button>
+                    </form>
                 </section>
             </div>
         </div>
@@ -583,6 +734,6 @@
 
     <script src="../js/session.js"></script>
     <script src="../js/app_layout.js?v=20260604a"></script>
-    <script src="../js/ia_feedback.js?v=20260609d"></script>
+    <script src="../js/ia_feedback.js?v=20260617a"></script>
 </body>
 </html>

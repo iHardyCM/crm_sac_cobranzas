@@ -180,6 +180,11 @@
     background: #0b3f6d;
 }
 
+.login-button:disabled {
+    cursor: wait;
+    opacity: .72;
+}
+
 .login-message {
     margin: 0 0 12px;
     border-radius: 8px;

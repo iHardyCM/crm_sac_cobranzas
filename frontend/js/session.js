@@ -81,7 +81,7 @@ function exigirSesion() {
     const agente = localStorage.getItem("agente");
 
     if (!dni || !agente) {
-        alert("Sesion invalida, vuelve a iniciar sesion");
+        sessionStorage.setItem("loginMensaje", "Sesion vencida o invalida. Inicia sesion nuevamente.");
         window.location.href = "login.html";
         return false;
     }
@@ -93,7 +93,7 @@ function exigirAccesoCorporativo() {
     if (!exigirSesion()) return false;
 
     if (!puedeVerCorporativo()) {
-        alert("No tienes acceso al panel corporativo");
+        sessionStorage.setItem("homeMensaje", "Tu perfil no tiene acceso al panel corporativo.");
         irInicio();
         return false;
     }
@@ -105,7 +105,7 @@ function exigirAccesoPdpHoy() {
     if (!exigirSesion()) return false;
 
     if (!puedeVerPdpHoy()) {
-        alert("No tienes acceso a promesas con vencimiento hoy");
+        sessionStorage.setItem("homeMensaje", "Tu perfil no tiene acceso a promesas con vencimiento hoy.");
         irInicio();
         return false;
     }

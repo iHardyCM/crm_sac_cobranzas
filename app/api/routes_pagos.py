@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.services.pagos_service import (
     confirmar_importacion,
@@ -30,7 +31,8 @@ async def validar_pago(
 ):
     try:
         content = await archivo.read()
-        return validar_archivo_pago(
+        return await run_in_threadpool(
+            validar_archivo_pago,
             formato=formato,
             filename=archivo.filename or "archivo",
             content=content,
@@ -43,9 +45,9 @@ async def validar_pago(
 
 
 @router.post("/confirmar/{id_importacion}")
-def confirmar_pago(id_importacion: int):
+async def confirmar_pago(id_importacion: int):
     try:
-        return confirmar_importacion(id_importacion)
+        return await run_in_threadpool(confirmar_importacion, id_importacion)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

@@ -1,20 +1,107 @@
 from calendar import monthrange
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from io import BytesIO
+import re
+import unicodedata
+from typing import Dict, List, Optional, Tuple
 
+import pandas as pd
 from sqlalchemy import bindparam, text
 
 from app.core.db_siscob import engine_siscob
 
 
 GRUPOS_CARTERA = {
-    "MIBANCO": [112, 135, 143],
+    "MIBANCO": [0, 112, 135, 143],
     "INTERBANK": [117, 137],
     "FINANCIERA_OH": [132],
     "COMPARTAMOS_VIGENTE": [126, 128, 133],
     "COMPARTAMOS_CASTIGO": [124, 144],
     "COMPARTAMOS": [124, 126, 128, 133, 144],
 }
+
+CARTERAS_MIBANCO_META = {
+    "BIZNESCOB": (112, "MIBANCO"),
+    "BIZNESCOB - IRRE": (0, "MIBANCO IRRE"),
+}
+
+COLUMNAS_MIBANCO_META = {
+    "funcionario": ["funcionario", "funcionarios"],
+    "ant_castigo": ["ant_castigo", "ant castigo", "antiguedad", "antigüedad"],
+    "ran_ticket": ["ran_ticket", "ran ticket", "rango ticket", "ticket"],
+    "cluster": ["clust", "cluster"],
+    "monto_meta": ["monto_meta", "monto meta", "meta", "monto"],
+}
+
+
+def importar_metas_mibanco(
+    codmes: Optional[str],
+    archivo_nombre: str,
+    contenido: bytes,
+    usuario: Optional[str] = None,
+) -> Dict:
+    codmes_limpio = normalizar_codmes(codmes)
+    if not contenido:
+        raise ValueError("Archivo obligatorio.")
+
+    asegurar_columnas_metas_mibanco()
+    df = leer_archivo_metas(archivo_nombre, contenido)
+    columnas = mapear_columnas_mibanco(df)
+    faltantes = [campo for campo in COLUMNAS_MIBANCO_META if campo not in columnas]
+    if faltantes:
+        raise ValueError("Columnas obligatorias faltantes: " + ", ".join(faltantes))
+
+    detalle, errores = normalizar_metas_mibanco(df, columnas, codmes_limpio)
+    if not detalle:
+        raise ValueError("No se encontraron filas validas para importar.")
+
+    usuario_limpio = str(usuario or "SIN_USUARIO").strip()[:50]
+    ids_mibanco = tuple(sorted({row["idcartera"] for row in detalle}))
+    for row in detalle:
+        row["usuario_registro"] = usuario_limpio
+        row["fecha_registro"] = datetime.now()
+        row["archivo_origen"] = archivo_nombre[:255]
+
+    with engine_siscob.begin() as conn:
+        query_desactivar = text("""
+            UPDATE CobAuto.dbo.METAS_MENSUALES
+            SET activo = 0,
+                usuario_modificacion = :usuario,
+                fecha_modificacion = GETDATE()
+            WHERE codmes = :codmes
+              AND idcartera IN :ids_mibanco
+              AND UPPER(LTRIM(RTRIM(tipo_medicion))) = 'RECUPERO'
+              AND ISNULL(activo, 0) = 1
+        """).bindparams(bindparam("ids_mibanco", expanding=True))
+        result = conn.execute(query_desactivar, {
+            "codmes": int(codmes_limpio),
+            "ids_mibanco": ids_mibanco,
+            "usuario": usuario_limpio,
+        })
+        reemplazadas = int(result.rowcount or 0)
+
+        insertar_metas_mensuales(conn, detalle)
+
+    return {
+        "ok": True,
+        "codmes": codmes_limpio,
+        "archivo": archivo_nombre,
+        "filas_archivo": int(len(df)),
+        "filas_validas": len(detalle),
+        "filas_error": len(errores),
+        "metas_principales": len(detalle),
+        "metas_reemplazadas": reemplazadas,
+        "total_meta": round(sum(numero(row["meta_mensual"]) for row in detalle), 2),
+        "detalle_por_cartera": [
+            {
+                "idcartera": idcartera,
+                "cartera": cartera,
+                "meta_mensual": round(sum(numero(row["meta_mensual"]) for row in rows), 2),
+            }
+            for (idcartera, cartera), rows in agrupar_detalle_metas_mibanco(detalle).items()
+        ],
+        "errores_preview": errores[:10],
+    }
 
 
 def obtener_resumen_metas(
@@ -132,6 +219,7 @@ def consultar_metas(
     tipo_medicion: Optional[str] = None,
     grupo_cartera: Optional[str] = None,
 ) -> List[Dict]:
+    asegurar_columnas_metas_mibanco()
     filtros = [
         "m.codmes = :codmes",
         "ISNULL(m.activo, 0) = 1",
@@ -150,29 +238,62 @@ def consultar_metas(
         params["ids_grupo"] = tuple(ids_grupo)
 
     query = text(f"""
-        WITH pagos_activos AS (
-            SELECT
-                codmes,
-                idcartera,
-                SUM(ISNULL(monto_pago_soles, ISNULL(monto_pago, 0))) AS monto_pago_activo,
-                SUM(ISNULL(capital_contenido, 0)) AS capital_contenido_activo,
-                COUNT(1) AS registros_pago,
-                MAX(fecha_corte) AS ultimo_corte
-            FROM CobAuto.dbo.PAGOS_BI_NORMALIZADO WITH(NOLOCK)
-            WHERE codmes = :codmes
-                AND ISNULL(activo, 0) = 1
-            GROUP BY codmes, idcartera
-        )
         SELECT
             m.*,
             ISNULL(p.monto_pago_activo, 0) AS pago_monto_pago,
             ISNULL(p.capital_contenido_activo, 0) AS pago_capital_contenido,
             ISNULL(p.registros_pago, 0) AS pago_registros,
             p.ultimo_corte AS pago_ultimo_corte
-        FROM CobAuto.dbo.VW_METAS_VS_AVANCE_ACTIVO m WITH(NOLOCK)
-        LEFT JOIN pagos_activos p
-            ON p.codmes = m.codmes
-            AND p.idcartera = m.idcartera
+        FROM CobAuto.dbo.METAS_MENSUALES m WITH(NOLOCK)
+        OUTER APPLY (
+            SELECT
+                SUM(ISNULL(pb.monto_pago_soles, ISNULL(pb.monto_pago, 0))) AS monto_pago_activo,
+                SUM(ISNULL(pb.capital_contenido, 0)) AS capital_contenido_activo,
+                COUNT(1) AS registros_pago,
+                MAX(pb.fecha_corte) AS ultimo_corte
+            FROM CobAuto.dbo.PAGOS_BI_NORMALIZADO pb WITH(NOLOCK)
+            LEFT JOIN Desarrollo.dbo.act_mibanco_castigo mb WITH(NOLOCK)
+                ON NULLIF(LTRIM(RTRIM(ISNULL(m.funcionario, ''))), '') IS NOT NULL
+               AND (
+                    REPLACE(LTRIM(RTRIM(ISNULL(CAST(mb.NRO_DOC AS VARCHAR(100)), ''))), CHAR(160), '')
+                    = REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.documento AS VARCHAR(100)), ''))), CHAR(160), '')
+                    OR REPLACE(LTRIM(RTRIM(ISNULL(CAST(mb.NRO_DOC AS VARCHAR(100)), ''))), CHAR(160), '')
+                    = REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.dni AS VARCHAR(100)), ''))), CHAR(160), '')
+               )
+               AND REPLACE(LTRIM(RTRIM(ISNULL(CAST(mb.COD_PRE AS VARCHAR(100)), ''))), CHAR(160), '')
+                   = REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.num_operacion AS VARCHAR(100)), ''))), CHAR(160), '')
+            WHERE pb.codmes = m.codmes
+              AND ISNULL(pb.activo, 0) = 1
+              AND (
+                    (NULLIF(LTRIM(RTRIM(ISNULL(m.funcionario, ''))), '') IS NOT NULL
+                     AND UPPER(LTRIM(RTRIM(ISNULL(NULLIF(pb.usuario_asignado, ''), ISNULL(mb.USU_FIN, ''))))) = UPPER(LTRIM(RTRIM(m.funcionario))))
+                    OR
+                    (NULLIF(LTRIM(RTRIM(ISNULL(m.funcionario, ''))), '') IS NULL
+                     AND pb.idcartera = m.idcartera)
+                  )
+              AND (
+                    NULLIF(LTRIM(RTRIM(ISNULL(m.cluster_meta, ''))), '') IS NULL
+                    OR UPPER(LTRIM(RTRIM(ISNULL(NULLIF(pb.segmentacion, ''), ISNULL(mb.CLUSTER_RFP, ''))))) = UPPER(LTRIM(RTRIM(m.cluster_meta)))
+                  )
+              AND (
+                    NULLIF(LTRIM(RTRIM(ISNULL(m.cuenta_meta, ''))), '') IS NULL
+                    OR REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.num_cuenta AS VARCHAR(100)), ''))), CHAR(160), '') = REPLACE(LTRIM(RTRIM(m.cuenta_meta)), CHAR(160), '')
+                    OR REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.cod_credito AS VARCHAR(100)), ''))), CHAR(160), '') = REPLACE(LTRIM(RTRIM(m.cuenta_meta)), CHAR(160), '')
+                    OR REPLACE(LTRIM(RTRIM(ISNULL(CAST(pb.num_operacion AS VARCHAR(100)), ''))), CHAR(160), '') = REPLACE(LTRIM(RTRIM(m.cuenta_meta)), CHAR(160), '')
+                  )
+              AND (
+                    NULLIF(LTRIM(RTRIM(ISNULL(m.clasificacion_sbs, ''))), '') IS NULL
+                    OR UPPER(LTRIM(RTRIM(ISNULL(pb.clasificacion_sbs, '')))) = UPPER(LTRIM(RTRIM(m.clasificacion_sbs)))
+                  )
+              AND (
+                    NULLIF(LTRIM(RTRIM(ISNULL(m.tipo_producto, ''))), '') IS NULL
+                    OR UPPER(LTRIM(RTRIM(ISNULL(pb.tipo_producto, '')))) = UPPER(LTRIM(RTRIM(m.tipo_producto)))
+                  )
+              AND (
+                    ISNULL(m.excluir_impulso, 0) = 0
+                    OR UPPER(LTRIM(RTRIM(ISNULL(pb.tipo_producto, '')))) <> 'IMPULSO'
+                  )
+        ) p
         WHERE {' AND '.join(filtros)}
         ORDER BY m.tipo_medicion, m.cartera
     """)
@@ -186,8 +307,194 @@ def consultar_metas(
     return [normalizar_fila(dict(row)) for row in rows]
 
 
+def asegurar_columnas_metas_mibanco() -> None:
+    ddl = text("""
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'funcionario') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD funcionario VARCHAR(100) NULL
+
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'ant_castigo') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD ant_castigo VARCHAR(50) NULL
+
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'ran_ticket') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD ran_ticket VARCHAR(50) NULL
+
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'cluster_meta') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD cluster_meta VARCHAR(50) NULL
+
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'cuenta_meta') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD cuenta_meta VARCHAR(100) NULL
+
+        IF COL_LENGTH('CobAuto.dbo.METAS_MENSUALES', 'archivo_origen') IS NULL
+            ALTER TABLE CobAuto.dbo.METAS_MENSUALES ADD archivo_origen VARCHAR(255) NULL
+    """)
+    with engine_siscob.begin() as conn:
+        conn.execute(ddl)
+
+
+def leer_archivo_metas(archivo_nombre: str, contenido: bytes) -> pd.DataFrame:
+    extension = archivo_nombre.lower().rsplit(".", 1)[-1] if "." in archivo_nombre else ""
+    stream = BytesIO(contenido)
+
+    if extension in {"csv", "txt"}:
+        try:
+            return pd.read_csv(stream, dtype=str)
+        except Exception:
+            stream.seek(0)
+            return pd.read_csv(stream, sep=";", dtype=str)
+
+    if extension == "xls":
+        return pd.read_excel(stream, dtype=str, engine="xlrd")
+
+    return pd.read_excel(stream, dtype=str, engine="openpyxl")
+
+
+def mapear_columnas_mibanco(df: pd.DataFrame) -> Dict[str, str]:
+    columnas = {normalizar_columna_meta(col): str(col) for col in df.columns}
+    resultado = {}
+
+    for campo, aliases in COLUMNAS_MIBANCO_META.items():
+        for alias in aliases:
+            normalizado = normalizar_columna_meta(alias)
+            if normalizado in columnas:
+                resultado[campo] = columnas[normalizado]
+                break
+
+    return resultado
+
+
+def normalizar_metas_mibanco(
+    df: pd.DataFrame,
+    columnas: Dict[str, str],
+    codmes: str,
+) -> Tuple[List[Dict], List[Dict]]:
+    detalle = []
+    errores = []
+
+    for idx, row in df.iterrows():
+        fila_excel = int(idx) + 2
+        funcionario = limpiar_texto_meta(row.get(columnas["funcionario"]))
+        ant_castigo = limpiar_texto_meta(row.get(columnas["ant_castigo"]))
+        ran_ticket = limpiar_texto_meta(row.get(columnas["ran_ticket"]))
+        cluster = limpiar_texto_meta(row.get(columnas["cluster"]))
+        monto = numero(row.get(columnas["monto_meta"]))
+
+        if not funcionario and not ant_castigo and not ran_ticket and not cluster and monto <= 0:
+            continue
+
+        idcartera, cartera = cartera_mibanco_por_funcionario(funcionario)
+        motivos = []
+        if not idcartera:
+            motivos.append(f"Funcionario no mapeado: {funcionario or '-'}")
+        if monto <= 0:
+            motivos.append("Monto meta invalido o cero.")
+        if not cluster:
+            motivos.append("Cluster vacio.")
+
+        if motivos:
+            errores.append({
+                "fila_excel": fila_excel,
+                "funcionario": funcionario,
+                "cluster": cluster,
+                "error": " | ".join(motivos),
+            })
+            continue
+
+        detalle.append({
+            "codmes": int(codmes),
+            "idcartera": idcartera,
+            "cartera": cartera,
+            "tipo_medicion": "RECUPERO",
+            "meta_mensual": monto,
+            "tipo_producto": None,
+            "clasificacion_sbs": None,
+            "segmentacion": None,
+            "excluir_impulso": 0,
+            "es_meta_principal": 1,
+            "activo": 1,
+            "observacion": f"Meta MiBanco detalle {cluster} | {ant_castigo} | {ran_ticket}",
+            "funcionario": funcionario,
+            "ant_castigo": ant_castigo,
+            "ran_ticket": ran_ticket,
+            "cluster_meta": cluster,
+        })
+
+    return detalle, errores
+
+
+def agrupar_detalle_metas_mibanco(detalle: List[Dict]) -> Dict[Tuple[int, str], List[Dict]]:
+    grupos: Dict[Tuple[int, str], List[Dict]] = {}
+    for row in detalle:
+        key = (int(row["idcartera"]), str(row["cartera"]))
+        grupos.setdefault(key, []).append(row)
+    return grupos
+
+
+def insertar_metas_mensuales(conn, filas: List[Dict]) -> None:
+    if not filas:
+        return
+
+    columnas_disponibles = columnas_tabla_metas(conn, "METAS_MENSUALES")
+    columnas = [
+        "codmes", "idcartera", "cartera", "tipo_medicion", "meta_mensual",
+        "tipo_producto", "clasificacion_sbs", "segmentacion", "excluir_impulso",
+        "es_meta_principal", "activo", "observacion", "usuario_registro",
+        "fecha_registro", "funcionario", "ant_castigo", "ran_ticket",
+        "cluster_meta", "cuenta_meta", "archivo_origen",
+    ]
+    columnas = [col for col in columnas if col in columnas_disponibles]
+    columnas_sql = ", ".join(columnas)
+    valores_sql = ", ".join(f":{col}" for col in columnas)
+
+    payload = []
+    for row in filas:
+        item = {col: row.get(col) for col in columnas}
+        item.setdefault("usuario_registro", row.get("usuario_registro") or "SIN_USUARIO")
+        payload.append(item)
+
+    conn.execute(text(f"""
+        INSERT INTO CobAuto.dbo.METAS_MENSUALES ({columnas_sql})
+        VALUES ({valores_sql})
+    """), payload)
+
+
+def columnas_tabla_metas(conn, table: str) -> set:
+    rows = conn.execute(text("""
+        SELECT LOWER(COLUMN_NAME) AS column_name
+        FROM CobAuto.INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = 'dbo'
+          AND TABLE_NAME = :table
+    """), {"table": table}).fetchall()
+    return {row.column_name for row in rows}
+
+
+def cartera_mibanco_por_funcionario(funcionario: str) -> Tuple[Optional[int], Optional[str]]:
+    valor = re.sub(r"\s+", " ", str(funcionario or "").strip().upper())
+    valor_compacto = re.sub(r"[^A-Z0-9]+", "", valor)
+    if "IRRE" in valor:
+        return CARTERAS_MIBANCO_META["BIZNESCOB - IRRE"]
+    if valor_compacto in {"BIZNESCOB", "BIZNECOB"}:
+        return CARTERAS_MIBANCO_META["BIZNESCOB"]
+    return None, None
+
+
+def limpiar_texto_meta(value) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return re.sub(r"\s+", " ", str(value).replace("\u00a0", " ").strip())
+
+
+def normalizar_columna_meta(value) -> str:
+    texto_valor = str(value or "").strip().lower()
+    texto_valor = unicodedata.normalize("NFKD", texto_valor)
+    texto_valor = "".join(char for char in texto_valor if not unicodedata.combining(char))
+    texto_valor = re.sub(r"[^a-z0-9]+", "_", texto_valor)
+    return re.sub(r"_+", "_", texto_valor).strip("_")
+
+
 def normalizar_fila(row: Dict) -> Dict:
     normalizada = {str(key).lower(): serializar_valor(value) for key, value in row.items()}
+    if normalizada.get("cluster_meta") and not normalizada.get("segmentacion"):
+        normalizada["segmentacion"] = normalizada.get("cluster_meta")
     normalizada["avance_actual"] = (
         normalizada.get("pago_monto_pago")
         if texto(normalizada.get("tipo_medicion")) == "RECUPERO"

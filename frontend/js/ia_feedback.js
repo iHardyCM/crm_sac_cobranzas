@@ -4,6 +4,13 @@ let historialIa = [];
 let resultadoActualIa = null;
 let reporteriaActualIa = null;
 let detalleReporteIa = [];
+let detalleReportePaginaIa = 1;
+let detalleReportePageSizeIa = 10;
+let agenteSemanaPaginaIa = 1;
+let agenteSemanaPageSizeIa = 8;
+let agenteSemanaCarteraIa = "";
+let agenteSemanaItemsIa = [];
+let mensajeIaTimeout = null;
 let iaAudioConfig = {
     formatos: ["MP3", "WAV", "M4A", "OGG"],
     extensiones: [".mp3", ".wav", ".m4a", ".ogg"],
@@ -16,6 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
     prepararFormularioIa();
     prepararFiltrosReporteIa();
     prepararAccionesReporteIa();
+    prepararAccionesAgenteSemanaIa();
     cargarConfigIa();
     cargarCarterasIa();
     cargarHistorialIa();
@@ -40,7 +48,7 @@ function prepararFormularioIa() {
 
     const comentario = document.getElementById("comentarioIa");
     if (comentario) {
-        comentario.placeholder = "Ejemplo: llamada con cliente que solicita descuento; revisar si el asesor aplico negociacion escalonada y cerro las 3C.";
+        comentario.placeholder = "Ejemplo: revisar bajo COPC cobranza si hubo diagnostico, negociacion escalonada, cierre 3C y algun riesgo critico.";
     }
 
     audioInput.addEventListener("change", () => {
@@ -57,6 +65,11 @@ function prepararFormularioIa() {
     document.getElementById("formRevisionIa")?.addEventListener("submit", async (event) => {
         event.preventDefault();
         await guardarRevisionIa();
+    });
+
+    document.getElementById("formRecalibracionIa")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await enviarRecalibracionIa();
     });
 }
 
@@ -113,7 +126,7 @@ async function subirYAnalizarIa() {
         } else {
             mostrarMensajeIa("Analisis generado correctamente.", "ok");
         }
-        limpiarFormularioBasicoIa();
+        limpiarFormularioBasicoIa({ limpiarCartera: true });
         await cargarHistorialIa();
     } catch (error) {
         cambiarEstadoProceso("ERROR");
@@ -374,11 +387,13 @@ function renderResultadoIa(data) {
     setText("resultadoGestionIa", data.resultado_gestion || "-");
     setText("objecionIa", data.objecion_principal || "-");
     setText("scoreCalidadIa", data.score_calidad != null ? `${Number(data.score_calidad).toFixed(1)} / 100` : "-");
+    setText("estadoRecalibracionIa", (data.estado_recalibracion || "SIN_APELACION").replace("_", " "));
     setText("recomendacionIa", data.recomendaciones || "-");
     setText("guionIa", data.guion_sugerido || "-");
 
     pintarEvaluacionCalidad(data.evaluacion_calidad_lista || []);
     pintarResumenSegmentos(data.evaluacion_calidad_lista || []);
+    pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(data.evaluacion_calidad_lista || []));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
     pintarLista("alertasIa", data.alertas_lista || []);
     pintarPuntosCriticos(data.puntos_criticos_lista || []);
@@ -386,6 +401,7 @@ function renderResultadoIa(data) {
 }
 
 function activarVistaResultadoIa(activa) {
+    ocultarMensajeIa();
     setVistaActivaIa("evaluaciones");
     document.getElementById("filtrosReporteIa")?.classList.add("oculto");
     document.getElementById("kpisIa")?.classList.toggle("oculto", activa);
@@ -399,6 +415,7 @@ function activarVistaResultadoIa(activa) {
 }
 
 function nuevaLlamadaIa() {
+    ocultarMensajeIa();
     resultadoActualIa = null;
     setVistaActivaIa("evaluaciones");
     document.getElementById("filtrosReporteIa")?.classList.add("oculto");
@@ -418,6 +435,7 @@ function nuevaLlamadaIa() {
 }
 
 function toggleHistorialIa() {
+    ocultarMensajeIa();
     setVistaActivaIa("evaluaciones");
     const panel = document.getElementById("historialPanelIa");
     document.getElementById("filtrosReporteIa")?.classList.add("oculto");
@@ -436,6 +454,7 @@ function toggleReporteriaIa() {
 }
 
 function activarVistaReporteriaIa(options = {}) {
+    ocultarMensajeIa();
     setVistaActivaIa("reporte");
     document.getElementById("filtrosReporteIa")?.classList.remove("oculto");
     document.getElementById("kpisIa")?.classList.add("oculto");
@@ -478,6 +497,8 @@ async function cargarReporteriaIa() {
 function renderReporteriaIa(data) {
     reporteriaActualIa = data || {};
     detalleReporteIa = aplicarFiltrosDetalleIa(reporteriaActualIa.detalle || []);
+    const paginas = totalPaginasDetalleIa();
+    if (detalleReportePaginaIa > paginas) detalleReportePaginaIa = paginas;
     poblarFiltroSupervisoresIa(reporteriaActualIa.detalle || []);
     const dataFiltrada = construirReporteFiltradoIa(reporteriaActualIa, detalleReporteIa);
     const brechas = dataFiltrada.brechas || [];
@@ -510,6 +531,9 @@ function renderReporteriaIa(data) {
     pintarComparativoCarterasIa(carteras);
     pintarSemanasReporte(dataFiltrada.semanas || []);
     pintarCarteraSemanaIa(detalleReporteIa);
+    pintarResumenCopcIa(dataFiltrada);
+    poblarFiltroAgenteSemanaIa(detalleReporteIa);
+    pintarAgenteSemanaIa(detalleReporteIa);
     pintarPrecisionCarteraIa(carteras);
     pintarTendenciaSemanalIa(detalleReporteIa);
     pintarParetoIa(brechas);
@@ -529,6 +553,7 @@ function prepararFiltrosReporteIa() {
         if (!el) return;
         const evento = el.tagName === "INPUT" ? "input" : "change";
         el.addEventListener(evento, () => {
+            detalleReportePaginaIa = 1;
             if (reporteriaActualIa) renderReporteriaIa(reporteriaActualIa);
         });
     });
@@ -556,6 +581,21 @@ function prepararAccionesReporteIa() {
             cargarReporteriaIa();
         });
         btn.removeAttribute("onclick");
+    });
+    document.getElementById("pageSizeDetalleIa")?.addEventListener("change", event => {
+        detalleReportePageSizeIa = Number(event.target.value || 10);
+        detalleReportePaginaIa = 1;
+        pintarDetalleReporteIa(detalleReporteIa);
+    });
+    document.getElementById("prevDetalleIa")?.addEventListener("click", () => {
+        if (detalleReportePaginaIa <= 1) return;
+        detalleReportePaginaIa -= 1;
+        pintarDetalleReporteIa(detalleReporteIa);
+    });
+    document.getElementById("nextDetalleIa")?.addEventListener("click", () => {
+        if (detalleReportePaginaIa >= totalPaginasDetalleIa()) return;
+        detalleReportePaginaIa += 1;
+        pintarDetalleReporteIa(detalleReporteIa);
     });
 }
 
@@ -656,7 +696,7 @@ function pintarCarteraSemanaIa(items) {
         </thead>
         <tbody>
             ${rows.map(row => `
-                <tr>
+                <tr class="cartera-week-row" data-cartera="${encodeURIComponent(row.cartera)}" title="Ver agentes evaluados de esta cartera">
                     <td><strong>${escapeHtml(row.cartera)}</strong></td>
                     <td>${formatoNumero(row.total)}</td>
                     <td>${(row.scoreTotal / row.total).toFixed(1)}%</td>
@@ -669,6 +709,170 @@ function pintarCarteraSemanaIa(items) {
             `).join("")}
         </tbody>
     `;
+}
+
+function prepararAccionesAgenteSemanaIa() {
+    document.getElementById("repAgenteCarteraIa")?.addEventListener("change", event => {
+        agenteSemanaCarteraIa = event.target.value || "";
+        agenteSemanaPaginaIa = 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.getElementById("repAgenteBusquedaIa")?.addEventListener("input", () => {
+        agenteSemanaPaginaIa = 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.getElementById("repAgenteOrdenIa")?.addEventListener("change", () => {
+        agenteSemanaPaginaIa = 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.getElementById("repAgentePageSizeIa")?.addEventListener("change", event => {
+        agenteSemanaPageSizeIa = Number(event.target.value || 8);
+        agenteSemanaPaginaIa = 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.getElementById("repAgentePrevIa")?.addEventListener("click", () => {
+        if (agenteSemanaPaginaIa <= 1) return;
+        agenteSemanaPaginaIa -= 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.getElementById("repAgenteNextIa")?.addEventListener("click", () => {
+        const totalPaginas = Math.max(1, Math.ceil((agenteSemanaItemsIa.length || 0) / agenteSemanaPageSizeIa));
+        if (agenteSemanaPaginaIa >= totalPaginas) return;
+        agenteSemanaPaginaIa += 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+    });
+    document.addEventListener("click", event => {
+        const scrollTarget = event.target.closest("[data-quality-scroll]");
+        if (scrollTarget) {
+            event.preventDefault();
+            document.getElementById(scrollTarget.dataset.qualityScroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        const row = event.target.closest(".cartera-week-row");
+        if (!row) return;
+        agenteSemanaCarteraIa = decodeURIComponent(row.dataset.cartera || "");
+        setValue("repAgenteCarteraIa", agenteSemanaCarteraIa);
+        agenteSemanaPaginaIa = 1;
+        pintarAgenteSemanaIa(detalleReporteIa);
+        document.getElementById("repAgenteSemanaCardIa")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+}
+
+function pintarResumenCopcIa(data) {
+    const total = Number(data.total_audios || 0);
+    const score = data.score_promedio == null ? 0 : Number(data.score_promedio || 0);
+    const ceros = Number(data.items_nota_cero || 0);
+    const agentes = data.agentes || [];
+    const carteras = data.carteras || [];
+    const coaching = agentes.filter(x => porcentajeReporte(x) < 75 || Number(x.ceros || 0) > 0).length;
+    setText("copcMonitorResumenIa", `${formatoNumero(total)} evaluaciones, ${formatoNumero(ceros)} alertas y score promedio ${score ? score.toFixed(1) : "0.0"}%.`);
+    setText("copcSupervisorResumenIa", `${formatoNumero(agentes.length)} agentes evaluados; ${formatoNumero(coaching)} requieren seguimiento o coaching.`);
+    setText("copcFichaResumenIa", total ? `Ultima muestra lista para ficha: ${formatoNumero(total)} evaluaciones del periodo filtrado.` : "Sin evaluaciones para preparar ficha en el filtro actual.");
+    setText("copcCalibracionResumenIa", `${formatoNumero(carteras.length)} carteras comparables para calibrar criterio y brechas.`);
+}
+
+function poblarFiltroAgenteSemanaIa(items) {
+    const select = document.getElementById("repAgenteCarteraIa");
+    if (!select) return;
+    const actual = agenteSemanaCarteraIa || select.value || "";
+    const carteras = [...new Set(items.map(item => item.cartera || "Sin cartera").filter(Boolean))].sort();
+    select.innerHTML = `<option value="">Todas las carteras</option>` + carteras.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join("");
+    select.value = carteras.includes(actual) ? actual : "";
+    agenteSemanaCarteraIa = select.value;
+}
+
+function pintarAgenteSemanaIa(items) {
+    const table = document.getElementById("repAgenteSemanaIa");
+    if (!table) return;
+    const semanas = [...new Set(items.map(item => claveSemanaClienteIa(item.fecha_llamada || item.fecha_creacion)))].sort();
+    const cartera = agenteSemanaCarteraIa || valor("repAgenteCarteraIa");
+    const busqueda = valor("repAgenteBusquedaIa").toLowerCase();
+    const orden = valor("repAgenteOrdenIa") || "riesgo";
+    const filtrados = items.filter(item => {
+        if (cartera && String(item.cartera || "Sin cartera") !== cartera) return false;
+        if (busqueda && !String(item.agente || "Sin agente asociado").toLowerCase().includes(busqueda)) return false;
+        return true;
+    });
+    const grupos = {};
+    filtrados.forEach(item => {
+        const agente = item.agente || "Sin agente asociado";
+        const itemCartera = item.cartera || "Sin cartera";
+        const semana = claveSemanaClienteIa(item.fecha_llamada || item.fecha_creacion);
+        const key = `${itemCartera}||${agente}`;
+        const actual = grupos[key] || { cartera: itemCartera, agente, total: 0, scoreTotal: 0, criticos: 0, semanas: {} };
+        actual.total += 1;
+        actual.scoreTotal += Number(item.score_calidad || 0);
+        actual.criticos += Number(item.total_puntos_criticos || 0);
+        const sem = actual.semanas[semana] || { total: 0, scoreTotal: 0 };
+        sem.total += 1;
+        sem.scoreTotal += Number(item.score_calidad || 0);
+        actual.semanas[semana] = sem;
+        grupos[key] = actual;
+    });
+    agenteSemanaItemsIa = Object.values(grupos).map(item => ({
+        ...item,
+        promedio: item.total ? item.scoreTotal / item.total : 0,
+    }));
+    ordenarAgentesSemanaIa(agenteSemanaItemsIa, orden);
+    const total = agenteSemanaItemsIa.length;
+    const totalPaginas = Math.max(1, Math.ceil(total / agenteSemanaPageSizeIa));
+    if (agenteSemanaPaginaIa > totalPaginas) agenteSemanaPaginaIa = totalPaginas;
+    const inicio = total ? (agenteSemanaPaginaIa - 1) * agenteSemanaPageSizeIa : 0;
+    const pagina = agenteSemanaItemsIa.slice(inicio, inicio + agenteSemanaPageSizeIa);
+    setText("repAgenteSemanaSubIa", cartera ? `Agentes evaluados en ${cartera}.` : "Agentes evaluados por cartera, mes y semana.");
+    setText("repAgenteCarteraActivaIa", cartera ? `Cartera seleccionada: ${cartera}` : "Vista consolidada de agentes evaluados.");
+    setText("repAgenteConteoIa", total ? `Mostrando ${formatoNumero(inicio + 1)} a ${formatoNumero(Math.min(inicio + agenteSemanaPageSizeIa, total))} de ${formatoNumero(total)} agentes` : "Mostrando 0 agentes");
+    setText("repAgentePaginaIa", `Pagina ${formatoNumero(agenteSemanaPaginaIa)} de ${formatoNumero(totalPaginas)}`);
+    const prev = document.getElementById("repAgentePrevIa");
+    const next = document.getElementById("repAgenteNextIa");
+    if (prev) prev.disabled = agenteSemanaPaginaIa <= 1;
+    if (next) next.disabled = agenteSemanaPaginaIa >= totalPaginas;
+    if (!pagina.length) {
+        table.innerHTML = `<tbody><tr><td class="empty-row">No hay agentes evaluados para esta seleccion.</td></tr></tbody>`;
+        return;
+    }
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Agente</th>
+                <th>Cartera</th>
+                <th>Evaluaciones mes</th>
+                <th>Promedio</th>
+                <th>Alertas</th>
+                ${semanas.map(semana => `<th>${escapeHtml(semana)}</th>`).join("")}
+            </tr>
+        </thead>
+        <tbody>
+            ${pagina.map(row => `
+                <tr class="${row.promedio < 70 || row.criticos > 0 ? "warning-row" : ""}">
+                    <td><strong>${escapeHtml(row.agente)}</strong></td>
+                    <td>${escapeHtml(row.cartera)}</td>
+                    <td>${formatoNumero(row.total)}</td>
+                    <td><span class="quality-score ${claseScoreAgenteIa(row.promedio)}">${row.promedio.toFixed(1)}%</span></td>
+                    <td>${formatoNumero(row.criticos)}</td>
+                    ${semanas.map(semana => {
+                        const sem = row.semanas[semana];
+                        return `<td>${sem ? `${formatoNumero(sem.total)} | ${(sem.scoreTotal / sem.total).toFixed(1)}%` : "-"}</td>`;
+                    }).join("")}
+                </tr>
+            `).join("")}
+        </tbody>
+    `;
+}
+
+function ordenarAgentesSemanaIa(items, orden) {
+    const sorters = {
+        total: (a, b) => b.total - a.total || a.promedio - b.promedio,
+        score_desc: (a, b) => b.promedio - a.promedio || b.total - a.total,
+        score_asc: (a, b) => a.promedio - b.promedio || b.criticos - a.criticos,
+        riesgo: (a, b) => b.criticos - a.criticos || a.promedio - b.promedio || b.total - a.total,
+    };
+    items.sort(sorters[orden] || sorters.riesgo);
+}
+
+function claseScoreAgenteIa(score) {
+    if (score >= 85) return "score-ok";
+    if (score >= 70) return "score-mid";
+    return "score-low";
 }
 
 function pintarPrecisionCarteraIa(items) {
@@ -764,12 +968,22 @@ function agruparScoreDetalleIa(items, campo) {
 function pintarDetalleReporteIa(items) {
     const tbody = document.getElementById("repDetalleBodyIa");
     if (!tbody) return;
-    setText("repConteoDetalleIa", `Mostrando ${formatoNumero(items.length)} evaluaciones`);
+    const total = items.length;
+    const totalPaginas = totalPaginasDetalleIa();
+    const inicio = total ? (detalleReportePaginaIa - 1) * detalleReportePageSizeIa : 0;
+    const fin = Math.min(inicio + detalleReportePageSizeIa, total);
+    const pagina = items.slice(inicio, fin);
+    setText("repConteoDetalleIa", total ? `Mostrando ${formatoNumero(inicio + 1)} a ${formatoNumero(fin)} de ${formatoNumero(total)} evaluaciones` : "Mostrando 0 evaluaciones");
+    setText("detallePaginaIa", `Pagina ${formatoNumero(detalleReportePaginaIa)} de ${formatoNumero(totalPaginas)}`);
+    const prev = document.getElementById("prevDetalleIa");
+    const next = document.getElementById("nextDetalleIa");
+    if (prev) prev.disabled = detalleReportePaginaIa <= 1;
+    if (next) next.disabled = detalleReportePaginaIa >= totalPaginas;
     if (!items.length) {
         tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No hay evaluaciones para los filtros seleccionados.</td></tr>`;
         return;
     }
-    tbody.innerHTML = items.map(item => `
+    tbody.innerHTML = pagina.map(item => `
         <tr>
             <td>${escapeHtml(item.id_feedback || "-")}</td>
             <td>${escapeHtml(item.archivo_nombre || "-")}</td>
@@ -784,10 +998,19 @@ function pintarDetalleReporteIa(items) {
     `).join("");
 }
 
+function totalPaginasDetalleIa() {
+    return Math.max(1, Math.ceil((detalleReporteIa?.length || 0) / detalleReportePageSizeIa));
+}
+
 function formatearNotasSegmentoIa(notas) {
     const entries = Object.entries(notas || {});
     if (!entries.length) return "-";
-    return entries.map(([segmento, item]) => `${segmento}: ${Number(item.nota || 0).toFixed(1)}/${Number(item.peso || 0).toFixed(1)}`).join(" | ");
+    return entries.map(([segmento, item]) => `${formatearSegmentoIa(segmento)}: ${Number(item.nota || 0).toFixed(1)}/${Number(item.peso || 0).toFixed(1)}`).join(" | ");
+}
+
+function formatearSegmentoIa(segmento) {
+    const value = String(segmento || "-");
+    return value.toLowerCase() === "experiencia y riesgo" ? "Filosofia Biznescob" : value;
 }
 
 function poblarFiltroSupervisoresIa(items) {
@@ -799,12 +1022,18 @@ function poblarFiltroSupervisoresIa(items) {
 }
 
 function limpiarFiltrosReporteIa() {
+    detalleReportePaginaIa = 1;
+    agenteSemanaPaginaIa = 1;
+    agenteSemanaCarteraIa = "";
     setValue("filtroFechaIa", "");
     setValue("filtroCarteraIa", "");
     setValue("filtroSupervisorIa", "");
     setValue("filtroAgenteIa", "");
     setValue("filtroRiesgoIa", "");
     setValue("filtroResultadoIa", "");
+    setValue("repAgenteCarteraIa", "");
+    setValue("repAgenteBusquedaIa", "");
+    setValue("repAgenteOrdenIa", "riesgo");
     if (reporteriaActualIa) renderReporteriaIa(reporteriaActualIa);
 }
 
@@ -864,9 +1093,8 @@ function formatoFechaCortaIa(fecha) {
 
 function claveSemanaClienteIa(value) {
     const fecha = parseFechaIa(value) || new Date();
-    const inicio = new Date(fecha.getFullYear(), 0, 1);
-    const dias = Math.floor((fecha - inicio) / 86400000);
-    return `${fecha.getFullYear()}-S${String(Math.ceil((dias + inicio.getDay() + 1) / 7)).padStart(2, "0")}`;
+    const semanaMes = Math.ceil(fecha.getDate() / 7);
+    return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")} S${semanaMes}`;
 }
 
 function pintarDistribucionIa(data) {
@@ -1007,7 +1235,7 @@ function etiquetaReporte(item, labelField) {
     if (labelField === "cartera") return item.cartera || "-";
     if (labelField === "agente") return item.agente || "-";
     if (labelField === "semana") return item.semana || "-";
-    return item.segmento || "-";
+    return formatearSegmentoIa(item.segmento);
 }
 
 function pintarSemanasReporte(items) {
@@ -1072,6 +1300,72 @@ async function guardarRevisionIa() {
     }
 }
 
+function abrirRecalibracionIa() {
+    if (!resultadoActualIa?.id_feedback) {
+        mostrarMensajeIa("Primero abre o genera un analisis para solicitar recalibracion.", "error");
+        return;
+    }
+    setText("recalibracionIdIa", resultadoActualIa.id_feedback || "-");
+    setText("recalibracionNotaIa", resultadoActualIa.score_calidad != null ? `${Number(resultadoActualIa.score_calidad).toFixed(1)} / 100` : "-");
+    setText("recalibracionNivelIa", resultadoActualIa.nivel_oportunidad_mejora || "-");
+    setValue("itemRecalibracionIa", "");
+    setValue("scoreSugeridoIa", "");
+    setValue("nivelSugeridoIa", "");
+    setValue("motivoRecalibracionIa", "");
+    setValue("evidenciaRecalibracionIa", "");
+    document.getElementById("modalRecalibracionIa")?.classList.remove("oculto");
+}
+
+function cerrarRecalibracionIa() {
+    document.getElementById("modalRecalibracionIa")?.classList.add("oculto");
+}
+
+async function enviarRecalibracionIa() {
+    const idFeedback = resultadoActualIa?.id_feedback || valor("feedbackIdActualIa");
+    if (!idFeedback) {
+        mostrarMensajeIa("Primero abre o genera un analisis para solicitar recalibracion.", "error");
+        return;
+    }
+
+    if (!valor("motivoRecalibracionIa")) {
+        mostrarMensajeIa("Ingresa el motivo de discrepancia para dejar trazabilidad.", "error");
+        return;
+    }
+
+    const btn = document.getElementById("btnEnviarRecalibracionIa");
+    btn.disabled = true;
+    btn.textContent = "Enviando...";
+
+    try {
+        const formData = new FormData();
+        formData.append("item_cuestionado", valor("itemRecalibracionIa"));
+        if (valor("scoreSugeridoIa")) formData.append("score_sugerido", valor("scoreSugeridoIa"));
+        formData.append("nivel_sugerido", valor("nivelSugeridoIa"));
+        formData.append("motivo", valor("motivoRecalibracionIa"));
+        formData.append("evidencia_supervisor", valor("evidenciaRecalibracionIa"));
+        formData.append("solicitado_por", localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
+
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}/recalibracion`, {
+            method: "POST",
+            body: formData,
+        }, 30000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo solicitar la recalibracion.");
+
+        resultadoActualIa = data.feedback || resultadoActualIa;
+        setText("estadoRecalibracionIa", "PENDIENTE");
+        setText("trazaRevisionIa", resultadoActualIa.estado_revision || "PENDIENTE");
+        cerrarRecalibracionIa();
+        await cargarHistorialIa();
+        mostrarMensajeIa("Solicitud de recalibracion registrada con trazabilidad.", "ok");
+    } catch (error) {
+        mostrarMensajeIa(error.message || "Error solicitando recalibracion.", "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Enviar solicitud";
+    }
+}
+
 function cargarRevisionEnFormulario(data) {
     setValue("feedbackIdActualIa", data.id_feedback || "");
     setValue("agenteRevisionIa", data.agente || "");
@@ -1106,22 +1400,75 @@ function pintarEvaluacionCalidad(items) {
     if (!tbody) return;
 
     if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="8">Sin evaluacion de calidad registrada.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9">Sin evaluacion de calidad registrada.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = items.map(item => `
         <tr class="${claseFilaEvaluacion(item)}">
-            <td>${escapeHtml(item.segmento || "-")}</td>
+            <td>${escapeHtml(formatearSegmentoIa(item.segmento))}</td>
             <td>${escapeHtml(item.item || "-")}</td>
             <td>${formatoPeso(item.peso)}</td>
             <td><strong class="${Number(item.nota || 0) === 0 ? "critical-score" : ""}">${formatoPeso(item.nota)}</strong></td>
             <td>${escapeHtml(item.resultado || "-")}</td>
             <td>${escapeHtml(item.hallazgo || "-")}</td>
+            <td>${escapeHtml(item.momento || "No disponible")}</td>
             <td>${escapeHtml(item.evidencia || "-")}</td>
             <td>${escapeHtml(item.recomendacion || "-")}</td>
         </tr>
     `).join("");
+}
+
+function pintarHabilidadesBlandas(items) {
+    const contenedor = document.getElementById("habilidadesBlandasIa");
+    if (!contenedor) return;
+    if (!items.length) {
+        contenedor.innerHTML = `<div class="empty-segment">Sin habilidades blandas registradas.</div>`;
+        return;
+    }
+    contenedor.innerHTML = items.map(item => {
+        const nivel = String(item.nivel || "Medio");
+        return `
+            <article class="soft-skill-card ${claseNivelHabilidadIa(nivel)}">
+                <div>
+                    <span>${escapeHtml(item.habilidad || "-")}</span>
+                    <strong>${escapeHtml(nivel)}</strong>
+                </div>
+                <p>${escapeHtml(item.evidencia || "-")}</p>
+                <small>${escapeHtml(item.recomendacion || "-")}</small>
+            </article>
+        `;
+    }).join("");
+}
+
+function habilidadesBlandasDesdeEvaluacionIa(items) {
+    const config = [
+        ["Actitud conciliadora", ["3.2", "5.1"], "Refuerza una postura colaborativa ante objeciones."],
+        ["Empatia", ["5.1", "5.3"], "Validar la situacion del cliente antes de insistir."],
+        ["Escucha activa", ["2.3", "2.4"], "Evitar interrupciones y confirmar entendimiento."],
+        ["Vocalizacion y claridad", ["5.2"], "Mantener lenguaje claro, ordenado y facil de seguir."],
+        ["Manejo emocional", ["5.3", "5.4"], "Sostener calma, respeto y control durante toda la llamada."],
+    ];
+    return config.map(([habilidad, prefijos, recomendacion]) => {
+        const relacionados = items.filter(item => prefijos.some(prefijo => String(item.item || "").startsWith(prefijo)));
+        const peso = relacionados.reduce((sum, item) => sum + Number(item.peso || 0), 0);
+        const nota = relacionados.reduce((sum, item) => sum + Number(item.nota || 0), 0);
+        const porcentaje = peso ? (nota / peso) * 100 : 0;
+        const nivel = porcentaje >= 80 ? "Alto" : porcentaje >= 55 ? "Medio" : "Bajo";
+        return {
+            habilidad,
+            nivel,
+            evidencia: relacionados.map(item => item.hallazgo).filter(Boolean).slice(0, 2).join(" | ") || "No hay evidencia suficiente.",
+            recomendacion,
+        };
+    });
+}
+
+function claseNivelHabilidadIa(nivel) {
+    const value = String(nivel || "").toLowerCase();
+    if (value.includes("alto")) return "skill-high";
+    if (value.includes("bajo")) return "skill-low";
+    return "skill-mid";
 }
 
 function claseFilaEvaluacion(item) {
@@ -1161,7 +1508,7 @@ function pintarResumenSegmentos(items) {
         return `
             <article class="segment-card ${porcentaje < 60 ? "critical-segment" : porcentaje < 80 ? "warning-segment" : ""}">
                 <div>
-                    <span>${escapeHtml(item.segmento)}</span>
+                    <span>${escapeHtml(formatearSegmentoIa(item.segmento))}</span>
                     <strong>${formatoPeso(item.nota)} / ${formatoPeso(item.peso)}</strong>
                 </div>
                 <div class="segment-bar"><i style="width:${Math.max(0, Math.min(100, porcentaje))}%"></i></div>
@@ -1172,7 +1519,11 @@ function pintarResumenSegmentos(items) {
 }
 
 function toggleDetalleCalidadIa() {
-    document.getElementById("detalleCalidadIa")?.classList.toggle("oculto");
+    const detalle = document.getElementById("detalleCalidadIa");
+    const btn = document.getElementById("btnDetalleCalidadIa");
+    if (!detalle) return;
+    const visible = detalle.classList.toggle("oculto") === false;
+    if (btn) btn.textContent = visible ? "Ocultar detalle de evaluacion" : "Ver detalle de evaluacion";
 }
 
 async function cargarPromptIa() {
@@ -1266,20 +1617,38 @@ async function guardarPromptIa() {
 function pintarPuntosCriticos(items) {
     const tbody = document.getElementById("puntosCriticosIa");
     if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="6">Sin puntos criticos registrados.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9">Sin puntos criticos registrados.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = items.map(item => `
-        <tr class="${esAlertaCritica(`${item.hallazgo} ${item.impacto} ${item.recomendacion}`) ? "critical-row" : ""}">
-            <td>${escapeHtml(item.segmento || "-")}</td>
+        <tr class="${claseFilaPuntoCriticoIa(item)}">
+            <td>${escapeHtml(formatearSegmentoIa(item.segmento))}</td>
             <td>${escapeHtml(item.categoria || "-")}</td>
+            <td><span class="severity ${claseSeveridadIa(item.severidad)}">${escapeHtml(item.severidad || "MEDIA")}</span></td>
+            <td>${escapeHtml(item.momento || "No disponible")}</td>
+            <td>${escapeHtml(item.frase_textual || "No disponible")}</td>
             <td>${escapeHtml(item.hallazgo || "-")}</td>
             <td>${escapeHtml(item.evidencia || "-")}</td>
             <td>${escapeHtml(item.impacto || "-")}</td>
             <td>${escapeHtml(item.recomendacion || "-")}</td>
         </tr>
     `).join("");
+}
+
+function claseFilaPuntoCriticoIa(item) {
+    const severidad = String(item.severidad || "").toUpperCase();
+    const texto = `${item.hallazgo} ${item.impacto} ${item.recomendacion} ${item.frase_textual}`;
+    if (severidad === "ANULANTE" || severidad === "GRAVE" || esAlertaCritica(texto)) return "critical-row";
+    if (severidad === "MEDIA") return "warning-row";
+    return "";
+}
+
+function claseSeveridadIa(severidad) {
+    const value = String(severidad || "MEDIA").toLowerCase();
+    if (value === "anulante" || value === "grave") return "critica";
+    if (value === "media") return "alta";
+    return "media";
 }
 
 function cambiarEstadoProceso(estado) {
@@ -1309,14 +1678,23 @@ function claseEstado(estado) {
     return "badge-pendiente";
 }
 
-function limpiarFormularioBasicoIa() {
+function limpiarFormularioBasicoIa(options = {}) {
     document.getElementById("audioIa").value = "";
     document.getElementById("nombreAudioIa").textContent = "Ningun archivo seleccionado";
+    setValue("dniIa", "");
+    setValue("telefonoIa", "");
+    setValue("comentarioIa", "");
+    setValue("fechaIa", fechaLocalActualIa());
+    if (options.limpiarCartera) {
+        const cartera = document.getElementById("carteraIa");
+        if (cartera && cartera.options.length > 2) cartera.value = "";
+    }
 }
 
 function mostrarMensajeIa(texto, tipo = "ok") {
     const box = document.getElementById("mensajeIa");
     if (!box) return;
+    clearTimeout(mensajeIaTimeout);
     box.className = `ia-message ${tipo}`;
     box.textContent = texto;
     box.classList.remove("oculto");
@@ -1327,6 +1705,15 @@ function mostrarMensajeIa(texto, tipo = "ok") {
         box.classList.remove("floating-message");
         document.getElementById("panelCargaIa")?.appendChild(box);
     }
+    mensajeIaTimeout = setTimeout(ocultarMensajeIa, tipo === "error" ? 9000 : 5000);
+}
+
+function ocultarMensajeIa() {
+    const box = document.getElementById("mensajeIa");
+    if (!box) return;
+    clearTimeout(mensajeIaTimeout);
+    box.classList.add("oculto");
+    box.classList.remove("floating-message");
 }
 
 async function leerJsonSeguro(response) {
@@ -1479,6 +1866,10 @@ function valorCsvIa(value) {
     return `"${texto}"`;
 }
 
+function mostrarPendienteCalidadIa(nombre) {
+    mostrarMensajeIa(`${nombre}: base visual creada. El siguiente paso es construir la vista completa y PDF.`, "ok");
+}
+
 function escapeHtml(value) {
     return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -1503,3 +1894,6 @@ window.cerrarPromptIa = cerrarPromptIa;
 window.mostrarSeccionPromptIa = mostrarSeccionPromptIa;
 window.guardarPromptIa = guardarPromptIa;
 window.cargarPromptIa = cargarPromptIa;
+window.abrirRecalibracionIa = abrirRecalibracionIa;
+window.cerrarRecalibracionIa = cerrarRecalibracionIa;
+window.mostrarPendienteCalidadIa = mostrarPendienteCalidadIa;

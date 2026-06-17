@@ -4,12 +4,15 @@ document.addEventListener("DOMContentLoaded", () => {
     pintarCabeceraHome();
     pintarModulos();
     pintarRoadmap();
+    pintarMensajeHome();
 });
 
 function pintarCabeceraHome() {
     const agente = localStorage.getItem("agente") || "Usuario";
     const tipo = localStorage.getItem("tipo") || "Agente";
     const nombre = agente.includes(" - ") ? agente.split(" - ").slice(1).join(" - ") : agente;
+    const carteras = typeof obtenerIdCarterasSesion === "function" ? obtenerIdCarterasSesion() : [];
+    const inicioSesion = localStorage.getItem("session_started_at");
 
     document.getElementById("homeUsuario").innerText = agente;
     document.getElementById("homePerfil").innerText = tipo;
@@ -22,6 +25,19 @@ function pintarCabeceraHome() {
     });
 
     document.getElementById("homeDescripcion").innerText = obtenerDescripcionPerfil(tipo);
+
+    const homeCarteras = document.getElementById("homeCarteras");
+    const homeSesion = document.getElementById("homeSesion");
+
+    if (homeCarteras) {
+        homeCarteras.innerText = carteras.length ? carteras.join(", ") : "Sin cartera";
+    }
+
+    if (homeSesion) {
+        homeSesion.innerText = inicioSesion
+            ? `Activa desde ${new Date(inicioSesion).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}`
+            : "Activa";
+    }
 }
 
 function obtenerDescripcionPerfil(tipo) {
@@ -42,6 +58,11 @@ function pintarModulos() {
     const tipo = normalizarTipoUsuario(localStorage.getItem("tipo"));
     const contenedor = document.getElementById("modulosHome");
     const modulos = obtenerModulosPorPerfil(tipo);
+    const contador = document.getElementById("homeModulos");
+
+    if (contador) {
+        contador.innerText = String(modulos.length);
+    }
 
     contenedor.innerHTML = modulos.map(modulo => `
         <article class="module-card ${modulo.destacado ? "destacado" : ""}">
@@ -205,6 +226,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "SI",
+                titulo: "Susurro IA",
+                descripcion: "Monitoreo y sugerencias en vivo para llamadas de cobranza.",
+                ruta: "susurro_ia.html",
+                destacado: false
+            },
+            {
                 sigla: "SV",
                 titulo: "Supervisores",
                 descripcion: "Mantenimiento de carteras visibles por supervisor.",
@@ -253,4 +281,15 @@ function pintarRoadmap() {
 
 function abrirModulo(ruta) {
     window.location.href = ruta;
+}
+
+function pintarMensajeHome() {
+    const mensaje = sessionStorage.getItem("homeMensaje");
+    const contenedor = document.getElementById("homeMensaje");
+
+    if (!mensaje || !contenedor) return;
+
+    contenedor.textContent = mensaje;
+    contenedor.classList.remove("oculto");
+    sessionStorage.removeItem("homeMensaje");
 }

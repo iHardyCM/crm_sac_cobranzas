@@ -9,6 +9,10 @@ body {
     color: #0f172a;
 }
 
+.oculto {
+    display: none !important;
+}
+
 .home-topbar {
     height: 68px;
     background: #ffffff;
@@ -138,6 +142,48 @@ body {
 .today-box strong {
     display: block;
     line-height: 1.25;
+}
+
+.home-message {
+    margin-top: 14px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #0f4c81;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.access-strip {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.access-strip article {
+    border: 1px solid #d9e5f0;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(15, 76, 129, .05);
+}
+
+.access-strip span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.access-strip strong {
+    display: block;
+    margin-top: 6px;
+    color: #0f4c81;
+    font-size: 16px;
 }
 
 .section-head {
@@ -274,6 +320,10 @@ body {
 
     .home-container {
         padding: 18px;
+    }
+
+    .access-strip {
+        grid-template-columns: 1fr;
     }
 
     .module-grid,

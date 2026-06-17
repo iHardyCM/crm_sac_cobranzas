@@ -360,7 +360,11 @@ def normalizar_registros(df: pd.DataFrame, formato: str, filename: str) -> List[
             "tipo_medicion": config.get("tipo_medicion"),
             "tipo_producto": normalizar_tipo_producto(valor_texto(row, df, "TipCartera")),
             "clasificacion_sbs": valor_texto(row, df, "Calif_Provisiones"),
-            "segmentacion": valor_texto(row, df, "TIP_CAR"),
+            "segmentacion": (
+                valor_texto(row, df, "CLUSTER_RFP")
+                if formato == "MIBANCO"
+                else valor_texto(row, df, "TIP_CAR")
+            ),
             "usuario_asignado": valor_texto(row, df, config.get("filter_col")),
             "cod_cliente": valor_texto(row, df, "COD_CLI") or valor_texto(row, df, "codcliente"),
             "num_operacion": (
@@ -517,8 +521,7 @@ def crear_importacion(conn, resumen: Dict) -> int:
 
 
 def insertar_staging(conn, registros: List[Dict]):
-    for registro in registros:
-        insertar_dinamico(conn, "PAGOS_STAGING_NORMALIZADO", registro)
+    insertar_dinamico_masivo(conn, "PAGOS_STAGING_NORMALIZADO", registros)
 
 
 def obtener_staging_valido(conn, id_importacion: int) -> List[Dict]:
@@ -549,7 +552,7 @@ def desactivar_bi_anterior(conn, formato, codmes, idcartera):
 
 
 def publicar_bi(conn, staging: List[Dict]) -> int:
-    total = 0
+    filas = []
     for row in staging:
         row = preparar_fila_bi(dict(row))
         row["activo"] = 1
@@ -557,9 +560,8 @@ def publicar_bi(conn, staging: List[Dict]) -> int:
         row["fecha_publicacion"] = datetime.now()
         row.pop("id_staging", None)
         row.pop("id_pago_staging", None)
-        insertar_dinamico(conn, "PAGOS_BI_NORMALIZADO", row)
-        total += 1
-    return total
+        filas.append(row)
+    return insertar_dinamico_masivo(conn, "PAGOS_BI_NORMALIZADO", filas)
 
 
 def preparar_fila_bi(row: Dict) -> Dict:
@@ -687,12 +689,7 @@ def actualizar_importaciones_reemplazadas(conn, id_importacion_actual: int, grup
 def insertar_dinamico(conn, table: str, row: Dict, devolver_identity: bool = False):
     columns = columnas_tabla(conn, table)
     identity = columna_identity(conn, table)
-    clean = {}
-
-    for key, value in row.items():
-        key_lower = key.lower()
-        if key_lower in columns and key_lower != identity:
-            clean[key_lower] = normalizar_valor_sql(value)
+    clean = limpiar_fila_dinamica(row, columns, identity)
 
     if not clean:
         raise ValueError(f"No hay columnas compatibles para insertar en {table}.")
@@ -713,6 +710,50 @@ def insertar_dinamico(conn, table: str, row: Dict, devolver_identity: bool = Fal
         return int(conn.execute(text("SELECT SCOPE_IDENTITY()")).scalar())
 
     return None
+
+
+def insertar_dinamico_masivo(conn, table: str, rows: List[Dict], chunk_size: int = 1000) -> int:
+    if not rows:
+        return 0
+
+    columns = columnas_tabla(conn, table)
+    identity = columna_identity(conn, table)
+    clean_rows = [
+        limpiar_fila_dinamica(row, columns, identity)
+        for row in rows
+    ]
+    clean_rows = [row for row in clean_rows if row]
+    if not clean_rows:
+        raise ValueError(f"No hay columnas compatibles para insertar en {table}.")
+
+    insert_columns = sorted({col for row in clean_rows for col in row.keys()})
+    payload = [
+        {col: row.get(col) for col in insert_columns}
+        for row in clean_rows
+    ]
+
+    col_sql = ", ".join(insert_columns)
+    val_sql = ", ".join([f":{col}" for col in insert_columns])
+    query = text(f"""
+        INSERT INTO dbo.{table} ({col_sql})
+        VALUES ({val_sql})
+    """)
+
+    total = 0
+    for inicio in range(0, len(payload), chunk_size):
+        chunk = payload[inicio:inicio + chunk_size]
+        conn.execute(query, chunk)
+        total += len(chunk)
+    return total
+
+
+def limpiar_fila_dinamica(row: Dict, columns: set, identity: Optional[str]) -> Dict:
+    clean = {}
+    for key, value in row.items():
+        key_lower = key.lower()
+        if key_lower in columns and key_lower != identity:
+            clean[key_lower] = normalizar_valor_sql(value)
+    return clean
 
 
 def columnas_tabla(conn, table: str) -> set:
@@ -835,6 +876,10 @@ def valor_fecha(row, df, col: str, strict_yyyymmdd: bool = False):
                 return None
         return None
 
+    fecha_ano_primero = fecha_desde_texto_ano_primero(texto)
+    if fecha_ano_primero:
+        return fecha_ano_primero
+
     fecha_periodo = fecha_desde_periodo_texto(texto)
     if fecha_periodo:
         return fecha_periodo
@@ -865,6 +910,9 @@ def normalizar_codmes(raw) -> Optional[str]:
         fecha_serial = fecha_desde_serial_excel(numeros)
         if fecha_serial:
             return fecha_serial.strftime("%Y%m")
+    fecha_ano_primero = fecha_desde_texto_ano_primero(texto)
+    if fecha_ano_primero:
+        return fecha_ano_primero.strftime("%Y%m")
     fecha_periodo = fecha_desde_periodo_texto(texto)
     if fecha_periodo:
         return fecha_periodo.strftime("%Y%m")
@@ -887,6 +935,17 @@ def fecha_desde_serial_excel(value) -> Optional[date]:
     if serial < 20000 or serial > 60000:
         return None
     return (datetime(1899, 12, 30) + timedelta(days=serial)).date()
+
+
+def fecha_desde_texto_ano_primero(value: str) -> Optional[date]:
+    texto = str(value or "").strip()
+    match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+.*)?$", texto)
+    if not match:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        return None
 
 
 def fecha_desde_periodo_texto(value: str):

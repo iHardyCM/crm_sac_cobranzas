@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.services.admin_supervisores_service import listar_carteras
 from app.services.ia_analysis_service import (
@@ -12,11 +13,13 @@ from app.services.ia_analysis_service import (
 from app.services.ia_audio_service import (
     analizar_feedback,
     guardar_revision_feedback,
+    listar_recalibraciones_feedback,
     listar_feedback,
     obtener_configuracion_audio,
     obtener_feedback,
     obtener_reporteria_calidad,
     registrar_audio_feedback,
+    solicitar_recalibracion_feedback,
 )
 
 
@@ -106,7 +109,8 @@ async def upload_ia_feedback(
 ):
     try:
         contenido = await archivo.read()
-        return registrar_audio_feedback(
+        return await run_in_threadpool(
+            registrar_audio_feedback,
             archivo_nombre=archivo.filename or "audio",
             contenido=contenido,
             agente=agente,
@@ -124,9 +128,9 @@ async def upload_ia_feedback(
 
 
 @router.post("/{id_feedback}/analizar")
-def analizar_ia_feedback(id_feedback: int):
+async def analizar_ia_feedback(id_feedback: int):
     try:
-        return analizar_feedback(id_feedback)
+        return await run_in_threadpool(analizar_feedback, id_feedback)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
@@ -153,6 +157,40 @@ def guardar_revision_ia_feedback(
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error guardando revision IA: {exc}")
+
+
+@router.post("/{id_feedback}/recalibracion")
+def solicitar_recalibracion_ia_feedback(
+    id_feedback: int,
+    item_cuestionado: str | None = Form(default=None),
+    score_sugerido: float | None = Form(default=None),
+    nivel_sugerido: str | None = Form(default=None),
+    motivo: str | None = Form(default=None),
+    evidencia_supervisor: str | None = Form(default=None),
+    solicitado_por: str | None = Form(default=None),
+):
+    try:
+        return solicitar_recalibracion_feedback(
+            id_feedback,
+            item_cuestionado=item_cuestionado,
+            score_sugerido=score_sugerido,
+            nivel_sugerido=nivel_sugerido,
+            motivo=motivo,
+            evidencia_supervisor=evidencia_supervisor,
+            solicitado_por=solicitado_por,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error solicitando recalibracion IA: {exc}")
+
+
+@router.get("/{id_feedback}/recalibraciones")
+def recalibraciones_ia_feedback(id_feedback: int):
+    try:
+        return {"data": listar_recalibraciones_feedback(id_feedback)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error listando recalibraciones IA: {exc}")
 
 
 @router.get("/listar")

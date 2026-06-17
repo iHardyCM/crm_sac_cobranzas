@@ -59,6 +59,11 @@
             key: "ia_feedback",
             title: "Analisis IA",
             subtitle: "Feedback operativo de llamadas para supervision"
+        },
+        "susurro_ia.html": {
+            key: "susurro_ia",
+            title: "Susurro IA",
+            subtitle: "Asistencia en vivo para llamadas de cobranza"
         }
     };
 
@@ -97,6 +102,7 @@
             title: "Análisis",
             items: [
                 { key: "ia_feedback", label: "Analisis IA", href: "ia_feedback.html", icon: iconIa() },
+                { key: "susurro_ia", label: "Susurro IA", href: "susurro_ia.html", icon: iconIa() },
                 { key: "reportes", label: "Reportes", disabled: true, icon: iconChart() }
             ]
         },
@@ -329,13 +335,15 @@
         return NAV_GROUPS
             .map(group => ({
                 ...group,
-                items: group.items.filter(item => item.key === "inicio" || item.disabled || puedeAccederModulo(item.key))
+                items: group.items.filter(item => item.key === "inicio" || puedeAccederModulo(item.key))
             }))
             .filter(group => group.items.length);
     }
 
     function puedeAccederModulo(key) {
-        if (["inicio", "reportes", "admin"].includes(key)) return true;
+        if (key === "inicio") return true;
+        if (key === "reportes") return true;
+        if (key === "admin") return esPerfilGerencial();
         if (key === "compromisos" && esPerfilGerencial()) return false;
         if (esPerfilGerencial()) return true;
 

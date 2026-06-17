@@ -22,6 +22,7 @@ from app.services.ia_analysis_service import (
 
 
 TABLA_FEEDBACK = "CobAuto.dbo.ia_feedback_llamadas"
+TABLA_RECALIBRACIONES = "CobAuto.dbo.ia_feedback_recalibraciones"
 UPLOAD_DIR = Path(os.getenv("IA_FEEDBACK_UPLOAD_DIR", str(Path("uploads") / "ia_feedback")))
 EXTENSIONES_PERMITIDAS = {".mp3", ".wav", ".m4a", ".ogg"}
 try:
@@ -55,6 +56,7 @@ def ensure_tabla_feedback():
                 objecion_principal VARCHAR(250) NULL,
                 score_calidad DECIMAL(5,2) NULL,
                 evaluacion_calidad NVARCHAR(MAX) NULL,
+                habilidades_blandas NVARCHAR(MAX) NULL,
                 fortalezas NVARCHAR(MAX) NULL,
                 puntos_criticos NVARCHAR(MAX) NULL,
                 recomendaciones NVARCHAR(MAX) NULL,
@@ -96,6 +98,56 @@ def ensure_tabla_feedback():
         IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'evaluacion_calidad') IS NULL
             ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
             ADD evaluacion_calidad NVARCHAR(MAX) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'habilidades_blandas') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD habilidades_blandas NVARCHAR(MAX) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'score_calidad_ia') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD score_calidad_ia DECIMAL(5,2) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'nivel_ia') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD nivel_ia VARCHAR(50) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'falta_anulante') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD falta_anulante BIT DEFAULT 0;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'frase_anulante') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD frase_anulante NVARCHAR(500) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'momento_falta_anulante') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD momento_falta_anulante VARCHAR(20) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'estado_recalibracion') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD estado_recalibracion VARCHAR(30) DEFAULT 'SIN_APELACION';
+
+        IF OBJECT_ID('CobAuto.dbo.ia_feedback_recalibraciones', 'U') IS NULL
+        BEGIN
+            CREATE TABLE CobAuto.dbo.ia_feedback_recalibraciones (
+                id_recalibracion INT IDENTITY(1,1) PRIMARY KEY,
+                id_feedback INT NOT NULL,
+                score_ia DECIMAL(5,2) NULL,
+                nivel_ia VARCHAR(50) NULL,
+                item_cuestionado VARCHAR(250) NULL,
+                score_sugerido DECIMAL(5,2) NULL,
+                nivel_sugerido VARCHAR(50) NULL,
+                motivo NVARCHAR(MAX) NOT NULL,
+                evidencia_supervisor NVARCHAR(MAX) NULL,
+                solicitado_por VARCHAR(150) NULL,
+                fecha_solicitud DATETIME DEFAULT GETDATE(),
+                estado VARCHAR(30) DEFAULT 'PENDIENTE',
+                resuelto_por VARCHAR(150) NULL,
+                fecha_resolucion DATETIME NULL,
+                motivo_resolucion NVARCHAR(MAX) NULL,
+                score_final DECIMAL(5,2) NULL
+            );
+        END
     """)
     with engine_siscob.begin() as conn:
         conn.execute(query)
@@ -219,7 +271,8 @@ def listar_feedback(limit: int = 100, supervisor: Optional[str] = None) -> List[
             id_feedback, archivo_nombre, agente, supervisor, cartera, dni, telefono,
             fecha_llamada, duracion_segundos, estado, resultado_gestion,
             score_calidad, puntos_criticos, nivel_oportunidad_mejora, estado_revision,
-            comentario_feedback, revisado_por, mensaje_error,
+            comentario_feedback, revisado_por, mensaje_error, falta_anulante,
+            estado_recalibracion,
             fecha_creacion, fecha_analisis, fecha_revision
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         {where_sql}
@@ -245,7 +298,7 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             id_feedback, archivo_nombre, cartera, supervisor, agente, score_calidad,
             evaluacion_calidad, fecha_creacion, fecha_llamada, comentario_supervisor,
             comentario_feedback, resultado_gestion, nivel_oportunidad_mejora,
-            puntos_criticos, estado_revision
+            puntos_criticos, estado_revision, falta_anulante, estado_recalibracion
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE {where_sql}
         ORDER BY fecha_creacion DESC, id_feedback DESC
@@ -291,6 +344,8 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             "total_puntos_criticos": len(puntos_criticos),
             "observacion_supervisor": row.get("comentario_feedback") or row.get("comentario_supervisor"),
             "estado_revision": row.get("estado_revision"),
+            "falta_anulante": bool(row.get("falta_anulante")),
+            "estado_recalibracion": row.get("estado_recalibracion") or "SIN_APELACION",
         })
 
         for item in evaluacion:
@@ -398,8 +453,8 @@ def clave_semana(value) -> str:
             fecha = datetime.fromisoformat(str(value))
         except Exception:
             fecha = datetime.now()
-    iso = fecha.isocalendar()
-    return f"{iso.year}-S{iso.week:02d}"
+    semana_mes = ((fecha.day - 1) // 7) + 1
+    return f"{fecha.year}-{fecha.month:02d} S{semana_mes}"
 
 
 def obtener_feedback(id_feedback: int) -> Dict:
@@ -409,9 +464,10 @@ def obtener_feedback(id_feedback: int) -> Dict:
             id_feedback, archivo_nombre, ruta_archivo, agente, supervisor, cartera, dni,
             telefono, fecha_llamada, duracion_segundos, estado, transcripcion, resumen,
             tipo_contacto, resultado_gestion, objecion_principal, score_calidad,
-            evaluacion_calidad, fortalezas, puntos_criticos, recomendaciones, guion_sugerido, alertas,
+            evaluacion_calidad, habilidades_blandas, fortalezas, puntos_criticos, recomendaciones, guion_sugerido, alertas,
             nivel_oportunidad_mejora, comentario_supervisor, estado_revision,
-            comentario_feedback, revisado_por, mensaje_error,
+            comentario_feedback, revisado_por, mensaje_error, score_calidad_ia, nivel_ia,
+            falta_anulante, frase_anulante, momento_falta_anulante, estado_recalibracion,
             fecha_creacion, fecha_analisis, fecha_revision
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE id_feedback = :id_feedback
@@ -425,6 +481,7 @@ def obtener_feedback(id_feedback: int) -> Dict:
 
     data = serializar(dict(row))
     data["evaluacion_calidad_lista"] = cargar_json_lista(data.get("evaluacion_calidad"))
+    data["habilidades_blandas_lista"] = cargar_json_lista(data.get("habilidades_blandas"))
     data["fortalezas_lista"] = cargar_json_lista(data.get("fortalezas"))
     data["puntos_criticos_lista"] = cargar_json_lista(data.get("puntos_criticos"))
     data["alertas_lista"] = cargar_json_lista(data.get("alertas"))
@@ -468,13 +525,20 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
                 resultado_gestion = :resultado_gestion,
                 objecion_principal = :objecion_principal,
                 score_calidad = :score_calidad,
+                score_calidad_ia = :score_calidad,
                 evaluacion_calidad = :evaluacion_calidad,
+                habilidades_blandas = :habilidades_blandas,
                 fortalezas = :fortalezas,
                 puntos_criticos = :puntos_criticos,
                 recomendaciones = :recomendaciones,
                 guion_sugerido = :guion_sugerido,
                 alertas = :alertas,
                 nivel_oportunidad_mejora = :nivel_oportunidad_mejora,
+                nivel_ia = :nivel_oportunidad_mejora,
+                falta_anulante = :falta_anulante,
+                frase_anulante = :frase_anulante,
+                momento_falta_anulante = :momento_falta_anulante,
+                estado_recalibracion = ISNULL(estado_recalibracion, 'SIN_APELACION'),
                 mensaje_error = NULL,
                 fecha_analisis = GETDATE()
             WHERE id_feedback = :id_feedback
@@ -486,12 +550,16 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
             "objecion_principal": analisis.get("objecion_principal"),
             "score_calidad": analisis.get("score_calidad"),
             "evaluacion_calidad": json.dumps(analisis.get("evaluacion_calidad") or [], ensure_ascii=False),
+            "habilidades_blandas": json.dumps(analisis.get("habilidades_blandas") or [], ensure_ascii=False),
             "fortalezas": json.dumps(analisis.get("fortalezas_agente") or [], ensure_ascii=False),
             "puntos_criticos": json.dumps(analisis.get("puntos_criticos") or [], ensure_ascii=False),
             "recomendaciones": analisis.get("recomendacion_feedback_supervisor"),
             "guion_sugerido": analisis.get("guion_sugerido"),
             "alertas": json.dumps(analisis.get("alertas") or [], ensure_ascii=False),
             "nivel_oportunidad_mejora": analisis.get("nivel_oportunidad_mejora"),
+            "falta_anulante": 1 if analisis.get("falta_anulante") else 0,
+            "frase_anulante": analisis.get("frase_anulante"),
+            "momento_falta_anulante": analisis.get("momento_falta_anulante"),
         })
 
 
@@ -527,9 +595,79 @@ def guardar_revision_feedback(
     return obtener_feedback(id_feedback)
 
 
+def solicitar_recalibracion_feedback(
+    id_feedback: int,
+    *,
+    item_cuestionado: Optional[str] = None,
+    score_sugerido: Optional[float] = None,
+    nivel_sugerido: Optional[str] = None,
+    motivo: Optional[str] = None,
+    evidencia_supervisor: Optional[str] = None,
+    solicitado_por: Optional[str] = None,
+) -> Dict:
+    ensure_tabla_feedback()
+    feedback = obtener_feedback(id_feedback)
+    motivo_limpio = limpiar_texto(motivo)
+    if not motivo_limpio:
+        raise ValueError("Ingresa el motivo de la solicitud de recalibracion.")
+
+    score_actual = feedback.get("score_calidad_ia")
+    if score_actual is None:
+        score_actual = feedback.get("score_calidad")
+
+    with engine_siscob.begin() as conn:
+        id_recalibracion = int(conn.execute(text("""
+            INSERT INTO CobAuto.dbo.ia_feedback_recalibraciones
+                (id_feedback, score_ia, nivel_ia, item_cuestionado, score_sugerido,
+                 nivel_sugerido, motivo, evidencia_supervisor, solicitado_por, estado)
+            OUTPUT INSERTED.id_recalibracion
+            VALUES
+                (:id_feedback, :score_ia, :nivel_ia, :item_cuestionado, :score_sugerido,
+                 :nivel_sugerido, :motivo, :evidencia_supervisor, :solicitado_por, 'PENDIENTE')
+        """), {
+            "id_feedback": id_feedback,
+            "score_ia": score_actual,
+            "nivel_ia": feedback.get("nivel_ia") or feedback.get("nivel_oportunidad_mejora"),
+            "item_cuestionado": limpiar_texto(item_cuestionado),
+            "score_sugerido": normalizar_score_sugerido(score_sugerido),
+            "nivel_sugerido": limpiar_texto(nivel_sugerido),
+            "motivo": motivo_limpio,
+            "evidencia_supervisor": limpiar_texto(evidencia_supervisor),
+            "solicitado_por": limpiar_texto(solicitado_por),
+        }).scalar())
+        conn.execute(text("""
+            UPDATE CobAuto.dbo.ia_feedback_llamadas
+            SET estado_recalibracion = 'PENDIENTE'
+            WHERE id_feedback = :id_feedback
+        """), {"id_feedback": id_feedback})
+
+    return {
+        "ok": True,
+        "id_recalibracion": id_recalibracion,
+        "feedback": obtener_feedback(id_feedback),
+    }
+
+
+def listar_recalibraciones_feedback(id_feedback: int) -> List[Dict]:
+    ensure_tabla_feedback()
+    query = text("""
+        SELECT id_recalibracion, id_feedback, score_ia, nivel_ia, item_cuestionado,
+               score_sugerido, nivel_sugerido, motivo, evidencia_supervisor,
+               solicitado_por, fecha_solicitud, estado, resuelto_por,
+               fecha_resolucion, motivo_resolucion, score_final
+        FROM CobAuto.dbo.ia_feedback_recalibraciones WITH(NOLOCK)
+        WHERE id_feedback = :id_feedback
+        ORDER BY fecha_solicitud DESC, id_recalibracion DESC
+    """)
+    with engine_siscob.connect() as conn:
+        rows = conn.execute(query, {"id_feedback": id_feedback}).mappings().all()
+    return [serializar(dict(row)) for row in rows]
+
+
 def preparar_resumen(row: Dict) -> Dict:
     data = serializar(row)
     data["total_puntos_criticos"] = len(cargar_json_lista(data.get("puntos_criticos")))
+    data["falta_anulante"] = bool(data.get("falta_anulante"))
     return data
 
 
@@ -586,6 +724,15 @@ def normalizar_estado_revision(value: Optional[str]) -> str:
     estado = str(value or "REVISADO").strip().upper()
     permitidos = {"PENDIENTE", "REVISADO", "FEEDBACK_ENVIADO", "CERRADO"}
     return estado if estado in permitidos else "REVISADO"
+
+
+def normalizar_score_sugerido(value) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        return round(min(max(float(value), 0), 100), 2)
+    except (TypeError, ValueError):
+        raise ValueError("La nota sugerida debe ser un numero entre 0 y 100.")
 
 
 def serializar(row: Dict) -> Dict:
