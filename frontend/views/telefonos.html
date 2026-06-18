@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Validación de Teléfonos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Layout global del CRM -->
+    <link rel="stylesheet" href="/frontend/css/app_layout.css">
+
+    <!-- CSS propio de la vista -->
+    <link rel="stylesheet" href="/frontend/css/telefonos.css">
+</head>
+
+<body>
+
+<main class="telefonos-container">
+
+    <section class="telefonos-page-header">
+        <div>
+            <h2>Validación de Teléfonos</h2>
+            <p>Consulta teléfonos activos por DNI, ID Cliente o número de teléfono.</p>
+        </div>
+
+        <div class="telefonos-meta">
+            <span>Última consulta: <strong id="ultimaConsulta">--</strong></span>
+            <span>Vista operativa</span>
+        </div>
+    </section>
+
+    <section class="telefonos-card telefonos-search-card">
+        <div class="telefonos-search-row">
+            <div class="telefonos-search-box">
+                <span>🔎</span>
+                <input
+                    type="text"
+                    id="txtBuscar"
+                    placeholder="Buscar DNI / ID Cliente / Teléfono"
+                    autocomplete="off"
+                >
+            </div>
+
+            <button id="btnBuscar" class="telefonos-btn primary">Buscar</button>
+            <button id="btnLimpiar" class="telefonos-btn secondary">Limpiar</button>
+        </div>
+
+        <div class="telefonos-filters-row">
+            <div class="telefonos-filter">
+                <label>Cartera</label>
+                <select id="filtroCartera">
+                    <option value="TODOS">Todas</option>
+                </select>
+            </div>
+
+            <div class="telefonos-filter">
+                <label>WhatsApp</label>
+                <select id="filtroWhatsapp">
+                    <option value="TODOS">Todos</option>
+                </select>
+            </div>
+
+            <div class="telefonos-filter">
+                <label>Timbra</label>
+                <select id="filtroTimbra">
+                    <option value="TODOS">Todos</option>
+                </select>
+            </div>
+
+            <div class="telefonos-filter">
+                <label>Tipo</label>
+                <select id="filtroTipo">
+                    <option value="TODOS">Todos</option>
+                </select>
+            </div>
+
+            <div class="telefonos-filter">
+                <label>Origen</label>
+                <select id="filtroOrigen">
+                    <option value="TODOS">Todos</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <div id="estadoConsulta" class="telefonos-estado hidden"></div>
+
+    <section id="panelResumen" class="telefonos-card hidden">
+        <div class="telefonos-section-title">
+            <h3>Resumen del cliente</h3>
+        </div>
+
+        <div class="telefonos-client-grid">
+            <div>
+                <span>DNI</span>
+                <strong id="resumenDni">--</strong>
+            </div>
+
+            <div>
+                <span>ID Cliente</span>
+                <strong id="resumenIdCliente">--</strong>
+            </div>
+
+            <div>
+                <span>Carteras asociadas</span>
+                <strong id="resumenCarteras">--</strong>
+            </div>
+        </div>
+
+        <div class="telefonos-kpi-grid">
+            <div class="telefonos-kpi-card">
+                <div class="telefonos-kpi-icon blue">☎</div>
+                <div>
+                    <span>Total teléfonos</span>
+                    <strong id="kpiTotal">0</strong>
+                    <small>activos</small>
+                </div>
+            </div>
+
+            <div class="telefonos-kpi-card">
+                <div class="telefonos-kpi-icon cian">OS</div>
+                <div>
+                    <span>Con Osiptel</span>
+                    <strong id="kpiOsiptel">0</strong>
+                    <small id="kpiOsiptelPct">0%</small>
+                </div>
+            </div>
+
+            <div class="telefonos-kpi-card">
+                <div class="telefonos-kpi-icon green">WA</div>
+                <div>
+                    <span>Con WhatsApp</span>
+                    <strong id="kpiWhatsapp">0</strong>
+                    <small id="kpiWhatsappPct">0%</small>
+                </div>
+            </div>
+
+            <div class="telefonos-kpi-card">
+                <div class="telefonos-kpi-icon orange">📞</div>
+                <div>
+                    <span>Timbran</span>
+                    <strong id="kpiTimbran">0</strong>
+                    <small id="kpiTimbranPct">0%</small>
+                </div>
+            </div>
+
+            <div class="telefonos-kpi-card">
+                <div class="telefonos-kpi-icon purple">★</div>
+                <div>
+                    <span>Recomendado</span>
+                    <strong id="kpiRecomendado">--</strong>
+                    <small id="kpiScore">Score --</small>
+                </div>
+            </div>
+        </div>
+
+        <div id="alertaResumen" class="telefonos-alert hidden"></div>
+    </section>
+
+    <div class="telefonos-layout-grid">
+
+        <section class="telefonos-main-column">
+
+            <section class="telefonos-card telefonos-table-card">
+                <div class="telefonos-table-header">
+                    <div>
+                        <h3>Teléfonos asociados</h3>
+                        <p>Ordenados por score operativo de recomendación.</p>
+                    </div>
+
+                    <span id="contadorTelefonos">0 registros</span>
+                </div>
+
+                <div class="telefonos-table-wrapper">
+                    <table class="telefonos-table">
+                        <thead>
+                            <tr>
+                                <th>Prioridad</th>
+                                <th>Teléfono</th>
+                                <th>Cartera</th>
+                                <th>Tipo</th>
+                                <th>WhatsApp</th>
+                                <th>Timbra</th>
+                                <th>Osiptel</th>
+                                <th>Origen</th>
+                                <th>Condición</th>
+                                <th>Score</th>
+                                <th>Recomendación</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="tbodyTelefonos">
+                            <tr>
+                                <td colspan="12" class="telefonos-empty-table">
+                                    Realiza una búsqueda para ver teléfonos activos.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="telefonos-logic-note">
+                    <strong>Regla:</strong> se prioriza Osiptel, timbrado, prioridad fono, origen, antigüedad del dato, añomes y WhatsApp.
+                </div>
+            </section>
+
+        </section>
+
+        <aside class="telefonos-side-column">
+
+            <section id="panelDetalle" class="telefonos-card telefonos-detail-card hidden">
+                <div class="telefonos-detail-header">
+                    <h3>Detalle del teléfono</h3>
+                    <button id="btnCerrarDetalle" type="button">×</button>
+                </div>
+
+                <div class="telefonos-phone-main">
+                    <div id="detallePhoneCircle" class="telefonos-phone-circle">☎</div>
+                    <strong id="detalleTelefono">--</strong>
+                </div>
+
+                <div class="telefonos-detail-list">
+                    <div><span>DNI:</span><strong id="detalleDni">--</strong></div>
+                    <div><span>ID Cliente:</span><strong id="detalleIdCliente">--</strong></div>
+                    <div><span>Cartera:</span><strong id="detalleCartera">--</strong></div>
+                    <div><span>Tipo:</span><strong id="detalleTipo">--</strong></div>
+                    <div><span>WhatsApp:</span><strong id="detalleWhatsapp">--</strong></div>
+                    <div><span>Timbra:</span><strong id="detalleTimbra">--</strong></div>
+                    <div><span>Osiptel:</span><strong id="detalleOsiptel">--</strong></div>
+                    <div><span>Origen:</span><strong id="detalleOrigen">--</strong></div>
+                    <div><span>Tipo Base:</span><strong id="detalleTipoBase">--</strong></div>
+                    <div><span>Año / fecha:</span><strong id="detalleAnio">--</strong></div>
+                    <div><span>Añomes:</span><strong id="detalleAnomes">--</strong></div>
+                    <div><span>T_EMP:</span><strong id="detalleTEmp">--</strong></div>
+                    <div><span>Prioridad:</span><strong id="detallePrioridad">--</strong></div>
+                    <div><span>Score:</span><strong id="detalleScore">--</strong></div>
+                </div>
+
+                <div id="detalleEstado" class="telefonos-estado-operativo">--</div>
+            </section>
+
+            <section id="panelRelacionados" class="telefonos-card telefonos-related-card hidden">
+                <div class="telefonos-related-header">
+                    <h3>Clientes relacionados</h3>
+                    <span id="relacionadosCount">0</span>
+                </div>
+
+                <div class="telefonos-related-wrapper">
+                    <table class="telefonos-related-table">
+                        <thead>
+                            <tr>
+                                <th>DNI</th>
+                                <th>ID Cliente</th>
+                                <th>Cartera</th>
+                                <th>Origen</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="tbodyRelacionados"></tbody>
+                    </table>
+                </div>
+
+                <div class="telefonos-alert soft">
+                    Validar identidad antes de brindar información sensible o registrar contacto efectivo.
+                </div>
+            </section>
+
+        </aside>
+
+    </div>
+
+</main>
+
+<!-- Layout global del CRM -->
+<script src="/frontend/js/app_layout.js"></script>
+
+<!-- JS propio de la vista -->
+<script src="/frontend/js/telefonos.js"></script>
+
+</body>
+</html>

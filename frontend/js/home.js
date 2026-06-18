@@ -98,6 +98,14 @@ function obtenerModulosPorPerfil(tipo) {
             ruta: "compromisos.html",
             destacado: true
         });
+
+        modulos.push({
+            sigla: "TF",
+            titulo: "Validación de Teléfonos",
+            descripcion: "Consulta teléfonos activos por DNI, ID Cliente o número de teléfono.",
+            ruta: "telefonos.html",
+            destacado: false
+        });
     }
 
     if (tipo === "SUPERVISOR") {
@@ -119,6 +127,13 @@ function obtenerModulosPorPerfil(tipo) {
                 descripcion: "Seguimiento de agentes, promesas por estado y reporte de cartera.",
                 ruta: "supervisor.html",
                 destacado: true
+            },
+            {
+                sigla: "TF",
+                titulo: "Validación de Teléfonos",
+                descripcion: "Consulta teléfonos activos y valida prioridad, Osiptel, timbrado y origen.",
+                ruta: "telefonos.html",
+                destacado: false
             },
             {
                 sigla: "PH",
@@ -181,6 +196,13 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Consulta Compartamos",
                 descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
                 ruta: "compartamos.html",
+                destacado: false
+            },
+            {
+                sigla: "TF",
+                titulo: "Validación de Teléfonos",
+                descripcion: "Consulta teléfonos activos y valida prioridad, Osiptel, timbrado y origen.",
+                ruta: "telefonos.html",
                 destacado: false
             },
             {

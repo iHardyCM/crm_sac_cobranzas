@@ -1,5 +1,7 @@
+# main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_auth import router as auth_router
 from app.api.routes_admin_supervisores import router as admin_supervisores_router
@@ -14,9 +16,11 @@ from app.api.routes_importacion import router as importacion_router
 from app.api.routes_score_telefonico import router as score_telefonico_router
 from app.api.routes_ia_feedback import router as ia_feedback_router
 from app.api.routes_susurro_ia import router as susurro_ia_router
+from app.api.routes_telefonos import router as telefonos_router
 
 app = FastAPI(title="CRM COBRANZAS")
 
+app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,6 +42,7 @@ app.include_router(susurro_ia_router, prefix="/susurro-ia", tags=["Susurro IA"])
 app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"])
 app.include_router(metas_router, prefix="/metas", tags=["Metas"])
 app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"])
+app.include_router(telefonos_router, prefix="/telefonos", tags=["Validación de Teléfonos"])
 
 @app.get("/")
 def healthcheck():

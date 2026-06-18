@@ -1,0 +1,1017 @@
+/* frontend/css/telefonos.css */
+
+/* ================================
+   CONTENEDOR GENERAL DE LA VISTA
+================================ */
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #eef3f8;
+    color: #061b35;
+}
+
+.telefonos-container {
+    width: min(100%, var(--crm-content-max, 1740px));
+    margin: 0 auto;
+    padding: var(--crm-content-pad-y, 20px) var(--crm-content-pad-x, 32px) 32px;
+    box-sizing: border-box;
+}
+
+.telefonos-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.telefonos-page-header h2 {
+    margin: 0;
+    color: #061b35;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+}
+
+.telefonos-page-header p {
+    margin: 6px 0 0;
+    color: #52677f;
+    font-size: 14px;
+}
+
+.telefonos-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    color: #52677f;
+    font-size: 12px;
+}
+
+.telefonos-meta strong {
+    color: #061b35;
+}
+
+
+/* ================================
+   TARJETAS BASE
+================================ */
+
+.telefonos-card {
+    background: #ffffff;
+    border: 1px solid #dbe4ec;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    box-sizing: border-box;
+}
+
+.telefonos-search-card {
+    padding: 18px;
+    margin-bottom: 14px;
+}
+
+
+/* ================================
+   BUSCADOR Y FILTROS
+================================ */
+
+.telefonos-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px 110px;
+    gap: 12px;
+    align-items: center;
+}
+
+.telefonos-search-box {
+    position: relative;
+}
+
+.telefonos-search-box span {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+    opacity: 0.8;
+    font-size: 14px;
+}
+
+.telefonos-search-box input {
+    width: 100%;
+    height: 46px;
+    border: 1px solid #cfd8e3;
+    border-radius: 9px;
+    padding: 0 14px 0 42px;
+    color: #0f172a;
+    background: #ffffff;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.telefonos-search-box input:focus {
+    border-color: #0b66d8;
+    box-shadow: 0 0 0 3px rgba(11, 102, 216, 0.12);
+}
+
+.telefonos-btn {
+    height: 46px;
+    border-radius: 9px;
+    padding: 0 18px;
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.telefonos-btn:hover {
+    transform: translateY(-1px);
+}
+
+.telefonos-btn.primary {
+    background: #0b66d8;
+    border-color: #0b66d8;
+    color: #ffffff;
+}
+
+.telefonos-btn.primary:hover {
+    background: #0958bb;
+    border-color: #0958bb;
+}
+
+.telefonos-btn.secondary {
+    background: #ffffff;
+    border-color: #cfd8e3;
+    color: #061b35;
+}
+
+.telefonos-btn.secondary:hover {
+    background: #f8fbff;
+}
+
+.telefonos-filters-row {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.telefonos-filter label {
+    display: block;
+    margin-bottom: 6px;
+    color: #061b35;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.telefonos-filter select {
+    width: 100%;
+    height: 38px;
+    border: 1px solid #cfd8e3;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    padding: 0 10px;
+    font-size: 13px;
+    outline: none;
+}
+
+.telefonos-filter select:focus {
+    border-color: #0b66d8;
+    box-shadow: 0 0 0 3px rgba(11, 102, 216, 0.10);
+}
+
+
+/* ================================
+   ESTADOS / MENSAJES
+================================ */
+
+.telefonos-estado {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.telefonos-estado.info {
+    color: #1e3a8a;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+}
+
+.telefonos-estado.warning {
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+}
+
+.telefonos-estado.error {
+    color: #991b1b;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+}
+
+.telefonos-estado.success {
+    color: #166534;
+    background: #dcfce7;
+    border: 1px solid #86efac;
+}
+
+
+/* ================================
+   RESUMEN DEL CLIENTE
+================================ */
+
+.telefonos-section-title {
+    padding: 16px 16px 0;
+}
+
+.telefonos-section-title h3 {
+    margin: 0;
+    color: #061b35;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+#panelResumen {
+    padding-bottom: 16px;
+    margin-bottom: 14px;
+}
+
+.telefonos-client-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 14px 16px 0;
+    border: 1px solid #dbe4ec;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.telefonos-client-grid div {
+    padding: 13px 16px;
+    border-right: 1px solid #e7eef5;
+    background: #ffffff;
+}
+
+.telefonos-client-grid div:last-child {
+    border-right: none;
+}
+
+.telefonos-client-grid span {
+    display: block;
+    color: #52677f;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.telefonos-client-grid strong {
+    display: block;
+    margin-top: 6px;
+    color: #0b66d8;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.telefonos-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin: 14px 16px 0;
+}
+
+.telefonos-kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 82px;
+    padding: 13px;
+    border: 1px solid #dbe4ec;
+    border-radius: 11px;
+    background: #ffffff;
+}
+
+.telefonos-kpi-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex: 0 0 42px;
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.telefonos-kpi-icon.blue {
+    background: #e8f1ff;
+    color: #0b66d8;
+}
+
+.telefonos-kpi-icon.green {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.telefonos-kpi-icon.orange {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.telefonos-kpi-icon.cian {
+    background: #036073;
+    color: #06b6d9;
+}
+
+.telefonos-kpi-icon.purple {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.telefonos-kpi-card span {
+    display: block;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.telefonos-kpi-card strong {
+    display: block;
+    margin-top: 4px;
+    color: #061b35;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-kpi-card small {
+    display: block;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.telefonos-alert {
+    margin: 14px 16px 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #facc15;
+    background: #fffbeb;
+    color: #713f12;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.telefonos-alert.soft {
+    margin: 14px 0 0;
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #7c2d12;
+}
+
+
+/* ================================
+   LAYOUT INTERNO
+================================ */
+
+.telefonos-layout-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 390px;
+    gap: 18px;
+    align-items: start;
+}
+
+.telefonos-main-column,
+.telefonos-side-column {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+
+/* ================================
+   TABLA PRINCIPAL
+================================ */
+
+.telefonos-table-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.telefonos-table-header {
+    padding: 16px;
+    border-bottom: 1px solid #e7eef5;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.telefonos-table-header h3 {
+    margin: 0;
+    color: #061b35;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.telefonos-table-header p {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.telefonos-table-header span {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.telefonos-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.telefonos-table {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: collapse;
+}
+
+.telefonos-table th,
+.telefonos-table td {
+    padding: 11px 10px;
+    border-bottom: 1px solid #e7eef5;
+    text-align: left;
+    vertical-align: middle;
+    font-size: 12px;
+}
+
+.telefonos-table th {
+    background: #f8fafc;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.telefonos-table tbody tr:hover {
+    background: #f8fbff;
+}
+
+.telefonos-table td small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.telefonos-empty-table {
+    padding: 34px 16px !important;
+    text-align: center !important;
+    color: #64748b;
+    font-size: 13px !important;
+}
+
+.telefonos-phone-link,
+.phone-link {
+    border: none;
+    background: transparent;
+    color: #0b66d8;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+}
+
+.telefonos-phone-link:hover,
+.phone-link:hover {
+    text-decoration: underline;
+}
+
+.tag-recommended {
+    display: block;
+    width: fit-content;
+    margin-top: 5px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.telefonos-logic-note {
+    margin: 12px 16px 16px;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 9px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+
+/* ================================
+   BADGES
+================================ */
+
+.badge,
+.priority {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    max-width: 160px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.15;
+    font-weight: 900;
+    white-space: normal;
+    text-align: center;
+}
+
+.priority {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.badge-green {
+    color: #166534;
+    background: #dcfce7;
+    border: 1px solid #86efac;
+}
+
+.badge-blue {
+    color: #1d4ed8;
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+}
+
+.badge-orange {
+    color: #b45309;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+}
+
+.badge-yellow {
+    color: #854d0e;
+    background: #fef9c3;
+    border: 1px solid #facc15;
+}
+
+.badge-turquoise {
+    color: #0f766e;
+    background: #ccfbf1;
+    border: 1px solid #5eead4;
+}
+
+.badge-fuchsia {
+    color: #a21caf;
+    background: #fae8ff;
+    border: 1px solid #f0abfc;
+}
+
+.badge-red {
+    color: #b91c1c;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+}
+
+.badge-gray {
+    color: #334155;
+    background: #e5e7eb;
+    border: 1px solid #cbd5e1;
+}
+
+.badge-purple {
+    color: #6d28d9;
+    background: #ede9fe;
+    border: 1px solid #c4b5fd;
+}
+
+
+/* ================================
+   ACCIONES
+================================ */
+
+.actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.actions button {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #bfdbfe;
+    border-radius: 7px;
+    background: #eff6ff;
+    color: #0b66d8;
+    cursor: pointer;
+    font-size: 12px;
+    display: grid;
+    place-items: center;
+}
+
+.actions button:hover {
+    background: #dbeafe;
+}
+
+
+/* ================================
+   PANEL DETALLE
+================================ */
+
+.telefonos-detail-card,
+.telefonos-related-card {
+    padding: 16px;
+}
+
+.telefonos-detail-header,
+.telefonos-related-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.telefonos-detail-header h3,
+.telefonos-related-header h3 {
+    margin: 0;
+    color: #061b35;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.telefonos-detail-header button {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.telefonos-detail-header button:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.telefonos-phone-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.telefonos-phone-circle {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.telefonos-phone-circle.telefono-prioridad-v {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.telefonos-phone-circle.telefono-prioridad-a {
+    background: #fef9c3;
+    color: #a16207;
+}
+
+.telefonos-phone-circle.telefono-prioridad-q {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.telefonos-phone-circle.telefono-prioridad-t {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.telefonos-phone-circle.telefono-prioridad-r {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.telefonos-phone-circle.telefono-prioridad-f {
+    background: #fae8ff;
+    color: #a21caf;
+}
+
+/* .telefonos-phone-main strong {
+    color: #15803d;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+} */
+
+.telefonos-phone-main strong.telefono-prioridad-default {
+    color: #0f172a;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-v {
+    color: #15803d; /* Verde: contacto efectivo */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-a {
+    color: #facc15; /* Amarillo: no contesta */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-q {
+    color: #475569; /* Plomo: nuevo / sin gestión */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-t {
+    color: #0f766e; /* Turquesa: tercero / familiar */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-r {
+    color: #b91c1c; /* Rojo: equivocado */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-phone-main strong.telefono-prioridad-f {
+    color: #a21caf; /* Fucsia: fallado */
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.telefonos-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.telefonos-detail-list div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #e2e8f0;
+    font-size: 12px;
+}
+
+.telefonos-detail-list div:last-child {
+    border-bottom: none;
+}
+
+.telefonos-detail-list span {
+    color: #52677f;
+    font-weight: 900;
+}
+
+.telefonos-detail-list strong {
+    color: #0f172a;
+    font-weight: 800;
+    text-align: right;
+}
+
+.telefonos-estado-operativo {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.35;
+}
+
+.telefonos-estado-operativo.ok {
+    color: #166534;
+    background: #dcfce7;
+    border: 1px solid #86efac;
+}
+
+.telefonos-estado-operativo.good {
+    color: #1d4ed8;
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+}
+
+.telefonos-estado-operativo.warning {
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+}
+
+.telefonos-estado-operativo.bad {
+    color: #b91c1c;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+}
+
+
+/* ================================
+   CLIENTES RELACIONADOS
+================================ */
+
+.telefonos-related-header span {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    color: #0b66d8;
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.telefonos-related-wrapper {
+    margin-top: 12px;
+    border: 1px solid #e7eef5;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.telefonos-related-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.telefonos-related-table th,
+.telefonos-related-table td {
+    padding: 11px 10px;
+    border-bottom: 1px solid #e7eef5;
+    text-align: left;
+    vertical-align: middle;
+    font-size: 12px;
+}
+
+.telefonos-related-table th {
+    background: #f8fafc;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.telefonos-related-table tr:last-child td {
+    border-bottom: none;
+}
+
+.telefonos-related-table td small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 10px;
+}
+
+
+/* ================================
+   UTILITARIOS
+================================ */
+
+.hidden {
+    display: none !important;
+}
+
+
+/* ================================
+   RESPONSIVE
+================================ */
+
+@media (max-width: 1300px) {
+    .telefonos-layout-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .telefonos-side-column {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .telefonos-page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .telefonos-meta {
+        align-items: flex-start;
+    }
+
+    .telefonos-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .telefonos-filters-row,
+    .telefonos-client-grid,
+    .telefonos-kpi-grid,
+    .telefonos-side-column {
+        grid-template-columns: 1fr;
+    }
+
+    .telefonos-table {
+        min-width: 1050px;
+    }
+}
+
+@media (max-width: 620px) {
+    .telefonos-container {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .telefonos-page-header h2 {
+        font-size: 22px;
+    }
+
+    .telefonos-kpi-card {
+        min-height: auto;
+    }
+
+    .telefonos-client-grid div {
+        border-right: none;
+        border-bottom: 1px solid #e7eef5;
+    }
+
+    .telefonos-client-grid div:last-child {
+        border-bottom: none;
+    }
+}
+
+.telefonos-table-wrapper {
+    width: calc(100% - 32px);
+    margin: 0 16px;
+    border: 1px solid #e1e8f0;
+    border-radius: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.telefonos-table {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.telefonos-table-card .telefonos-logic-note {
+    margin: 12px 16px 16px;
+}
+
+.telefonos-table {
+    min-width: 1050px;
+}
+
+.telefonos-table th,
+.telefonos-table td {
+    padding: 9px 8px;
+    font-size: 11px;
+}
+
+.telefonos-table th {
+    font-size: 10.5px;
+}
+
+.telefonos-table td small {
+    font-size: 9.5px;
+}
+
+.badge,
+.priority {
+    font-size: 10.5px;
+}
+
+.phone-link {
+    font-size: 12px;
+}

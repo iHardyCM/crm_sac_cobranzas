@@ -1,3 +1,4 @@
+// app_layout.js
 (function () {
     const MODULES = {
         "corporativo.html": {
@@ -64,7 +65,12 @@
             key: "susurro_ia",
             title: "Susurro IA",
             subtitle: "Asistencia en vivo para llamadas de cobranza"
-        }
+        },
+        "telefonos.html": {
+            key: "telefonos",
+            title: "Validación de Teléfonos",
+            subtitle: "Consulta operativa de teléfonos activos por cliente"
+        },
     };
 
     const NAV_GROUPS = [
@@ -79,7 +85,8 @@
             items: [
                 { key: "clientes", label: "Consulta Compartamos", href: "compartamos.html", icon: iconUsers() },
                 { key: getCompromisosKey(), label: "Compromisos", href: getCompromisosHref(), icon: iconClipboard() },
-                { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() }
+                { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() },
+                { key: "telefonos", label: "Validación de Teléfonos", href: "/telefonos.html", icon: iconUsers() },
             ]
         },
         {
@@ -359,12 +366,14 @@
                 "ia_feedback",
                 "pagos",
                 "canales",
+                "telefonos",
                 ...(compartamos ? ["clientes"] : [])
             ].includes(key);
         }
 
         return [
             "compromisos",
+            "telefonos",
             ...(compartamos ? ["clientes"] : [])
         ].includes(key);
     }
