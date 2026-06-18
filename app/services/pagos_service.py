@@ -24,7 +24,6 @@ FORMATS = {
         "monto_original": "PAG_REA",
         "fecha": "FEC_ULT_PAG",
         "fecha_yyyymmdd": True,
-        "idcartera": 112,
         "tipo_medicion": "RECUPERO",
     },
     "INTERBANK": {
@@ -101,9 +100,17 @@ def validar_archivo_pago(
     validar_columnas(df, config["required"] + config.get("required_extra", []))
     df = aplicar_filtros_formato(df, formato, config)
 
-    registros = normalizar_registros(df, formato, filename)
+    usuario_carga_limpio = (usuario_carga or "").strip() or None
+
+    registros = normalizar_registros(
+        df,
+        formato,
+        filename,
+        usuario_carga=usuario_carga_limpio,
+    )
+
     resumen = construir_resumen_previo(formato, filename, registros)
-    resumen["usuario_carga"] = (usuario_carga or "").strip() or None
+    resumen["usuario_carga"] = usuario_carga_limpio
 
     with engine_siscob.begin() as conn:
         id_importacion = crear_importacion(conn, resumen)
@@ -314,7 +321,12 @@ def aplicar_filtros_formato(df: pd.DataFrame, formato: str, config: Dict) -> pd.
     return filtrado
 
 
-def normalizar_registros(df: pd.DataFrame, formato: str, filename: str) -> List[Dict]:
+def normalizar_registros(
+    df: pd.DataFrame,
+    formato: str,
+    filename: str,
+    usuario_carga: Optional[str] = None,
+) -> List[Dict]:
     config = FORMATS[formato]
     registros = []
 
@@ -362,12 +374,9 @@ def normalizar_registros(df: pd.DataFrame, formato: str, filename: str) -> List[
             "tipo_medicion": config.get("tipo_medicion"),
             "tipo_producto": normalizar_tipo_producto(valor_texto(row, df, "TipCartera")),
             "clasificacion_sbs": valor_texto(row, df, "Calif_Provisiones"),
-            "segmentacion": (
-                valor_texto(row, df, "CLUSTER_RFP")
-                if formato == "MIBANCO"
-                else valor_texto(row, df, "TIP_CAR")
-            ),
+            "segmentacion": obtener_segmentacion(row, df, formato),
             "usuario_asignado": valor_texto(row, df, config.get("filter_col")),
+            "usuario_carga": usuario_carga,
             "cod_cliente": valor_texto(row, df, "COD_CLI") or valor_texto(row, df, "codcliente"),
             "num_operacion": (
                 valor_texto(row, df, "COD_PRE")
@@ -394,6 +403,9 @@ def normalizar_registros(df: pd.DataFrame, formato: str, filename: str) -> List[
 
 
 def obtener_idcartera(row, df, formato: str, config: Dict) -> Tuple[Optional[int], Optional[str]]:
+    if formato == "MIBANCO":
+        return identificar_cartera_mibanco(row, df)
+
     if config.get("idcartera"):
         return config["idcartera"], None
 
@@ -401,32 +413,36 @@ def obtener_idcartera(row, df, formato: str, config: Dict) -> Tuple[Optional[int
         linneg = valor_texto(row, df, "LinNeg").upper()
         return config["linneg"].get(linneg), f"LinNeg no mapeado: {linneg}" if linneg else "LinNeg vacio"
 
-    if formato == "MIBANCO":
-        return identificar_cartera_mibanco(row, df)
-
     return None, None
 
 
 def identificar_cartera_mibanco(row, df) -> Tuple[Optional[int], Optional[str]]:
+    posibles_columnas_id = [
+        "IDCARTERA",
+        "ID_CARTERA",
+        "idcartera",
+        "id_cartera",
+        "CARTERA_ID",
+    ]
+
+    for col in posibles_columnas_id:
+        idcartera = valor_texto(row, df, col)
+        if idcartera:
+            try:
+                valor = int(float(idcartera))
+                if valor in {112, 143, 135}:
+                    return valor, None
+            except Exception:
+                pass
+
     cod_cli = valor_texto(row, df, "COD_CLI")
-    idcartera = valor_texto(row, df, "IDCARTERA") or valor_texto(row, df, "ID_CARTERA")
 
-    if idcartera:
-        try:
-            valor = int(float(idcartera))
-            if valor in {112, 143, 135}:
-                return valor, None
-        except Exception:
-            pass
+    if cod_cli:
+        match = re.search(r"(112|143|135)", cod_cli)
+        if match:
+            return int(match.group(1)), None
 
-    if not cod_cli:
-        return None, "COD_CLI vacio."
-
-    match = re.search(r"(112|143|135)", cod_cli)
-    if match:
-        return int(match.group(1)), None
-
-    return None, f"No se identifico cartera por COD_CLI: {cod_cli}"
+    return 112, "No se identifico cartera MIBANCO; se asigno 112 por defecto."
 
 
 def obtener_fecha_pago(row, df, config: Dict):
@@ -459,17 +475,23 @@ def construir_resumen_previo(formato: str, filename: str, registros: List[Dict])
     resumen_cartera = {}
 
     for r in registros:
-        key = r.get("idcartera") or "SIN_CARTERA"
+        segmentacion = normalizar_segmentacion_resumen(r.get("segmentacion"))
+
+        key = segmentacion or "SIN_SEGMENTACION"
+
         item = resumen_cartera.setdefault(key, {
-            "idcartera": r.get("idcartera"),
-            "cartera": r.get("cartera") or "Sin cartera",
+            "idcartera": None,
+            "cartera": segmentacion or "Sin segmentación",
+            "segmentacion": segmentacion or "Sin segmentación",
             "filas": 0,
             "validas": 0,
             "errores": 0,
             "monto_pago": 0,
             "capital_contenido": 0,
         })
+
         item["filas"] += 1
+
         if r["estado_fila"] == "VALIDO":
             item["validas"] += 1
             item["monto_pago"] += r["monto_pago_soles"] or 0
@@ -1001,6 +1023,49 @@ def normalizar_tipo_producto(value: str) -> Optional[str]:
     if "TRAD" in valor:
         return "TRADICIONAL"
     return valor
+
+
+def normalizar_segmentacion_resumen(value: Optional[str]) -> Optional[str]:
+    valor = str(value or "").strip().upper()
+
+    if not valor:
+        return None
+
+    if valor in {"CASTIGO", "CASTIGADO", "MORA", "CARTERA CASTIGO"}:
+        return "Castigo"
+
+    if valor in {"ACTIVO", "ACTIVA", "VIGENTE", "CARTERA ACTIVA"}:
+        return "Activo"
+
+    return str(value).strip()
+
+
+def obtener_segmentacion(row, df, formato: str) -> Optional[str]:
+    if formato == "MIBANCO":
+        columnas = [
+            "CLUSTER_RFP",
+            "RANGO_CASTIGO",
+            "RANGO_MORA",
+            "RIESGO",
+            "TIP_CAR",
+            "SEGMENTO",
+            "SEGMENTACION",
+        ]
+    else:
+        columnas = [
+            "TIP_CAR",
+            "SEGMENTO",
+            "SEGMENTACION",
+            "RANGO_CASTIGO",
+            "LinNeg",
+        ]
+
+    for col in columnas:
+        valor = valor_texto(row, df, col)
+        if valor:
+            return valor
+
+    return None
 
 
 def normalizar_valor_sql(value):

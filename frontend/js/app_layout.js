@@ -86,7 +86,7 @@
                 { key: "clientes", label: "Consulta Compartamos", href: "compartamos.html", icon: iconUsers() },
                 { key: getCompromisosKey(), label: "Compromisos", href: getCompromisosHref(), icon: iconClipboard() },
                 { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() },
-                { key: "telefonos", label: "Validación de Teléfonos", href: "/telefonos.html", icon: iconUsers() },
+                { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconUsers() },
             ]
         },
         {
