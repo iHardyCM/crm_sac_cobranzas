@@ -136,6 +136,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "DO",
+                titulo: "Documentos automatizados",
+                descripcion: "Genera cartas de cancelacion usando datos de Compartamos y validacion de monto.",
+                ruta: "documentos.html",
+                destacado: false
+            },
+            {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",
                 descripcion: "PDP de hoy filtradas por las carteras asignadas al supervisor.",
@@ -203,6 +210,13 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Validación de Teléfonos",
                 descripcion: "Consulta teléfonos activos y valida prioridad, Osiptel, timbrado y origen.",
                 ruta: "telefonos.html",
+                destacado: false
+            },
+            {
+                sigla: "DO",
+                titulo: "Documentos automatizados",
+                descripcion: "Genera cartas de cancelacion usando datos de Compartamos y validacion de monto.",
+                ruta: "documentos.html",
                 destacado: false
             },
             {

@@ -31,6 +31,11 @@
             title: "Gestion y Recupero",
             subtitle: "Seguimiento operativo en tiempo real"
         },
+        "control_matriz.html": {
+            key: "control_horario",
+            title: "Matriz mensual",
+            subtitle: "Generacion, recaudacion y proyectado por agente"
+        },
         "importacion.html": {
             key: "importacion",
             title: "Importacion de Cartera",
@@ -71,6 +76,11 @@
             title: "Validación de Teléfonos",
             subtitle: "Consulta operativa de teléfonos activos por cliente"
         },
+        "documentos.html": {
+            key: "documentos",
+            title: "Documentos Automatizados",
+            subtitle: "Generacion de cartas con datos de Compartamos"
+        },
     };
 
     const NAV_GROUPS = [
@@ -87,6 +97,7 @@
                 { key: getCompromisosKey(), label: "Compromisos", href: getCompromisosHref(), icon: iconClipboard() },
                 { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() },
                 { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconUsers() },
+                { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocument() },
             ]
         },
         {
@@ -367,6 +378,7 @@
                 "pagos",
                 "canales",
                 "telefonos",
+                "documentos",
                 ...(compartamos ? ["clientes"] : [])
             ].includes(key);
         }
@@ -444,6 +456,10 @@
 
     function iconClipboard() {
         return svg('<path d="M8 4h8l1 2h2v14H5V6h2z"/><path d="M9 11h6M9 15h6"/>');
+    }
+
+    function iconDocument() {
+        return svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6M10 17h6"/>');
     }
 
     function iconCalendar() {

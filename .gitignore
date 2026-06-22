@@ -11,6 +11,7 @@ node_modules/
 
 # logs
 *.log
+app/generated_documents/
 
 # Windows
 Thumbs.db

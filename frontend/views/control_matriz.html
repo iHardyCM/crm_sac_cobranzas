@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matriz mensual - Gestion y Recupero</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/control_matriz.css?v=20260619a">
+</head>
+<body>
+
+<main class="matriz-page">
+    <section class="matriz-toolbar">
+        <div>
+            <span class="matriz-eyebrow">Gestion y recupero</span>
+            <h2 id="tituloMatrizPage">Matriz mensual por agente</h2>
+            <p id="subtituloMatrizPage">Cargando informacion mensual.</p>
+        </div>
+        <div class="matriz-actions">
+            <div class="metric-switch">
+                <button type="button" class="active" data-metrica="generacion" onclick="cambiarMetricaMatrizPage('generacion')">Generacion</button>
+                <button type="button" data-metrica="recupero" onclick="cambiarMetricaMatrizPage('recupero')">Recaudacion</button>
+                <button type="button" data-metrica="proyectado" onclick="cambiarMetricaMatrizPage('proyectado')">Proyectado</button>
+            </div>
+            <button class="btn-secondary" type="button" onclick="window.close()">Cerrar</button>
+        </div>
+    </section>
+
+    <section class="matriz-summary" id="resumenMatrizPage"></section>
+
+    <section class="matriz-alertas" id="alertasMatrizPage"></section>
+
+    <section class="matriz-card">
+        <div class="matriz-card-head">
+            <div>
+                <h3 id="tituloTablaMatriz">Detalle por agente</h3>
+                <p>Ordena por agente, totales, variacion o cualquier fecha.</p>
+            </div>
+            <div id="estadoMatrizPage" class="estado-matriz">Cargando...</div>
+        </div>
+        <div class="matriz-table-wrap">
+            <table class="matriz-page-table">
+                <thead id="theadMatrizPage"></thead>
+                <tbody id="tbodyMatrizPage"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260528b"></script>
+<script src="../js/control_matriz.js?v=20260619a"></script>
+</body>
+</html>

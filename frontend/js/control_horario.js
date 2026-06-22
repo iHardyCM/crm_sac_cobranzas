@@ -11,6 +11,7 @@ let dataControlHorario = {
 };
 
 let resumenCarteras = [];
+let matrizMensualControl = { fechas: [], agentes: [], fecha_mes_anterior: "" };
 let resumenOpcionesCarteras = [];
 let carteraSeleccionada = null;
 let carteraFiltroControl = null;
@@ -18,12 +19,13 @@ let idsFiltroCarteraControl = [];
 let etiquetaFiltroCarteraControl = "";
 let agenteSeleccionado = null;
 let metricaHoraActual = "gestiones";
+let metricaMatrizActual = "generacion";
 let ordenResumen = { campo: "gestiones", direccion: "desc" };
 let ordenAgentes = { campo: "cef", direccion: "desc" };
 let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
 let vistaCarteraControl = "AGRUPADO";
 
-const CACHE_CONTROL_HORARIO = "controlHorarioCacheV5";
+const CACHE_CONTROL_HORARIO = "controlHorarioCacheV6";
 
 const CARTERAS_CONTROL = {
     112: "MIBANCO 1",
@@ -130,6 +132,76 @@ async function fetchControlHorario(fecha, idcartera) {
     });
     if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
     return response.json();
+}
+
+async function obtenerMatrizMensualControl(fecha, idsConsulta = null) {
+    const ids = idsConsulta || idsCarteraMatrizConsulta();
+
+    if (ids.length) {
+        const respuestas = await Promise.all(ids.map(id => fetchMatrizMensualControl(fecha, id)));
+        return unirMatricesMensuales(respuestas);
+    }
+
+    return fetchMatrizMensualControl(fecha, "");
+}
+
+async function fetchMatrizMensualControl(fecha, idcartera) {
+    const params = new URLSearchParams();
+    if (fecha) params.set("fecha", fecha);
+    if (idcartera) params.set("idcartera", idcartera);
+
+    const response = await fetch(`${BASE_URL_CONTROL}/control-horario/matriz-mensual?${params.toString()}`, {
+        cache: "no-store"
+    });
+    if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
+    return response.json();
+}
+
+function unirMatricesMensuales(respuestas) {
+    const base = {
+        fecha: respuestas.find(item => item?.fecha)?.fecha || "",
+        mes: respuestas.find(item => item?.mes)?.mes || "",
+        fechas: respuestas.find(item => item?.fechas?.length)?.fechas || [],
+        fecha_mes_anterior: respuestas.find(item => item?.fecha_mes_anterior)?.fecha_mes_anterior || "",
+        agentes: []
+    };
+    const agentes = new Map();
+
+    respuestas.forEach(data => {
+        (data?.agentes || []).forEach(row => {
+            const key = String(row.idusuario || row.agente || "");
+            if (!key) return;
+
+            const actual = agentes.get(key) || {
+                ...row,
+                dias: {},
+                mes_anterior: { generacion: 0, recupero: 0, proyectado: 0 },
+                mes_anterior_total: { generacion: 0, recupero: 0, proyectado: 0 }
+            };
+
+            Object.entries(row.dias || {}).forEach(([fechaKey, valores]) => {
+                const dia = actual.dias[fechaKey] || { generacion: 0, recupero: 0, proyectado: 0 };
+                dia.generacion += Number(valores.generacion || 0);
+                dia.recupero += Number(valores.recupero || 0);
+                dia.proyectado += Number(valores.proyectado || 0);
+                actual.dias[fechaKey] = dia;
+            });
+
+            actual.mes_anterior.generacion += Number(row.mes_anterior?.generacion || 0);
+            actual.mes_anterior.recupero += Number(row.mes_anterior?.recupero || 0);
+            actual.mes_anterior.proyectado += Number(row.mes_anterior?.proyectado || 0);
+            actual.mes_anterior_total.generacion += Number(row.mes_anterior_total?.generacion || 0);
+            actual.mes_anterior_total.recupero += Number(row.mes_anterior_total?.recupero || 0);
+            actual.mes_anterior_total.proyectado += Number(row.mes_anterior_total?.proyectado || 0);
+            agentes.set(key, actual);
+        });
+    });
+
+    base.agentes = [...agentes.values()].sort((a, b) =>
+        String(a.agente || "").localeCompare(String(b.agente || ""), "es")
+    );
+
+    return base;
 }
 
 function unirRespuestasControlHorario(respuestas) {
@@ -510,6 +582,283 @@ function setSubtituloControl(texto) {
     const subtitulo = document.getElementById("subtituloControl");
     const corte = valor(dataControlHorario.kpis || {}, ["ULTIMO_CORTE", "ultimo_corte"], "");
     subtitulo.innerHTML = `${h(texto)}${corte ? ` <span class="last-cut">Ultimo corte: ${h(corte)}</span>` : ""}`;
+}
+
+async function abrirMatrizMensual() {
+    const fecha = document.getElementById("filtroFecha")?.value || fechaLocalInput();
+    const params = new URLSearchParams();
+    const ids = idsCarteraSeleccionada().map(String).filter(id => /^\d+$/.test(id));
+    if (fecha) params.set("fecha", fecha);
+    if (ids.length) params.set("ids", ids.join(","));
+    if (agenteSeleccionado) params.set("agente", agenteSeleccionado);
+    if (etiquetaFiltroCarteraControl) params.set("label", etiquetaFiltroCarteraControl);
+    window.open(`control_matriz.html?${params.toString()}`, "_blank");
+}
+
+function cerrarMatrizMensual(event) {
+    if (event && event.target !== document.getElementById("modalMatrizMensual")) return;
+    document.getElementById("modalMatrizMensual")?.classList.remove("activo");
+}
+
+function cambiarMetricaMatriz(metrica) {
+    metricaMatrizActual = metrica;
+    document.querySelectorAll(".matriz-switch button").forEach(button => {
+        button.classList.toggle("active", button.dataset.matriz === metrica);
+    });
+    renderMatrizMensual();
+}
+
+function renderMatrizMensual() {
+    const thead = document.getElementById("theadMatrizMensual");
+    const tbody = document.getElementById("tbodyMatrizMensual");
+    const titulo = document.getElementById("tituloMatrizMensual");
+    const subtitulo = document.getElementById("subtituloMatrizMensual");
+
+    if (!thead || !tbody) return;
+
+    const fechaFiltro = document.getElementById("filtroFecha")?.value || matrizMensualControl.fecha || fechaLocalInput();
+    const fechas = fechasVisiblesMatriz(matrizMensualControl.fechas || [], fechaFiltro);
+    const agentes = agentesMatrizFiltrados();
+    const mesTexto = nombreMesMatriz(fechaFiltro);
+    const comparativo = matrizMensualControl.fecha_mes_anterior || "";
+
+    if (titulo) titulo.innerText = `Matriz mensual por agente - ${mesTexto}`;
+    if (subtitulo) {
+        subtitulo.innerText = `${etiquetaMatrizMensual()} ${metricaMatrizActual === "proyectado" ? "del mes completo" : "hasta la fecha filtrada"}. Corte ${comparativo ? formatoFechaCorta(comparativo) : "mes anterior"} como referencia; variacion contra total del mes anterior.`;
+    }
+
+    if (!fechas.length) {
+        thead.innerHTML = "";
+        tbody.innerHTML = emptyRow(3, "No hay matriz mensual para el filtro seleccionado.");
+        return;
+    }
+
+    thead.innerHTML = `
+        <tr>
+            <th class="sticky-col agente-col">Agente</th>
+            ${fechas.map(fecha => `<th>${h(etiquetaFechaMatriz(fecha))}</th>`).join("")}
+            <th class="total-col">Total</th>
+            <th class="compare-col">Corte mes ant.</th>
+            <th class="compare-col">Total mes ant.</th>
+            <th class="sticky-end">Var. vs total ant.</th>
+        </tr>
+    `;
+
+    if (!agentes.length) {
+        tbody.innerHTML = emptyRow(fechas.length + 5, "No hay agentes para la matriz mensual.");
+        return;
+    }
+
+    tbody.innerHTML = agentes.map(row => {
+        const totalMes = fechas.reduce((total, fecha) =>
+            total + valorMatriz(row.dias?.[fecha], metricaMatrizActual), 0);
+        const anteriorCorte = valorMatriz(row.mes_anterior, metricaMatrizActual);
+        const anteriorTotal = valorMatriz(row.mes_anterior_total, metricaMatrizActual);
+        const variacion = calcularVariacionMatriz(totalMes, anteriorTotal);
+
+        return `
+            <tr>
+                <td class="left sticky-col agente-col">
+                    <strong>${h(row.agente || "-")}</strong>
+                    <small class="muted">${h(row.cartera || "")}</small>
+                </td>
+                ${fechas.map(fecha => {
+                    const value = valorMatriz(row.dias?.[fecha], metricaMatrizActual);
+                    return `<td class="${claseCeldaMatriz(value)}">${formatoMatriz(value)}</td>`;
+                }).join("")}
+                <td class="total-col">${formatoMatriz(totalMes)}</td>
+                <td class="compare-col ${claseCeldaMatriz(anteriorCorte)}">${formatoMatriz(anteriorCorte)}</td>
+                <td class="compare-col ${claseCeldaMatriz(anteriorTotal)}">${formatoMatriz(anteriorTotal)}</td>
+                <td class="sticky-end ${claseVariacionMatriz(variacion)}">${formatoVariacionMatriz(variacion)}</td>
+            </tr>
+        `;
+    }).join("");
+
+    sincronizarScrollMatriz();
+}
+
+function sincronizarScrollMatriz() {
+    const top = document.getElementById("matrizScrollTop");
+    const inner = document.getElementById("matrizScrollTopInner");
+    const wrap = document.querySelector(".matriz-wrap");
+    const table = document.querySelector(".matriz-table");
+
+    if (!top || !inner || !wrap || !table) return;
+
+    requestAnimationFrame(() => {
+        inner.style.width = `${table.scrollWidth}px`;
+        top.scrollLeft = wrap.scrollLeft;
+
+        top.onscroll = () => {
+            if (wrap.scrollLeft !== top.scrollLeft) wrap.scrollLeft = top.scrollLeft;
+        };
+        wrap.onscroll = () => {
+            if (top.scrollLeft !== wrap.scrollLeft) top.scrollLeft = wrap.scrollLeft;
+        };
+    });
+}
+
+function fechasVisiblesMatriz(fechas, fechaFiltro) {
+    if (metricaMatrizActual === "proyectado") return fechas;
+
+    const limite = String(fechaFiltro || "").slice(0, 10);
+    return fechas.filter(fecha => String(fecha).slice(0, 10) <= limite);
+}
+
+function agentesMatrizFiltrados() {
+    return (matrizMensualControl.agentes || []).filter(row => {
+        if (agenteSeleccionado && String(row.idusuario || "") !== String(agenteSeleccionado)) return false;
+        return true;
+    });
+}
+
+function construirMatrizDesdeDetalleActual(fecha) {
+    const fechas = fechasDelMesMatriz(fecha);
+    const fechaKey = String(fecha || fechaLocalInput()).slice(0, 10);
+    const fechaAnterior = fechaMesAnteriorMatriz(fechaKey);
+    const agentes = new Map();
+
+    detalleActual().forEach(row => {
+        const idusuario = String(valor(row, CAMPOS.idusuario, valor(row, CAMPOS.agente, "")));
+        if (!idusuario) return;
+        if (agenteSeleccionado && String(agenteSeleccionado) !== idusuario) return;
+
+        const item = agentes.get(idusuario) || {
+            idusuario,
+            agente: valor(row, CAMPOS.agente, `Agente ${idusuario}`),
+            idcartera: getIdCarteraBase(row),
+            idcartera_original: getIdCarteraBase(row),
+            ids_cartera: String(getIdCarteraBase(row) || ""),
+            cartera: valor(row, CAMPOS.cartera, ""),
+            dias: {},
+            mes_anterior: { generacion: 0, recupero: 0, proyectado: 0 },
+            mes_anterior_total: { generacion: 0, recupero: 0, proyectado: 0 }
+        };
+        const dia = item.dias[fechaKey] || { generacion: 0, recupero: 0, proyectado: 0 };
+        dia.generacion += getPdpGenerado(row);
+        dia.recupero += numeroCampo(row, CAMPOS.pago);
+        dia.proyectado += numeroCampo(row, CAMPOS.proyectado);
+        item.dias[fechaKey] = dia;
+        agentes.set(idusuario, item);
+    });
+
+    return {
+        fecha: fechaKey,
+        mes: fechaKey.slice(0, 7),
+        fechas,
+        fecha_mes_anterior: fechaAnterior,
+        agentes: [...agentes.values()].sort((a, b) =>
+            String(a.agente || "").localeCompare(String(b.agente || ""), "es")
+        )
+    };
+}
+
+function fechasDelMesMatriz(fecha) {
+    const base = fechaDesdeIsoLocal(fecha) || new Date();
+    const totalDias = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    return Array.from({ length: totalDias }, (_, index) => {
+        const dia = new Date(base.getFullYear(), base.getMonth(), index + 1);
+        return fechaLocalInput(dia);
+    });
+}
+
+function fechaMesAnteriorMatriz(fecha) {
+    const base = fechaDesdeIsoLocal(fecha) || new Date();
+    const anterior = new Date(base.getFullYear(), base.getMonth(), 0);
+    const dia = Math.min(base.getDate(), anterior.getDate());
+    return fechaLocalInput(new Date(anterior.getFullYear(), anterior.getMonth(), dia));
+}
+
+function idsCarteraMatrizConsulta() {
+    const ids = idsCarteraSeleccionada()
+        .map(String)
+        .filter(id => /^\d+$/.test(id));
+    if (ids.length) return ids;
+    return carterasPermitidasSupervisor();
+}
+
+function valorMatriz(valores, metrica) {
+    return Number((valores || {})[metrica] || 0);
+}
+
+function calcularVariacionMatriz(actual, anterior) {
+    const actualNum = Number(actual || 0);
+    const anteriorNum = Number(anterior || 0);
+    const diferencia = actualNum - anteriorNum;
+    const baseMinima = 900;
+
+    return {
+        actual: actualNum,
+        anterior: anteriorNum,
+        diferencia,
+        porcentaje: anteriorNum >= baseMinima ? diferencia / anteriorNum : null
+    };
+}
+
+function formatoMatriz(value) {
+    return num(value);
+}
+
+function formatoVariacionMatriz(value) {
+    const dif = Number(value?.diferencia || 0);
+    const signoMonto = dif > 0 ? "+" : "";
+    const monto = `${signoMonto}${num(dif)}`;
+
+    if (value?.porcentaje === null || value?.porcentaje === undefined) {
+        if (Number(value?.anterior || 0) <= 0 && Number(value?.actual || 0) > 0) {
+            return `${monto} | nuevo`;
+        }
+        return monto;
+    }
+
+    const pct = Number(value.porcentaje || 0) * 100;
+    const signoPct = pct > 0 ? "+" : "";
+    return `${monto} | ${signoPct}${pct.toFixed(1)}%`;
+}
+
+function etiquetaMatrizMensual() {
+    if (metricaMatrizActual === "proyectado") return "Proyectado";
+    if (metricaMatrizActual === "recupero") return "Recaudacion";
+    return "Generacion";
+}
+
+function etiquetaFechaMatriz(fecha) {
+    const date = fechaDesdeIsoLocal(fecha);
+    if (!date) return fecha;
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+}
+
+function nombreMesMatriz(fecha) {
+    const date = fechaDesdeIsoLocal(fecha);
+    if (!date) return "-";
+    return date.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
+}
+
+function formatoFechaCorta(fecha) {
+    const date = fechaDesdeIsoLocal(fecha);
+    if (!date) return fecha;
+    return date.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function fechaDesdeIsoLocal(fecha) {
+    const parts = String(fecha || "").slice(0, 10).split("-").map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function claseCeldaMatriz(value) {
+    const n = Number(value || 0);
+    if (n <= 0) return "matriz-cero";
+    if (n < 900) return "matriz-rojo";
+    if (n <= 1500) return "matriz-amarillo";
+    return "matriz-verde";
+}
+
+function claseVariacionMatriz(value) {
+    const n = Number(value?.diferencia || 0);
+    if (n > 0) return "var-mejora";
+    if (n < 0) return "var-desfase";
+    return "var-neutral";
 }
 
 function detalleActual() {
@@ -1248,8 +1597,8 @@ function claseMonto(value, escala, tipo) {
     let nivel = "cero";
 
     if (n > 0 && n < 900) nivel = "bajo";
-    if (n >= 900 && n < 2000) nivel = "medio";
-    if (n >= 2000) nivel = "alto";
+    if (n >= 900 && n <= 1500) nivel = "medio";
+    if (n > 1500) nivel = "alto";
 
     return `monto-heat monto-${tipo} monto-${nivel}`;
 }

@@ -1,0 +1,150 @@
+<!-- documentos.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Documentos Automatizados</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/frontend/css/app_layout.css">
+    <link rel="stylesheet" href="/frontend/css/documentos.css?v=20260622f">
+</head>
+<body>
+
+<main class="documentos-container">
+    <section class="documentos-header">
+        <div>
+            <h2>Documentos Automatizados</h2>
+            <p>Busca la operacion, valida los datos del cliente y genera la carta lista para descargar.</p>
+        </div>
+        <div class="documentos-meta">
+            <span>Ultima generacion</span>
+            <strong id="ultimaGeneracion">--</strong>
+        </div>
+    </section>
+
+    <section class="documentos-card documentos-form-card">
+        <div class="documentos-form-grid">
+            <label>
+                Tipo de documento
+                <select id="documentoTipo"></select>
+            </label>
+            <label>
+                DNI
+                <input id="dni" type="text" placeholder="Ej. 12345678" autocomplete="off">
+            </label>
+            <label>
+                Operacion
+                <input id="operacion" type="text" placeholder="Codigo de operacion" autocomplete="off">
+            </label>
+            <label>
+                Cta grupal
+                <input id="codigoGrupo" type="text" placeholder="CodigoGrupo" autocomplete="off">
+            </label>
+            <label>
+                Cod grupal
+                <input id="codCreGrupal" type="text" placeholder="CodCreGrupal" autocomplete="off">
+            </label>
+        </div>
+
+        <div class="documentos-actions">
+            <button id="btnBuscar" class="documentos-btn primary" type="button">Buscar datos</button>
+            <button id="btnLimpiar" class="documentos-btn secondary" type="button">Limpiar</button>
+        </div>
+    </section>
+
+    <div id="estadoDocumento" class="documentos-estado hidden"></div>
+
+    <section id="panelResultados" class="documentos-card documentos-results hidden">
+        <div class="documentos-section-head">
+            <div>
+                <h3>Operaciones encontradas</h3>
+                <p>Selecciona la operacion que se usara para completar la carta.</p>
+            </div>
+            <span id="contadorResultados">0 registros</span>
+        </div>
+
+        <div class="documentos-table-wrapper">
+            <table class="documentos-table">
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>DNI</th>
+                        <th>Operacion</th>
+                        <th>Grupo</th>
+                        <th>Deuda total</th>
+                        <th>Monto minimo</th>
+                        <th>Accion</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyResultados"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="panelGeneracion" class="documentos-card documentos-generate hidden">
+        <div class="documentos-section-head">
+            <div>
+                <h3>Generar documento</h3>
+                <p id="clienteSeleccionado">Selecciona una operacion para continuar.</p>
+            </div>
+            <span id="operacionSeleccionada">--</span>
+        </div>
+
+        <div class="documentos-summary">
+            <div>
+                <span>Mto CancelacionCliente SQL</span>
+                <strong id="montoMinimo">S/ --</strong>
+            </div>
+            <div>
+                <span>Deuda total</span>
+                <strong id="deudaTotal">S/ --</strong>
+            </div>
+            <div>
+                <span>Condonacion estimada</span>
+                <strong id="condonacionEstimada">S/ --</strong>
+            </div>
+        </div>
+
+        <div class="documentos-generate-grid">
+            <label>
+                Cancelacion a ingresar
+                <input id="cancelacion" type="number" step="0.01" min="0" placeholder="Debe ser mayor al monto minimo">
+            </label>
+            <div class="documentos-date-box">
+                <span>Fecha del documento y pago</span>
+                <strong id="fechaDocumentoHoy">--/--/----</strong>
+            </div>
+            <div class="documentos-format-box">
+                <span>Formato</span>
+                <div class="documentos-format-toggle" role="group" aria-label="Formato de descarga">
+                    <button class="active" type="button" data-formato="docx">Word</button>
+                    <button type="button" data-formato="pdf">PDF</button>
+                </div>
+                <input id="formatoDocumento" type="hidden" value="docx">
+            </div>
+            <button id="btnGenerar" class="documentos-btn download" type="button">Generar y descargar</button>
+        </div>
+
+        <div class="documentos-rule">
+            La cancelacion debe ser mayor al <strong>Mto CancelacionCliente</strong> obtenido de la consulta SQL. Las fechas se generan con la fecha del dia.
+        </div>
+    </section>
+
+    <section id="panelPreview" class="documentos-card documentos-preview-card hidden">
+        <div class="documentos-section-head">
+            <div>
+                <h3>Preview del documento</h3>
+                <p>Revisa contenido, montos y firmas antes de descargar.</p>
+            </div>
+            <span>Vista previa</span>
+        </div>
+        <div class="documentos-preview-wrapper">
+            <article id="documentoPreview" class="documentos-preview-page"></article>
+        </div>
+    </section>
+</main>
+
+<script src="/frontend/js/app_layout.js"></script>
+<script src="/frontend/js/documentos.js?v=20260622f"></script>
+</body>
+</html>

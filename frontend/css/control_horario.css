@@ -287,6 +287,192 @@ body {
     overflow: auto;
 }
 
+.matriz-head {
+    align-items: flex-start;
+    flex: 0 0 auto;
+    gap: 12px;
+}
+
+.matriz-actions {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+}
+
+.matriz-switch {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.matriz-wrap {
+    border-color: #c8d8ea;
+    border-radius: 8px;
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+    position: relative;
+}
+
+.matriz-modal {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 10px;
+}
+
+.matriz-modal-card {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 20px);
+    max-height: none;
+    max-width: none;
+    width: calc(100vw - 20px);
+}
+
+.matriz-scroll-top {
+    border: 1px solid #c8d8ea;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    flex: 0 0 auto;
+    height: 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.matriz-scroll-top div {
+    height: 1px;
+}
+
+.matriz-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 2200px;
+}
+
+.matriz-table th {
+    background: #e8f2ff;
+    border-bottom: 1px solid #bfd5ee;
+    color: #0b3768;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 8px 10px;
+    position: sticky;
+    text-transform: uppercase;
+    top: 0;
+    z-index: 3;
+}
+
+.matriz-table td {
+    border-bottom: 1px solid rgba(214, 227, 240, .72);
+    color: #001632;
+    font-size: 12px;
+    min-width: 104px;
+    padding: 7px 8px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.matriz-table tbody tr:hover {
+    background: transparent;
+}
+
+.matriz-table .agente-col {
+    min-width: 660px;
+    max-width: 760px;
+    text-align: left;
+    white-space: normal;
+}
+
+.matriz-table .sticky-col {
+    background: #f8fbff;
+    box-shadow: 1px 0 0 #c8d8ea;
+    color: #061b33;
+    left: 0;
+    position: sticky;
+    z-index: 4;
+}
+
+.matriz-table th.sticky-col {
+    background: #0f5590;
+    color: #ffffff;
+    z-index: 5;
+}
+
+.matriz-table .sticky-end {
+    box-shadow: -1px 0 0 #c8d8ea;
+    min-width: 190px;
+    position: sticky;
+    right: 0;
+    z-index: 4;
+}
+
+.matriz-table th.sticky-end {
+    background: #0f5590;
+    color: #ffffff;
+    z-index: 5;
+}
+
+.matriz-table .total-col {
+    background: #ffffff;
+    color: #001632;
+    font-weight: 900;
+    min-width: 128px;
+}
+
+.matriz-table th.total-col {
+    background: #dbeafe;
+    color: #0b3768;
+}
+
+.matriz-table .compare-col {
+    min-width: 130px;
+    font-weight: 800;
+}
+
+.matriz-table th.compare-col {
+    background: #f0f6ff;
+    color: #0b3768;
+}
+
+.matriz-cero {
+    background: #eef2f6;
+    color: #64748b;
+}
+
+.matriz-rojo {
+    background: #ffe1e7;
+    color: #b91c1c;
+}
+
+.matriz-amarillo {
+    background: #fff1b8;
+    color: #8a5a00;
+    font-weight: 800;
+}
+
+.matriz-verde {
+    background: #d9f8e4;
+    color: #08733e;
+    font-weight: 900;
+}
+
+.var-mejora {
+    background: #d9f8e4;
+    color: #08733e;
+    font-weight: 900;
+}
+
+.var-desfase {
+    background: #ffe1e7;
+    color: #b91c1c;
+    font-weight: 900;
+}
+
+.var-neutral {
+    background: #eef2f6;
+    color: #475569;
+    font-weight: 800;
+}
+
 table {
     border-collapse: collapse;
     min-width: 920px;
@@ -718,26 +904,26 @@ tbody tr:hover {
 }
 
 .monto-cero {
-    background: #6b6b6d;
-    border: 1px solid #cbd5e1;
-    color: #111827;
+    background: #4b5563;
+    border: 1px solid #4b5563;
+    color: #ffffff;
 }
 
 .monto-bajo {
-    background: #fee2e2;
-    border: 1px solid #fecaca;
+    background: #ffe1e7;
+    border: 1px solid #ffc5cf;
     color: #b91c1c;
 }
 
 .monto-medio {
-    background: #fef3c7;
-    border: 1px solid #fde68a;
-    color: #92400e;
+    background: #fff1b8;
+    border: 1px solid #f5d98d;
+    color: #8a5a00;
 }
 
 .monto-alto {
-    background: #dcfce7;
-    border: 1px solid #bbf7d0;
+    background: #d9f8e4;
+    border: 1px solid #b9efca;
     color: #08733e;
 }
 
@@ -895,5 +1081,10 @@ tbody tr:hover {
     .control-filtros,
     .kpi-grid {
         grid-template-columns: 1fr;
+    }
+
+    .matriz-head {
+        align-items: stretch;
+        flex-direction: column;
     }
 }

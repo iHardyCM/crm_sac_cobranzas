@@ -1,0 +1,364 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background: #edf4fa;
+    color: #061b33;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+.matriz-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 100vh;
+    padding: 14px;
+}
+
+.matriz-toolbar,
+.matriz-card,
+.metric-card {
+    background: #ffffff;
+    border: 1px solid #d6e3f0;
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(10, 35, 66, 0.06);
+}
+
+.matriz-toolbar {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+}
+
+.matriz-toolbar h2 {
+    font-size: 20px;
+    margin: 2px 0 4px;
+}
+
+.matriz-toolbar p,
+.matriz-card-head p {
+    color: #526780;
+    margin: 0;
+}
+
+.matriz-eyebrow {
+    color: #46617f;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.matriz-actions,
+.metric-switch {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.metric-switch button,
+.btn-secondary {
+    background: #ffffff;
+    border: 1px solid #c8d8ea;
+    border-radius: 999px;
+    color: #0f5590;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 900;
+    min-height: 34px;
+    padding: 0 16px;
+}
+
+.metric-switch button.active {
+    background: #0f5590;
+    border-color: #0f5590;
+    color: #ffffff;
+}
+
+.matriz-summary {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(6, minmax(140px, 1fr));
+}
+
+.matriz-alertas {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.alerta-critica {
+    background: #fff1f2;
+    border: 1px solid #f7c2c7;
+    border-radius: 8px;
+    color: #9f1239;
+    padding: 10px 12px;
+}
+
+.alerta-critica.alta {
+    background: #fff7dd;
+    border-color: #f5d98d;
+    color: #8a5a00;
+}
+
+.alerta-critica strong,
+.alerta-critica span {
+    display: block;
+}
+
+.alerta-critica strong {
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.alerta-critica span {
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.metric-card {
+    padding: 12px;
+}
+
+.metric-card span {
+    color: #526780;
+    display: block;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.metric-card strong {
+    display: block;
+    font-size: 18px;
+    margin-top: 6px;
+}
+
+.matriz-card {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding: 12px;
+}
+
+.matriz-card-head {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.matriz-card-head h3 {
+    font-size: 15px;
+    margin: 0 0 4px;
+}
+
+.estado-matriz {
+    background: #e8f2ff;
+    border: 1px solid #cfe0f3;
+    border-radius: 999px;
+    color: #0f5590;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 7px 12px;
+}
+
+.matriz-table-wrap {
+    border: 1px solid #d6e3f0;
+    border-radius: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.matriz-page-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 1680px;
+    width: max-content;
+}
+
+.matriz-page-table th,
+.matriz-page-table td {
+    border-bottom: 1px solid #e2edf7;
+    padding: 8px 10px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.matriz-page-table th {
+    background: #eef6ff;
+    color: #0b3768;
+    font-size: 10px;
+    font-weight: 900;
+    position: sticky;
+    text-transform: uppercase;
+    top: 0;
+    z-index: 4;
+}
+
+.matriz-page-table th button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 900;
+    padding: 0;
+    text-transform: inherit;
+}
+
+.matriz-page-table th button::after {
+    color: #0f5590;
+    content: " <>";
+}
+
+.matriz-page-table td {
+    font-size: 12px;
+}
+
+.matriz-page-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.matriz-page-table th.sortable::after {
+    color: #0f5590;
+    content: " <>";
+}
+
+.matriz-page-table .agent-col {
+    left: 0;
+    min-width: 360px;
+    position: sticky;
+    text-align: left;
+    white-space: normal;
+    z-index: 5;
+}
+
+.matriz-page-table th.agent-col {
+    background: #0f5590;
+    color: #ffffff;
+    z-index: 6;
+}
+
+.matriz-page-table td.agent-col {
+    background: #f8fbff;
+    box-shadow: 1px 0 0 #c8d8ea;
+}
+
+.matriz-page-table td.agent-col strong,
+.matriz-page-table td.agent-col small {
+    display: block;
+}
+
+.matriz-page-table td.agent-col small {
+    color: #64748b;
+    font-size: 10px;
+    margin-top: 3px;
+}
+
+.summary-col {
+    min-width: 122px;
+    font-weight: 900;
+}
+
+.day-col {
+    min-width: 96px;
+}
+
+.heat-zero {
+    background: #4b5563;
+    color: #ffffff;
+}
+
+.heat-low {
+    background: #ffe1e7;
+    color: #b91c1c;
+}
+
+.heat-mid {
+    background: #fff1b8;
+    color: #8a5a00;
+    font-weight: 800;
+}
+
+.heat-high {
+    background: #d9f8e4;
+    color: #08733e;
+    font-weight: 900;
+}
+
+.total-ahead,
+.total-new {
+    background: #d9f8e4;
+    color: #08733e;
+    font-weight: 900;
+}
+
+.total-watch {
+    background: #fff1b8;
+    color: #8a5a00;
+    font-weight: 900;
+}
+
+.total-mid {
+    background: #e9f8d7;
+    color: #3f7c16;
+    font-weight: 900;
+}
+
+.total-behind {
+    background: #ffe1e7;
+    color: #b91c1c;
+    font-weight: 900;
+}
+
+.summary-reference {
+    background: #eef6ff;
+    color: #0b3768;
+    font-weight: 900;
+}
+
+.var-up {
+    background: #d9f8e4;
+    color: #08733e;
+    font-weight: 900;
+}
+
+.var-down {
+    background: #ffe1e7;
+    color: #b91c1c;
+    font-weight: 900;
+}
+
+.var-flat {
+    background: #eef2f6;
+    color: #475569;
+    font-weight: 800;
+}
+
+.empty-row {
+    color: #64748b;
+    padding: 20px;
+    text-align: center;
+}
+
+@media (max-width: 900px) {
+    .matriz-toolbar,
+    .matriz-card-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .matriz-summary {
+        grid-template-columns: 1fr;
+    }
+}

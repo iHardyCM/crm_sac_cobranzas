@@ -4,7 +4,10 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
 
-from app.services.control_horario_service import obtener_resumen_control_horario
+from app.services.control_horario_service import (
+    obtener_matriz_mensual_control_horario,
+    obtener_resumen_control_horario,
+)
 
 
 router = APIRouter()
@@ -23,6 +26,19 @@ def resumen_control_horario(
     idusuario: Optional[int] = Query(default=None)
 ):
     return obtener_resumen_control_horario(
+        fecha=fecha,
+        idcartera=idcartera,
+        idusuario=idusuario
+    )
+
+
+@router.get("/matriz-mensual")
+def matriz_mensual_control_horario(
+    fecha: Optional[str] = Query(default=None),
+    idcartera: Optional[int] = Query(default=None),
+    idusuario: Optional[int] = Query(default=None)
+):
+    return obtener_matriz_mensual_control_horario(
         fecha=fecha,
         idcartera=idcartera,
         idusuario=idusuario

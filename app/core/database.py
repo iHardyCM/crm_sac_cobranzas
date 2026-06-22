@@ -10,5 +10,7 @@ def get_connection():
         f"SERVER={os.getenv('DB_SERVER')};"
         f"DATABASE={os.getenv('DB_NAME')};"
         f"UID={os.getenv('DB_USER')};"
-        f"PWD={os.getenv('DB_PASSWORD')}"
+        f"PWD={os.getenv('DB_PASSWORD')};"
+        "Encrypt=no;"
+        "TrustServerCertificate=yes;"
     )

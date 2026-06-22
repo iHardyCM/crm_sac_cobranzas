@@ -19,6 +19,7 @@
 
         <div class="control-actions">
             <button class="btn-secondary" type="button" onclick="limpiarFiltrosControl()">Limpiar filtros</button>
+            <button class="btn-secondary" type="button" onclick="abrirMatrizMensual()">Matriz mensual</button>
             <button class="btn-secondary" type="button" onclick="exportarControlHorario()">Exportar</button>
             <button class="btn-primary" type="button" onclick="cargarControlHorario()">Actualizar</button>
         </div>
@@ -204,6 +205,34 @@
                     </tr>
                 </thead>
                 <tbody id="tablaModalAgenteHoras"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="modalMatrizMensual" class="control-modal matriz-modal" onclick="cerrarMatrizMensual(event)">
+    <div class="control-modal-card matriz-modal-card">
+        <div class="section-head matriz-head">
+            <div>
+                <h3 id="tituloMatrizMensual">Matriz mensual por agente</h3>
+                <p id="subtituloMatrizMensual">Generacion diaria segun el mes filtrado.</p>
+            </div>
+            <div class="matriz-actions">
+                <div class="chart-switch matriz-switch">
+                    <button type="button" class="active" data-matriz="generacion" onclick="cambiarMetricaMatriz('generacion')">Generacion</button>
+                    <button type="button" data-matriz="recupero" onclick="cambiarMetricaMatriz('recupero')">Recaudacion</button>
+                    <button type="button" data-matriz="proyectado" onclick="cambiarMetricaMatriz('proyectado')">Proyectado</button>
+                </div>
+                <button class="btn-secondary" type="button" onclick="cerrarMatrizMensual()">Cerrar</button>
+            </div>
+        </div>
+        <div id="matrizScrollTop" class="matriz-scroll-top">
+            <div id="matrizScrollTopInner"></div>
+        </div>
+        <div class="table-wrap matriz-wrap">
+            <table class="matriz-table">
+                <thead id="theadMatrizMensual"></thead>
+                <tbody id="tbodyMatrizMensual"></tbody>
             </table>
         </div>
     </div>
