@@ -13,6 +13,21 @@ from app.core.db_siscob import engine_siscob
 
 CANALES = {"SMS", "WAPI", "EMAIL", "IVR", "BOT"}
 
+CARTERAS_PERMITIDAS = {
+    112: "MIBANCO",
+    117: "INTERBANK",
+    124: "COMPARTAMOS IND",
+    126: "COMPARTAMOS VIG",
+    128: "COMPARTAMOS CCM",
+    132: "FINANCIERAOH",
+    133: "COMPARTAMOS VIGEN CSM",
+    135: "MIBANCO VIGENTE",
+    137: "IBK 112024 CARTERA PROPIA",
+    143: "MI BANCO 2",
+    144: "COMPARTAMOS CAST CSM",
+    148: "FOH 062026 CARTERA PROPIA",
+}
+
 ALIASES = {
     "documento": ["dni", "documento", "doc", "nro_documento", "nro doc", "num_documento"],
     "telefono": ["numero", "telefono", "telefono_1", "celular", "fono", "nro_telefono", "nro celular"],
@@ -50,7 +65,20 @@ def listar_carteras_canales() -> List[Dict]:
     """)
     with engine_siscob.connect() as conn:
         rows = conn.execute(query).mappings().all()
-    return [{"idcartera": row["idcartera"], "cartera": row["cartera"]} for row in rows]
+
+    carteras = {
+        int(row["idcartera"]): row["cartera"]
+        for row in rows
+        if row["idcartera"] is not None
+    }
+
+    for idcartera, cartera in CARTERAS_PERMITIDAS.items():
+        carteras.setdefault(idcartera, cartera)
+
+    return [
+        {"idcartera": idcartera, "cartera": cartera}
+        for idcartera, cartera in sorted(carteras.items(), key=lambda item: item[0])
+    ]
 
 
 def importar_canales(

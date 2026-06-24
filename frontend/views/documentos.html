@@ -6,7 +6,7 @@
     <title>Documentos Automatizados</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/frontend/css/app_layout.css">
-    <link rel="stylesheet" href="/frontend/css/documentos.css?v=20260622f">
+    <link rel="stylesheet" href="/frontend/css/documentos.css?v=20260624b">
 </head>
 <body>
 
@@ -24,6 +24,10 @@
 
     <section class="documentos-card documentos-form-card">
         <div class="documentos-form-grid">
+            <label>
+                Cartera
+                <select id="documentoCartera"></select>
+            </label>
             <label>
                 Tipo de documento
                 <select id="documentoTipo"></select>
@@ -47,6 +51,7 @@
         </div>
 
         <div class="documentos-actions">
+            <button id="btnDirectorioAgencias" class="documentos-btn secondary" type="button">Directorio agencias</button>
             <button id="btnBuscar" class="documentos-btn primary" type="button">Buscar datos</button>
             <button id="btnLimpiar" class="documentos-btn secondary" type="button">Limpiar</button>
         </div>
@@ -105,6 +110,79 @@
             </div>
         </div>
 
+        <div id="panelGrupal" class="documentos-group-panel hidden">
+            <div class="documentos-subsection-head">
+                <div>
+                    <h4 id="tituloPersonaGrupal">Datos del encargado / fiador</h4>
+                    <p>Puede ser un participante encontrado o una persona ingresada manualmente.</p>
+                </div>
+                <div class="documentos-mode-toggle" role="group" aria-label="Tipo de encargado">
+                    <label><input type="radio" name="encargadoModo" value="participante" checked> Participante</label>
+                    <label><input type="radio" name="encargadoModo" value="libre"> Externo</label>
+                </div>
+            </div>
+
+            <div id="encargadoParticipanteBox" class="documentos-group-grid">
+                <label>
+                    Participante seleccionado
+                    <select id="encargadoParticipante"></select>
+                </label>
+                <label>
+                    Provincia
+                    <input id="encargadoProvinciaParticipante" type="text" placeholder="Ej. AYACUCHO" autocomplete="off">
+                </label>
+            </div>
+
+            <div id="encargadoLibreBox" class="documentos-group-grid hidden">
+                <label>
+                    Nombre
+                    <input id="encargadoNombreLibre" type="text" autocomplete="off">
+                </label>
+                <label>
+                    DNI
+                    <input id="encargadoDniLibre" type="text" autocomplete="off">
+                </label>
+                <label>
+                    Direccion
+                    <input id="encargadoDireccionLibre" type="text" autocomplete="off">
+                </label>
+                <label>
+                    Distrito
+                    <input id="encargadoDistritoLibre" type="text" autocomplete="off">
+                </label>
+                <label>
+                    Provincia
+                    <input id="encargadoProvinciaLibre" type="text" autocomplete="off">
+                </label>
+            </div>
+
+            <div class="documentos-subsection-head compact">
+                <div>
+                    <h4>Montos manuales del grupo</h4>
+                    <p id="ayudaMontosGrupales">La columna Cuenta usa CtaCliente de la consulta SQL. Ingresa el monto a pagar por cada operacion.</p>
+                </div>
+                <strong id="totalGrupalPreview">S/ 0.00</strong>
+            </div>
+
+            <div class="documentos-table-wrapper group-amounts">
+                <table class="documentos-table documentos-group-table">
+                    <thead>
+                        <tr>
+                            <th>Incluir</th>
+                            <th>Cuenta</th>
+                            <th>Operacion</th>
+                            <th id="thCuotaGrupal" class="hidden">N° Cuota</th>
+                            <th>Nombre de cliente</th>
+                            <th>Deuda total</th>
+                            <th id="thCuotaCalculada" class="hidden">Cuota calculada</th>
+                            <th>Monto manual</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyMontosGrupales"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="documentos-generate-grid">
             <label>
                 Cancelacion a ingresar
@@ -122,29 +200,103 @@
                 </div>
                 <input id="formatoDocumento" type="hidden" value="docx">
             </div>
+            <label class="documentos-exception-box">
+                <input id="excepcionDocumento" type="checkbox">
+                <span>
+                    Excepción
+                    <small>Permite monto menor al Mto CancelacionCliente.</small>
+                </span>
+            </label>
             <button id="btnGenerar" class="documentos-btn download" type="button">Generar y descargar</button>
         </div>
 
         <div class="documentos-rule">
-            La cancelacion debe ser mayor al <strong>Mto CancelacionCliente</strong> obtenido de la consulta SQL. Las fechas se generan con la fecha del dia.
+            La cancelacion debe ser mayor al <strong>Mto CancelacionCliente</strong> obtenido de la consulta SQL. Marca <strong>Excepcion</strong> solo si se permitira un monto menor. Las fechas se generan con la fecha del dia.
         </div>
     </section>
 
     <section id="panelPreview" class="documentos-card documentos-preview-card hidden">
         <div class="documentos-section-head">
             <div>
-                <h3>Preview del documento</h3>
-                <p>Revisa contenido, montos y firmas antes de descargar.</p>
+                <h3>Preview del documento y correo</h3>
+                <p>Revisa contenido, montos, firmas y mensaje antes de descargar.</p>
             </div>
             <span>Vista previa</span>
         </div>
-        <div class="documentos-preview-wrapper">
-            <article id="documentoPreview" class="documentos-preview-page"></article>
+        <div class="documentos-preview-layout">
+            <div class="documentos-preview-wrapper">
+                <article id="documentoPreview" class="documentos-preview-page"></article>
+            </div>
+            <aside class="documentos-mail-preview">
+                <div class="documentos-mail-head">
+                    <div>
+                        <h4>Correo sugerido</h4>
+                        <p>Texto listo para copiar y pegar.</p>
+                    </div>
+                    <button id="btnCopiarCorreo" class="documentos-mini-btn" type="button">Copiar</button>
+                </div>
+                <label>
+                    Asunto
+                    <input id="correoAsunto" type="text" readonly>
+                </label>
+                <label>
+                    Formato de correo
+                    <select id="correoFormato">
+                        <option value="carta">Carta / convenio</option>
+                    </select>
+                </label>
+                <label>
+                    Cuerpo
+                    <div id="correoCuerpoHtml" class="documentos-mail-body" contenteditable="true"></div>
+                    <textarea id="correoCuerpo" class="hidden" readonly></textarea>
+                </label>
+                <label>
+                    Correos obligatorios
+                    <textarea id="correoDestinatarios" readonly></textarea>
+                </label>
+            </aside>
+        </div>
+    </section>
+
+    <section id="modalDirectorioAgencias" class="documentos-modal hidden">
+        <div class="documentos-modal-card">
+            <div class="documentos-section-head">
+                <div>
+                    <h3>Directorio de agencias</h3>
+                    <p>Consulta correos, gerente, celular y horarios. Puedes reemplazar la data cargando el Excel vigente.</p>
+                </div>
+                <button id="btnCerrarDirectorio" class="documentos-mini-btn" type="button">Cerrar</button>
+            </div>
+            <div class="documentos-directory-toolbar">
+                <input id="buscarAgencia" type="text" placeholder="Buscar agencia, gerente, correo, distrito o region">
+                <button id="btnBuscarAgencia" class="documentos-btn secondary" type="button">Buscar</button>
+                <label class="documentos-import-btn">
+                    Importar/Reemplazar Excel
+                    <input id="archivoDirectorioAgencias" type="file" accept=".xlsx,.xls">
+                </label>
+            </div>
+            <div id="estadoDirectorioAgencias" class="documentos-directory-status">Sin datos cargados.</div>
+            <div class="documentos-table-wrapper documentos-directory-table">
+                <table class="documentos-table">
+                    <thead>
+                        <tr>
+                            <th>Agencia</th>
+                            <th>Gerente</th>
+                            <th>Celular</th>
+                            <th>Correos</th>
+                            <th>Region</th>
+                            <th>Ubicacion</th>
+                            <th>Horario</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyDirectorioAgencias"></tbody>
+                </table>
+            </div>
         </div>
     </section>
 </main>
 
-<script src="/frontend/js/app_layout.js"></script>
-<script src="/frontend/js/documentos.js?v=20260622f"></script>
+<script src="/frontend/js/app_layout.js?v=20260623a"></script>
+<script src="/frontend/js/documentos.js?v=20260624b"></script>
 </body>
 </html>

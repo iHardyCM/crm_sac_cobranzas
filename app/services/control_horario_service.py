@@ -15,10 +15,10 @@ CARTERAS = {
     128: "COMPARTAMOS VIGENTE CCM",
     133: "COMPARTAMOS VIGENTE GRUPAL / CSM",
     144: "COMPARTAMOS CASTIGO GRUPAL",
-    139: "COMPARTAMOS BANCO",
     132: "FINANCIERA OH",
     117: "INTERBANK",
     137: "INTERBANK CEDIDA",
+    148: "FINANCIERA OH PROPIA",
 }
 
 
@@ -32,6 +32,7 @@ GRUPOS_CARTERA = {
     128: {"id": "COMPARTAMOS_VIGENTE", "nombre": "COMPARTAMOS VIGENTE", "ids": [126, 128, 133]},
     133: {"id": "COMPARTAMOS_VIGENTE", "nombre": "COMPARTAMOS VIGENTE", "ids": [126, 128, 133]},
     132: {"id": "132", "nombre": "FINANCIERA OH", "ids": [132]},
+    148: {"id": "148", "nombre": "FINANCIERA OH PROPIA", "ids": [148]},
     117: {"id": "117", "nombre": "INTERBANK", "ids": [117]},
     137: {"id": "137", "nombre": "INTERBANK CEDIDA", "ids": [137]},
 }
@@ -520,6 +521,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     WHEN IDCARTERA = 117 THEN 'INTERBANK'
                     WHEN IDCARTERA = 132 THEN 'FINANCIERA OH'
                     WHEN IDCARTERA = 137 THEN 'INTERBANK CEDIDA'
+                    WHEN IDCARTERA = 148 THEN 'FINANCIERA OH PROPIA'
                     ELSE CONCAT('Cartera ', IDCARTERA)
                 END AS CARTERA,
                 FECHA,

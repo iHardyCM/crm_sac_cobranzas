@@ -13,13 +13,13 @@ CARTERAS = {
     128: "COMPARTAMOS VIGENTE CCM",
     133: "COMPARTAMOS VIGENTE GRUPAL / CSM",
     144: "COMPARTAMOS CASTIGO GRUPAL",
-    139: "COMPARTAMOS BANCO",
     132: "FINANCIERA OH",
     117: "INTERBANK",
     137: "INTERBANK CEDIDA",
-    141: "CARTERA 141",
-    148: "FINANCIERA OH CEDIDA",
+    148: "FINANCIERA OH PROPIA",
 }
+
+CARTERAS_PERMITIDAS = {112, 117, 124, 126, 128, 132, 133, 135, 137, 143, 144, 148}
 
 
 def serialize_value(value):
@@ -598,6 +598,7 @@ def listar_filtros_telefonos():
                 "cartera": CARTERAS.get(int(row[0]), f"Cartera {row[0]}")
             }
             for row in cursor.fetchall()
+            if row[0] is not None and int(row[0]) in CARTERAS_PERMITIDAS
         ]
 
         cursor.execute("""

@@ -135,13 +135,13 @@ function obtenerModulosPorPerfil(tipo) {
                 ruta: "telefonos.html",
                 destacado: false
             },
-            {
+            ...(compartamos ? [{
                 sigla: "DO",
                 titulo: "Documentos automatizados",
                 descripcion: "Genera cartas de cancelacion usando datos de Compartamos y validacion de monto.",
                 ruta: "documentos.html",
                 destacado: false
-            },
+            }] : []),
             {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",

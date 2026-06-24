@@ -14,7 +14,7 @@ from app.core.db_siscob import engine_siscob
 GRUPOS_CARTERA = {
     "MIBANCO": [0, 112, 135, 143],
     "INTERBANK": [117, 137],
-    "FINANCIERA_OH": [132],
+    "FINANCIERA_OH": [132, 148],
     "COMPARTAMOS_VIGENTE": [126, 128, 133],
     "COMPARTAMOS_CASTIGO": [124, 144],
     "COMPARTAMOS": [124, 126, 128, 133, 144],

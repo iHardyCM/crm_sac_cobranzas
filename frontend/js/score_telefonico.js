@@ -116,7 +116,8 @@ async function cargarContextoScore() {
             { idcartera: 143, nombre: "MIBANCO - EQUIPO 2 - MORA 0-24" },
             { idcartera: 135, nombre: "MIBANCO VIGENTE" },
             { idcartera: 117, nombre: "INTERBANK" },
-            { idcartera: 132, nombre: "FINANCIERA OH" }
+            { idcartera: 132, nombre: "FINANCIERA OH" },
+            { idcartera: 148, nombre: "FINANCIERA OH PROPIA" }
         ], 112);
 
         showToast("Contexto no disponible. Se usó cartera base.");

@@ -47,8 +47,8 @@ def carteras_ia_feedback():
                 {"idcartera": None, "cartera": "Mibanco"},
                 {"idcartera": None, "cartera": "Interbank"},
                 {"idcartera": None, "cartera": "Financiera OH"},
+                {"idcartera": None, "cartera": "Financiera OH Propia"},
                 {"idcartera": None, "cartera": "Compartamos"},
-                {"idcartera": None, "cartera": "Crediscotia"},
                 {"idcartera": None, "cartera": "Efectiva"},
             ]
         }

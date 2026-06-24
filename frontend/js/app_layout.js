@@ -378,8 +378,7 @@
                 "pagos",
                 "canales",
                 "telefonos",
-                "documentos",
-                ...(compartamos ? ["clientes"] : [])
+                ...(compartamos ? ["clientes", "documentos"] : [])
             ].includes(key);
         }
 
@@ -408,7 +407,7 @@
         if (typeof esCarteraCompartamos === "function") {
             return esCarteraCompartamos();
         }
-        return ["124", "126", "128", "133", "139", "144"].includes(String(localStorage.getItem("idcartera") || ""));
+        return ["124", "126", "128", "133", "144"].includes(String(localStorage.getItem("idcartera") || ""));
     }
 
     function escapeHtml(value) {

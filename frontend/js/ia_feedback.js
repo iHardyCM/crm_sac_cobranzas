@@ -145,12 +145,12 @@ async function cargarCarterasIa() {
         { idcartera: 112, cartera: "Mibanco" },
         { idcartera: 117, cartera: "Interbank" },
         { idcartera: 132, cartera: "Financiera OH" },
+        { idcartera: 148, cartera: "Financiera OH Propia" },
         { idcartera: 126, cartera: "Compartamos" },
         { idcartera: 128, cartera: "Compartamos" },
         { idcartera: 133, cartera: "Compartamos" },
         { idcartera: 124, cartera: "Compartamos Castigo" },
         { idcartera: 144, cartera: "Compartamos Castigo" },
-        { idcartera: 139, cartera: "Crediscotia" },
     ];
 
     try {

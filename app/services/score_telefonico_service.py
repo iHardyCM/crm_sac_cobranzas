@@ -18,6 +18,7 @@ CARTERAS_SCORE_CONTEXTO = [
     {"idcartera": 135, "nombre": "MIBANCO VIGENTE"},
     {"idcartera": 117, "nombre": "INTERBANK"},
     {"idcartera": 132, "nombre": "FINANCIERA OH"},
+    {"idcartera": 148, "nombre": "FINANCIERA OH PROPIA"},
     {"idcartera": 124, "nombre": "COMPARTAMOS CASTIGO IND"},
     {"idcartera": 126, "nombre": "COMPARTAMOS VIGENTE IND"},
     {"idcartera": 128, "nombre": "COMPARTAMOS VIGENTE CCM"},
@@ -32,6 +33,7 @@ CARTERA_SCORE_NOMBRES = {
 
     117: ["INTERBANK"],
     132: ["FINANCIERA OH"],
+    148: ["FINANCIERA OH PROPIA", "FOH 062026 CARTERA PROPIA"],
     124: ["COMPARTAMOS CASTIGO IND", "COMPARTAMOS CASTIGO INDIVIDUAL"],
     126: ["COMPARTAMOS VIGENTE IND", "COMPARTAMOS VIGENTE INDIVIDUAL"],
     128: ["COMPARTAMOS VIGENTE CCM"],
