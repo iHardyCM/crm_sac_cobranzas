@@ -48,6 +48,7 @@ class GenerarDocumentoRequest(BaseModel):
     excepcion: bool = False
     encargado: EncargadoDocumentoRequest | None = None
     pagos_grupales: list[PagoGrupalRequest] = Field(default_factory=list)
+    cuotas_individual: int | None = None
 
 
 @router.get("")
@@ -72,6 +73,7 @@ async def buscar_documentos(
     operacion: str | None = Query(default=None),
     codigo_grupo: str | None = Query(default=None),
     cod_cre_grupal: str | None = Query(default=None),
+    cartera_id: int = Query(default=133),
 ):
     try:
         rows = await run_in_threadpool(
@@ -80,6 +82,7 @@ async def buscar_documentos(
             operacion=operacion,
             codigo_grupo=codigo_grupo,
             cod_cre_grupal=cod_cre_grupal,
+            cartera_id=cartera_id,
         )
         return {"ok": True, "data": rows}
     except ValueError as exc:
@@ -146,6 +149,7 @@ async def generar_documento_endpoint(payload: GenerarDocumentoRequest):
             excepcion=payload.excepcion,
             encargado=payload.encargado.dict() if payload.encargado else None,
             pagos_grupales=[item.dict() for item in payload.pagos_grupales],
+            cuotas_individual=payload.cuotas_individual,
         )
         media_type = "application/pdf" if result["formato"] == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         return FileResponse(

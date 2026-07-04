@@ -6,8 +6,24 @@ let ordenMatriz = { campo: "total", direccion: "desc" };
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
+    const apoyo = document.getElementById("filtroApoyoRecuperoMatriz");
+    if (apoyo) {
+        apoyo.checked = new URLSearchParams(window.location.search).get("incluir_apoyo_recupero") === "true";
+    }
     cargarMatrizPage();
 });
+
+function cambiarApoyoRecuperoMatriz() {
+    const params = new URLSearchParams(window.location.search);
+    const activo = document.getElementById("filtroApoyoRecuperoMatriz")?.checked;
+    if (activo) {
+        params.set("incluir_apoyo_recupero", "true");
+    } else {
+        params.delete("incluir_apoyo_recupero");
+    }
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    cargarMatrizPage();
+}
 
 async function cargarMatrizPage() {
     const estado = document.getElementById("estadoMatrizPage");
@@ -39,9 +55,11 @@ async function obtenerMatrizPage() {
 }
 
 async function fetchMatrizPage(fecha, idcartera) {
+    const pageParams = new URLSearchParams(window.location.search);
     const params = new URLSearchParams();
     if (fecha) params.set("fecha", fecha);
     if (idcartera) params.set("idcartera", idcartera);
+    if (pageParams.get("incluir_apoyo_recupero") === "true") params.set("incluir_apoyo_recupero", "true");
 
     const response = await fetch(`${BASE_URL_MATRIZ}/control-horario/matriz-mensual?${params.toString()}`, {
         cache: "no-store"
@@ -131,7 +149,9 @@ function cambiarMetricaMatrizPage(metrica) {
 function renderMatrizPage() {
     const fechaFiltro = new URLSearchParams(window.location.search).get("fecha") || matrizData.fecha || fechaLocalInput();
     const fechas = fechasVisibles(fechaFiltro);
-    const rows = ordenarRowsMatriz((matrizData.agentes || []).map(row => prepararRow(row, fechas)));
+    const rows = ordenarRowsMatriz((matrizData.agentes || [])
+        .map(row => prepararRow(row, fechas))
+        .filter(row => row.total > 0 || row.corteAnterior > 0 || row.totalAnterior > 0));
     const mesTexto = nombreMes(fechaFiltro);
     const comparativo = matrizData.fecha_mes_anterior ? formatoFecha(matrizData.fecha_mes_anterior) : "mes anterior";
 

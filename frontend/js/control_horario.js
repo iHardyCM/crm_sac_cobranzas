@@ -86,9 +86,23 @@ document.addEventListener("DOMContentLoaded", () => {
         fecha.value = fechaLocalInput();
     }
 
+    const apoyoRecupero = document.getElementById("filtroApoyoRecupero");
+    if (apoyoRecupero) {
+        apoyoRecupero.checked = false;
+    }
+
     cargarCacheControlHorario();
     cargarControlHorario();
 });
+
+function incluirApoyoRecupero() {
+    return Boolean(document.getElementById("filtroApoyoRecupero")?.checked);
+}
+
+function cambiarApoyoRecupero() {
+    sessionStorage.removeItem(CACHE_CONTROL_HORARIO);
+    cargarControlHorario();
+}
 
 async function cargarControlHorario() {
     const fecha = document.getElementById("filtroFecha")?.value;
@@ -127,6 +141,7 @@ async function fetchControlHorario(fecha, idcartera) {
     const params = new URLSearchParams();
     if (fecha) params.set("fecha", fecha);
     if (idcartera) params.set("idcartera", idcartera);
+    if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
 
     const response = await fetch(`${BASE_URL_CONTROL}/control-horario/resumen?${params.toString()}`, {
         cache: "no-store"
@@ -150,6 +165,7 @@ async function fetchMatrizMensualControl(fecha, idcartera) {
     const params = new URLSearchParams();
     if (fecha) params.set("fecha", fecha);
     if (idcartera) params.set("idcartera", idcartera);
+    if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
 
     const response = await fetch(`${BASE_URL_CONTROL}/control-horario/matriz-mensual?${params.toString()}`, {
         cache: "no-store"
@@ -378,6 +394,7 @@ function cargarCacheControlHorario() {
 
         const cache = JSON.parse(raw);
         if (!cache?.data) return;
+        if (Boolean(cache.incluir_apoyo_recupero) !== incluirApoyoRecupero()) return;
         if (cache.fecha) {
             const fecha = document.getElementById("filtroFecha");
             if (fecha && !fecha.value) fecha.value = cache.fecha;
@@ -395,6 +412,7 @@ function guardarCacheControlHorario(fecha) {
         sessionStorage.setItem(CACHE_CONTROL_HORARIO, JSON.stringify({
             fecha,
             data: dataControlHorario,
+            incluir_apoyo_recupero: incluirApoyoRecupero(),
             guardado: new Date().toISOString()
         }));
     } catch (error) {
@@ -593,6 +611,7 @@ async function abrirMatrizMensual() {
     if (ids.length) params.set("ids", ids.join(","));
     if (agenteSeleccionado) params.set("agente", agenteSeleccionado);
     if (etiquetaFiltroCarteraControl) params.set("label", etiquetaFiltroCarteraControl);
+    if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
     window.open(`control_matriz.html?${params.toString()}`, "_blank");
 }
 
@@ -873,7 +892,7 @@ function agruparDetalleAgentes(detalle) {
     const map = new Map();
 
     detalle.forEach(row => {
-        if (numeroCampo(row, CAMPOS.gestiones) <= 0) return;
+        if (!tieneActividadVisibleAgente(row)) return;
 
         const idusuario = String(valor(row, CAMPOS.idusuario, valor(row, CAMPOS.agente, "")));
         if (!idusuario) return;
@@ -919,6 +938,23 @@ function agruparDetalleAgentes(detalle) {
         ...row,
         ...evaluarAccionAgente(row)
     })), ordenAgentes, valorOrdenAgente);
+}
+
+function tieneActividadVisibleAgente(row) {
+    return [
+        numeroCampo(row, CAMPOS.gestiones),
+        numeroCampo(row, CAMPOS.cef),
+        numeroCampo(row, CAMPOS.cne),
+        numeroCampo(row, CAMPOS.noc),
+        numeroCampo(row, CAMPOS.qPdp),
+        getPdpGenerado(row),
+        numeroCampo(row, CAMPOS.proyectado),
+        numeroCampo(row, CAMPOS.pago),
+        numeroCampo(row, CAMPOS.pendiente),
+        numeroCampo(row, ["Q_PROYECTADO", "q_proyectado"]),
+        numeroCampo(row, ["Q_PAGADOS", "q_pagados"]),
+        numeroCampo(row, ["Q_PENDIENTES", "q_pendientes"])
+    ].some(value => Number(value || 0) > 0);
 }
 
 function detalleFiltradoPorAgente(detalle) {
@@ -1615,11 +1651,18 @@ function cerrarModalAgente(event) {
 }
 
 function limpiarFiltrosControl() {
+    const apoyoRecupero = document.getElementById("filtroApoyoRecupero");
+    const estabaIncluidoApoyo = Boolean(apoyoRecupero?.checked);
+    if (apoyoRecupero) apoyoRecupero.checked = false;
     document.getElementById("filtroCartera").value = "";
     document.getElementById("filtroAgente").value = "";
     limpiarFiltroCarteraControl();
     carteraSeleccionada = null;
     agenteSeleccionado = null;
+    if (estabaIncluidoApoyo) {
+        cargarControlHorario();
+        return;
+    }
     resumenOpcionesCarteras = construirResumenCarteras(dataControlHorario.detalle || []);
     resumenCarteras = construirResumenVisible();
     poblarFiltroAgentes();

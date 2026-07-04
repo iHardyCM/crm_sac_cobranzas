@@ -6,7 +6,7 @@
     <title>Documentos Automatizados</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="../css/app_layout.css">
-    <link rel="stylesheet" href="../css/documentos.css?v=20260624b">
+    <link rel="stylesheet" href="../css/documentos.css?v=20260702d">
 </head>
 <body>
 
@@ -184,9 +184,44 @@
         </div>
 
         <div class="documentos-generate-grid">
-            <label>
+            <label id="cancelacionBox">
                 Cancelacion a ingresar
                 <input id="cancelacion" type="number" step="0.01" min="0" placeholder="Debe ser mayor al monto minimo">
+            </label>
+            <label id="modalidadCastigoBox" class="hidden">
+                Modalidad
+                <select id="modalidadCastigo">
+                    <option value="un_pago">Cancelacion en un pago</option>
+                    <option value="armadas">Cancelacion con armadas</option>
+                    <option value="cuotas">Cancelacion con cuotas</option>
+                </select>
+            </label>
+            <label id="cuotasCastigoBox" class="hidden">
+                Cantidad de cuotas
+                <input id="cuotasCastigo" type="number" step="1" min="1" value="1" placeholder="Ej. 1">
+            </label>
+            <label id="cuotasIndividualBox" class="hidden">
+                Cuotas a pagar
+                <select id="cuotasIndividual">
+                    <option value="1">1 cuota</option>
+                    <option value="2">2 cuotas</option>
+                    <option value="3">3 cuotas</option>
+                    <option value="4">4 cuotas</option>
+                </select>
+            </label>
+            <label id="inicialCastigoBox" class="hidden">
+                Inicial
+                <input id="inicialCastigo" type="number" step="0.01" min="0" placeholder="Inicial">
+            </label>
+            <label id="cuotaPagoCastigoBox" class="hidden">
+                Cuota a pagar
+                <input id="cuotaPagoCastigo" type="number" step="0.01" min="0" placeholder="Cuota">
+            </label>
+            <label id="agenciaDestinoCastigoBox" class="hidden">
+                Agencia destino
+                <select id="agenciaDestinoCastigo">
+                    <option value="">Misma agencia</option>
+                </select>
             </label>
             <div class="documentos-date-box">
                 <span>Fecha del documento y pago</span>
@@ -200,7 +235,7 @@
                 </div>
                 <input id="formatoDocumento" type="hidden" value="docx">
             </div>
-            <label class="documentos-exception-box">
+            <label id="excepcionDocumentoBox" class="documentos-exception-box">
                 <input id="excepcionDocumento" type="checkbox">
                 <span>
                     Excepción
@@ -208,6 +243,16 @@
                 </span>
             </label>
             <button id="btnGenerar" class="documentos-btn download" type="button">Generar y descargar</button>
+        </div>
+
+        <div id="fechasCuotasCastigoBox" class="documentos-installments hidden">
+            <div class="documentos-subsection-head compact">
+                <div>
+                    <h4>Pagos y fechas</h4>
+                    <p>Se generan montos iguales por defecto. En cuotas, las fechas se distribuyen por mes; en armadas, dentro del mismo mes. Puedes editar cada monto y fecha. Si una fecha cae domingo, se mueve al dia anterior. Validar feriados antes de enviar.</p>
+                </div>
+            </div>
+            <div id="fechasCuotasCastigo" class="documentos-installments-grid"></div>
         </div>
 
         <div class="documentos-rule">
@@ -297,6 +342,6 @@
 </main>
 
 <script src="../js/app_layout.js?v=20260623a"></script>
-<script src="../js/documentos.js?v=20260624b"></script>
+<script src="../js/documentos.js?v=20260703d"></script>
 </body>
 </html>

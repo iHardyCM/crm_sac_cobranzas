@@ -72,6 +72,45 @@ body {
     grid-template-columns: 1fr 1fr 180px 190px 210px;
 }
 
+.documentos-generate-grid.castigo-mail-grid {
+    grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.45fr) 180px 190px;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid {
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid.castigo-un-pago-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid #cancelacionBox {
+    grid-column: span 2;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid #modalidadCastigoBox {
+    grid-column: span 2;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid #cuotasCastigoBox,
+.documentos-generate-grid.castigo-acuerdo-grid #inicialCastigoBox,
+.documentos-generate-grid.castigo-acuerdo-grid #cuotaPagoCastigoBox {
+    grid-column: span 1;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid #agenciaDestinoCastigoBox {
+    grid-column: span 3;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid.castigo-un-pago-grid #agenciaDestinoCastigoBox {
+    grid-column: span 4;
+}
+
+.documentos-generate-grid.castigo-acuerdo-grid .documentos-date-box,
+.documentos-generate-grid.castigo-acuerdo-grid #excepcionDocumentoBox {
+    grid-column: span 2;
+}
+
 .documentos-form-grid label,
 .documentos-generate-grid label {
     color: #061b35;
@@ -102,6 +141,75 @@ body {
     color: #061b35;
     font-size: 12px;
     font-weight: 900;
+}
+
+.documentos-installments {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid #dbe4ec;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.documentos-installments-grid {
+    max-width: 620px;
+}
+
+.documentos-installments-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid #dbe4ec;
+    border-radius: 9px;
+    background: #ffffff;
+}
+
+.documentos-installments-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    color: #061b35;
+}
+
+.documentos-installments-table th,
+.documentos-installments-table td {
+    padding: 8px;
+    border-bottom: 1px solid #e6edf4;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.documentos-installments-table th {
+    position: sticky;
+    top: 0;
+    background: #f1f6fb;
+    font-weight: 900;
+    z-index: 1;
+}
+
+.documentos-installments-table td:first-child {
+    width: 90px;
+    font-weight: 900;
+}
+
+.documentos-installments-grid input {
+    width: 100%;
+    height: 36px;
+    margin: 0;
+    border: 1px solid #cfd8e3;
+    border-radius: 8px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    color: #0f172a;
+    background: #ffffff;
+    font-size: 13px;
+}
+
+.documentos-installments-table .monto-cuota-castigo {
+    max-width: 130px;
+}
+
+.documentos-installments-table .fecha-cuota-castigo {
+    max-width: 170px;
 }
 
 .documentos-format-box > span {
@@ -260,6 +368,11 @@ body {
     width: 100%;
 }
 
+.correo-dual-preview.single {
+    grid-template-columns: minmax(0, 860px);
+    justify-content: center;
+}
+
 .correo-directo-card {
     padding: 18px;
     border: 1px solid #cfd8e3;
@@ -318,6 +431,28 @@ body {
 
 .correo-directo-body {
     min-height: 460px;
+}
+
+.documentos-mail-warning {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 18px;
+    border: 1px solid #fcd34d;
+    border-radius: 12px;
+    background: #fffbeb;
+    color: #92400e;
+    font: 14px/1.35 "Segoe UI", Arial, sans-serif;
+}
+
+.documentos-mail-warning strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.documentos-mail-warning p {
+    margin: 0;
 }
 
 .documentos-preview-page h1,
@@ -530,6 +665,29 @@ body {
 .documentos-mail-table .mail-sustento {
     min-height: 96px;
     font-weight: 400;
+}
+
+.documentos-mail-table.castigo-mail-table {
+    width: 100%;
+    min-width: 620px;
+    table-layout: auto;
+}
+
+.documentos-mail-table.castigo-itf-table {
+    width: 520px;
+    table-layout: fixed;
+}
+
+.castigo-payment-plan {
+    display: inline-block;
+    margin: 8px 0 18px;
+    background: #ffff00;
+    color: #000000;
+    font: 14px/1.35 Arial, sans-serif;
+}
+
+.castigo-payment-plan p {
+    margin: 0 0 4px;
 }
 
 .documentos-mail-preview textarea#correoDestinatarios {

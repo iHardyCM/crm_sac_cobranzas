@@ -23,12 +23,14 @@ def vista_control_horario():
 def resumen_control_horario(
     fecha: Optional[str] = Query(default=None),
     idcartera: Optional[int] = Query(default=None),
-    idusuario: Optional[int] = Query(default=None)
+    idusuario: Optional[int] = Query(default=None),
+    incluir_apoyo_recupero: bool = Query(default=False)
 ):
     return obtener_resumen_control_horario(
         fecha=fecha,
         idcartera=idcartera,
-        idusuario=idusuario
+        idusuario=idusuario,
+        incluir_apoyo_recupero=incluir_apoyo_recupero
     )
 
 
@@ -36,10 +38,12 @@ def resumen_control_horario(
 def matriz_mensual_control_horario(
     fecha: Optional[str] = Query(default=None),
     idcartera: Optional[int] = Query(default=None),
-    idusuario: Optional[int] = Query(default=None)
+    idusuario: Optional[int] = Query(default=None),
+    incluir_apoyo_recupero: bool = Query(default=False)
 ):
     return obtener_matriz_mensual_control_horario(
         fecha=fecha,
         idcartera=idcartera,
-        idusuario=idusuario
+        idusuario=idusuario,
+        incluir_apoyo_recupero=incluir_apoyo_recupero
     )

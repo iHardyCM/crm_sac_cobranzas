@@ -96,7 +96,7 @@ body {
 
 .control-filtros {
     display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    grid-template-columns: repeat(5, minmax(180px, 1fr));
     gap: 12px;
     padding: 14px;
 }
@@ -115,6 +115,38 @@ body {
     height: 36px;
     padding: 0 10px;
     width: 100%;
+}
+
+.check-field {
+    align-items: center;
+    background: #f8fbff;
+    border: 1px solid #c8d8ea;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    min-height: 36px;
+    padding: 8px 10px;
+}
+
+.check-field input {
+    flex: 0 0 auto;
+}
+
+.check-field strong,
+.check-field small {
+    display: block;
+}
+
+.check-field strong {
+    color: #0b3768;
+    font-size: 11px;
+}
+
+.check-field small {
+    color: #526780;
+    font-size: 10px;
+    margin-top: 2px;
 }
 
 .control-toast {

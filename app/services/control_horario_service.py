@@ -37,6 +37,8 @@ GRUPOS_CARTERA = {
     137: {"id": "137", "nombre": "INTERBANK CEDIDA", "ids": [137]},
 }
 
+PERFILES_RECUPERO_APOYO = {"ADM", "SUPERVISOR", "JEFE"}
+
 
 def serialize_value(value):
     if isinstance(value, Decimal):
@@ -162,7 +164,11 @@ def extraer_usuario_agente(valor):
     return posible or None
 
 
-def enriquecer_por_usuario(rows, mapa_id, mapa_usuario):
+def es_perfil_recupero_apoyo(info):
+    return str(info.get("tipousuario") or "").strip().upper() in PERFILES_RECUPERO_APOYO
+
+
+def enriquecer_por_usuario(rows, mapa_id, mapa_usuario, incluir_apoyo_recupero=False):
     data = []
 
     for row in rows:
@@ -188,10 +194,13 @@ def enriquecer_por_usuario(rows, mapa_id, mapa_usuario):
         if info is None:
             continue
 
-        if info.get("tipousuario") != "GESTOR":
+        if info.get("estado") == "E":
             continue
 
-        if info.get("estado") == "E":
+        es_gestor = info.get("tipousuario") == "GESTOR"
+        es_apoyo_recupero = incluir_apoyo_recupero and es_perfil_recupero_apoyo(info)
+
+        if not es_gestor and not es_apoyo_recupero:
             continue
 
         if idcartera_resultado is None:
@@ -203,6 +212,8 @@ def enriquecer_por_usuario(rows, mapa_id, mapa_usuario):
         item = dict(row)
         item["IDUSUARIO"] = info["idusuario"]
         item["USUARIO"] = info["usuario"]
+        item["TIPOUSUARIO"] = info["tipousuario"]
+        item["ES_RECUPERO_APOYO"] = 0 if es_gestor else 1
         item["IDCARTERA_ORIGINAL"] = int(idcartera_resultado)
         item["IDCARTERA_USUARIO"] = info["idcartera"]
         item["CARTERA_USUARIO"] = info["cartera"]
@@ -217,7 +228,7 @@ def enriquecer_por_usuario(rows, mapa_id, mapa_usuario):
     return data
 
 
-def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None):
+def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
     conn = None
     cursor = None
 
@@ -252,12 +263,14 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None):
         detalle = enriquecer_por_usuario(
             resultsets[0] if len(resultsets) > 0 else [],
             mapa_id,
-            mapa_usuario
+            mapa_usuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
         )
         agente_hora = enriquecer_por_usuario(
             resultsets[6] if len(resultsets) > 6 else [],
             mapa_id,
-            mapa_usuario
+            mapa_usuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
         )
 
         return {
@@ -386,7 +399,7 @@ def agregar_movimiento_matriz(agentes, row, fecha_key):
     valores["proyectado"] += float(row.get("PROYECTADO") or 0)
 
 
-def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario=None):
+def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
     fecha_base = fecha_desde_parametro(fecha)
     ultimo_dia = monthrange(fecha_base.year, fecha_base.month)[1]
     fechas_mes = [
@@ -412,7 +425,6 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
             "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
             "G.IDCARTERA IS NOT NULL",
             "G.IDUSUARIO IS NOT NULL",
-            "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'",
             "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
         ]
         params_extra = []
@@ -425,7 +437,13 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
             filtros.append("G.IDUSUARIO = ?")
             params_extra.append(idusuario)
 
-        where_extra = " AND ".join(filtros)
+        where_base = " AND ".join(filtros)
+        filtro_perfiles = (
+            "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')"
+            if incluir_apoyo_recupero else
+            "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'"
+        )
+        where_perfiles = f"{where_base} AND {filtro_perfiles}"
 
         query = f"""
             WITH MOVIMIENTOS AS (
@@ -446,7 +464,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHAGENERO >= ?
                     AND C.FECHAGENERO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -472,7 +490,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHAPAGO >= ?
                     AND C.FECHAPAGO < ?
                     AND ISNULL(C.MONTOPAGADO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -498,7 +516,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHACOMPROMISO >= ?
                     AND C.FECHACOMPROMISO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -574,7 +592,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHAGENERO >= ?
                     AND C.FECHAGENERO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -598,7 +616,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHAPAGO >= ?
                     AND C.FECHAPAGO < ?
                     AND ISNULL(C.MONTOPAGADO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -622,7 +640,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     C.FECHACOMPROMISO >= ?
                     AND C.FECHACOMPROMISO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_extra}
+                    AND {where_perfiles}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),

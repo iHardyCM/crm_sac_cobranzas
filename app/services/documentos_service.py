@@ -71,6 +71,78 @@ DOCUMENT_TYPES = {
         "cartera_nombre": "Compartamos vigente grupal",
         "plantilla_correo": "vigente_grupal_pago_directo_cuota",
         "solo_correo": True,
+    },
+    "castigo_individual_convenio": {
+        "id": "castigo_individual_convenio",
+        "nombre": "Castigo - convenio / compromiso de pago",
+        "descripcion": "Correo de convenio o compromiso de pago para cartera castigo individual.",
+        "cartera_id": 124,
+        "cartera_nombre": "Compartamos castigo individual",
+        "plantilla_correo": "castigo_convenio",
+        "solo_correo": True,
+    },
+    "castigo_individual_formatos": {
+        "id": "castigo_individual_formatos",
+        "nombre": "Castigo - formatos cortos",
+        "descripcion": "Correos cortos de pago a cuenta y pago sobre deuda total.",
+        "cartera_id": 124,
+        "cartera_nombre": "Compartamos castigo individual",
+        "plantilla_correo": "castigo_formatos",
+        "solo_correo": True,
+    },
+    "castigo_grupal_convenio": {
+        "id": "castigo_grupal_convenio",
+        "nombre": "Castigo grupal - convenio / compromiso de pago",
+        "descripcion": "Correo de convenio o compromiso de pago para cartera castigo grupal.",
+        "cartera_id": 144,
+        "cartera_nombre": "Compartamos castigo grupal",
+        "plantilla_correo": "castigo_convenio",
+        "solo_correo": True,
+    },
+    "castigo_grupal_formatos": {
+        "id": "castigo_grupal_formatos",
+        "nombre": "Castigo grupal - formatos cortos",
+        "descripcion": "Correos cortos de pago a cuenta y pago sobre deuda total para castigo grupal.",
+        "cartera_id": 144,
+        "cartera_nombre": "Compartamos castigo grupal",
+        "plantilla_correo": "castigo_formatos",
+        "solo_correo": True,
+    },
+    "vigente_individual_cancelacion": {
+        "id": "vigente_individual_cancelacion",
+        "nombre": "Vigente individual - cancelacion",
+        "descripcion": "Convenio de cancelacion para cartera vigente individual.",
+        "cartera_id": 126,
+        "cartera_nombre": "Compartamos vigente individual",
+        "plantilla_correo": "vigente_individual_cancelacion",
+        "document_kind": "cancelacion_individual",
+    },
+    "vigente_individual_cuota": {
+        "id": "vigente_individual_cuota",
+        "nombre": "Vigente individual - pago de cuota",
+        "descripcion": "Compromiso de pago de cuota para cartera vigente individual.",
+        "cartera_id": 126,
+        "cartera_nombre": "Compartamos vigente individual",
+        "plantilla_correo": "vigente_individual_cuota",
+        "document_kind": "cuota_individual",
+    },
+    "ccm_cancelacion": {
+        "id": "ccm_cancelacion",
+        "nombre": "CCM - cancelacion",
+        "descripcion": "Convenio de cancelacion para cartera CCM.",
+        "cartera_id": 128,
+        "cartera_nombre": "Compartamos CCM",
+        "plantilla_correo": "vigente_individual_cancelacion",
+        "document_kind": "cancelacion_individual",
+    },
+    "ccm_cuota": {
+        "id": "ccm_cuota",
+        "nombre": "CCM - pago de cuota",
+        "descripcion": "Compromiso de pago de cuota para cartera CCM.",
+        "cartera_id": 128,
+        "cartera_nombre": "Compartamos CCM",
+        "plantilla_correo": "vigente_individual_cuota",
+        "document_kind": "cuota_individual",
     }
 }
 
@@ -82,18 +154,23 @@ DOCUMENT_QUERY_SCOPES = {
     },
     124: {
         "nombre": "Compartamos castigo individual",
-        "consulta": "pendiente_compartamos_castigo_individual",
-        "activo": False,
+        "consulta": "compartamos_castigo_individual",
+        "activo": True,
     },
     144: {
         "nombre": "Compartamos castigo grupal",
-        "consulta": "pendiente_compartamos_castigo_grupal",
-        "activo": False,
+        "consulta": "compartamos_castigo_grupal",
+        "activo": True,
     },
     126: {
         "nombre": "Compartamos vigente individual",
-        "consulta": "pendiente_compartamos_vigente_individual",
-        "activo": False,
+        "consulta": "compartamos_vigente_individual",
+        "activo": True,
+    },
+    128: {
+        "nombre": "Compartamos CCM",
+        "consulta": "compartamos_ccm",
+        "activo": True,
     }
 }
 
@@ -121,6 +198,22 @@ EMAIL_TEMPLATE_SCOPES = {
     "vigente_grupal_pago_directo_cuota": {
         "asunto": "APLICACION PAGOS PARCIALES_CUOTA_{cliente}_{agencia}",
         "requiere_adjunto": False,
+    },
+    "castigo_convenio": {
+        "asunto": "CAMPANA_CASTIGO_{tipo_acuerdo}_{cliente}_{agencia}_OPERACION_{operacion}",
+        "requiere_adjunto": False,
+    },
+    "castigo_formatos": {
+        "asunto": "Formatos castigo - {cliente}",
+        "requiere_adjunto": False,
+    },
+    "vigente_individual_cancelacion": {
+        "asunto": "MITIGACION_VIG_CANCELACION_{cliente}_{agencia}_OPERACION_{operacion}",
+        "requiere_adjunto": True,
+    },
+    "vigente_individual_cuota": {
+        "asunto": "IND_VIGENTE_CAMPANA_CUOTAS_{cliente}_{agencia}_OPERACION_{operacion}",
+        "requiere_adjunto": True,
     },
 }
 
@@ -404,6 +497,16 @@ def obtener_nro_cuota_atrasada(row):
     return limpiar_texto(row.get("UltCuotaAtrasada")) or "1"
 
 
+def obtener_nros_cuotas_individual(row, cantidad):
+    inicio_texto = obtener_nro_cuota_atrasada(row)
+    try:
+        inicio = int(float(str(inicio_texto).replace(",", ".")))
+    except (TypeError, ValueError):
+        return inicio_texto
+    numeros = [str(inicio + index) for index in range(max(1, int(cantidad or 1)))]
+    return " y ".join(numeros) if len(numeros) == 2 else ", ".join(numeros)
+
+
 def format_fecha_pago(value):
     if not value:
         return ""
@@ -450,7 +553,98 @@ def filtros_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupa
     return " AND ".join(filtros), params
 
 
-def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, limit=20):
+def columna_tabla(columns, candidates):
+    for candidate in candidates:
+        actual = columns.get(candidate.lower())
+        if actual:
+            return actual
+    return None
+
+
+def column_expr(alias, columns, candidates, sql_type="NVARCHAR(255)"):
+    actual = columna_tabla(columns, candidates)
+    if actual:
+        return f"CG.[{actual}] AS {alias}"
+    return f"CAST(NULL AS {sql_type}) AS {alias}"
+
+
+def cast_column_expr(alias, columns, candidates, sql_type="NVARCHAR(50)"):
+    actual = columna_tabla(columns, candidates)
+    if actual:
+        return f"CAST(CG.[{actual}] AS {sql_type}) AS {alias}"
+    return f"CAST(NULL AS {sql_type}) AS {alias}"
+
+
+def obtener_columnas_tabla(cursor, table_name):
+    cursor.execute(
+        """
+        SELECT COLUMN_NAME
+        FROM Desarrollo.INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = ?
+        """,
+        table_name,
+    )
+    return {str(row[0]).lower(): str(row[0]) for row in cursor.fetchall()}
+
+
+def sac_column_expr(columns, column_name):
+    actual = columna_tabla(columns, [column_name, f"{column_name} "])
+    if not actual:
+        return None
+    return f"COALESCE(S.[{actual}], 0)"
+
+
+def sac_cuota_part_expr(columns, numero):
+    suffixes = [str(numero), *[f"{numero}{index}" for index in range(1, 6)]]
+    parts = [sac_column_expr(columns, f"CT {suffix}") for suffix in suffixes]
+    parts = [part for part in parts if part]
+    if not parts:
+        return "CAST(0 AS DECIMAL(18,2))", False
+    return " + ".join(parts), True
+
+
+def sac_cuota_acumulada_expr(columns, hasta, fallback_expr):
+    parts = []
+    all_present = True
+    for numero in range(1, hasta + 1):
+        expr, present = sac_cuota_part_expr(columns, numero)
+        parts.append(f"({expr})")
+        all_present = all_present and present
+
+    if not all_present:
+        return f"({fallback_expr} * {hasta})"
+
+    total_expr = " + ".join(parts)
+    return f"COALESCE(NULLIF(({total_expr}), 0), ({fallback_expr} * {hasta}))"
+
+
+def filtros_documento_castigo(dni=None, operacion=None):
+    if limpiar_texto(operacion):
+        return "CAST(C.Operacion AS VARCHAR(50)) = ?", [limpiar_texto(operacion)]
+
+    if limpiar_texto(dni):
+        return "RTRIM(LTRIM(CAST(C.NumDoc AS VARCHAR(50)))) = ?", [limpiar_texto(dni)]
+
+    raise ValueError("Ingresa DNI u operacion para buscar en cartera castigo.")
+
+
+def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, limit=20, cartera_id=133):
+    cartera_id = int(cartera_id or 133)
+    if cartera_id in (124, 144):
+        return consultar_datos_documento_castigo(
+            cartera_id=cartera_id,
+            dni=dni,
+            operacion=operacion,
+            limit=limit,
+        )
+    if cartera_id in (126, 128):
+        return consultar_datos_documento_vigente_individual(
+            cartera_id=cartera_id,
+            dni=dni,
+            operacion=operacion,
+            limit=limit,
+        )
+
     where, params = filtros_documento(
         dni=dni,
         operacion=operacion,
@@ -514,13 +708,206 @@ def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_c
             conn.close()
 
 
-def obtener_registro_unico(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None):
+def consultar_datos_documento_vigente_individual(cartera_id=126, dni=None, operacion=None, limit=20):
+    cartera_id = int(cartera_id or 126)
+    if limpiar_texto(operacion):
+        where = "CAST(C.Operacion AS VARCHAR(50)) = ?"
+        params = [limpiar_texto(operacion)]
+    elif limpiar_texto(dni):
+        dni_col = "C.NumDoc" if cartera_id == 126 else "C.DNI"
+        where = f"RTRIM(LTRIM(CAST({dni_col} AS VARCHAR(50)))) = ?"
+        params = [limpiar_texto(dni)]
+    else:
+        raise ValueError("Ingresa DNI u operacion para buscar en cartera vigente individual.")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        sac_columns = obtener_columnas_tabla(cursor, "SAC_CAR_BIZNESCOB")
+
+        if cartera_id == 126:
+            table = "Desarrollo.dbo.compartamos_individual"
+            cuota_fallback = "C.Cuota_Atrasada"
+            select_sql = f"""
+                    C.NumDoc AS NumDocumento,
+                    C.Operacion,
+                    C.Nomcliente AS NomCliente,
+                    C.DireccionPrincipal,
+                    C.DistritoPrincipal,
+                    C.ProvinciaPrincipal,
+                    C.Cancelacion AS MtoCancelacionCliente,
+                    C.ctacliente AS CtaCliente,
+                    C.codcuenta AS CodCuenta,
+                    CAST(NULL AS NVARCHAR(50)) AS CodigoGrupo,
+                    CAST(NULL AS NVARCHAR(50)) AS CodCreGrupal,
+                    CAST(NULL AS NVARCHAR(255)) AS NomGrupo,
+                    C.Oficina AS NomOficina,
+                    C.[Saldo Capital por Cuenta] AS SdoCapital,
+                    C.[Saldo Total x Cliente] AS DeudaTotal,
+                    {sac_cuota_acumulada_expr(sac_columns, 1, cuota_fallback)} AS CT1,
+                    {sac_cuota_acumulada_expr(sac_columns, 2, cuota_fallback)} AS CT2,
+                    {sac_cuota_acumulada_expr(sac_columns, 3, cuota_fallback)} AS CT3,
+                    {sac_cuota_acumulada_expr(sac_columns, 4, cuota_fallback)} AS CT4,
+                    C.[Campaña Final 1 Cuota] AS MtoCuotaCampania,
+                    C.[Campaña Final 1 Cuota] AS MtoCuotaCampania1,
+                    C.[Campaña Final 2 Cuota] AS MtoCuotaCampania2,
+                    C.[Campaña Final 3 Cuota] AS MtoCuotaCampania3,
+                    C.[Campaña Final 4 Cuota] AS MtoCuotaCampania4,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT11,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT12,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT13,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT14,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT15,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT21,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT22,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT23,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT24,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT25,
+                    CAST(C.NROCUOTASPAGADAS + 1 AS NVARCHAR(50)) AS UltCuotaAtrasada,
+                    C.Producto,
+                    C.[Saldo Capital por Cuenta] AS CapitalActual,
+                    C.[Saldo Total x Cliente] AS DeudaTotalActual
+            """
+        else:
+            table = "Desarrollo.dbo.compartamos_ccm"
+            cuota_fallback = "C.CuotaAtrasada"
+            select_sql = f"""
+                    C.DNI AS NumDocumento,
+                    C.Operacion,
+                    C.[Nombre Cliente] AS NomCliente,
+                    C.DireccionPrincipal,
+                    C.DistritoPrincipal,
+                    C.ProvinciaPrincipal,
+                    C.Cancelacion AS MtoCancelacionCliente,
+                    C.ctacliente AS CtaCliente,
+                    C.codcuenta AS CodCuenta,
+                    CAST(NULL AS NVARCHAR(50)) AS CodigoGrupo,
+                    CAST(NULL AS NVARCHAR(50)) AS CodCreGrupal,
+                    CAST(NULL AS NVARCHAR(255)) AS NomGrupo,
+                    C.Oficina AS NomOficina,
+                    C.[Saldo Capital por Cuenta] AS SdoCapital,
+                    C.[Saldo Total x Cliente] AS DeudaTotal,
+                    {sac_cuota_acumulada_expr(sac_columns, 1, cuota_fallback)} AS CT1,
+                    {sac_cuota_acumulada_expr(sac_columns, 2, cuota_fallback)} AS CT2,
+                    {sac_cuota_acumulada_expr(sac_columns, 3, cuota_fallback)} AS CT3,
+                    {sac_cuota_acumulada_expr(sac_columns, 4, cuota_fallback)} AS CT4,
+                    C.[Campaña Final 1 Cuota] AS MtoCuotaCampania,
+                    C.[Campaña Final 1 Cuota] AS MtoCuotaCampania1,
+                    C.[Campaña Final 2 Cuota] AS MtoCuotaCampania2,
+                    C.[Campaña Final 3 Cuota] AS MtoCuotaCampania3,
+                    C.[Campaña Final 4 Cuota] AS MtoCuotaCampania4,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT11,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT12,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT13,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT14,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT15,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT21,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT22,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT23,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT24,
+                    CAST(NULL AS DECIMAL(18,2)) AS CT25,
+                    CAST(NULL AS NVARCHAR(50)) AS UltCuotaAtrasada,
+                    C.LineaNegocio AS Producto,
+                    C.[Saldo Capital por Cuenta] AS CapitalActual,
+                    C.[Saldo Total x Cliente] AS DeudaTotalActual
+            """
+
+        cursor.execute(
+            f"""
+            SELECT TOP {int(limit)}
+                {select_sql},
+                {cartera_id} AS CarteraId
+            FROM {table} C WITH(NOLOCK)
+            LEFT JOIN Desarrollo.dbo.SAC_CAR_BIZNESCOB S WITH(NOLOCK)
+                ON RIGHT('00000000000000000000' + CAST(C.Operacion AS NVARCHAR(20)), 20) = S.[Cod Operación]
+            WHERE {where}
+            ORDER BY C.Operacion
+            """,
+            *params,
+        )
+        return fetch_resultset(cursor)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
+def consultar_datos_documento_castigo(cartera_id=124, dni=None, operacion=None, limit=20):
+    table = "Desarrollo.dbo.COMPARTAMOS_CASTIGO" if int(cartera_id or 124) == 124 else "Desarrollo.dbo.COMPARTAMOS_GRUPAL_CASTIGO"
+    producto_sql = "PRODUCTO INDIVIDUAL" if int(cartera_id or 124) == 124 else "PRODUCTO GRUPAL"
+    where, params = filtros_documento_castigo(dni=dni, operacion=operacion)
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT TOP {int(limit)}
+                C.NumDoc AS NumDocumento,
+                C.Operacion,
+                C.NomCliente,
+                CAST(NULL AS NVARCHAR(500)) AS DireccionPrincipal,
+                CAST(NULL AS NVARCHAR(160)) AS Distrito_Principal,
+                (C.SdoCap * (1 - C.Porcent_Camp)) AS MtoCancelacionCliente,
+                CAST(NULL AS INT) AS NroCuotas_Aprobadas,
+                CAST(NULL AS INT) AS NroCuotasPagadas,
+                CAST(NULL AS INT) AS NroCuotas,
+                CAST(NULL AS INT) AS DiasAtraso,
+                CAST(NULL AS NVARCHAR(50)) AS CodCuenta,
+                C.CtaCliente,
+                CAST(NULL AS NVARCHAR(50)) AS CodigoGrupo,
+                CAST(NULL AS NVARCHAR(50)) AS CodCreGrupal,
+                CAST(NULL AS NVARCHAR(255)) AS NomGrupo,
+                C.NomOficina,
+                C.SdoCap AS SdoCapital,
+                S.[Deuda_Total ] AS DeudaTotal,
+                CAST(NULL AS DECIMAL(18,2)) AS CT1,
+                CAST(NULL AS DECIMAL(18,2)) AS CT11,
+                CAST(NULL AS DECIMAL(18,2)) AS CT12,
+                CAST(NULL AS DECIMAL(18,2)) AS CT13,
+                CAST(NULL AS DECIMAL(18,2)) AS CT14,
+                CAST(NULL AS DECIMAL(18,2)) AS CT15,
+                CAST(NULL AS DECIMAL(18,2)) AS CT2,
+                CAST(NULL AS DECIMAL(18,2)) AS CT21,
+                CAST(NULL AS DECIMAL(18,2)) AS CT22,
+                CAST(NULL AS DECIMAL(18,2)) AS CT23,
+                CAST(NULL AS DECIMAL(18,2)) AS CT24,
+                CAST(NULL AS DECIMAL(18,2)) AS CT25,
+                CAST(NULL AS NVARCHAR(50)) AS UltCuotaAtrasada,
+                CAST('{producto_sql}' AS NVARCHAR(120)) AS Producto,
+                C.SdoCap AS CapitalActual,
+                S.[Deuda_Total ] AS DeudaTotalActual,
+                {cartera_id} AS CarteraId
+            FROM {table} C WITH(NOLOCK)
+            LEFT JOIN Desarrollo.dbo.SAC_CAR_BIZNESCOB S WITH(NOLOCK)
+                ON RIGHT(REPLICATE('0',20) + CAST(CAST(C.Operacion AS BIGINT) AS VARCHAR(20)),20) = S.[Cod Operación]
+            WHERE {where}
+              AND (S.[SEGMENTO ] IS NULL OR S.[SEGMENTO ] <> 'INCENTIVO DOBLE')
+            ORDER BY C.NomCliente, C.Operacion
+            """,
+            *params,
+        )
+        return fetch_resultset(cursor)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
+def obtener_registro_unico(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cartera_id=133):
     rows = consultar_datos_documento(
         dni=dni,
         operacion=operacion,
         codigo_grupo=codigo_grupo,
         cod_cre_grupal=cod_cre_grupal,
         limit=2,
+        cartera_id=cartera_id,
     )
 
     if not rows:
@@ -1991,9 +2378,11 @@ def preparar_contexto_cuota_grupal(rows, fiador=None, pagos_grupales=None, excep
     }
 
 
-def preparar_contexto_cuota_individual(registro, cancelacion=None, fecha_pago=None, excepcion=False):
-    cuota = calcular_cuota_grupal(registro)
-    monto_pago, _ = validar_cancelacion(cancelacion, cuota, excepcion=excepcion)
+def preparar_contexto_cuota_individual(registro, cancelacion=None, fecha_pago=None, excepcion=False, cuotas_individual=1):
+    cantidad_cuotas = max(1, min(4, int(cuotas_individual or 1)))
+    cuota = decimal_value(registro.get(f"CT{cantidad_cuotas}"), calcular_cuota_grupal(registro)) or Decimal("0")
+    minimo = decimal_value(registro.get(f"MtoCuotaCampania{cantidad_cuotas}"), registro.get("MtoCuotaCampania")) or cuota
+    monto_pago, _ = validar_cancelacion(cancelacion, minimo, excepcion=excepcion)
     deuda_total = decimal_value(registro.get("DeudaTotal"), Decimal("0"))
     monto_condonacion = max(cuota - monto_pago, Decimal("0"))
     hoy = datetime.now(ZoneInfo("America/Lima")).date()
@@ -2008,7 +2397,8 @@ def preparar_contexto_cuota_individual(registro, cancelacion=None, fecha_pago=No
         "codigo_grupo": limpiar_texto(registro.get("CodigoGrupo")),
         "credito_grupal": limpiar_texto(registro.get("CodCreGrupal") or registro.get("CodigoGrupo")),
         "cuenta": limpiar_texto(registro.get("CtaCliente") or registro.get("CodigoGrupo")),
-        "nro_cuota": obtener_nro_cuota_atrasada(registro),
+        "nro_cuota": obtener_nros_cuotas_individual(registro, cantidad_cuotas),
+        "cantidad_cuotas": cantidad_cuotas,
         "deuda_total": format_money(deuda_total),
         "cuota": format_money(cuota),
         "cancelacion": format_money(monto_pago),
@@ -2404,8 +2794,9 @@ def generar_documento_cuota_grupal(config, dni=None, operacion=None, codigo_grup
     }
 
 
-def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None):
+def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None):
     config = obtener_config_documento(documento_tipo)
+    cartera_id = int(config.get("cartera_id") or 133)
 
     if config.get("solo_correo"):
         raise ValueError("Este tipo solo genera el preview de correo. No descarga carta.")
@@ -2441,14 +2832,16 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
         operacion=operacion,
         codigo_grupo=codigo_grupo,
         cod_cre_grupal=cod_cre_grupal,
+        cartera_id=cartera_id,
     )
 
-    if documento_tipo == "compromiso_cuota_individual":
+    if documento_tipo == "compromiso_cuota_individual" or config.get("document_kind") == "cuota_individual":
         context = preparar_contexto_cuota_individual(
             registro,
             cancelacion=cancelacion,
             fecha_pago=fecha_pago,
             excepcion=excepcion,
+            cuotas_individual=cuotas_individual,
         )
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

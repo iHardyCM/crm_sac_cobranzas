@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Horario de Gestion y Recupero</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
-    <link rel="stylesheet" href="../css/control_horario.css?v=20260601e">
+    <link rel="stylesheet" href="../css/control_horario.css?v=20260702a">
 </head>
 <body>
 
@@ -49,6 +49,13 @@
                 <option value="">Todos los agentes</option>
             </select>
         </div>
+        <label class="check-field" for="filtroApoyoRecupero">
+            <input id="filtroApoyoRecupero" type="checkbox" onchange="cambiarApoyoRecupero()">
+            <span>
+                <strong>Incluir apoyo operativo</strong>
+                <small>ADM, supervisor y jefe como agentes.</small>
+            </span>
+        </label>
     </section>
 
     <div id="controlToast" class="control-toast"></div>
@@ -240,6 +247,6 @@
 
 <script src="../js/session.js"></script>
 <script src="../js/app_layout.js?v=20260623a"></script>
-<script src="../js/control_horario.js?v=20260601f"></script>
+<script src="../js/control_horario.js?v=20260703a"></script>
 </body>
 </html>

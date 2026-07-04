@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matriz mensual - Gestion y Recupero</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
-    <link rel="stylesheet" href="../css/control_matriz.css?v=20260619a">
+    <link rel="stylesheet" href="../css/control_matriz.css?v=20260702a">
 </head>
 <body>
 
@@ -17,6 +17,10 @@
             <p id="subtituloMatrizPage">Cargando informacion mensual.</p>
         </div>
         <div class="matriz-actions">
+            <label class="matriz-check" for="filtroApoyoRecuperoMatriz">
+                <input id="filtroApoyoRecuperoMatriz" type="checkbox" onchange="cambiarApoyoRecuperoMatriz()">
+                <span>Incluir apoyo operativo</span>
+            </label>
             <div class="metric-switch">
                 <button type="button" class="active" data-metrica="generacion" onclick="cambiarMetricaMatrizPage('generacion')">Generacion</button>
                 <button type="button" data-metrica="recupero" onclick="cambiarMetricaMatrizPage('recupero')">Recaudacion</button>
@@ -49,6 +53,6 @@
 
 <script src="../js/session.js"></script>
 <script src="../js/app_layout.js?v=20260623a"></script>
-<script src="../js/control_matriz.js?v=20260619a"></script>
+<script src="../js/control_matriz.js?v=20260702a"></script>
 </body>
 </html>
