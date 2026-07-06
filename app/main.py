@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_auth import router as auth_router
+from app.api.routes_admin_metas_agentes import router as admin_metas_agentes_router
 from app.api.routes_admin_supervisores import router as admin_supervisores_router
 from app.api.routes_canales import router as canales_router
 from app.api.routes_cliente import router as cliente_router
@@ -31,6 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+app.include_router(admin_metas_agentes_router, prefix="/admin-metas-agentes", tags=["Administracion Metas Agentes"])
 app.include_router(admin_supervisores_router, prefix="/admin-supervisores", tags=["Administracion Supervisores"])
 app.include_router(canales_router, prefix="/canales", tags=["Canales Alternos"])
 app.include_router(cliente_router, prefix="/cliente", tags=["Cliente"])

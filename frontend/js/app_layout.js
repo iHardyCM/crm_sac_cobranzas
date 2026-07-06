@@ -46,6 +46,16 @@
             title: "Mantenimiento de Supervisores",
             subtitle: "Asignacion de carteras por supervisor"
         },
+        "admin_metas_agentes.html": {
+            key: "metas_agentes_admin",
+            title: "Metas por Agente",
+            subtitle: "Configuracion de metas mensuales individuales"
+        },
+        "ritmo_meta.html": {
+            key: "ritmo_meta",
+            title: "Ritmo de Meta",
+            subtitle: "Meta diaria, brecha y semaforo de avance"
+        },
         "compromisos.html": {
             key: "compromisos",
             title: "Compromisos",
@@ -95,6 +105,7 @@
             items: [
                 { key: "clientes", label: "Consulta Compartamos", href: "compartamos.html", icon: iconUsers() },
                 { key: getCompromisosKey(), label: "Compromisos", href: getCompromisosHref(), icon: iconClipboard() },
+                { key: "ritmo_meta", label: "Ritmo Meta", href: "ritmo_meta.html", icon: iconTarget() },
                 { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() },
                 { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconUsers() },
                 { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocument() },
@@ -137,6 +148,13 @@
         label: "Supervisores",
         href: "admin_supervisores.html",
         icon: iconUsers()
+    });
+
+    NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
+        key: "metas_agentes_admin",
+        label: "Metas Agentes",
+        href: "admin_metas_agentes.html",
+        icon: iconTarget()
     });
 
     document.addEventListener("DOMContentLoaded", initCrmLayout);
@@ -372,6 +390,7 @@
             return [
                 "gestiones",
                 "compromisos",
+                "ritmo_meta",
                 "pdp_hoy",
                 "control_horario",
                 "ia_feedback",
@@ -384,6 +403,7 @@
 
         return [
             "compromisos",
+            "ritmo_meta",
             "telefonos",
             ...(compartamos ? ["clientes"] : [])
         ].includes(key);

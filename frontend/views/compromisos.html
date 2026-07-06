@@ -19,6 +19,37 @@
                 Agente: <strong id="nombre_agente">-</strong>
             </p>
         </div>
+        <aside class="goal-panel" aria-label="Resumen de meta mensual">
+            <div class="goal-main">
+                <span>Meta del mes</span>
+                <strong id="meta_mes">S/ 0.00</strong>
+                <small id="meta_estado">Sin meta configurada</small>
+            </div>
+            <div class="goal-progress">
+                <i id="meta_barra"></i>
+            </div>
+            <div class="goal-grid">
+                <div>
+                    <span>Cumplido</span>
+                    <b id="meta_cumplido">S/ 0.00</b>
+                </div>
+                <div>
+                    <span>Vigente</span>
+                    <b id="meta_vigente">S/ 0.00</b>
+                </div>
+                <div>
+                    <span>Caido</span>
+                    <b id="meta_caido">S/ 0.00</b>
+                </div>
+                <div>
+                    <span>Ticket prom.</span>
+                    <b id="meta_ticket">S/ 0.00</b>
+                </div>
+            </div>
+            <div class="goal-actions">
+                <a id="link_ritmo_meta" href="ritmo_meta.html">Ver ritmo diario</a>
+            </div>
+        </aside>
         <button class="btn-secondary" id="btn_volver_compromisos" type="button" onclick="volverVistaAnterior()">Volver</button>
     </section>
 

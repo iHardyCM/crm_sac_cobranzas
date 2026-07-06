@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ritmo de Meta</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/ritmo_meta.css?v=20260706a">
+    <link rel="icon" href="logo_i_biznescob.png">
+</head>
+<body>
+
+<main class="ritmo-page">
+    <section class="ritmo-hero">
+        <div>
+            <p class="eyebrow">Meta diaria</p>
+            <h2>Ritmo de meta</h2>
+            <p class="agent-context">Agente: <strong id="ritmoAgente">-</strong></p>
+        </div>
+        <div class="month-control">
+            <label for="ritmoCodmes">Mes</label>
+            <select id="ritmoCodmes" onchange="cargarRitmoMeta()"></select>
+        </div>
+    </section>
+
+    <section class="ritmo-grid">
+        <article class="ritmo-card primary">
+            <span class="has-tip" data-tip="Monto promedio que necesitas cobrar por cada dia habil restante para llegar a la meta mensual.">Necesario hoy</span>
+            <strong id="ritmoNecesarioDia">S/ 0.00</strong>
+            <small id="ritmoDiasRestantes" class="has-tip" data-tip="Dias disponibles de lunes a viernes desde hoy hasta fin de mes.">0 dias habiles restantes</small>
+        </article>
+
+        <article class="ritmo-card">
+            <span class="has-tip" data-tip="Diferencia entre tu meta del mes y el monto que ya tienes cumplido.">Brecha actual</span>
+            <strong id="ritmoBrecha">S/ 0.00</strong>
+            <small id="ritmoMeta" class="has-tip" data-tip="Meta mensual configurada para el agente en esta cartera.">Meta S/ 0.00</small>
+        </article>
+
+        <article class="ritmo-card">
+            <span class="has-tip" data-tip="Cantidad estimada de pagos con tu ticket promedio actual que necesitas conseguir por dia habil para cubrir el necesario diario.">Necesitas pagos al dia</span>
+            <strong id="ritmoTickets">0.0</strong>
+            <small id="ritmoTicketPromedio" class="has-tip" data-tip="Promedio de los montos pagados en compromisos cumplidos durante el mes.">Para ponerte al dia con ticket prom. S/ 0.00</small>
+        </article>
+
+        <article class="ritmo-card">
+            <span class="has-tip" data-tip="Estimacion de cierre si mantienes tu promedio diario actual hasta fin de mes.">Proyeccion cierre</span>
+            <strong id="ritmoProyeccion">S/ 0.00</strong>
+            <small id="ritmoProyeccionPct">0.0% de la meta</small>
+        </article>
+    </section>
+
+    <section class="ritmo-band">
+        <article class="ritmo-status" id="ritmoStatus">
+            <div>
+                <span id="ritmoEstadoLabel">Sin ritmo</span>
+                <h3 id="ritmoEstadoTitulo">-</h3>
+                <p id="ritmoEstadoDetalle">-</p>
+            </div>
+            <strong id="ritmoCumplimiento">0.0%</strong>
+        </article>
+
+        <article class="ritmo-panel">
+            <div class="panel-title">
+                <h3>Avance esperado vs. real</h3>
+                <p id="ritmoFecha">-</p>
+            </div>
+            <div class="compare-row">
+                <span class="has-tip" data-tip="Parte de la meta que deberias llevar segun los dias habiles transcurridos del mes.">Esperado a hoy</span>
+                <b id="ritmoEsperado">S/ 0.00</b>
+            </div>
+            <div class="progress-line">
+                <span id="barEsperado"></span>
+            </div>
+            <div class="compare-row">
+                <span class="has-tip" data-tip="Monto cumplido acumulado hasta este momento en el mes seleccionado.">Cumplido actual</span>
+                <b id="ritmoCumplido">S/ 0.00</b>
+            </div>
+            <div class="progress-line real">
+                <span id="barReal"></span>
+            </div>
+            <div class="compare-row result">
+                <span class="has-tip" data-tip="Diferencia entre lo cumplido actual y lo esperado a hoy. Positivo: vas adelante. Negativo: vas atrasado.">Desvio</span>
+                <b id="ritmoDesvio">S/ 0.00</b>
+            </div>
+        </article>
+    </section>
+
+    <section class="ritmo-panel calculator">
+        <div class="panel-title">
+            <h3>Calculadora rapida</h3>
+            <p>Simula un pago adicional y mira como baja lo necesario diario.</p>
+        </div>
+        <div class="calc-grid">
+            <label>
+                <span class="has-tip" data-tip="Monto hipotetico que podrias cobrar hoy para simular el impacto en tu brecha.">Pago simulado</span>
+                <input id="calcPago" type="number" min="0" step="0.01" value="0" oninput="renderCalculadora()">
+            </label>
+            <div>
+                <span class="has-tip" data-tip="Brecha que quedaria despues de restar el pago simulado.">Nueva brecha</span>
+                <b id="calcBrecha">S/ 0.00</b>
+            </div>
+            <div>
+                <span class="has-tip" data-tip="Nuevo monto promedio diario necesario luego del pago simulado.">Nuevo diario</span>
+                <b id="calcDiario">S/ 0.00</b>
+            </div>
+            <div>
+                <span class="has-tip" data-tip="Cuanto baja tu exigencia diaria gracias al pago simulado. Si antes necesitabas S/ 10,000 diarios y luego S/ 8,000, el alivio diario es S/ 2,000.">Alivio diario</span>
+                <b id="calcAlivio">S/ 0.00</b>
+            </div>
+        </div>
+    </section>
+</main>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260623a"></script>
+<script src="../js/ritmo_meta.js?v=20260706a"></script>
+</body>
+</html>

@@ -281,7 +281,7 @@ function setSummaryLabels() {
         summary[2].textContent = "Saldo estimado a condonar";
     } else if (esDocumentoCuotaIndividual() || esDocumentoCorreoPagoDirectoCuota()) {
         summary[0].textContent = "Campaña cuota SQL";
-        summary[1].textContent = "Deuda total";
+        summary[1].textContent = "Total cuotas seleccionadas";
         summary[2].textContent = "Saldo estimado a condonar";
     } else if (esDocumentoGrupal()) {
         summary[0].textContent = "Integrantes";
@@ -627,6 +627,7 @@ function actualizarCondonacion() {
     if (esDocumentoCuotaIndividual() || esDocumentoCorreoPagoDirectoCuota()) {
         const cuota = cuotaDocumento(documentoSeleccionado);
         const pago = Number(document.getElementById("cancelacion")?.value || 0);
+        document.getElementById("deudaTotal").textContent = money(cuota);
         target.textContent = money(Math.max(cuota - pago, 0));
         return;
     }
@@ -785,8 +786,8 @@ function pintarPreviewCuotaIndividual() {
     if (!panel || !preview || !documentoSeleccionado) return;
 
     const pago = Number(document.getElementById("cancelacion")?.value || 0);
-    const deuda = Number(documentoSeleccionado.DeudaTotal || 0);
     const cuota = cuotaDocumento(documentoSeleccionado);
+    const deuda = cuota;
     const condonacion = Math.max(cuota - pago, 0);
     const fecha = fechaLargaHoy();
     const fechaCorta = fechaCortaHoy();
@@ -1557,25 +1558,19 @@ function correoConHtml(base, html) {
 function correoCancelacionIndividual() {
     const pago = Number(document.getElementById("cancelacion")?.value || 0);
     const agencia = agenciaDocumento(documentoSeleccionado);
-    const grupo = documentoSeleccionado.NomGrupo || "GRUPO";
+    const cliente = valueOrDash(documentoSeleccionado.NomCliente);
+    const operacion = valueOrDash(documentoSeleccionado.Operacion);
+    const agenciaNombre = agenciaSinPrefijo(agencia) || agencia || "AGENCIA";
     const html = [
         parrafoCorreo("Buen Día"),
         parrafoCorreo("Estimado (a)"),
-        parrafoCorreo("Se reporta cliente de cartera Vigente - CSM que se acoge a campaña de cancelación."),
-        parrafoCorreo("Una vez concluida la operación el cliente solicitará su constancia de cancelación del crédito."),
-        parrafoCorreo("Reciban un cordial saludo."),
-        parrafoCorreo(`En relación con el grupo "${grupo}", les informamos que se viene gestionando una pronta solución de pago que permitirá mejorar su calificación crediticia grupal ante la entidad bancaria.`),
-        parrafoCorreo("Con ese objetivo, se ha planteado una alternativa de pago con uno(a) de los(as) socios(as), por lo cual solicitamos su apoyo para:"),
-        bulletCorreo([
-            `Emitir el <strong>convenio de pago</strong> correspondiente.`,
-            `Realizar la <strong>cobranza por el monto de S/ ${moneyNumber(pago)}</strong>, destinado a cubrir la <strong>cancelación de la operación Nro. ${escapeHtml(documentoSeleccionado.Operacion)}</strong>.`,
-        ]),
-        parrafoCorreo("Cabe señalar que los demás integrantes del grupo se encuentran en conversaciones con Biznescob para coordinar un próximo pago."),
-        parrafoCorreo("Agradecemos de antemano su atención y quedamos atentos a su pronta respuesta."),
+        parrafoCorreo(`Agradeceré su apoyo en la atención del cliente ${cliente}, realizará la CANCELACIÓN DE CRÉDITO Nro. ${operacion}, con campaña del mes por S/. ${moneyNumber(pago)}.`),
+        parrafoCorreo(`Por ello, agradeceré su apoyo en la toma de firma y direccionamiento del pago en Saldo por Aplicar. En caso de ser necesario, enviar por esta misma vía el documento escaneado a la Agencia Origen para proceder con el registro en el sistema y ejecutar la solicitud de acuerdo a instrucción para cancelar el crédito. El pago se realizará en la AGENCIA ${agenciaNombre}.`),
+        parrafoCorreo("Nota: Los saldos colocados en el contenido del cliente son a lo indicado en WSAC, dicha información es facilitada por Compartamos Banco."),
         tablaMitigacionCorreo({
-            cliente: valueOrDash(documentoSeleccionado.NomCliente),
+            cliente,
             codigoCliente: cuentaDocumento(documentoSeleccionado),
-            operacion: valueOrDash(documentoSeleccionado.Operacion),
+            operacion,
             tipo: "Liquidación",
             agencia,
             monto: pago,
@@ -1585,7 +1580,7 @@ function correoCancelacionIndividual() {
     ].join("");
     return correoConHtml({
         ...correoBase(),
-        asunto: `MITIGACION_CSM_CANCELACION_VIGENTE GRUPAL_${valueOrDash(documentoSeleccionado.NomCliente)}_DNI ${valueOrDash(documentoSeleccionado.NumDocumento)}_${valueOrDash(documentoSeleccionado.Operacion)}`,
+        asunto: `MITIGACION_VIG_CANCELACION_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
 
@@ -1593,36 +1588,33 @@ function correoCancelacionIndividual() {
 function correoCuotaIndividual() {
     const pago = Number(document.getElementById("cancelacion")?.value || 0);
     const cuota = nroCuotaDocumento(documentoSeleccionado);
-    const grupo = documentoSeleccionado.NomGrupo || "GRUPO";
     const agencia = agenciaDocumento(documentoSeleccionado);
+    const cliente = valueOrDash(documentoSeleccionado.NomCliente);
+    const operacion = valueOrDash(documentoSeleccionado.Operacion);
+    const agenciaNombre = agenciaSinPrefijo(agencia) || agencia || "AGENCIA";
     const html = [
-        parrafoCorreo("Buen Día"),
+        parrafoCorreo("Buen día,"),
         parrafoCorreo("Estimado (a)"),
-        parrafoCorreo("Reciban un cordial saludo."),
-        parrafoCorreo(`En relación con el grupo "${grupo}", les informamos que se viene gestionando una pronta solución de pago que permitirá mejorar su calificación crediticia grupal ante la entidad bancaria.`),
-        parrafoCorreo("Con ese objetivo, se ha planteado una alternativa de pago con uno(a) de los(as) socios(as), por lo cual solicitamos su apoyo para:"),
-        bulletCorreo([
-            `Emitir el <strong>convenio de pago</strong> correspondiente.`,
-            `Realizar la <strong>cobranza por el monto de S/ ${moneyNumber(pago)}</strong>, destinado a cubrir la <strong>cuota Nro. ${escapeHtml(cuota)} de la operación Nro. ${escapeHtml(documentoSeleccionado.Operacion)}</strong>.`,
-        ]),
-        parrafoCorreo("Cabe señalar que los demás integrantes del grupo se encuentran en conversaciones con Biznescob para coordinar un próximo pago."),
-        parrafoCorreo("Agradecemos de antemano su atención y quedamos atentos a su pronta respuesta."),
+        parrafoCorreo(`CLIENTE ${cliente} realizará PAGO DE LA CUOTA del Crédito Nro. ${operacion}; realizará el pago en la AGENCIA ${agenciaNombre}.`),
+        parrafoCorreo("Por ello, agradeceré su apoyo en la toma de firma y direccionamiento del pago en Saldo por Aplicar."),
+        parrafoCorreo("En caso de ser necesario, enviar por esta misma vía el convenio firmado a la Agencia de Origen para que pueda proceder con el registro del pago en el sistema y ejecutar la solicitud de acuerdo a la instrucción."),
+        parrafoCorreo(`En relación al cliente, pagará su cuota N° ${cuota}, cancelará con monto de S/ ${moneyNumber(pago)}.`),
+        parrafoCorreo("Nota: Los saldos colocados en el contenido del cliente son a lo indicado en WSAC, dicha información es facilitada por Compartamos Banco."),
         tablaMitigacionCorreo({
-            cliente: valueOrDash(documentoSeleccionado.NomCliente),
+            cliente,
             codigoCliente: cuentaDocumento(documentoSeleccionado),
-            operacion: valueOrDash(documentoSeleccionado.Operacion),
+            operacion,
             tipo: "Cuotas",
             cuota,
             agencia,
             monto: pago,
             fecha: fechaCortaHoy(),
-            sustento: "Cliente informa que ha logrado reunir el monto detallado para cancelar una cuota.",
+            sustento: "Titular, a la fecha ha podido reunir el monto para cancelar su cuota más vencida; indica que ha tenido inconvenientes personales que no le han permitido pagar a tiempo su crédito.",
         }),
-        parrafoCorreo("Nota: Los saldos colocados en el contenido del cliente son a lo indicado en WSAC, dicha información es facilitada por Compartamos Banco."),
     ].join("");
     return correoConHtml({
         ...correoBase(),
-        asunto: `MITIGACION_CUOTA_VIGENTE GRUPAL_${valueOrDash(documentoSeleccionado.NomCliente)}_OPERACION_${valueOrDash(documentoSeleccionado.Operacion)}`,
+        asunto: `IND_VIGENTE_CAMPAÑA_CUOTAS_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
 

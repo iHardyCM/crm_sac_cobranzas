@@ -2383,7 +2383,7 @@ def preparar_contexto_cuota_individual(registro, cancelacion=None, fecha_pago=No
     cuota = decimal_value(registro.get(f"CT{cantidad_cuotas}"), calcular_cuota_grupal(registro)) or Decimal("0")
     minimo = decimal_value(registro.get(f"MtoCuotaCampania{cantidad_cuotas}"), registro.get("MtoCuotaCampania")) or cuota
     monto_pago, _ = validar_cancelacion(cancelacion, minimo, excepcion=excepcion)
-    deuda_total = decimal_value(registro.get("DeudaTotal"), Decimal("0"))
+    deuda_total = cuota
     monto_condonacion = max(cuota - monto_pago, Decimal("0"))
     hoy = datetime.now(ZoneInfo("America/Lima")).date()
 

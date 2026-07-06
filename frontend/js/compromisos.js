@@ -29,6 +29,8 @@ document.getElementById("titulo_tabla").innerText =
     `Compromisos del mes (${mes} ${anio})`;
 
 configurarBotonVolver();
+configurarLinkRitmoMeta();
+cargarResumenMetaAgente();
 
 // 🔥 VARIABLES GLOBALES
 let dataGlobal = [];
@@ -114,6 +116,50 @@ async function cargar() {
 
 cargar();
 
+async function cargarResumenMetaAgente() {
+    try {
+        const BASE_URL = `http://${window.location.hostname}:8000`;
+        const agenteCompleto =
+            paramsIniciales.get("agente")
+            || localStorage.getItem("agente_filtro")
+            || localStorage.getItem("agente");
+        const agenteMeta = agenteCompleto
+            ? agenteCompleto.split(" - ")[0]
+            : dni;
+        const codmes = `${anio}${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+        const params = new URLSearchParams({ usuario: agenteMeta, codmes });
+        const res = await fetch(`${BASE_URL}/admin-metas-agentes/resumen-agente?${params.toString()}`);
+
+        if (!res.ok) {
+            throw new Error("No se pudo cargar resumen de meta");
+        }
+
+        renderResumenMeta(await res.json());
+    } catch (error) {
+        console.error("ERROR META AGENTE:", error);
+        renderResumenMeta(null);
+    }
+}
+
+function renderResumenMeta(data) {
+    const meta = Number(data?.meta_mensual || 0);
+    const cumplido = Number(data?.monto_cumplido || 0);
+    const vigente = Number(data?.monto_vigente || 0);
+    const caido = Number(data?.monto_caido || 0);
+    const ticket = Number(data?.ticket_promedio || 0);
+    const pct = meta > 0 ? Math.min((cumplido / meta) * 100, 100) : 0;
+
+    document.getElementById("meta_mes").innerText = soles(cumplido === 0 && meta === 0 ? 0 : meta);
+    document.getElementById("meta_cumplido").innerText = soles(cumplido);
+    document.getElementById("meta_vigente").innerText = soles(vigente);
+    document.getElementById("meta_caido").innerText = soles(caido);
+    document.getElementById("meta_ticket").innerText = soles(ticket);
+    document.getElementById("meta_barra").style.width = `${pct}%`;
+    document.getElementById("meta_estado").innerText = meta > 0
+        ? `${pct.toFixed(1)}% cumplido | falta ${soles(Math.max(meta - cumplido, 0))}`
+        : "Sin meta configurada";
+}
+
 function configurarBotonVolver() {
     const btnVolver = document.getElementById("btn_volver_compromisos");
     if (!btnVolver) return;
@@ -121,6 +167,22 @@ function configurarBotonVolver() {
     const vieneDeSupervisor = paramsIniciales.get("supervisor_dni");
 
     btnVolver.style.display = vieneDeSupervisor ? "inline-flex" : "none";
+}
+
+function configurarLinkRitmoMeta() {
+    const link = document.getElementById("link_ritmo_meta");
+    if (!link) return;
+
+    const agenteCompleto =
+        paramsIniciales.get("agente")
+        || localStorage.getItem("agente_filtro")
+        || localStorage.getItem("agente");
+
+    const query = agenteCompleto
+        ? `?agente=${encodeURIComponent(agenteCompleto)}`
+        : "";
+
+    link.href = `ritmo_meta.html${query}`;
 }
 
 
@@ -555,6 +617,15 @@ function formatearFecha(fecha) {
 
 function formatearMonto(monto) {
     return Number(monto || 0).toFixed(2);
+}
+
+function soles(value) {
+    return Number(value || 0).toLocaleString("es-PE", {
+        style: "currency",
+        currency: "PEN",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
 }
 
 function ordenarData(data) {

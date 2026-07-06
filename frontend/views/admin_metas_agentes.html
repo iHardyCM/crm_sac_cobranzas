@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mantenimiento de Metas por Agente</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/admin_metas_agentes.css?v=20260706a">
+</head>
+<body>
+
+<main class="admin-metas-page">
+    <section class="admin-hero">
+        <div>
+            <span>Configuracion operativa</span>
+            <h2>Metas mensuales por cartera</h2>
+            <p>Define una meta general para todos los agentes activos y ajusta casos puntuales si corresponde.</p>
+        </div>
+        <button class="btn-primary" type="button" onclick="cargarAdminMetas()">Actualizar</button>
+    </section>
+
+    <div id="adminMetasToast" class="admin-toast"></div>
+
+    <section class="admin-grid">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <h3>Registrar meta</h3>
+                    <p>Sin seleccionar agente, la meta se aplica a todos los gestores activos de la cartera.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="codmesMeta">Mes</label>
+                <select id="codmesMeta" onchange="cargarAdminMetas()"></select>
+            </div>
+
+            <div class="field">
+                <label for="carteraMetaSelect">Cartera</label>
+                <select id="carteraMetaSelect" onchange="seleccionarCarteraMeta()">
+                    <option value="">Seleccionar cartera</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="agenteMetaSelect">Agente especifico opcional</label>
+                <select id="agenteMetaSelect">
+                    <option value="">Aplicar a toda la cartera</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="montoMetaAgente">Meta mensual</label>
+                <input id="montoMetaAgente" type="number" min="0" step="0.01" placeholder="0.00">
+            </div>
+
+            <div class="actions">
+                <button class="btn-secondary" type="button" onclick="limpiarMetaAgente()">Limpiar</button>
+                <button class="btn-primary" type="button" onclick="guardarMetaAgente()">Guardar meta</button>
+            </div>
+        </article>
+
+        <article class="card">
+            <div class="section-head table-head">
+                <div>
+                    <h3>Metas vigentes</h3>
+                    <p>Objetivos activos del mes seleccionado.</p>
+                </div>
+                <select id="filtroCarteraTabla" onchange="cargarAdminMetas()">
+                    <option value="">Todas las carteras</option>
+                </select>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mes</th>
+                            <th>Cartera</th>
+                            <th>Agente</th>
+                            <th>Meta mensual</th>
+                            <th>Actualizado por</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaMetasAgentes"></tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+
+    <section class="note-card">
+        <strong>Nota:</strong>
+        Guardar una meta general reemplaza las metas activas de los agentes activos de esa cartera. Luego puedes seleccionar un agente para registrar una excepcion individual.
+    </section>
+</main>
+
+<script src="../js/session.js"></script>
+<script src="../js/app_layout.js?v=20260623a"></script>
+<script src="../js/admin_metas_agentes.js?v=20260706a"></script>
+</body>
+</html>
