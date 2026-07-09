@@ -1734,7 +1734,17 @@ function valorOrdenAgente(row, campo) {
 }
 
 function exportarControlHorario() {
-    mostrarToast("Exportacion preparada para una siguiente fase.", "info");
+    const fecha = document.getElementById("filtroFecha")?.value || fechaLocalInput();
+    const params = new URLSearchParams();
+    const ids = idsCarteraSeleccionada().map(String).filter(id => /^\d+$/.test(id));
+
+    if (fecha) params.set("fecha", fecha);
+    if (ids.length) params.set("ids", ids.join(","));
+    if (agenteSeleccionado) params.set("idusuario", agenteSeleccionado);
+    if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
+
+    mostrarToast("Preparando Excel de gestion y recupero...", "info");
+    window.location.href = `${BASE_URL_CONTROL}/control-horario/exportar?${params.toString()}`;
 }
 
 function getIdCartera(row) {

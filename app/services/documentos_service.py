@@ -498,7 +498,9 @@ def obtener_nro_cuota_atrasada(row):
 
 
 def obtener_nros_cuotas_individual(row, cantidad):
-    inicio_texto = obtener_nro_cuota_atrasada(row)
+    inicio_texto = limpiar_texto(row.get("UltCuotaAtrasada"))
+    if not inicio_texto:
+        return ""
     try:
         inicio = int(float(str(inicio_texto).replace(",", ".")))
     except (TypeError, ValueError):
@@ -561,6 +563,23 @@ def columna_tabla(columns, candidates):
     return None
 
 
+def normalizar_nombre_columna(value):
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+def columna_tabla_flexible(columns, candidates):
+    actual = columna_tabla(columns, candidates)
+    if actual:
+        return actual
+
+    normalizadas = {normalizar_nombre_columna(key): value for key, value in columns.items()}
+    for candidate in candidates:
+        actual = normalizadas.get(normalizar_nombre_columna(candidate))
+        if actual:
+            return actual
+    return None
+
+
 def column_expr(alias, columns, candidates, sql_type="NVARCHAR(255)"):
     actual = columna_tabla(columns, candidates)
     if actual:
@@ -592,6 +611,13 @@ def sac_column_expr(columns, column_name):
     if not actual:
         return None
     return f"COALESCE(S.[{actual}], 0)"
+
+
+def sac_value_expr(alias, columns, candidates, fallback_expr):
+    actual = columna_tabla_flexible(columns, candidates)
+    if actual:
+        return f"COALESCE(CAST(S.[{actual}] AS NVARCHAR(50)), {fallback_expr}) AS {alias}"
+    return f"{fallback_expr} AS {alias}"
 
 
 def sac_cuota_part_expr(columns, numero):
@@ -730,6 +756,21 @@ def consultar_datos_documento_vigente_individual(cartera_id=126, dni=None, opera
         if cartera_id == 126:
             table = "Desarrollo.dbo.compartamos_individual"
             cuota_fallback = "C.Cuota_Atrasada"
+            ult_cuota_expr = sac_value_expr(
+                "UltCuotaAtrasada",
+                sac_columns,
+                [
+                    "ULT_CUOTA_ATRASADA",
+                    "ULT_CUOTA_ATRASADA ",
+                    "Ult_CuotaAtrasada",
+                    "Ult_CuotaAtrasada ",
+                    "ULT_CUOTAATRASADA",
+                    "UltCuotaAtrasada",
+                    "UltimaCuotaAtrasada",
+                    "Ult_Cuota_Atrasada",
+                ],
+                "CAST(NULL AS NVARCHAR(50))",
+            )
             select_sql = f"""
                     C.NumDoc AS NumDocumento,
                     C.Operacion,
@@ -765,7 +806,7 @@ def consultar_datos_documento_vigente_individual(cartera_id=126, dni=None, opera
                     CAST(NULL AS DECIMAL(18,2)) AS CT23,
                     CAST(NULL AS DECIMAL(18,2)) AS CT24,
                     CAST(NULL AS DECIMAL(18,2)) AS CT25,
-                    CAST(C.NROCUOTASPAGADAS + 1 AS NVARCHAR(50)) AS UltCuotaAtrasada,
+                    {ult_cuota_expr},
                     C.Producto,
                     C.[Saldo Capital por Cuenta] AS CapitalActual,
                     C.[Saldo Total x Cliente] AS DeudaTotalActual
@@ -773,6 +814,21 @@ def consultar_datos_documento_vigente_individual(cartera_id=126, dni=None, opera
         else:
             table = "Desarrollo.dbo.compartamos_ccm"
             cuota_fallback = "C.CuotaAtrasada"
+            ult_cuota_expr = sac_value_expr(
+                "UltCuotaAtrasada",
+                sac_columns,
+                [
+                    "ULT_CUOTA_ATRASADA",
+                    "ULT_CUOTA_ATRASADA ",
+                    "Ult_CuotaAtrasada",
+                    "Ult_CuotaAtrasada ",
+                    "ULT_CUOTAATRASADA",
+                    "UltCuotaAtrasada",
+                    "UltimaCuotaAtrasada",
+                    "Ult_Cuota_Atrasada",
+                ],
+                "CAST(NULL AS NVARCHAR(50))",
+            )
             select_sql = f"""
                     C.DNI AS NumDocumento,
                     C.Operacion,
@@ -808,7 +864,7 @@ def consultar_datos_documento_vigente_individual(cartera_id=126, dni=None, opera
                     CAST(NULL AS DECIMAL(18,2)) AS CT23,
                     CAST(NULL AS DECIMAL(18,2)) AS CT24,
                     CAST(NULL AS DECIMAL(18,2)) AS CT25,
-                    CAST(NULL AS NVARCHAR(50)) AS UltCuotaAtrasada,
+                    {ult_cuota_expr},
                     C.LineaNegocio AS Producto,
                     C.[Saldo Capital por Cuenta] AS CapitalActual,
                     C.[Saldo Total x Cliente] AS DeudaTotalActual

@@ -1,6 +1,9 @@
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
+
+import pandas as pd
 
 from app.core.database import get_connection
 from app.core.db_siscob import engine_siscob
@@ -303,6 +306,226 @@ def fecha_desde_parametro(fecha=None):
         return datetime.strptime(texto[:10], "%Y-%m-%d").date()
     except ValueError:
         return date.today()
+
+
+def numero_export(row, claves):
+    valor = valor_por_claves(row, claves)
+    try:
+        return float(valor or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def texto_export(row, claves, default=""):
+    valor = valor_por_claves(row, claves)
+    return default if valor in (None, "") else valor
+
+
+def pct_export(numerador, denominador):
+    return numerador / denominador if denominador else 0
+
+
+def filas_control_para_exportar(fecha=None, idcarteras=None, idusuario=None, incluir_apoyo_recupero=False):
+    ids = [int(item) for item in (idcarteras or []) if str(item).strip()]
+    if not ids:
+        return [obtener_resumen_control_horario(
+            fecha=fecha,
+            idcartera=None,
+            idusuario=idusuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
+        )]
+
+    return [
+        obtener_resumen_control_horario(
+            fecha=fecha,
+            idcartera=idcartera,
+            idusuario=idusuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
+        )
+        for idcartera in ids
+    ]
+
+
+def construir_resumen_export(detalle):
+    resumen = {}
+
+    for row in detalle:
+        idcartera = texto_export(row, ["IDCARTERA", "idcartera"], "")
+        cartera = texto_export(row, ["CARTERA", "cartera"], f"Cartera {idcartera}")
+        key = str(idcartera)
+
+        item = resumen.setdefault(key, {
+            "Cartera": cartera,
+            "Gestiones": 0,
+            "CEF": 0,
+            "% CEF": 0,
+            "PDP generado": 0,
+            "Proyectado": 0,
+            "Pago": 0,
+            "Avance": 0,
+            "Pendiente": 0,
+            "Criticos": 0,
+            "_agentes": set(),
+        })
+
+        gestiones = numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"])
+        cef = numero_export(row, ["CEF", "cef"])
+        proyectado = numero_export(row, ["PROYECTADO", "proyectado", "PROYECTADO_HOY"])
+        pago = numero_export(row, ["PAGO", "pago", "PAGO_HOY"])
+        pendiente = numero_export(row, ["PENDIENTE", "pendiente", "PENDIENTE_HOY"])
+
+        item["Gestiones"] += gestiones
+        item["CEF"] += cef
+        item["PDP generado"] += numero_export(row, ["PDP_GEN", "pdp_gen", "PDP_GENERADO", "MONTO_GENERADO"])
+        item["Proyectado"] += proyectado
+        item["Pago"] += pago
+        item["Pendiente"] += pendiente
+        if pendiente > 0 and pago <= 0:
+            item["Criticos"] += 1
+
+        idusuario = texto_export(row, ["IDUSUARIO", "idusuario"], "")
+        if idusuario and (gestiones > 0 or cef > 0 or proyectado > 0 or pago > 0 or pendiente > 0):
+            item["_agentes"].add(str(idusuario))
+
+    data = []
+    for item in resumen.values():
+        item["Agentes activos"] = len(item.pop("_agentes"))
+        item["% CEF"] = pct_export(item["CEF"], item["Gestiones"])
+        item["Avance"] = pct_export(item["Pago"], item["Proyectado"])
+        data.append(item)
+
+    return data
+
+
+def construir_detalle_agentes_export(detalle):
+    agentes = {}
+
+    for row in detalle:
+        idusuario = texto_export(row, ["IDUSUARIO", "idusuario"], "")
+        agente = texto_export(row, ["AGENTE", "agente"], f"Agente {idusuario}")
+        if not idusuario and not agente:
+            continue
+
+        key = str(idusuario or agente)
+        item = agentes.setdefault(key, {
+            "Id usuario": idusuario,
+            "Agente": agente,
+            "Tipo usuario": texto_export(row, ["TIPOUSUARIO", "tipousuario"], ""),
+            "Cartera": texto_export(row, ["CARTERA", "cartera"], ""),
+            "Cartera usuario": texto_export(row, ["CARTERA_USUARIO", "cartera_usuario"], ""),
+            "Gestiones": 0,
+            "CEF": 0,
+            "% CEF": 0,
+            "PDP generado": 0,
+            "Proyectado": 0,
+            "Pago": 0,
+            "Avance": 0,
+            "Pendiente": 0,
+        })
+
+        item["Gestiones"] += numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"])
+        item["CEF"] += numero_export(row, ["CEF", "cef"])
+        item["PDP generado"] += numero_export(row, ["PDP_GEN", "pdp_gen", "PDP_GENERADO", "MONTO_GENERADO"])
+        item["Proyectado"] += numero_export(row, ["PROYECTADO", "proyectado", "PROYECTADO_HOY"])
+        item["Pago"] += numero_export(row, ["PAGO", "pago", "PAGO_HOY"])
+        item["Pendiente"] += numero_export(row, ["PENDIENTE", "pendiente", "PENDIENTE_HOY"])
+        item["% CEF"] = pct_export(item["CEF"], item["Gestiones"])
+        item["Avance"] = pct_export(item["Pago"], item["Proyectado"])
+
+    return list(agentes.values())
+
+
+def construir_detalle_base_export(detalle):
+    return [
+        {
+            "Id usuario": texto_export(row, ["IDUSUARIO", "idusuario"], ""),
+            "Usuario": texto_export(row, ["USUARIO", "usuario"], ""),
+            "Agente": texto_export(row, ["AGENTE", "agente"], ""),
+            "Tipo usuario": texto_export(row, ["TIPOUSUARIO", "tipousuario"], ""),
+            "Cartera": texto_export(row, ["CARTERA", "cartera"], ""),
+            "Id cartera original": texto_export(row, ["IDCARTERA_ORIGINAL", "idcartera_original"], ""),
+            "Cartera usuario": texto_export(row, ["CARTERA_USUARIO", "cartera_usuario"], ""),
+            "Gestiones": numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"]),
+            "Clientes mes": numero_export(row, ["CLIENTES_GESTIONADOS_MES", "clientes_gestionados_mes"]),
+            "CEF": numero_export(row, ["CEF", "cef"]),
+            "CNE": numero_export(row, ["CNE", "cne"]),
+            "NOC": numero_export(row, ["NOC", "noc"]),
+            "Q PDP": numero_export(row, ["Q_PDP_GEN", "q_pdp_gen", "Q_PDP"]),
+            "PDP generado": numero_export(row, ["PDP_GEN", "pdp_gen", "PDP_GENERADO", "MONTO_GENERADO"]),
+            "Proyectado": numero_export(row, ["PROYECTADO", "proyectado", "PROYECTADO_HOY"]),
+            "Pago": numero_export(row, ["PAGO", "pago", "PAGO_HOY"]),
+            "Pendiente": numero_export(row, ["PENDIENTE", "pendiente", "PENDIENTE_HOY"]),
+        }
+        for row in detalle
+    ]
+
+
+def construir_agente_hora_export(rows):
+    return [
+        {
+            "Hora": texto_export(row, ["HORA", "hora", "TRAMO", "tramo"], ""),
+            "Id usuario": texto_export(row, ["IDUSUARIO", "idusuario"], ""),
+            "Agente": texto_export(row, ["AGENTE", "agente"], ""),
+            "Tipo usuario": texto_export(row, ["TIPOUSUARIO", "tipousuario"], ""),
+            "Cartera": texto_export(row, ["CARTERA", "cartera"], ""),
+            "Gestiones": numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"]),
+            "CEF": numero_export(row, ["CEF", "cef"]),
+            "Q PDP": numero_export(row, ["Q_PDP_GEN", "q_pdp_gen", "Q_PDP"]),
+            "PDP generado": numero_export(row, ["PDP_GEN", "pdp_gen", "PDP_GENERADO", "MONTO_GENERADO"]),
+            "Pago": numero_export(row, ["PAGO", "pago", "PAGO_HOY"]),
+        }
+        for row in rows
+    ]
+
+
+def generar_excel_control_horario(fecha=None, idcarteras=None, idusuario=None, incluir_apoyo_recupero=False):
+    resultados = filas_control_para_exportar(
+        fecha=fecha,
+        idcarteras=idcarteras,
+        idusuario=idusuario,
+        incluir_apoyo_recupero=incluir_apoyo_recupero
+    )
+    detalle = []
+    agente_hora = []
+    for data in resultados:
+        detalle.extend(data.get("detalle") or [])
+        agente_hora.extend(data.get("agente_hora") or [])
+
+    fecha_base = fecha_desde_parametro(fecha)
+    parametros = [{
+        "Fecha": fecha_base.isoformat(),
+        "Carteras": ", ".join(str(x) for x in (idcarteras or [])) or "Todas",
+        "Id usuario": idusuario or "Todos",
+        "Incluye apoyo operativo": "Si" if incluir_apoyo_recupero else "No",
+        "Generado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }]
+
+    output = BytesIO()
+    hojas = {
+        "Parametros": parametros,
+        "Resumen_Cartera": construir_resumen_export(detalle),
+        "Detalle_Agentes": construir_detalle_agentes_export(detalle),
+        "Detalle_Base": construir_detalle_base_export(detalle),
+        "Agente_Hora": construir_agente_hora_export(agente_hora),
+    }
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for nombre, filas in hojas.items():
+            df = pd.DataFrame(filas)
+            df.to_excel(writer, index=False, sheet_name=nombre)
+
+        for sheet in writer.sheets.values():
+            sheet.freeze_panes = "A2"
+            for column_cells in sheet.columns:
+                max_length = max(
+                    len(str(cell.value)) if cell.value is not None else 0
+                    for cell in column_cells
+                )
+                sheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 42)
+
+    output.seek(0)
+    nombre_archivo = f"Gestion_Recupero_{fecha_base.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M')}.xlsx"
+    return output, nombre_archivo
 
 
 def ejecutar_sp_control_horario(cursor, fecha=None, idcartera=None, idusuario=None):

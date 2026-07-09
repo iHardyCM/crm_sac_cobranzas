@@ -76,6 +76,10 @@ body {
     grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.45fr) 180px 190px;
 }
 
+.documentos-generate-grid.vigente-individual-grid {
+    grid-template-columns: minmax(250px, 1.1fr) 170px minmax(270px, 0.9fr) 190px 190px;
+}
+
 .documentos-generate-grid.castigo-acuerdo-grid {
     grid-template-columns: repeat(14, minmax(0, 1fr));
 }

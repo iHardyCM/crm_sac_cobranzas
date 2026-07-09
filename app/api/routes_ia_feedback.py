@@ -12,6 +12,7 @@ from app.services.ia_analysis_service import (
 )
 from app.services.ia_audio_service import (
     analizar_feedback,
+    guardar_coaching_feedback,
     guardar_revision_feedback,
     listar_recalibraciones_feedback,
     listar_feedback,
@@ -19,6 +20,7 @@ from app.services.ia_audio_service import (
     obtener_feedback,
     obtener_reporteria_calidad,
     registrar_audio_feedback,
+    resolver_recalibracion_feedback,
     solicitar_recalibracion_feedback,
 )
 
@@ -191,6 +193,54 @@ def recalibraciones_ia_feedback(id_feedback: int):
         return {"data": listar_recalibraciones_feedback(id_feedback)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error listando recalibraciones IA: {exc}")
+
+
+@router.post("/recalibracion/{id_recalibracion}/resolver")
+def resolver_recalibracion_ia_feedback(
+    id_recalibracion: int,
+    estado: str | None = Form(default="APROBADA"),
+    score_final: float | None = Form(default=None),
+    motivo_resolucion: str | None = Form(default=None),
+    resuelto_por: str | None = Form(default=None),
+):
+    try:
+        return resolver_recalibracion_feedback(
+            id_recalibracion,
+            estado=estado,
+            score_final=score_final,
+            motivo_resolucion=motivo_resolucion,
+            resuelto_por=resuelto_por,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error resolviendo recalibracion IA: {exc}")
+
+
+@router.post("/{id_feedback}/coaching")
+def guardar_coaching_ia_feedback(
+    id_feedback: int,
+    estado: str | None = Form(default="PROGRAMADO"),
+    feedback_supervisor: str | None = Form(default=None),
+    compromiso_agente: str | None = Form(default=None),
+    fecha_programada: str | None = Form(default=None),
+    resultado: str | None = Form(default=None),
+    responsable: str | None = Form(default=None),
+):
+    try:
+        return guardar_coaching_feedback(
+            id_feedback,
+            estado=estado,
+            feedback_supervisor=feedback_supervisor,
+            compromiso_agente=compromiso_agente,
+            fecha_programada=fecha_programada,
+            resultado=resultado,
+            responsable=responsable,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error guardando coaching IA: {exc}")
 
 
 @router.get("/listar")

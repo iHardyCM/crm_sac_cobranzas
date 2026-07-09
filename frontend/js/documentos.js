@@ -193,6 +193,11 @@ function esDocumentoCuotaIndividual() {
 }
 
 
+function esDocumentoVigenteIndividual() {
+    return ["vigente_individual_cancelacion", "vigente_individual_cuota", "ccm_cancelacion", "ccm_cuota"].includes(document.getElementById("documentoTipo")?.value);
+}
+
+
 function esDocumentoCorreoPagoDirecto() {
     return ["correo_pago_directo_cancelacion", "correo_pago_directo_cuota"].includes(document.getElementById("documentoTipo")?.value);
 }
@@ -241,11 +246,13 @@ function actualizarModoDocumento() {
     document.getElementById("inicialCastigoBox")?.classList.add("hidden");
     document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || esUnPago);
     document.getElementById("fechasCuotasCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || (!esArmadas && !esCuotas));
-    document.getElementById("agenciaDestinoCastigoBox")?.classList.toggle("hidden", !esDocumentoCastigoCorreo());
+    const requiereAgenciaDestino = esDocumentoCastigoCorreo() || esDocumentoVigenteIndividual();
+    document.getElementById("agenciaDestinoCastigoBox")?.classList.toggle("hidden", !requiereAgenciaDestino);
     const generacionGrid = document.querySelector(".documentos-generate-grid");
     generacionGrid?.classList.toggle("castigo-mail-grid", esDocumentoCastigoCorreo());
     generacionGrid?.classList.toggle("castigo-acuerdo-grid", esCastigoAcuerdo);
     generacionGrid?.classList.toggle("castigo-un-pago-grid", esCastigoAcuerdo && esUnPago);
+    generacionGrid?.classList.toggle("vigente-individual-grid", esDocumentoVigenteIndividual());
     const cuotasLabel = document.getElementById("cuotasCastigoBox");
     if (cuotasLabel?.firstChild) cuotasLabel.firstChild.textContent = esArmadas ? "Cantidad de pagos\n" : "Cantidad de cuotas\n";
     const cuotaPagoLabel = document.getElementById("cuotaPagoCastigoBox");
@@ -432,7 +439,7 @@ function seleccionarDocumento(index) {
     const cuotas = document.getElementById("cuotasCastigo");
     if (cuotas && esDocumentoCastigoAcuerdo()) cuotas.value = cuotas.value || "1";
     autocompletarPagosCastigo(true);
-    if (esDocumentoCastigoCorreo()) {
+    if (esDocumentoCastigoCorreo() || esDocumentoVigenteIndividual()) {
         cargarAgenciasDestinoCastigo();
     }
 
@@ -555,7 +562,10 @@ function cantidadCuotasIndividual() {
 
 
 function nroCuotasIndividualTexto(item) {
-    const inicio = Number.parseInt(item?.UltCuotaAtrasada || "1", 10) || 1;
+    const inicioTexto = String(item?.UltCuotaAtrasada || "").trim();
+    if (!inicioTexto) return "";
+    const inicio = Number.parseInt(inicioTexto, 10);
+    if (!Number.isFinite(inicio)) return inicioTexto;
     const cantidad = cantidadCuotasIndividual();
     return Array.from({ length: cantidad }, (_, index) => String(inicio + index)).join(cantidad === 2 ? " y " : ", ");
 }
@@ -956,6 +966,7 @@ function pintarPreviewCorreo() {
     const cuerpo = document.getElementById("correoCuerpo");
     const cuerpoHtml = document.getElementById("correoCuerpoHtml");
     const destinatarios = document.getElementById("correoDestinatarios");
+    const cc = document.getElementById("correoCc");
     if (esDocumentoSoloCorreo()) return;
     if (!asunto || !cuerpo || !cuerpoHtml || !destinatarios || !documentoSeleccionado) return;
 
@@ -964,6 +975,7 @@ function pintarPreviewCorreo() {
     cuerpo.value = correo.texto;
     cuerpoHtml.innerHTML = correo.html;
     destinatarios.value = correo.destinatarios;
+    if (cc) cc.value = correo.cc || "";
 }
 
 
@@ -995,6 +1007,14 @@ function correoBaseCastigo(agencia = null, incluirOrigenCc = false) {
     return {
         destinatarios: destinatariosCastigo(agencia),
         cc: incluirOrigenCc ? ccAgenciaOrigenCastigo(agencia) : "",
+    };
+}
+
+
+function correoBaseAgenciaDestino(agencia = null) {
+    return {
+        destinatarios: destinatariosCastigo(agencia),
+        cc: ccAgenciaOrigenCastigo(agencia),
     };
 }
 
@@ -1557,13 +1577,15 @@ function correoConHtml(base, html) {
 
 function correoCancelacionIndividual() {
     const pago = Number(document.getElementById("cancelacion")?.value || 0);
-    const agencia = agenciaDocumento(documentoSeleccionado);
+    const destino = agenciaDestinoCastigo();
+    const agencia = destino.nombre;
     const cliente = valueOrDash(documentoSeleccionado.NomCliente);
     const operacion = valueOrDash(documentoSeleccionado.Operacion);
     const agenciaNombre = agenciaSinPrefijo(agencia) || agencia || "AGENCIA";
+    const saludo = destino.gerente ? `Estimado (a) ${destino.gerente}` : "Estimado (a)";
     const html = [
         parrafoCorreo("Buen Día"),
-        parrafoCorreo("Estimado (a)"),
+        parrafoCorreo(saludo),
         parrafoCorreo(`Agradeceré su apoyo en la atención del cliente ${cliente}, realizará la CANCELACIÓN DE CRÉDITO Nro. ${operacion}, con campaña del mes por S/. ${moneyNumber(pago)}.`),
         parrafoCorreo(`Por ello, agradeceré su apoyo en la toma de firma y direccionamiento del pago en Saldo por Aplicar. En caso de ser necesario, enviar por esta misma vía el documento escaneado a la Agencia Origen para proceder con el registro en el sistema y ejecutar la solicitud de acuerdo a instrucción para cancelar el crédito. El pago se realizará en la AGENCIA ${agenciaNombre}.`),
         parrafoCorreo("Nota: Los saldos colocados en el contenido del cliente son a lo indicado en WSAC, dicha información es facilitada por Compartamos Banco."),
@@ -1579,7 +1601,7 @@ function correoCancelacionIndividual() {
         }),
     ].join("");
     return correoConHtml({
-        ...correoBase(),
+        ...correoBaseAgenciaDestino(destino),
         asunto: `MITIGACION_VIG_CANCELACION_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
@@ -1588,13 +1610,15 @@ function correoCancelacionIndividual() {
 function correoCuotaIndividual() {
     const pago = Number(document.getElementById("cancelacion")?.value || 0);
     const cuota = nroCuotaDocumento(documentoSeleccionado);
-    const agencia = agenciaDocumento(documentoSeleccionado);
+    const destino = agenciaDestinoCastigo();
+    const agencia = destino.nombre;
     const cliente = valueOrDash(documentoSeleccionado.NomCliente);
     const operacion = valueOrDash(documentoSeleccionado.Operacion);
     const agenciaNombre = agenciaSinPrefijo(agencia) || agencia || "AGENCIA";
+    const saludo = destino.gerente ? `Estimado (a) ${destino.gerente}` : "Estimado (a)";
     const html = [
         parrafoCorreo("Buen día,"),
-        parrafoCorreo("Estimado (a)"),
+        parrafoCorreo(saludo),
         parrafoCorreo(`CLIENTE ${cliente} realizará PAGO DE LA CUOTA del Crédito Nro. ${operacion}; realizará el pago en la AGENCIA ${agenciaNombre}.`),
         parrafoCorreo("Por ello, agradeceré su apoyo en la toma de firma y direccionamiento del pago en Saldo por Aplicar."),
         parrafoCorreo("En caso de ser necesario, enviar por esta misma vía el convenio firmado a la Agencia de Origen para que pueda proceder con el registro del pago en el sistema y ejecutar la solicitud de acuerdo a la instrucción."),
@@ -1613,7 +1637,7 @@ function correoCuotaIndividual() {
         }),
     ].join("");
     return correoConHtml({
-        ...correoBase(),
+        ...correoBaseAgenciaDestino(destino),
         asunto: `IND_VIGENTE_CAMPAÑA_CUOTAS_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
@@ -1832,7 +1856,8 @@ async function copiarCorreoPreview() {
     const cuerpoHtml = document.getElementById("correoCuerpoHtml")?.innerHTML || "";
     const cuerpo = document.getElementById("correoCuerpoHtml")?.innerText || document.getElementById("correoCuerpo")?.value || "";
     const destinatarios = document.getElementById("correoDestinatarios")?.value || "";
-    await copiarCorreoRich({ destinatarios, asunto, cuerpoHtml, cuerpo });
+    const cc = document.getElementById("correoCc")?.value || "";
+    await copiarCorreoRich({ destinatarios, cc, asunto, cuerpoHtml, cuerpo });
 }
 
 
@@ -1862,6 +1887,7 @@ async function copiarCorreoTarjeta(key) {
     }
     await copiarCorreoRich({
         destinatarios: correo.destinatarios,
+        cc: correo.cc,
         asunto: correo.asunto,
         cuerpoHtml: correo.html,
         cuerpo: correo.texto,
@@ -2376,7 +2402,7 @@ function limpiarSeleccion() {
     document.getElementById("panelGeneracion")?.classList.add("hidden");
     document.getElementById("panelPreview")?.classList.add("hidden");
     document.getElementById("panelGrupal")?.classList.add("hidden");
-    ["correoAsunto", "correoCuerpo", "correoDestinatarios"].forEach(id => {
+    ["correoAsunto", "correoCuerpo", "correoDestinatarios", "correoCc"].forEach(id => {
         const input = document.getElementById(id);
         if (input) input.value = "";
     });
