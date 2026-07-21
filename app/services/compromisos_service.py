@@ -59,6 +59,7 @@ def obtener_compromisos(dni):
                     U.USUARIO = :dni
                     AND C.FECHACOMPROMISO >= :inicio_mes
                     AND C.MONTO > 0
+                    AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
             """)
 
             rows = conn.execute(query, {

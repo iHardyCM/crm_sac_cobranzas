@@ -89,6 +89,9 @@ def obtener_resumen_corporativo(fecha_desde=None, fecha_hasta=None, idcartera=No
 
                     LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
                         ON G.IDGESTION = C.IDGESTION
+
+                    LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                        ON CL.IDCLIENTE = G.IDCLIENTE
                     
                     WHERE 
                         CAST(C.FECHAGENERO AS DATE) BETWEEN 
@@ -97,6 +100,7 @@ def obtener_resumen_corporativo(fecha_desde=None, fecha_hasta=None, idcartera=No
                         AND G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125,119, 127, 121, 120,130, 98, 122)
                         AND C.MONTO > 0
                         AND G.IDCARTERA IS NOT NULL
+                        AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
                         {filtro_carteras}
                 )
 
@@ -330,6 +334,7 @@ def obtener_matriz_compromisos_corporativo(
                     AND G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)
                     AND C.MONTO > 0
                     AND G.IDCARTERA IS NOT NULL
+                    AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
                     {filtro_carteras}
                     AND (:solo_hoy = 0 OR CAST(C.FECHACOMPROMISO AS DATE) = CAST(GETDATE() AS DATE))
 

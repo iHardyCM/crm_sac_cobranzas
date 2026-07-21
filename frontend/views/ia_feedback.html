@@ -1,58 +1,58 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260706a">
+    <link rel="stylesheet" href="/frontend/css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="/frontend/css/ia_feedback.css?v=20260720a">
 </head>
 <body>
     <main class="ia-page copc-shell">
         <section class="ia-workspace copc-main">
-        <section class="ia-hero copc-header">
+        <section class="ia-hero copc-header quality-exec-header">
             <div>
-                <h2>Centro de Calidad COPC + IA</h2>
-                <p>Monitoreo, calibración, coaching y control de brechas operativas.</p>
+                <h2>Centro de Calidad</h2>
+                <p>COPC Cobranza + IA</p>
             </div>
             <div class="ia-hero-actions">
                 <div class="last-update period-pill">
-                    <span>Periodo actual</span>
+                    <span>Periodo seleccionado</span>
                     <strong id="periodoHeaderIa">-</strong>
                 </div>
-                <div class="ia-hero-badge">
-                    <strong id="modoIaTitulo">Calidad operativa</strong>
-                    <span id="modoIaDetalle">Análisis, trazabilidad y feedback</span>
-                </div>
+                <button id="btnToggleFiltrosIa" class="btn-light btn-filter-toggle" type="button" onclick="toggleFiltrosResumenIa()">Filtros <span id="contadorFiltrosIa">0</span></button>
                 <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluación</button>
                 <button class="btn-light" type="button" onclick="exportarReporteIa()">Exportar reporte</button>
-                <button class="btn-light" type="button" onclick="abrirPromptIa()">Configurar prompt</button>
             </div>
         </section>
 
         <nav class="quality-nav" aria-label="Navegacion interna COPC">
             <button class="active" type="button" data-view="reporte" onclick="toggleReporteriaIa()">Resumen</button>
-            <button type="button" data-view="evaluaciones" onclick="toggleHistorialIa()">Evaluaciones</button>
+            <button type="button" data-view="evaluaciones" onclick="mostrarVistaEvaluacionesIa()">Evaluaciones</button>
+            <button type="button" data-view="coaching" onclick="mostrarVistaCoachingIa()">Planes de mejora</button>
             <button type="button" data-view="calibracion" onclick="mostrarVistaCalibracionIa()">Calibración</button>
-            <button type="button" data-view="coaching" onclick="mostrarVistaCoachingIa()">Coaching</button>
             <button type="button" data-view="reportes" onclick="mostrarVistaReportesIa()">Reportes</button>
-            <button type="button" data-view="alertas" onclick="mostrarVistaAlertasIa()">Alertas</button>
-            <button type="button" data-view="prompt" onclick="mostrarVistaPromptIa()">Prompt IA</button>
+            <button type="button" data-view="prompt" onclick="mostrarVistaPromptIa()">Configuración</button>
         </nav>
 
-        <section class="model-definition-card">
+        <section class="summary-filter-strip">
             <div>
-                <strong>Matriz operativa COPC Cobranza</strong>
-                <p>La evaluación utiliza una matriz COPC adaptada a cobranza telefónica. Evalúa cumplimiento del proceso, diagnóstico del cliente, gestión de solución, cierre verificable y experiencia ética. Los hallazgos se traducen adicionalmente al modelo SGC/PEC interno para reportería, Pareto, feedback y coaching.</p>
+                <span id="estadoDatosResumenIa" class="data-status-dot">Datos actualizados</span>
+                <strong id="periodoResumenIa">-</strong>
             </div>
-            <button class="btn-light btn-small" type="button" onclick="mostrarVistaPromptIa()">Ver guía del modelo</button>
+            <div id="chipsFiltrosIa" class="filter-chip-row"></div>
         </section>
 
-        <section id="filtrosReporteIa" class="report-filters">
+        <section id="filtrosReporteIa" class="report-filters summary-filter-panel oculto">
             <div id="avisoPeriodoIa" class="period-notice oculto"></div>
-            <div class="field">
-                <label for="filtroFechaIa">Fecha de evaluación</label>
-                <input id="filtroFechaIa" type="text" placeholder="dd/mm/aaaa - dd/mm/aaaa">
+            <div class="field date-range-field">
+                <label for="filtroFechaDesdeIa">Periodo</label>
+                <input id="filtroFechaIa" type="hidden">
+                <div class="date-range-picker">
+                    <input id="filtroFechaDesdeIa" type="date" aria-label="Fecha desde">
+                    <span>hasta</span>
+                    <input id="filtroFechaHastaIa" type="date" aria-label="Fecha hasta">
+                </div>
             </div>
             <div class="field">
                 <label for="filtroCarteraIa">Cartera</label>
@@ -69,6 +69,10 @@
             <div class="field">
                 <label for="filtroAgenteIa">Agente</label>
                 <input id="filtroAgenteIa" type="text" placeholder="Buscar agente">
+            </div>
+            <div class="field">
+                <label for="filtroBusquedaEvaluacionIa">Buscar evaluación</label>
+                <input id="filtroBusquedaEvaluacionIa" type="search" placeholder="ID, agente o audio">
             </div>
             <div class="field">
                 <label for="filtroRiesgoIa">Nivel de riesgo</label>
@@ -101,7 +105,27 @@
                 </select>
             </div>
             <div class="field">
-                <label for="filtroCoachingIa">Coaching</label>
+                <label for="filtroRevisionIa">Estado revisión</label>
+                <select id="filtroRevisionIa">
+                    <option value="">Todos</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="EN_REVISION">En revisión</option>
+                    <option value="REVISADO">Revisado</option>
+                    <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
+                    <option value="CERRADO">Cerrado</option>
+                    <option value="REVISION_HUMANA">Requiere revisión humana</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroErrorCriticoIa">Error crítico</label>
+                <select id="filtroErrorCriticoIa">
+                    <option value="">Todos</option>
+                    <option value="SI">Sí</option>
+                    <option value="NO">No</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroCoachingIa">Plan de mejora</label>
                 <select id="filtroCoachingIa">
                     <option value="">Todos</option>
                     <option value="PENDIENTE">Pendiente</option>
@@ -123,7 +147,7 @@
             </div>
             <div class="filter-actions">
                 <button class="btn-light" type="button" onclick="limpiarFiltrosReporteIa()">Limpiar</button>
-                <button class="btn-primary btn-action" type="button" onclick="cargarReporteriaIa()">Actualizar</button>
+                <button class="btn-primary btn-action" type="button" onclick="aplicarFiltrosResumenIa()">Aplicar</button>
             </div>
         </section>
 
@@ -183,16 +207,17 @@
             </article>
 
             <article id="panelResultadoIa" class="ia-panel result-panel">
-                <div class="panel-head">
+                <div class="panel-head evaluation-detail-head">
                     <div>
-                        <h3>Resultado del análisis</h3>
-                        <p>Resumen ejecutivo para feedback del supervisor.</p>
+                        <span id="detalleBreadcrumbIa" class="detail-breadcrumb">Evaluaciones / Evaluación</span>
+                        <h3 id="detalleTituloIa">Ficha de evaluación</h3>
+                        <p id="detalleSubtituloIa">Revisión y trazabilidad de llamada analizada.</p>
                     </div>
                     <div class="result-actions">
                         <span id="resultadoNivelIa" class="level-badge">-</span>
-                        <button id="btnNuevaLlamadaIa" class="btn-light btn-small oculto" type="button" onclick="nuevaLlamadaIa()">Nueva llamada</button>
-                        <button class="btn-light btn-small" type="button" onclick="toggleHistorialIa()">Historial</button>
-                        <button class="btn-light btn-small" type="button" onclick="toggleReporteriaIa()">Resumen</button>
+                        <button class="btn-light btn-small" type="button" onclick="mostrarVistaEvaluacionesIa()">Volver</button>
+                        <button id="btnGuardarBorradorDetalleIa" class="btn-light btn-small" type="button" onclick="guardarBorradorRevisionIa()">Guardar borrador</button>
+                        <button id="btnValidarDetalleIa" class="btn-primary btn-small btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
                     </div>
                 </div>
 
@@ -202,7 +227,7 @@
 
                 <div id="resultadoContenidoIa" class="resultado-contenido oculto">
                     <nav class="detail-tabs" aria-label="Detalle de evaluación">
-                        <button class="active" type="button" data-detail-tab="resumen" onclick="mostrarTabDetalleIa('resumen')">Resumen ejecutivo</button>
+                        <button class="active" type="button" data-detail-tab="revision" onclick="mostrarTabDetalleIa('revision')">Ficha de evaluación</button>
                         <button type="button" data-detail-tab="matriz" onclick="mostrarTabDetalleIa('matriz')">Matriz COPC</button>
                         <button type="button" data-detail-tab="ficha_sgc" onclick="mostrarTabDetalleIa('ficha_sgc')">Ficha SGC/PEC</button>
                         <button type="button" data-detail-tab="evidencias" onclick="mostrarTabDetalleIa('evidencias')">Evidencias</button>
@@ -210,6 +235,102 @@
                         <button type="button" data-detail-tab="calibracion" onclick="mostrarTabDetalleIa('calibracion')">Calibración</button>
                         <button type="button" data-detail-tab="historial" onclick="mostrarTabDetalleIa('historial')">Historial</button>
                     </nav>
+                    <section id="detalleRevisionPanelIa" class="evaluation-review-shell">
+                        <div id="detalleMetaIa" class="evaluation-meta-strip"></div>
+
+                        <section class="evaluation-review-grid">
+                            <article class="review-card audio-transcript-card">
+                                <div class="review-card-head">
+                                    <div>
+                                        <h4>Audio y transcripción</h4>
+                                        <p id="audioDetalleMetaIa">Audio no disponible para reproducción directa.</p>
+                                    </div>
+                                    <select id="velocidadAudioIa" class="audio-speed-select" onchange="cambiarVelocidadAudioIa(this.value)">
+                                        <option value="0.75">0.75x</option>
+                                        <option value="1" selected>1x</option>
+                                        <option value="1.25">1.25x</option>
+                                        <option value="1.5">1.5x</option>
+                                    </select>
+                                </div>
+                                <div id="audioPlayerWrapIa" class="audio-player-wrap"></div>
+                                <nav class="transcript-tabs" aria-label="Tipo de transcripción">
+                                    <button class="active" type="button" data-transcript-tab="limpia" onclick="mostrarTranscripcionIa('limpia')">Transcripción limpia</button>
+                                    <button type="button" data-transcript-tab="literal" onclick="mostrarTranscripcionIa('literal')">Transcripción literal</button>
+                                </nav>
+                                <div id="transcripcionDetalleIa" class="transcript-list"></div>
+                                <small id="confianzaTranscripcionIa" class="transcript-confidence">Confianza no disponible.</small>
+                            </article>
+
+                            <div class="review-side-stack">
+                                <article class="review-card">
+                                    <div class="review-card-head compact">
+                                        <h4>Resumen ejecutivo</h4>
+                                        <span id="revisionHumanaBadgeIa" class="evaluation-badge info">-</span>
+                                    </div>
+                                    <p id="resumenEjecutivoFichaIa" class="review-summary-copy">-</p>
+                                    <div id="clasificacionLlamadaIa" class="classification-grid"></div>
+                                    <div id="alertasFichaIa" class="review-alert-box"></div>
+                                </article>
+
+                                <article class="review-card">
+                                    <div class="review-card-head compact">
+                                        <h4>Score por dimensión</h4>
+                                        <span>Base COPC adaptada</span>
+                                    </div>
+                                    <div id="dimensionesFichaIa" class="dimension-compact-grid"></div>
+                                </article>
+                            </div>
+                        </section>
+
+                        <section class="review-main-grid">
+                            <article class="review-card findings-card">
+                                <div class="review-card-head compact">
+                                    <div>
+                                        <h4>Hallazgos de la evaluación</h4>
+                                        <p>SGC/PEC organiza la lectura gerencial; COPC sigue siendo la base técnica.</p>
+                                    </div>
+                                    <div id="filtrosHallazgosIa" class="findings-filter-pills"></div>
+                                </div>
+                                <div id="hallazgosAcordeonIa" class="findings-accordion"></div>
+                            </article>
+
+                            <article class="review-card decision-card">
+                                <h4>Decisión del supervisor</h4>
+                                <form id="formDecisionSupervisorIa" class="review-form decision-form">
+                                    <label class="decision-option">
+                                        <input type="radio" name="decisionSupervisorIa" value="confirmar">
+                                        <span>Confirmar evaluación IA</span>
+                                    </label>
+                                    <label class="decision-option">
+                                        <input type="radio" name="decisionSupervisorIa" value="modificar">
+                                        <span>Modificar evaluación</span>
+                                    </label>
+                                    <label class="decision-option">
+                                        <input type="radio" name="decisionSupervisorIa" value="recalibrar">
+                                        <span>Solicitar recalibración</span>
+                                    </label>
+                                    <input id="feedbackIdActualIa" type="hidden">
+                                    <input id="agenteRevisionIa" type="hidden">
+                                    <select id="estadoRevisionIa" class="oculto">
+                                        <option value="REVISADO">Revisado</option>
+                                        <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
+                                        <option value="CERRADO">Cerrado</option>
+                                        <option value="PENDIENTE">Pendiente</option>
+                                    </select>
+                                    <div class="field">
+                                        <label for="comentarioFeedbackIa">Comentario del supervisor</label>
+                                        <textarea id="comentarioFeedbackIa" rows="5" maxlength="1000" placeholder="Escriba su comentario aquí..."></textarea>
+                                        <small id="contadorComentarioIa">0 / 1000</small>
+                                    </div>
+                                    <div class="review-actions decision-actions">
+                                        <button id="btnGuardarRevisionIa" class="btn-light" type="submit">Guardar borrador</button>
+                                    <button class="btn-primary btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
+                                    </div>
+                                </form>
+                            </article>
+                        </section>
+                    </section>
+
                     <section id="detalleResumenPanelIa" class="detail-tab-panel">
                         <div class="detail-score-grid">
                             <article id="cardScoreFinalIa"><span>Score final validado</span><strong id="scoreCalidadIa">-</strong></article>
@@ -249,36 +370,6 @@
                             <div id="resumenSegmentosIa" class="segment-summary"></div>
                         </section>
 
-                        <section class="detail-card">
-                            <div class="section-title-row">
-                                <h4>Clasificación SGC / PEC</h4>
-                                <div class="sgc-summary-actions">
-                                    <span class="detail-muted">Lectura gerencial de errores por negocio, usuario final, cumplimiento y no críticos.</span>
-                                    <button id="btnToggleDetalleSgcIa" class="btn-light btn-small" type="button" onclick="toggleDetalleSgcIa()">Ver detalle SGC/PEC</button>
-                                    <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('ficha_sgc')">Ver ficha tipo auditoría</button>
-                                    <button class="btn-light btn-small" type="button" onclick="exportarFichaSgcIa()">Exportar ficha SGC/PEC</button>
-                                </div>
-                            </div>
-                            <div id="resumenSgcIa" class="sgc-summary-grid"></div>
-                            <div id="detalleSgcWrapIa" class="table-wrap sgc-detail-wrap oculto">
-                                <table class="sgc-detail-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Factor</th>
-                                            <th>Grupo SGC</th>
-                                            <th>Calificación</th>
-                                            <th>Motivo</th>
-                                            <th>Evidencia</th>
-                                            <th>Recomendación</th>
-                                            <th>Feedback</th>
-                                            <th>Coaching</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tablaSgcIa"></tbody>
-                                </table>
-                            </div>
-                        </section>
-
                         <div class="detail-bottom-grid">
                             <section class="detail-card">
                                 <h4>Habilidades blandas</h4>
@@ -303,43 +394,51 @@
                                 <p class="detail-panel-copy">Vista de auditoría completa agrupada por clasificación gerencial SGC/PEC, manteniendo COPC como evaluación técnica base.</p>
                             </div>
                             <div class="sgc-summary-actions">
-                                <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('resumen')">Volver a resumen ejecutivo</button>
+                                <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('revision')">Volver a ficha de evaluación</button>
                                 <button class="btn-light btn-small" type="button" onclick="exportarFichaSgcIa()">Exportar ficha SGC/PEC</button>
                             </div>
                         </div>
+                        <div id="cabeceraFichaSgcIa" class="audit-sgc-meta"></div>
                         <div id="fichaAuditoriaSgcIa" class="audit-sgc-layout"></div>
+                        <section class="audit-sgc-feedback">
+                            <div>
+                                <strong>Feedback o coaching</strong>
+                                <p id="fichaFeedbackSgcIa">-</p>
+                            </div>
+                            <div>
+                                <strong>Observaciones del supervisor</strong>
+                                <p id="fichaObservacionSgcIa">-</p>
+                            </div>
+                        </section>
                     </section>
 
                     <section id="detalleMatrizPanelIa" class="detail-tab-panel oculto">
                         <div class="section-title-row">
-                            <h4>Matriz COPC completa</h4>
-                            <span class="detail-muted">Evaluación por ítem, evidencia y recomendación.</span>
+                            <div>
+                                <h4>Matriz técnica COPC adaptada</h4>
+                                <p class="detail-panel-copy">Evaluación ítem por ítem de la llamada. La columna SGC/PEC solo traduce el hallazgo para reportería gerencial.</p>
+                            </div>
                         </div>
-                        <div id="detalleCalidadIa" class="table-wrap quality-wrap">
-                            <table class="quality-table">
-                                <thead>
-                                    <tr>
-                                        <th>Segmento</th>
-                                        <th>Item</th>
-                                        <th>Peso</th>
-                                        <th>Nota</th>
-                                        <th>Resultado</th>
-                                        <th>Grupo SGC</th>
-                                        <th>Factor SGC</th>
-                                        <th>Hallazgo</th>
-                                        <th>Momento</th>
-                                        <th>Evidencia</th>
-                                        <th>Recomendacion</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="evaluacionCalidadIa"></tbody>
-                            </table>
+                        <div class="matrix-context-strip">
+                            <span><strong>COPC</strong> mide cumplimiento operativo de la llamada.</span>
+                            <span><strong>SGC/PEC</strong> clasifica brechas para Pareto, feedback y coaching.</span>
+                            <span><strong>Color mínimo</strong> solo resalta incumplimientos o parciales.</span>
                         </div>
+                        <div id="evaluacionCalidadIa" class="quality-grouped-matrix"></div>
                     </section>
 
                     <section id="evidenciasClaveSectionIa" class="detail-tab-panel oculto">
-                        <h4>Evidencias</h4>
+                        <div class="section-title-row">
+                            <div>
+                                <h4>Evidencias</h4>
+                                <p class="detail-panel-copy">Frases, momentos y hallazgos que sustentan la evaluación.</p>
+                            </div>
+                        </div>
                         <div id="evidenciasClaveIa" class="evidence-grid"></div>
+                        <div class="section-title-row compact-section-title">
+                            <h4>Puntos críticos principales</h4>
+                            <span class="detail-muted">Máximo 5 hallazgos para mantener foco operativo.</span>
+                        </div>
                         <div class="table-wrap compact-critical-table">
                             <table>
                                 <thead>
@@ -363,16 +462,18 @@
                     <section id="detalleCoachingPanelIa" class="detail-tab-panel oculto coaching-layout">
                         <section class="detail-card feedback-box">
                             <h4>Feedback sugerido por IA</h4>
+                            <span class="detail-muted">Observación puntual asociada a esta llamada.</span>
                             <p id="recomendacionIa">-</p>
                         </section>
                         <section class="detail-card script-box">
                             <h4>Guion sugerido</h4>
+                            <span class="detail-muted">Texto breve para bajar el feedback sin perder el foco.</span>
                             <p id="guionIa">-</p>
                         </section>
                         <section class="detail-card review-box">
                             <div>
                                 <h4>Plan de coaching</h4>
-                                <p>Seguimiento operativo para corregir brechas recurrentes.</p>
+                                <p>Plan estructurado solo para errores críticos, reincidencias o brechas de alto impacto.</p>
                             </div>
                             <form id="formCoachingIa" class="review-form coaching-form">
                                 <div class="form-row">
@@ -410,16 +511,15 @@
                                 <h4>Cierre del supervisor</h4>
                                 <p>La nota IA no se edita desde supervisión. Si discrepas, solicita recalibración con motivo y trazabilidad.</p>
                             </div>
-                            <form id="formRevisionIa" class="review-form">
-                                <input id="feedbackIdActualIa" type="hidden">
+                            <form id="formRevisionIa" class="review-form legacy-review-form">
                                 <div class="form-row">
                                     <div class="field">
-                                        <label for="agenteRevisionIa">Agente identificado</label>
-                                        <input id="agenteRevisionIa" type="text" placeholder="Opcional: DNI - Nombre del agente">
+                                        <label>Agente identificado</label>
+                                        <input id="agenteRevisionLegacyIa" type="text" placeholder="Opcional: DNI - Nombre del agente">
                                     </div>
                                     <div class="field">
-                                        <label for="estadoRevisionIa">Estado revisión</label>
-                                        <select id="estadoRevisionIa">
+                                        <label>Estado revisión</label>
+                                        <select id="estadoRevisionLegacyIa">
                                             <option value="REVISADO">Revisado</option>
                                             <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
                                             <option value="CERRADO">Cerrado</option>
@@ -428,11 +528,11 @@
                                     </div>
                                 </div>
                                 <div class="field">
-                                    <label for="comentarioFeedbackIa">Feedback final</label>
-                                    <textarea id="comentarioFeedbackIa" rows="3" placeholder="Comentario final del supervisor para el agente."></textarea>
+                                    <label>Feedback final</label>
+                                    <textarea id="comentarioFeedbackLegacyIa" rows="3" placeholder="Comentario final del supervisor para el agente."></textarea>
                                 </div>
                                 <div class="review-actions">
-                                    <button id="btnGuardarRevisionIa" class="btn-primary" type="submit">Guardar revisión</button>
+                                    <button id="btnGuardarRevisionLegacyIa" class="btn-primary" type="submit">Guardar revisión</button>
                                     <button class="btn-light" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
                                 </div>
                             </form>
@@ -484,56 +584,79 @@
             </div>
         </section>
 
-        <section id="reporteriaPanelIa" class="report-view oculto">
-            <div class="report-head">
+        <section id="reporteriaPanelIa" class="report-view quality-summary-v2 oculto">
+            <div class="report-head executive-summary-head">
                 <div>
-                    <h3>Resumen ejecutivo de calidad</h3>
-                    <p>Indicadores COPC para priorizar cartera, brecha, agente, coaching y calibración.</p>
+                    <span>Monitoreo ejecutivo</span>
+                    <h3>Resumen de calidad</h3>
+                    <p>Visión consolidada del desempeño, riesgos y acciones de mejora.</p>
                 </div>
-            </div>
-            <div class="report-grid copc-kpi-grid">
-                <article class="metric-card blue copc-kpi-card">
-                    <div class="copc-kpi-icon">EV</div>
-                    <span>Evaluaciones realizadas</span>
-                    <strong id="repTotalIa">0</strong>
-                    <small id="repTotalObjetivoIa">Objetivo: -</small>
-                    <div class="copc-progress"><i id="repTotalProgressIa"></i></div>
-                    <em id="repTotalPctIa">-</em>
-                </article>
-                <article class="metric-card green copc-kpi-card">
-                    <div class="copc-kpi-icon">CM</div>
-                    <span>Cumplimiento de monitoreo</span>
-                    <strong id="repCumplimientoMonitoreoIa">-</strong>
-                    <small>Meta: 85%</small>
-                    <div class="copc-progress green"><i id="repCumplimientoProgressIa"></i></div>
-                </article>
-                <article class="metric-card purple copc-kpi-card">
-                    <div class="copc-kpi-icon">SC</div>
-                    <span>Score calidad validado</span>
-                    <strong id="repScoreValidadoIa">-</strong>
-                    <small id="repScoreDeltaIa">Score normalizado / 100</small>
-                </article>
-                <article class="metric-card red copc-kpi-card">
-                    <div class="copc-kpi-icon">!</div>
-                    <span>Errores criticos</span>
-                    <strong id="repErroresCriticosIa">0</strong>
-                    <small id="repErroresPctIa">-</small>
-                </article>
-                <article class="metric-card amber copc-kpi-card">
-                    <div class="copc-kpi-icon">CO</div>
-                    <span>Coaching pendiente</span>
-                    <strong id="repPendienteCoachingIa">0</strong>
-                    <small id="repCoachingPctIa">Accion requerida</small>
-                </article>
-                <article class="metric-card cyan copc-kpi-card">
-                    <div class="copc-kpi-icon">RC</div>
-                    <span>Recalibraciones abiertas</span>
-                    <strong id="repRecalibracionesAbiertasIa">0</strong>
-                    <small>Pendientes de resolver</small>
-                </article>
+                <button class="btn-light btn-small" type="button" onclick="toggleFiltrosResumenIa()">Ajustar filtros</button>
             </div>
 
-            <section class="executive-grid copc-dashboard-grid">
+            <div id="resumenKpisEjecutivosIa" class="summary-kpi-grid"></div>
+            <div id="alertaEjecutivaIa" class="executive-alert-card"></div>
+
+            <section class="summary-main-grid">
+                <article class="summary-card trend-summary-card">
+                    <div class="summary-card-head">
+                        <div>
+                            <h4 id="tituloTendenciaIa">Evolución de calidad</h4>
+                            <p id="subtituloTendenciaIa">Score validado frente a la meta mensual</p>
+                        </div>
+                        <span id="variacionTendenciaIa" class="summary-pill muted">Pendiente de integración</span>
+                    </div>
+                    <div id="tendenciaCalidadResumenIa" class="summary-trend-chart"></div>
+                </article>
+
+                <article class="summary-card pareto-summary-card">
+                    <div class="summary-card-head">
+                        <div>
+                            <h4>Brechas que explican el resultado</h4>
+                            <p>Evaluaciones afectadas por factor</p>
+                        </div>
+                        <button class="link-button" type="button" onclick="mostrarVistaReportesIa()" title="Una evaluación puede presentar brechas en varios factores">Ver Pareto completo →</button>
+                    </div>
+                    <div id="paretoResumenIa" class="summary-pareto-list"></div>
+                </article>
+            </section>
+
+            <article class="summary-card dimension-card">
+                <div class="summary-card-head">
+                        <div>
+                            <h4>Desempeño por dimensión COPC</h4>
+                            <p id="subtituloDimensionCopcIa">Lectura técnica de las cinco etapas evaluadas en la llamada</p>
+                        </div>
+                    <span class="summary-pill">Meta operativa 85%</span>
+                </div>
+                <div id="dimensionCopcResumenIa" class="dimension-grid"></div>
+            </article>
+
+            <section class="summary-bottom-grid">
+                <article class="summary-card agents-priority-card">
+                    <div class="summary-card-head">
+                        <div>
+                            <h4>Prioridad de intervención</h4>
+                            <p>Agentes con reincidencia o brechas de alto impacto</p>
+                        </div>
+                        <button class="link-button" type="button" onclick="mostrarVistaCoachingIa()">Ver todos →</button>
+                    </div>
+                    <div id="agentesPriorizadosResumenIa"></div>
+                </article>
+
+                <article class="summary-card actions-summary-card">
+                    <div class="summary-card-head">
+                        <div>
+                            <h4>Acciones de mejora</h4>
+                            <p>Estado del seguimiento</p>
+                        </div>
+                        <button class="link-button" type="button" onclick="mostrarVistaCoachingIa()">Gestionar →</button>
+                    </div>
+                    <div id="accionesMejoraResumenIa"></div>
+                </article>
+            </section>
+
+            <section class="executive-grid copc-dashboard-grid legacy-summary-widgets oculto">
                 <article class="report-card executive-card copc-card quality-by-portfolio">
                     <h4>Calidad por cartera</h4>
                     <p>Volumen, score y criticidad por cartera.</p>
@@ -545,8 +668,8 @@
                     <div id="repTendenciaSemanalIa" class="trend-lines"></div>
                 </article>
                 <article class="report-card executive-card copc-card breach-card">
-                    <h4>Brechas criticas del periodo</h4>
-                    <p>Frecuencia, impacto, cartera afectada y accion recomendada.</p>
+                    <h4>Pareto general de errores y brechas</h4>
+                    <p>Prioriza los factores SGC/PEC que concentran la mayor cantidad de observaciones.</p>
                     <div id="repBrechasCriticasPeriodoIa" class="executive-table"></div>
                 </article>
                 <article class="report-card executive-card copc-card agents-card">
@@ -564,6 +687,67 @@
                     <p>Clasificación PEC para Pareto, feedback y coaching.</p>
                     <div id="repDistribucionSgcIa" class="sgc-distribution"></div>
                 </article>
+            </section>
+
+            <section class="evaluations-view-card evaluaciones-only">
+                <div class="evaluations-head">
+                    <div>
+                        <h3>Evaluaciones</h3>
+                        <p>Revisión y trazabilidad de llamadas analizadas</p>
+                    </div>
+                    <div class="evaluations-actions">
+                        <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluación</button>
+                        <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar</button>
+                    </div>
+                </div>
+
+                <div id="evaluacionesKpisIa" class="evaluations-kpi-grid"></div>
+
+                <div class="evaluations-toolbar">
+                    <div>
+                        <h4>Bandeja de evaluaciones</h4>
+                        <p id="evaluacionesConteoIa">Mostrando 0 evaluaciones</p>
+                    </div>
+                    <div class="evaluations-search">
+                        <input id="busquedaRapidaEvaluacionesIa" type="search" placeholder="Buscar agente, audio o evaluación">
+                        <button class="btn-light btn-small" type="button" onclick="limpiarFiltrosReporteIa()">Limpiar filtros</button>
+                    </div>
+                </div>
+
+                <div class="evaluations-table-wrap">
+                    <table class="evaluations-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha y hora</th>
+                                <th>Agente</th>
+                                <th>Cartera</th>
+                                <th>Tipo de llamada</th>
+                                <th>Score</th>
+                                <th>Error crítico</th>
+                                <th>Riesgo</th>
+                                <th>Revisión</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="evaluacionesBodyIa"></tbody>
+                    </table>
+                </div>
+
+                <div class="evaluations-pagination">
+                    <span id="evaluacionesPaginaInfoIa">Mostrando 0 evaluaciones</span>
+                    <label>Mostrar
+                        <select id="evaluacionesPageSizeIa">
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20">20</option>
+                        </select>
+                    </label>
+                    <div>
+                        <button id="evaluacionesPrevIa" class="btn-light btn-small" type="button">Anterior</button>
+                        <span id="evaluacionesPaginaIa">Página 1 de 1</span>
+                        <button id="evaluacionesNextIa" class="btn-light btn-small" type="button">Siguiente</button>
+                    </div>
+                </div>
             </section>
 
             <section class="report-card stats-cube-card report-only">
@@ -663,7 +847,7 @@
                 <div class="tab-panel-head">
                     <div>
                         <h4>Reportería SGC / PEC</h4>
-                        <p>Precisión por asesor, paretos de error y evolución semanal para gestión gerencial.</p>
+                        <p>Precisión por asesor, distribución por grupo y evolución semanal para seguimiento gerencial.</p>
                     </div>
                     <div class="prompt-tab-actions">
                         <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar resumen</button>
@@ -677,11 +861,7 @@
                         <div id="repPrecisionAsesorSgcIa" class="mini-table"></div>
                     </article>
                     <article class="report-card inner-tab-card">
-                        <h4>Pareto de errores</h4>
-                        <div id="repParetoErroresSgcIa" class="mini-table"></div>
-                    </article>
-                    <article class="report-card inner-tab-card">
-                        <h4>Pareto por grupo</h4>
+                        <h4>Distribución por grupo SGC/PEC</h4>
                         <div id="repParetoGrupoSgcIa" class="mini-table"></div>
                     </article>
                     <article class="report-card inner-tab-card">
@@ -851,8 +1031,9 @@
         </section>
     </main>
 
-    <script src="../js/session.js"></script>
-    <script src="../js/app_layout.js?v=20260623a"></script>
-    <script src="../js/ia_feedback.js?v=20260706a"></script>
+    <script src="/frontend/js/session.js"></script>
+    <script src="/frontend/js/app_layout.js?v=20260623a"></script>
+    <script src="/frontend/js/ia_feedback.js?v=20260720a"></script>
 </body>
 </html>
+

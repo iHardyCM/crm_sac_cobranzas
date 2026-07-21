@@ -84,6 +84,7 @@ def detalle(id: int):
         WHERE 1=1
             AND C.IDCOMPROMISO = :id
             AND C.MONTO > 0
+            AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
     """)
 
     try:
@@ -209,6 +210,7 @@ def resumen_supervisor(dni: str):
                     DATEADD(MONTH, -1, DATEADD(DAY, 1, EOMONTH(GETDATE()))) 
                     AND GETDATE()
                 AND C.MONTO > 0
+                AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
             GROUP BY U.USUARIO, U.Nombres, U.Apellidos
             ORDER BY TOTAL DESC
         """)
@@ -321,6 +323,7 @@ def exportar_cartera(dni: str):
                 WHERE USUARIO = :dni
             )
             AND C.MONTO > 0
+            AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')
             AND CAST(C.FECHAGENERO AS DATE)
                 BETWEEN DATEADD(MONTH,-1,DATEADD(DAY,1,EOMONTH(GETDATE())))
                 AND GETDATE()

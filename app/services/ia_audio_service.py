@@ -754,6 +754,15 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
         nivel_riesgo=analisis.get("nivel_riesgo") or analisis.get("nivel_oportunidad_mejora"),
         falta_anulante=bool(analisis.get("falta_anulante")),
     )
+    if analisis.get("tipificaciones_sugeridas"):
+        resumen_sgc["tipificaciones_sugeridas"] = analisis.get("tipificaciones_sugeridas")
+    if analisis.get("json_copc_v2"):
+        resumen_sgc["version_evaluacion"] = "2.0"
+        resumen_sgc["json_copc_v2"] = analisis.get("json_copc_v2")
+    if analisis.get("estado_tecnico"):
+        resumen_sgc["estado_tecnico"] = analisis.get("estado_tecnico")
+    if analisis.get("feedback_asesor"):
+        resumen_sgc["feedback_asesor"] = analisis.get("feedback_asesor")
     with engine_siscob.begin() as conn:
         conn.execute(text("""
             UPDATE CobAuto.dbo.ia_feedback_llamadas
@@ -1226,6 +1235,10 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
     )
     data["evaluacion_calidad_lista"] = evaluacion
     data["resumen_sgc"] = resumen_sgc
+    data["version_evaluacion"] = resumen_sgc.get("version_evaluacion")
+    data["estado_tecnico"] = resumen_sgc.get("estado_tecnico")
+    data["tipificaciones_sugeridas"] = resumen_sgc.get("tipificaciones_sugeridas") or []
+    data["feedback_asesor"] = resumen_sgc.get("feedback_asesor") or {}
     data["requiere_feedback"] = bool(data.get("requiere_feedback") or resumen_sgc.get("requiere_feedback"))
     data["requiere_coaching"] = bool(data.get("requiere_coaching") or resumen_sgc.get("requiere_coaching"))
     data["estado_feedback"] = data.get("estado_feedback") or ("PENDIENTE" if data["requiere_feedback"] else "NO_REQUIERE")

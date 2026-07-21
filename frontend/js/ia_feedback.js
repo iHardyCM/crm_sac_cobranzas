@@ -1,4 +1,4 @@
-const IA_FEEDBACK_BASE = obtenerBaseUrlIaFeedback();
+﻿const IA_FEEDBACK_BASE = obtenerBaseUrlIaFeedback();
 
 let historialIa = [];
 let resultadoActualIa = null;
@@ -6,12 +6,22 @@ let reporteriaActualIa = null;
 let detalleReporteIa = [];
 let detalleReportePaginaIa = 1;
 let detalleReportePageSizeIa = 10;
+let evaluacionesPaginaIa = 1;
+let evaluacionesPageSizeIa = 10;
 let agenteSemanaPaginaIa = 1;
 let agenteSemanaPageSizeIa = 8;
 let agenteSemanaCarteraIa = "";
 let agenteSemanaItemsIa = [];
 let mensajeIaTimeout = null;
 let periodoAutoAjustadoIa = false;
+let auditoriaFichaIa = {
+    criterio: "factor_sgc | item",
+    resultado: "calificacion | resultado",
+    grupo: "grupo_error_sgc",
+    grupos: {},
+    duplicadosEliminados: 0,
+    noAplica: "Excluido de brechas y denominador penalizable",
+};
 let iaAudioConfig = {
     formatos: ["MP3", "WAV", "M4A", "OGG"],
     extensiones: [".mp3", ".wav", ".m4a", ".ogg"],
@@ -65,8 +75,23 @@ function prepararFormularioIa() {
 
     document.getElementById("formRevisionIa")?.addEventListener("submit", async (event) => {
         event.preventDefault();
+        sincronizarRevisionLegacyIa();
         await guardarRevisionIa();
     });
+
+    document.getElementById("formDecisionSupervisorIa")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await guardarBorradorRevisionIa();
+    });
+
+    document.getElementById("comentarioFeedbackIa")?.addEventListener("input", event => {
+        setText("contadorComentarioIa", `${event.target.value.length} / 1000`);
+    });
+
+    document.querySelectorAll("input[name='decisionSupervisorIa']").forEach(input => {
+        input.addEventListener("change", actualizarDecisionSupervisorIa);
+    });
+    document.getElementById("comentarioFeedbackIa")?.addEventListener("input", actualizarDecisionSupervisorIa);
 
     document.getElementById("formRecalibracionIa")?.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -404,18 +429,19 @@ function renderResultadoIa(data) {
     setText("faltaAnulanteIa", data.falta_anulante ? "Si" : "No");
     setText("revisionHumanaIa", data.requiere_revision_humana ? "Sí" : "No");
     aplicarEstadoCardsDetalleIa(data);
+    pintarFichaRevisionIa(data);
     setText("estadoRecalibracionIa", formatearEstadoRecalibracionIa(data.estado_recalibracion));
     setText("recomendacionIa", data.recomendaciones || "-");
     setText("guionIa", data.guion_sugerido || "-");
 
     pintarEvaluacionCalidad(data.evaluacion_calidad_lista || []);
     pintarResumenSegmentos(data.evaluacion_calidad_lista || []);
-    pintarResumenSgcDetalleIa(data);
     const evaluacionSgc = Array.isArray(data.evaluacion_calidad_lista) && data.evaluacion_calidad_lista.length
         ? data.evaluacion_calidad_lista
         : (Array.isArray(data.evaluacion_calidad) ? data.evaluacion_calidad : []);
-    pintarTablaSgcDetalleIa(evaluacionSgc);
+    pintarCabeceraFichaSgcIa(data);
     pintarFichaAuditoriaSgcIa(evaluacionSgc);
+    pintarCierreFichaSgcIa(data);
     pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(data.evaluacion_calidad_lista || []));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
     pintarLista("alertasIa", data.alertas_lista || []);
@@ -427,7 +453,7 @@ function renderResultadoIa(data) {
     pintarHistorialDetalleIa(data.historial_lista || []);
     cargarRevisionEnFormulario(data);
     cargarCoachingEnFormulario(data);
-    mostrarTabDetalleIa("resumen");
+    mostrarTabDetalleIa("revision");
 }
 
 function aplicarEstadoCardsDetalleIa(data) {
@@ -435,6 +461,598 @@ function aplicarEstadoCardsDetalleIa(data) {
     aplicarClaseEstadoCardIa("cardFaltaAnulanteIa", data.falta_anulante ? "state-danger" : "state-ok");
     aplicarClaseEstadoCardIa("cardRevisionHumanaIa", data.requiere_revision_humana ? "state-warning" : "state-ok");
     aplicarClaseEstadoCardIa("cardResultadoGestionIa", claseResultadoGestionCardIa(data.resultado_gestion));
+}
+
+function pintarFichaRevisionIa(data = {}) {
+    const id = data.id_feedback || "-";
+    const agente = data.agente || "Sin agente asociado";
+    const fecha = data.fecha_llamada || data.fecha_creacion;
+    const scoreIa = scoreIaPreliminarResumenIa(data);
+    const scoreFinal = scoreValidadoResumenIa(data);
+    const riesgo = formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo);
+    const errorCritico = Boolean(data.error_critico || data.falta_anulante || Number(data.total_puntos_criticos || 0) > 0);
+    const revision = estadoRevisionEvaluacionIa(data);
+
+    setText("detalleBreadcrumbIa", `Evaluaciones / Evaluación #${id}`);
+    setText("detalleTituloIa", "Ficha de evaluación");
+    setText("detalleSubtituloIa", `Llamada del ${formatoFecha(fecha)} · ${data.cartera || "Sin cartera"}`);
+    setText("resultadoNivelIa", riesgo);
+    setText("revisionHumanaBadgeIa", data.requiere_revision_humana ? "Requiere revisión humana" : revision.texto);
+    const revisionBadge = document.getElementById("revisionHumanaBadgeIa");
+    if (revisionBadge) revisionBadge.className = `evaluation-badge ${data.requiere_revision_humana ? "warn" : revision.clase}`;
+
+    const meta = document.getElementById("detalleMetaIa");
+    if (meta) {
+        meta.innerHTML = [
+            ["Tipo de llamada", tipoLlamadaVisibleIa(data)],
+            ["Agente", agente],
+            ["Score IA", scoreIa == null ? "Sin score" : `${scoreIa.toFixed(1)}%`],
+            ["Score final", scoreFinal == null ? "Pendiente" : `${scoreFinal.toFixed(1)}%`],
+            ["Error crítico", errorCritico ? "Sí" : "No"],
+            ["Revisión", revision.texto],
+        ].map(([label, value]) => `
+            <article>
+                <span>${escapeHtml(label)}</span>
+                <strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong>
+            </article>
+        `).join("");
+    }
+
+    setText("resumenEjecutivoFichaIa", data.resumen || "Sin resumen ejecutivo disponible.");
+    pintarAudioYTranscripcionFichaIa(data);
+    pintarClasificacionFichaIa(data);
+    pintarDimensionesFichaIa(data.evaluacion_calidad_lista || [], data);
+    pintarHallazgosAcordeonIa(data.evaluacion_calidad_lista || [], data);
+    limpiarDecisionSupervisorIa(data);
+    actualizarDecisionSupervisorIa();
+}
+
+function pintarAudioYTranscripcionFichaIa(data = {}) {
+    const wrap = document.getElementById("audioPlayerWrapIa");
+    const audioUrl = data.audio_url || data.url_audio || "";
+    const duracion = data.duracion_segundos ? formatoDuracionIa(Number(data.duracion_segundos)) : "Duración no disponible";
+    setText("audioDetalleMetaIa", `${data.archivo_nombre || "Audio"} · ${duracion}`);
+    const diarizacion = tieneDiarizacionRealIa(data);
+    setText("confianzaTranscripcionIa", diarizacion
+        ? `Transcripción con separación de interlocutores · Confianza: ${formatearConfianzaEvaluacionIa(data.confianza_evaluacion || data.calidad_transcripcion)}`
+        : "Transcripción sin separación de interlocutores · Confianza: BAJA · Requiere revisión humana en criterios dependientes del hablante.");
+    if (wrap) {
+        wrap.innerHTML = audioUrl
+            ? `<audio id="audioRevisionIa" controls preload="metadata" src="${escapeHtml(audioUrl)}"></audio>`
+            : `<div class="audio-unavailable"><strong>Audio pendiente de integración</strong><span>El backend guarda la ruta del archivo, pero aún no expone una URL segura para reproducirlo desde la ficha.</span></div>`;
+    }
+    mostrarTranscripcionIa("limpia");
+}
+
+function pintarClasificacionFichaIa(data = {}) {
+    const el = document.getElementById("clasificacionLlamadaIa");
+    if (!el) return;
+    const confianzaRaw = data.confianza_evaluacion || data.calidad_transcripcion;
+    const confianza = formatearConfianzaEvaluacionIa(confianzaRaw);
+    const confianzaBaja = confianzaEsBajaIa(confianzaRaw);
+    const tipo = tipoLlamadaVisibleIa(data);
+    el.innerHTML = `
+        <div>
+            <span>Tipo e intención</span>
+            <strong>${escapeHtml(confianzaBaja ? `Clasificación preliminar: ${tipo}` : tipo)} · ${escapeHtml(data.objetivo_principal || data.tipo_contacto || "Sin información")}</strong>
+        </div>
+        <div>
+            <span>Tipo de llamada supervisor</span>
+            <select id="tipoLlamadaSupervisorIa" class="inline-select">
+                ${opcionesTipoLlamadaIa(tipo)}
+            </select>
+        </div>
+        <div><span>Confianza de clasificación</span><strong>${escapeHtml(confianzaBaja ? "BAJA" : confianza)}</strong></div>
+        <div><span>Resultado de llamada</span><strong>${escapeHtml(data.resultado_gestion || "Sin información")}</strong></div>
+        <div><span>Contexto previo</span><strong>${escapeHtml(data.contexto_previo || "Contexto no disponible")}</strong></div>
+        ${renderTipificacionesSugeridasIa(data.tipificaciones_sugeridas || data.resumen_sgc?.tipificaciones_sugeridas || [])}
+    `;
+
+    const alertas = document.getElementById("alertasFichaIa");
+    if (!alertas) return;
+    const textos = [];
+    if (data.requiere_revision_humana || confianzaBaja) textos.push(data.motivo_revision || "Revisión humana requerida por confianza baja o criterios contextuales.");
+    if (data.falta_anulante) textos.push(`Falta anulante detectada${data.frase_anulante ? `: ${data.frase_anulante}` : "."}`);
+    if (Array.isArray(data.alertas_lista)) textos.push(...data.alertas_lista.slice(0, 2));
+    const alertasUnicas = deduplicarTextosAlertaFichaIa(textos);
+    alertas.innerHTML = alertasUnicas.length
+        ? alertasUnicas.map(item => `<p>${escapeHtml(item.texto)}${item.total > 1 ? ` · ${item.total} criterios relacionados` : ""}</p>`).join("")
+        : `<p>Sin alertas o contradicciones registradas.</p>`;
+}
+
+function renderTipificacionesSugeridasIa(items = []) {
+    if (!Array.isArray(items) || !items.length) return "";
+    const rows = items.slice(0, 2).map(item => {
+        const label = [item.categoria, item.tipificacion].filter(Boolean).join(" - ") || "Tipificación sugerida";
+        const confianza = item.confianza_porcentaje != null ? ` · ${Number(item.confianza_porcentaje).toFixed(0)}%` : "";
+        return `${label}${confianza}`;
+    });
+    return `
+        <div class="classification-wide">
+            <span>Tipificaciones sugeridas IA</span>
+            <strong>${rows.map(escapeHtml).join("<br>")}</strong>
+        </div>
+    `;
+}
+
+function deduplicarTextosAlertaFichaIa(textos = []) {
+    const mapa = new Map();
+    textos.forEach(textoOriginal => {
+        const texto = String(textoOriginal || "").trim();
+        if (!texto) return;
+        const normalizado = normalizarTextoComparacionIa(texto);
+        const key = claveAlertaResumenIa(normalizado);
+        const actual = mapa.get(key);
+        if (actual) {
+            actual.total += 1;
+            if (texto.length > actual.texto.length) actual.texto = texto;
+            return;
+        }
+        mapa.set(key, { texto: texto.replace(/\s+/g, " ").trim().replace(/\.+$/, ""), total: 1 });
+    });
+    return [...mapa.values()];
+}
+
+function claveAlertaResumenIa(textoNormalizado = "") {
+    const texto = String(textoNormalizado || "");
+    if ((texto.includes("exposicion") || texto.includes("expuso") || texto.includes("deuda")) && texto.includes("validacion") && texto.includes("titular")) {
+        return "exposicion deuda sin validacion titularidad";
+    }
+    if (texto.includes("deuda") && texto.includes("antes") && texto.includes("confirm") && (texto.includes("identidad") || texto.includes("titular"))) {
+        return "exposicion deuda sin validacion titularidad";
+    }
+    return texto.replace(/\b(de|la|el|sin|con|antes|del)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function pintarDimensionesFichaIa(items = [], data = {}) {
+    const el = document.getElementById("dimensionesFichaIa");
+    if (!el) return;
+    const nombres = ["Cumplimiento", "Diagnóstico", "Gestión de solución", "Cierre verificable", "Experiencia y ética"];
+    const segmentos = new Map();
+    items.forEach(raw => {
+        const item = itemSgcIa(raw);
+        const resultado = String(item.resultado || "").toLowerCase();
+        const segmento = formatearSegmentoIa(item.segmento || item.segmento_copc || "Sin segmento");
+        const actual = segmentos.get(segmento) || { peso: 0, nota: 0, total: 0, noAplica: 0, revision: 0 };
+        actual.total += 1;
+        if (item.aplica === false || resultado.includes("no aplica") || resultado.includes("no evaluable") || resultado.includes("revision") || resultado.includes("revisión")) {
+            actual.noAplica += 1;
+        } else {
+            actual.peso += Number(item.peso || 0);
+            actual.nota += Number(item.nota || 0);
+        }
+        if (String(item.resultado || "").toLowerCase().includes("revision")) actual.revision += 1;
+        segmentos.set(segmento, actual);
+    });
+    el.innerHTML = nombres.map(nombre => {
+        const item = segmentos.get(nombre);
+        const score = item && item.peso ? (item.nota / item.peso) * 100 : null;
+        const estado = !item ? "No evidenciado" : item.total === item.noAplica ? "No aplica" : item.revision ? "Revisión humana" : score >= 85 ? "Cumple" : score >= 60 ? "Parcial" : "No cumple";
+        const clase = estado.includes("Cumple") ? "ok" : estado.includes("Parcial") ? "warn" : estado.includes("No aplica") || estado.includes("No evidenciado") ? "info" : "risk";
+        const preliminar = esEvaluacionValidadaIa(data) ? "Score validado" : "Score IA preliminar";
+        return `
+            <article class="${clase}">
+                <span>${escapeHtml(nombre)}</span>
+                <strong>${score == null ? estado : `${score.toFixed(0)}%`}</strong>
+                <div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div>
+                <small>${escapeHtml(preliminar)} · ${escapeHtml(estado)}</small>
+            </article>
+        `;
+    }).join("");
+}
+
+function pintarHallazgosAcordeonIa(items = [], data = {}) {
+    const el = document.getElementById("hallazgosAcordeonIa");
+    if (!el) return;
+    const normalizados = items.map(itemSgcIa).map(normalizarHallazgoFichaIa);
+    const rowsBase = normalizados.filter(item => {
+        const cal = String(item.calificacion || item.resultado || "").toLowerCase();
+        if (cal.includes("no aplica")) return false;
+        return cal.includes("no cumple") || cal.includes("no evidenciado") || cal.includes("parcial") || item.requiere_feedback || item.requiere_coaching;
+    });
+    const { rows, duplicados } = deduplicarHallazgosFichaIa(rowsBase);
+    const grupos = SGC_GRUPOS_IA.map(grupo => ({ grupo, rows: rows.filter(item => item.grupo_error_sgc === grupo) }));
+    const totalCriticos = rows.filter(esHallazgoCriticoFichaIa).length;
+    const totalNoCriticos = rows.length - totalCriticos;
+    const maxIndex = Math.max(0, grupos.reduce((best, grupo, index) => criticidadGrupoIa(grupo.rows) > criticidadGrupoIa(grupos[best]?.rows || []) ? index : best, 0));
+    auditoriaFichaIa = {
+        criterio: "factor_sgc válido; fallback item COPC",
+        resultado: "calificacion; fallback resultado",
+        grupo: "grupo_error_sgc normalizado a los 4 grupos SGC/PEC",
+        grupos: Object.fromEntries(grupos.map(grupo => [grupo.grupo, grupo.rows.length])),
+        alertasAntesDeduplicar: rowsBase.length,
+        alertasDespuesDeduplicar: rows.length,
+        duplicadosEliminados: duplicados,
+        noAplica: "No aplica solo como estado/aplicabilidad; se excluye de hallazgos y del denominador penalizable",
+        decisionInicial: "ninguna",
+        validarInicial: "deshabilitado",
+        gruposAbiertosIniciales: grupos
+            .map((grupo, index) => index === maxIndex ? grupo.grupo : null)
+            .filter(Boolean),
+    };
+    window.auditoriaFichaIa = auditoriaFichaIa;
+    const filtros = document.getElementById("filtrosHallazgosIa");
+    if (filtros) {
+        filtros.innerHTML = `
+            <button class="active" type="button" data-findings-filter="todos" onclick="filtrarHallazgosFichaIa('todos')">Todos ${formatoNumero(rows.length)}</button>
+            <button type="button" data-findings-filter="criticos" onclick="filtrarHallazgosFichaIa('criticos')">Críticos ${formatoNumero(totalCriticos)}</button>
+            <button type="button" data-findings-filter="no-criticos" onclick="filtrarHallazgosFichaIa('no-criticos')">No críticos ${formatoNumero(totalNoCriticos)}</button>
+        `;
+    }
+    el.innerHTML = grupos.map(({ grupo, rows: grupoRows }, index) => `
+        <section class="finding-group ${index === maxIndex ? "" : "collapsed"}" data-critical-count="${grupoRows.filter(esHallazgoCriticoFichaIa).length}" data-noncritical-count="${grupoRows.filter(item => !esHallazgoCriticoFichaIa(item)).length}">
+            <button type="button" class="finding-group-head" onclick="toggleHallazgoGrupoIa(this)">
+                <span>${escapeHtml(grupo.toUpperCase())}</span>
+                <b>${formatoNumero(grupoRows.length)}</b>
+            </button>
+            <div class="finding-group-body">
+                ${grupoRows.length ? grupoRows.map(item => renderHallazgoFichaIa(item, data)).join("") : `<div class="empty-segment">Sin hallazgos registrados para este grupo.</div>`}
+            </div>
+        </section>
+    `).join("");
+}
+
+function renderHallazgoFichaIa(item = {}, data = {}) {
+    const resultado = resultadoHallazgoFichaIa(item);
+    const momento = timestampValidoIa(item.momento || item.timestamp) ? (item.momento || item.timestamp) : "";
+    const momentoParam = encodeURIComponent(momento);
+    const criterio = criterioHallazgoIa(item);
+    const itemParam = encodeURIComponent(criterio);
+    const audioDisponible = Boolean(data.audio_url || data.url_audio);
+    const evidenciaTemporal = audioDisponible && timestampValidoIa(momento);
+    const criteriosRelacionados = item.criterios_relacionados?.length || 1;
+    const hallazgoBase = item.hallazgo || item.motivo || "-";
+    const hallazgoTexto = criteriosRelacionados > 1
+        ? `${hallazgoBase} · ${criteriosRelacionados} criterios relacionados`
+        : hallazgoBase;
+    return `
+        <article class="finding-row" data-critical="${esHallazgoCriticoFichaIa(item) ? "1" : "0"}">
+            <div><span>Criterio</span><strong>${escapeHtml(criterio)}</strong>${criteriosRelacionados > 1 ? `<small>${criteriosRelacionados} criterios relacionados</small>` : ""}</div>
+            <div><span>Estado</span>${badgeResultadoCalidadIa(resultado)}</div>
+            <div><span>Evidencia</span><p>${escapeHtml(item.evidencia || "Sin evidencia registrada.")}</p><small>${escapeHtml(momento || "Timestamp no disponible")}</small></div>
+            <div><span>Hallazgo</span><p>${escapeHtml(hallazgoTexto)}</p></div>
+            <div><span>Recomendación</span><p>${escapeHtml(item.recomendacion || "-")}</p></div>
+            <div class="finding-actions">
+                <button class="btn-light btn-small" type="button" ${evidenciaTemporal ? `onclick="irAEvidenciaAudioIa('${momentoParam}', true)"` : "disabled title=\"Evidencia temporal no disponible\""}>Escuchar evidencia</button>
+                <button class="btn-light btn-small editable-criteria-action" type="button" onclick="prepararRecalibracionItemIa('${itemParam}', true)" disabled>Editar resultado</button>
+            </div>
+        </article>
+    `;
+}
+
+function normalizarHallazgoFichaIa(item = {}) {
+    const base = { ...item };
+    base.grupo_error_sgc = normalizarGrupoSgcFichaIa(base.grupo_error_sgc, base);
+    base.factor_sgc = criterioHallazgoIa(base);
+    base.calificacion = resultadoHallazgoFichaIa(base);
+    return base;
+}
+
+function normalizarGrupoSgcFichaIa(grupo, item = {}) {
+    const texto = String(grupo || "").trim().toLowerCase();
+    const encontrado = SGC_GRUPOS_IA.find(nombre => nombre.toLowerCase() === texto);
+    if (encontrado) return encontrado;
+    return clasificarSgcItemIa({ ...item, grupo_error_sgc: "" }).grupo;
+}
+
+function criterioHallazgoIa(item = {}) {
+    const candidatos = [
+        item.factor_sgc,
+        item.criterio,
+        item.nombre_criterio,
+        item.item_copc,
+        itemCopcVisibleIa(item),
+        item.item,
+    ];
+    for (const candidato of candidatos) {
+        const texto = String(candidato || "").trim();
+        if (texto && !/^(no aplica|na|n\/a|-|null|undefined)$/i.test(texto)) return texto;
+    }
+    return "Criterio no identificado";
+}
+
+function resultadoHallazgoFichaIa(item = {}) {
+    const resultado = String(item.calificacion || item.resultado || "").trim();
+    if (/no aplica/i.test(resultado)) return "No aplica";
+    if (/no evidenciado/i.test(resultado)) return "No evidenciado";
+    if (/no cumple/i.test(resultado)) return "No cumple";
+    if (/parcial/i.test(resultado)) return "Parcial";
+    if (/cumple/i.test(resultado)) return "Cumple";
+    return normalizarCalificacionItemIa(item);
+}
+
+function deduplicarHallazgosFichaIa(rows = []) {
+    const mapa = new Map();
+    let duplicados = 0;
+    rows.forEach(item => {
+        const key = claveDeduplicacionHallazgoIa(item);
+        if (!key) return;
+        if (mapa.has(key)) {
+            const existente = mapa.get(key);
+            existente.criterios_relacionados = [...(existente.criterios_relacionados || [criterioHallazgoIa(existente)]), criterioHallazgoIa(item)];
+            existente.requiere_feedback = existente.requiere_feedback || item.requiere_feedback;
+            existente.requiere_coaching = existente.requiere_coaching || item.requiere_coaching;
+            if (!existente.hallazgo && item.hallazgo) existente.hallazgo = item.hallazgo;
+            if (!existente.motivo && item.motivo) existente.motivo = item.motivo;
+            if (!existente.evidencia && item.evidencia) existente.evidencia = item.evidencia;
+            duplicados += 1;
+            return;
+        }
+        mapa.set(key, { ...item, criterios_relacionados: [criterioHallazgoIa(item)] });
+    });
+    return { rows: [...mapa.values()], duplicados };
+}
+
+function claveDeduplicacionHallazgoIa(item = {}) {
+    const piezas = [
+        item.alerta,
+        item.categoria,
+        item.hallazgo,
+        item.motivo,
+        item.evidencia,
+        item.recomendacion,
+        criterioHallazgoIa(item),
+    ].map(normalizarTextoComparacionIa).filter(Boolean);
+    const texto = piezas.join(" ");
+    if ((texto.includes("exposicion") || texto.includes("expuso") || texto.includes("deuda")) && texto.includes("validacion") && texto.includes("titular")) {
+        return "exposicion deuda sin validacion titularidad";
+    }
+    if (texto.includes("deuda") && texto.includes("antes") && texto.includes("confirm") && texto.includes("identidad")) {
+        return "exposicion deuda sin validacion titularidad";
+    }
+    return normalizarTextoComparacionIa(item.hallazgo || item.motivo || item.evidencia || criterioHallazgoIa(item));
+}
+
+function normalizarTextoComparacionIa(value = "") {
+    return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function esHallazgoCriticoFichaIa(item = {}) {
+    const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
+    const grupo = String(item.grupo_error_sgc || "").toLowerCase();
+    return resultado.includes("no cumple") || resultado.includes("no evidenciado") || grupo.includes("crítico") || grupo.includes("critico");
+}
+
+function criticidadGrupoIa(rows = []) {
+    return rows.reduce((sum, item) => sum + (esHallazgoCriticoFichaIa(item) ? 3 : 1), 0);
+}
+
+function timestampValidoIa(value) {
+    return /^\d{1,2}:\d{2}(?::\d{2})?$/.test(String(value || "").trim());
+}
+
+function filtrarHallazgosFichaIa(tipo = "todos") {
+    document.querySelectorAll("[data-findings-filter]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.findingsFilter === tipo);
+    });
+    document.querySelectorAll("#hallazgosAcordeonIa .finding-group").forEach(group => {
+        const criticos = Number(group.dataset.criticalCount || 0);
+        const noCriticos = Number(group.dataset.noncriticalCount || 0);
+        const visible = tipo === "todos" || (tipo === "criticos" && criticos > 0) || (tipo === "no-criticos" && noCriticos > 0);
+        group.classList.toggle("oculto", !visible);
+    });
+}
+
+function mostrarTranscripcionIa(tipo = "limpia") {
+    const el = document.getElementById("transcripcionDetalleIa");
+    if (!el) return;
+    document.querySelectorAll(".transcript-tabs button").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.transcriptTab === tipo);
+    });
+    const texto = resultadoActualIa?.transcripcion || "";
+    const intervenciones = parseTranscripcionFichaIa(texto, tipo);
+    if (!intervenciones.length) {
+        el.innerHTML = `<div class="empty-segment">Transcripción no disponible.</div>`;
+        return;
+    }
+    el.innerHTML = intervenciones.map(item => {
+        const tieneTimestamp = timestampValidoIa(item.momento);
+        const tieneHablante = item.hablante && item.hablante !== "SIN DIARIZACIÓN";
+        return `
+        <article class="transcript-line ${!tieneTimestamp ? "no-timestamp" : ""} ${!tieneHablante ? "no-speaker" : ""}">
+            ${tieneTimestamp ? `<button type="button" onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.momento)}', true)">${escapeHtml(item.momento)}</button>` : ""}
+            ${tieneHablante ? `<span class="${item.hablante === "CLIENTE" ? "client" : item.hablante === "AGENTE" ? "agent" : "neutral"}">${escapeHtml(item.hablante)}</span>` : ""}
+            <p>${escapeHtml(item.texto)}</p>
+        </article>
+    `;
+    }).join("");
+}
+
+function parseTranscripcionFichaIa(texto = "", tipo = "limpia") {
+    const diarizacion = tieneDiarizacionRealIa(resultadoActualIa || {});
+    const lineas = String(texto || "").split(/\r?\n+/).map(x => x.trim()).filter(Boolean);
+    const base = lineas.length ? lineas : String(texto || "").split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+    return base.slice(0, tipo === "limpia" ? 12 : 80).map((linea, index) => {
+        const momento = linea.match(/(?:\b|^)(\d{1,2}:\d{2}(?::\d{2})?)(?:\b|$)/)?.[1] || "No disponible";
+        const speakerMatch = linea.match(/^(agente|asesor|cliente|titular|deudor|interlocutor)\s*[:\-]/i);
+        const hablante = diarizacion && speakerMatch
+            ? (/cliente|titular|deudor|interlocutor/i.test(speakerMatch[1]) ? "CLIENTE" : "AGENTE")
+            : "SIN DIARIZACIÓN";
+        const limpio = linea
+            .replace(/^(agente|asesor|cliente|titular|deudor|interlocutor)\s*[:\-]\s*/i, "")
+            .replace(/(?:\b|^)\d{1,2}:\d{2}(?::\d{2})?(?:\b|$)/, "")
+            .trim();
+        return { momento, hablante, texto: limpio || linea, index };
+    });
+}
+
+function tieneDiarizacionRealIa(data = {}) {
+    return Array.isArray(data.transcripcion_diarizada) && data.transcripcion_diarizada.length > 0;
+}
+
+function formatoDuracionIa(segundos) {
+    if (!Number.isFinite(segundos) || segundos <= 0) return "Duración no disponible";
+    const min = Math.floor(segundos / 60);
+    const sec = Math.floor(segundos % 60);
+    return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function cambiarVelocidadAudioIa(value) {
+    const audio = document.getElementById("audioRevisionIa");
+    if (audio) audio.playbackRate = Number(value || 1);
+}
+
+function irAEvidenciaAudioIa(momento, encoded = false) {
+    const audio = document.getElementById("audioRevisionIa");
+    const valorMomento = encoded ? decodeURIComponent(momento || "") : momento;
+    const segundos = segundosDesdeMomentoIa(valorMomento);
+    if (!audio || segundos == null) {
+        mostrarMensajeIa("Timestamp o audio no disponible para esta evidencia.", "error");
+        return;
+    }
+    audio.currentTime = segundos;
+    audio.play();
+}
+
+function segundosDesdeMomentoIa(momento) {
+    const partes = String(momento || "").match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!partes) return null;
+    const nums = partes.slice(1).map(x => Number(x || 0));
+    return partes[3] ? nums[0] * 3600 + nums[1] * 60 + nums[2] : nums[0] * 60 + nums[1];
+}
+
+function toggleHallazgoGrupoIa(btn) {
+    btn?.closest(".finding-group")?.classList.toggle("collapsed");
+}
+
+function prepararRecalibracionItemIa(item, encoded = false) {
+    abrirRecalibracionIa();
+    setValue("itemRecalibracionIa", encoded ? decodeURIComponent(item || "") : item || "");
+}
+
+async function guardarBorradorRevisionIa() {
+    setValue("estadoRevisionIa", "PENDIENTE");
+    await guardarRevisionIa({ permanecerEnFicha: true });
+}
+
+async function validarEvaluacionDesdeFichaIa() {
+    const decision = document.querySelector("input[name='decisionSupervisorIa']:checked")?.value || "";
+    const estado = estadoDecisionSupervisorIa();
+    if (!estado.puedeValidar) {
+        mostrarMensajeIa(estado.motivo || "Selecciona una decisión válida antes de continuar.", "error");
+        return;
+    }
+    if (decision === "recalibrar") {
+        if (!valor("comentarioFeedbackIa")) {
+            mostrarMensajeIa("Ingresa un comentario para solicitar recalibración.", "error");
+            return;
+        }
+        abrirRecalibracionIa();
+        setValue("motivoRecalibracionIa", valor("comentarioFeedbackIa"));
+        return;
+    }
+    if (decision === "modificar") {
+        mostrarMensajeIa("Edición pendiente de integración con el backend. Guarda como borrador o solicita recalibración.", "error");
+        return;
+    }
+    setValue("estadoRevisionIa", decision === "modificar" ? "REVISADO" : "REVISADO");
+    await guardarRevisionIa();
+}
+
+function actualizarDecisionSupervisorIa() {
+    const decision = document.querySelector("input[name='decisionSupervisorIa']:checked")?.value || "";
+    const editable = false;
+    document.querySelectorAll(".editable-criteria-action").forEach(btn => {
+        btn.disabled = !editable;
+        btn.title = decision === "modificar"
+            ? "Edición pendiente de integración con el backend"
+            : "Selecciona Modificar evaluación para registrar una discrepancia";
+    });
+    const comentario = document.getElementById("comentarioFeedbackIa");
+    if (comentario) {
+        comentario.placeholder = decision === "recalibrar"
+            ? "Explica el motivo de la recalibración antes de enviarla..."
+            : decision === "modificar"
+                ? "Describe los criterios discrepantes. La edición por ítem aún no recalcula ni persiste score final..."
+                : "Escriba su comentario aquí...";
+    }
+    pintarAvisoDecisionSupervisorIa(decision);
+    const estado = estadoDecisionSupervisorIa();
+    document.querySelectorAll(".btn-validar-ficha-ia").forEach(btn => {
+        btn.disabled = !estado.puedeValidar;
+        btn.title = estado.puedeValidar ? "" : estado.motivo;
+    });
+}
+
+function limpiarDecisionSupervisorIa(data = {}) {
+    const pendiente = !esEvaluacionValidadaIa(data);
+    if (!pendiente) return;
+    document.querySelectorAll("input[name='decisionSupervisorIa']").forEach(input => {
+        input.checked = false;
+    });
+    setValue("comentarioFeedbackIa", "");
+}
+
+function estadoDecisionSupervisorIa() {
+    const decision = document.querySelector("input[name='decisionSupervisorIa']:checked")?.value || "";
+    const comentario = valor("comentarioFeedbackIa").trim();
+    const requiereComentario = fichaRequiereComentarioIa(decision);
+    if (!decision) {
+        return { puedeValidar: false, motivo: "Selecciona una decisión del supervisor." };
+    }
+    if (decision === "modificar") {
+        return { puedeValidar: false, motivo: "Edición pendiente de integración con el backend. Guarda borrador o solicita recalibración." };
+    }
+    if (requiereComentario && !comentario) {
+        return { puedeValidar: false, motivo: "Ingresa un comentario para dejar trazabilidad de la decisión." };
+    }
+    return { puedeValidar: true, motivo: "" };
+}
+
+function fichaRequiereComentarioIa(decision) {
+    if (!decision) return true;
+    if (["modificar", "recalibrar"].includes(decision)) return true;
+    const data = resultadoActualIa || {};
+    return Boolean(data.requiere_revision_humana || confianzaEsBajaIa(data.confianza_evaluacion || data.calidad_transcripcion));
+}
+
+function pintarAvisoDecisionSupervisorIa(decision) {
+    const form = document.getElementById("decisionSupervisorPanelIa") || document.querySelector(".decision-card");
+    if (!form) return;
+    let aviso = document.getElementById("avisoDecisionSupervisorIa");
+    if (!aviso) {
+        aviso = document.createElement("div");
+        aviso.id = "avisoDecisionSupervisorIa";
+        aviso.className = "decision-warning";
+        form.prepend(aviso);
+    }
+    const data = resultadoActualIa || {};
+    const requiereComentario = fichaRequiereComentarioIa(decision);
+    if (decision === "modificar") {
+        aviso.textContent = "Edición pendiente de integración con el backend. Puedes guardar borrador o solicitar recalibración; no se validará un score modificado sin persistencia.";
+        aviso.classList.remove("oculto");
+        return;
+    }
+    if (!decision) {
+        aviso.textContent = "Selecciona una decisión explícita para continuar. No hay confirmación automática.";
+        aviso.classList.remove("oculto");
+        return;
+    }
+    if (requiereComentario && (data.requiere_revision_humana || confianzaEsBajaIa(data.confianza_evaluacion || data.calidad_transcripcion))) {
+        aviso.textContent = "La evaluación tiene confianza baja o requiere revisión humana. Debes registrar comentario antes de confirmar o recalibrar.";
+        aviso.classList.remove("oculto");
+        return;
+    }
+    aviso.classList.add("oculto");
+}
+
+function opcionesTipoLlamadaIa(tipoActual) {
+    const opciones = ["Por clasificar", "Cobranza inicial", "Recordatorio PDP", "Confirmación de pago", "Contacto con tercero", "Reprogramación PDP"];
+    const actual = tipoActual && tipoActual !== "Sin información" ? tipoActual : "Por clasificar";
+    const lista = opciones.includes(actual) ? opciones : [actual, ...opciones];
+    return lista.map(opcion => `<option value="${escapeHtml(opcion)}" ${opcion === actual ? "selected" : ""}>${escapeHtml(opcion)}</option>`).join("");
+}
+
+function confianzaEsBajaIa(value) {
+    const texto = String(value || "").toLowerCase();
+    if (!texto || texto === "-") return true;
+    return texto.includes("baja") || texto.includes("low") || Number(texto.replace(/[^\d.]/g, "")) < 70;
 }
 
 function aplicarClaseEstadoCardIa(id, clase) {
@@ -539,7 +1157,7 @@ function activarVistaReporteriaIa(options = {}) {
     ocultarMensajeIa();
     const vista = options.view || "reporte";
     setVistaActivaIa(vista);
-    document.getElementById("filtrosReporteIa")?.classList.remove("oculto");
+    document.getElementById("filtrosReporteIa")?.classList.toggle("oculto", vista === "reporte");
     document.getElementById("kpisIa")?.classList.add("oculto");
     document.getElementById("panelCargaIa")?.classList.add("oculto");
     document.getElementById("panelResultadoIa")?.classList.add("oculto");
@@ -564,6 +1182,12 @@ function actualizarPanelesVistaReporteIa(vista) {
     Object.entries(paneles).forEach(([key, id]) => {
         document.getElementById(id)?.classList.toggle("oculto", vista !== key);
     });
+}
+
+function mostrarVistaEvaluacionesIa() {
+    activarVistaReporteriaIa({ view: "evaluaciones" });
+    toggleFiltrosResumenIa(false);
+    cargarReporteriaIa();
 }
 
 function volverResultadoIa() {
@@ -596,7 +1220,7 @@ async function cargarReporteriaIa() {
 function renderReporteriaIa(data) {
     reporteriaActualIa = data || {};
     ajustarPeriodoDefaultIa(reporteriaActualIa.detalle || []);
-    detalleReporteIa = aplicarFiltrosDetalleIa(reporteriaActualIa.detalle || []);
+    detalleReporteIa = ordenarEvaluacionesPorFechaDescIa(aplicarFiltrosDetalleIa(reporteriaActualIa.detalle || []));
     const paginas = totalPaginasDetalleIa();
     if (detalleReportePaginaIa > paginas) detalleReportePaginaIa = paginas;
     poblarFiltroSupervisoresIa(reporteriaActualIa.detalle || []);
@@ -605,6 +1229,7 @@ function renderReporteriaIa(data) {
     const carteras = dataFiltrada.carteras || [];
     const agentes = dataFiltrada.agentes || [];
     pintarKpisCopcIa(dataFiltrada, detalleReporteIa);
+    pintarResumenEjecutivoV2Ia(dataFiltrada, detalleReporteIa);
     setText("ultimaActualizacionIa", formatoFecha(new Date().toISOString()));
     pintarCarteraSemanaIa(detalleReporteIa);
     pintarResumenGerencialCopcIa(dataFiltrada, detalleReporteIa);
@@ -612,6 +1237,7 @@ function renderReporteriaIa(data) {
     pintarAgenteSemanaIa(detalleReporteIa);
     pintarTendenciaSemanalIa(detalleReporteIa);
     pintarDetalleReporteIa(detalleReporteIa);
+    pintarBandejaEvaluacionesIa(detalleReporteIa);
     pintarVistaCoachingIa(detalleReporteIa);
     pintarVistaCalibracionTabIa(detalleReporteIa);
     pintarVistaAlertasIa(detalleReporteIa);
@@ -643,8 +1269,376 @@ function pintarKpisCopcIa(data, detalle) {
     setText("repCoachingPctIa", pctCoaching == null ? "Sin base" : `${pctCoaching.toFixed(1)}% de evaluaciones`);
     setText("repScoreDeltaIa", scoreIa == null ? "Score normalizado / 100" : `IA promedio: ${scoreIa.toFixed(1)}%`);
     setText("periodoHeaderIa", valor("filtroFechaIa") || "-");
+    setText("periodoResumenIa", valor("filtroFechaIa") || "-");
     setWidthIa("repTotalProgressIa", cumplimiento);
     setWidthIa("repCumplimientoProgressIa", cumplimiento);
+}
+
+function pintarResumenEjecutivoV2Ia(data, detalle) {
+    actualizarResumenFiltrosIa();
+    pintarKpisResumenEjecutivoIa(data, detalle);
+    pintarAlertaEjecutivaIa(data, detalle);
+    pintarTendenciaCalidadResumenIa(detalle);
+    pintarParetoResumenIa(data, detalle);
+    pintarDimensionesCopcResumenIa(data, detalle);
+    pintarAgentesPriorizadosResumenIa(detalle);
+    pintarAccionesMejoraResumenIa(detalle);
+}
+
+function pintarKpisResumenEjecutivoIa(data, detalle) {
+    const el = document.getElementById("resumenKpisEjecutivosIa");
+    if (!el) return;
+    const total = detalle.length || Number(data.total_audios || 0);
+    const validadas = detalle.filter(esEvaluacionValidadaIa);
+    const scoreValidado = promedioDetalleIa(validadas, scoreValidadoResumenIa);
+    const scoreIa = promedioDetalleIa(detalle, scoreIaPreliminarResumenIa);
+    const errores = detalle.filter(item => item.error_critico || item.falta_anulante || Number(item.total_puntos_criticos || 0) > 0).length;
+    const pendientes = detalle.filter(item => !esEvaluacionValidadaIa(item)).length;
+    const vencidas = accionesVencidasIa(detalle);
+    const pctErrores = total ? (errores / total) * 100 : null;
+    const cards = [
+        {
+            color: scoreValidado == null ? "info" : scoreValidado >= 85 ? "ok" : scoreValidado >= 70 ? "warn" : "risk",
+            icon: "CV",
+            title: "Calidad validada",
+            value: scoreValidado == null ? "-" : `${scoreValidado.toFixed(1)}%`,
+            meta: scoreValidado == null ? "Sin evaluaciones validadas" : `${formatoNumero(validadas.length)} evaluaciones validadas`,
+            delta: scoreValidado == null && scoreIa != null ? `Score IA preliminar: ${scoreIa.toFixed(1)}%` : "Score final validado",
+        },
+        {
+            color: "info",
+            icon: "EV",
+            title: "Evaluaciones realizadas",
+            value: formatoNumero(total),
+            meta: "En el periodo seleccionado",
+            delta: "Periodo seleccionado",
+        },
+        {
+            color: errores ? "risk" : "ok",
+            icon: "EC",
+            title: "Evaluaciones con error crítico",
+            value: pctErrores == null ? "-" : `${pctErrores.toFixed(1)}%`,
+            meta: `${formatoNumero(errores)} evaluaciones`,
+            delta: total ? `${formatoNumero(errores)} evaluaciones afectadas` : "Sin base",
+        },
+        {
+            color: pendientes ? "warn" : "ok",
+            icon: "RP",
+            title: "Revisión pendiente",
+            value: formatoNumero(pendientes),
+            meta: pendientes ? "Requieren cierre supervisor" : "Sin pendientes",
+            delta: "Estado de revisión",
+        },
+        {
+            color: vencidas ? "risk" : "warn",
+            icon: "PM",
+            title: "Acciones vencidas",
+            value: formatoNumero(vencidas),
+            meta: "Coaching o planes de mejora",
+            delta: "Según fecha programada",
+        },
+    ];
+    el.innerHTML = cards.map(card => `
+        <article class="summary-kpi-card ${card.color}">
+            <div class="summary-kpi-top">
+                <span class="summary-kpi-icon">${escapeHtml(card.icon)}</span>
+                <em>${escapeHtml(card.delta)}</em>
+            </div>
+            <span>${escapeHtml(card.title)}</span>
+            <strong>${escapeHtml(card.value)}</strong>
+            <small>${escapeHtml(card.meta)}</small>
+        </article>
+    `).join("");
+}
+
+function pintarAlertaEjecutivaIa(data, detalle) {
+    const el = document.getElementById("alertaEjecutivaIa");
+    if (!el) return;
+    const pareto = construirParetoSgcIa(data, detalle);
+    if (!detalle.length) {
+        el.innerHTML = `<div><strong>Sin información disponible</strong><span>No hay evaluaciones para los filtros seleccionados.</span></div>`;
+        return;
+    }
+    const principal = pareto[0];
+    if (!principal) {
+        el.innerHTML = `<div><strong>Sin alerta prioritaria</strong><span>No se detectan brechas SGC/PEC relevantes en el periodo filtrado.</span></div>`;
+        return;
+    }
+    const evaluacionesAfectadas = evaluacionesAfectadasPorFactorIa(detalle, principal.factor_sgc);
+    const pct = detalle.length ? (evaluacionesAfectadas / detalle.length) * 100 : 0;
+    const textoBase = detalle.some(esEvaluacionValidadaIa) ? "evaluaciones revisadas" : "evaluaciones analizadas";
+    el.innerHTML = `
+        <div>
+            <strong>Atención requerida</strong>
+            <span>${escapeHtml(principal.factor_sgc)} concentra la principal brecha del periodo y afecta al ${pct.toFixed(1)}% de las ${textoBase}.</span>
+        </div>
+        <button class="link-button" type="button" onclick="mostrarVistaCoachingIa()">Revisar casos relacionados →</button>
+    `;
+}
+
+function pintarTendenciaCalidadResumenIa(detalle) {
+    const el = document.getElementById("tendenciaCalidadResumenIa");
+    if (!el) return;
+    const semanas = {};
+    const validadas = detalle.filter(esEvaluacionValidadaIa);
+    const usarIaPreliminar = !validadas.length;
+    const base = usarIaPreliminar ? detalle : validadas;
+    const scoreGetter = usarIaPreliminar ? scoreIaPreliminarResumenIa : scoreValidadoResumenIa;
+    setText("tituloTendenciaIa", usarIaPreliminar ? "Evolución del score IA preliminar" : "Evolución de calidad");
+    setText("subtituloTendenciaIa", usarIaPreliminar ? "Score IA preliminar frente a la meta mensual" : "Score validado frente a la meta mensual");
+    const scorePeriodo = promedioDetalleIa(base, scoreGetter);
+    base.forEach(row => {
+        const score = scoreGetter(row);
+        if (score == null) return;
+        const semana = claveSemanaClienteIa(row.fecha_llamada || row.fecha_creacion);
+        const actual = semanas[semana] || { semana, total: 0, score: 0 };
+        actual.total += 1;
+        actual.score += score;
+        semanas[semana] = actual;
+    });
+    const semanasOrdenadas = semanasResumenDesdeFiltroIa(Object.keys(semanas));
+    const rows = semanasOrdenadas.map(semana => {
+        const row = semanas[semana];
+        return row
+            ? { label: row.semana, score: row.total ? row.score / row.total : null, total: row.total }
+            : { label: semana, score: null, total: 0 };
+    }).slice(-6);
+    const pointsValidos = rows.filter(row => row.total > 0 && row.score != null);
+    if (!pointsValidos.length) {
+        el.innerHTML = estadoVacioReporteIa(detalle);
+        setText("variacionTendenciaIa", "Sin periodo comparable");
+        return;
+    }
+    const anterior = pointsValidos[pointsValidos.length - 2];
+    const ultimo = pointsValidos[pointsValidos.length - 1];
+    if (anterior && ultimo) {
+        const delta = ultimo.score - anterior.score;
+        setText("variacionTendenciaIa", `Vs semana con datos ${delta >= 0 ? "+" : "-"}${Math.abs(delta).toFixed(1)} pp`);
+    } else {
+        setText("variacionTendenciaIa", "Sin periodo comparable");
+    }
+    el.innerHTML = renderLineaResumenIa(rows, {
+        scorePeriodo,
+        evaluacionesValidas: pointsValidos.reduce((sum, item) => sum + item.total, 0),
+        usarIaPreliminar,
+    });
+}
+
+function renderLineaResumenIa(points, options = {}) {
+    const width = 760;
+    const height = 260;
+    const left = 54;
+    const right = 76;
+    const top = 34;
+    const bottom = 58;
+    const chartW = width - left - right;
+    const chartH = height - top - bottom;
+    const meta = 85;
+    const coords = points.map((point, index) => {
+        const x = left + (chartW * index) / Math.max(1, points.length - 1);
+        if (point.score == null || !point.total) return { ...point, x, y: top + chartH, sinDatos: true };
+        const y = top + chartH - (Math.max(0, Math.min(100, point.score)) / 100) * chartH;
+        return { ...point, x, y };
+    });
+    const lineasValidas = construirSegmentosLineaResumenIa(coords);
+    const areasValidas = construirAreasLineaResumenIa(coords, top + chartH);
+    const metaY = top + chartH - (meta / 100) * chartH;
+    return `
+        <svg class="summary-line-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolución de calidad">
+            <line class="summary-grid-line" x1="${left}" y1="${top + chartH}" x2="${left + chartW}" y2="${top + chartH}"></line>
+            <line class="summary-grid-line" x1="${left}" y1="${top + chartH / 2}" x2="${left + chartW}" y2="${top + chartH / 2}"></line>
+            <line class="summary-target-line" x1="${left}" y1="${metaY.toFixed(1)}" x2="${left + chartW}" y2="${metaY.toFixed(1)}"></line>
+            <text class="summary-target-label" x="${left + chartW - 116}" y="${metaY - 8}">${options.usarIaPreliminar ? "Meta referencial 85%" : "Meta 85%"}</text>
+            ${areasValidas.map(area => `<polygon class="summary-line-area" points="${area}"></polygon>`).join("")}
+            ${lineasValidas.map(linea => `<polyline class="summary-score-line" points="${linea}"></polyline>`).join("")}
+            ${coords.map(p => `
+                ${p.sinDatos ? `<text class="summary-no-data-label" x="${p.x.toFixed(1)}" y="${top + chartH + 22}">Sin evaluaciones</text>` : `
+                    <circle class="summary-score-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5"></circle>
+                    <text class="summary-score-label" x="${p.x.toFixed(1)}" y="${p.y - 12}">${p.score.toFixed(1)}%</text>
+                `}
+                <text class="summary-week-label" x="${p.x.toFixed(1)}" y="${height - 15}">${escapeHtml(p.label)}</text>
+            `).join("")}
+        </svg>
+        <div class="summary-chart-footer">
+            <span>Resultado del periodo: <strong>${options.scorePeriodo == null ? "Sin información" : `${options.scorePeriodo.toFixed(1)}%`}</strong></span>
+            <span>${formatoNumero(options.evaluacionesValidas || 0)} evaluaciones con ${options.usarIaPreliminar ? "score IA" : "score validado"}</span>
+        </div>
+    `;
+}
+
+function construirSegmentosLineaResumenIa(coords) {
+    const validos = coords.filter(point => !point.sinDatos);
+    if (validos.length < 2) return [];
+    return [validos.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")];
+}
+
+function construirAreasLineaResumenIa(coords, baseY) {
+    const validos = coords.filter(point => !point.sinDatos);
+    if (validos.length < 2) return [];
+    const primero = validos[0];
+    const ultimo = validos[validos.length - 1];
+    return [`${primero.x.toFixed(1)},${baseY} ${validos.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")} ${ultimo.x.toFixed(1)},${baseY}`];
+}
+
+function semanasResumenDesdeFiltroIa(semanasConDatos) {
+    const rango = parseRangoFechasIa(valor("filtroFechaIa"));
+    const ordenadas = [...new Set(semanasConDatos)].sort((a, b) => a.localeCompare(b));
+    if (!rango.desde || !rango.hasta) return ordenadas;
+    const semanas = [];
+    const cursor = new Date(rango.desde);
+    while (cursor <= rango.hasta) {
+        const clave = claveSemanaClienteIa(cursor.toISOString());
+        if (!semanas.includes(clave)) semanas.push(clave);
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return semanas.length ? semanas : ordenadas;
+}
+
+function pintarParetoResumenIa(data, detalle) {
+    const el = document.getElementById("paretoResumenIa");
+    if (!el) return;
+    const allRows = construirParetoSgcIa(data, detalle);
+    const rows = allRows.slice(0, 5);
+    if (!rows.length) {
+        el.innerHTML = estadoVacioReporteIa(detalle);
+        return;
+    }
+    const max = Math.max(...rows.map(row => Number(row.frecuencia || 0)), 1);
+    let acumulado = 0;
+    const totalFrecuencia = allRows.reduce((sum, row) => sum + Number(row.frecuencia || 0), 0);
+    const totalEvaluaciones = detalle.length;
+    const modo = detalle.some(esEvaluacionValidadaIa) ? "Resultado validado" : "Resultado preliminar IA";
+    el.innerHTML = `<div class="pareto-mode-label">${modo}</div>` + rows.map((row, index) => {
+        const frecuencia = Number(row.frecuencia || 0);
+        acumulado += frecuencia;
+        const afectadas = Number(row.evaluaciones_afectadas ?? frecuencia);
+        const pctMuestra = totalEvaluaciones ? (afectadas / totalEvaluaciones) * 100 : null;
+        const pctAcum = totalFrecuencia ? (acumulado / totalFrecuencia) * 100 : 0;
+        return `
+            <article class="pareto-summary-row" title="Una evaluación puede presentar brechas en varios factores">
+                <span>${index + 1}</span>
+                <div>
+                    <strong>${escapeHtml(row.factor_sgc || "-")}</strong>
+                    <div class="summary-progress"><i style="width:${Math.max(4, (frecuencia / max) * 100)}%"></i></div>
+                    <small>${formatoNumero(afectadas)} de ${formatoNumero(totalEvaluaciones)} evaluaciones afectadas · ${pctAcum.toFixed(1)}% acumulado de brechas</small>
+                </div>
+                <em>${formatoNumero(frecuencia)}</em>
+                <b>${pctMuestra == null ? "Sin base" : `${pctMuestra.toFixed(1)}%`}</b>
+            </article>
+        `;
+    }).join("");
+}
+
+function pintarDimensionesCopcResumenIa(data, detalle) {
+    const el = document.getElementById("dimensionCopcResumenIa");
+    if (!el) return;
+    const tieneValidadas = detalle.some(esEvaluacionValidadaIa);
+    setText("subtituloDimensionCopcIa", tieneValidadas ? "Resultado validado de las cinco etapas evaluadas" : "Resultado preliminar IA de las cinco etapas evaluadas");
+    const nombres = ["Cumplimiento", "Diagnóstico", "Gestión de solución", "Cierre verificable", "Experiencia y ética"];
+    const segmentos = Object.fromEntries((data.segmentos || []).map(item => [formatearSegmentoIa(item.segmento), item]));
+    el.innerHTML = nombres.map(nombre => {
+        const item = segmentos[nombre] || {};
+        const score = item.porcentaje != null ? Number(item.porcentaje) : null;
+        const brecha = score == null ? null : score - 85;
+        const clase = score == null ? "info" : score >= 85 ? "ok" : score >= 70 ? "warn" : "risk";
+        return `
+            <article class="dimension-item ${clase}">
+                <div><span>${escapeHtml(nombre)}</span><strong>${score == null ? "-" : `${score.toFixed(0)}%`}</strong></div>
+                <div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div>
+                <small>${brecha == null ? "Sin información disponible" : `Brecha ${brecha >= 0 ? "+" : ""}${brecha.toFixed(0)} pp`}</small>
+            </article>
+        `;
+    }).join("");
+}
+
+function pintarAgentesPriorizadosResumenIa(detalle) {
+    const el = document.getElementById("agentesPriorizadosResumenIa");
+    if (!el) return;
+    const rows = construirAgentesPriorizadosIa(detalle).slice(0, 5);
+    if (!rows.length) {
+        el.innerHTML = estadoVacioReporteIa(detalle);
+        return;
+    }
+    el.innerHTML = `
+        <div class="intervention-list">
+            ${rows.map(row => {
+                const nivel = row.errorCriticoPct >= 25 || (row.scoreValidado != null && row.scoreValidado < 70) ? "Crítico" : row.scoreValidado != null && row.scoreValidado < 80 ? "Alto" : "Medio";
+                const claseNivel = nivel === "Crítico" ? "alto" : nivel === "Alto" ? "medio" : "bajo";
+                const accion = String(row.estadoCoaching || "").toUpperCase() === "PENDIENTE" ? "Programar" : "Revisar";
+                const agenteVisible = nombreAgenteCortoIa(row.agente);
+                const agenteCompleto = nombreAgenteLimpioIa(row.agente);
+                const codigoAgente = codigoAgenteIa(row.agente);
+                const scoreValidadoTexto = row.scoreValidado == null ? "Pendiente" : `${row.scoreValidado.toFixed(1)}%`;
+                const scoreIaTexto = row.scoreNormalizado == null ? "Score IA: -" : `Score IA: ${row.scoreNormalizado.toFixed(1)}%`;
+                return `
+                    <article class="intervention-item ${nivel === "Crítico" ? "is-critical" : nivel === "Alto" ? "is-high" : ""}">
+                        <div class="intervention-agent">
+                            <span class="intervention-avatar">${escapeHtml(inicialesAgenteIa(row.agente))}</span>
+                            <div>
+                                <strong title="${escapeHtml(agenteCompleto)}">${escapeHtml(agenteVisible)}</strong>
+                                <small>${escapeHtml(codigoAgente ? `Código: ${codigoAgente}` : "Sin código")}</small>
+                                <small>${escapeHtml(row.cartera || "-")}</small>
+                            </div>
+                        </div>
+                        <div class="intervention-metrics">
+                            <span>
+                                <b class="${row.scoreValidado != null && row.scoreValidado < 70 ? "score-danger" : "score-ok"}">${scoreValidadoTexto}</b>
+                                <small>Calidad</small>
+                                <small>${scoreIaTexto}</small>
+                            </span>
+                            <span>
+                                <b>${escapeHtml(row.brechaPrincipal || "-")}</b>
+                                <small>Brecha principal</small>
+                            </span>
+                            <span>
+                                <b>${formatoNumero(row.criticos)}</b>
+                                <small>Reincidencia</small>
+                            </span>
+                        </div>
+                        <div class="intervention-actions">
+                            ${badgeGerencialIa(nivel, claseNivel)}
+                            <button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.idFeedback || 0)})">${accion}</button>
+                        </div>
+                    </article>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function pintarAccionesMejoraResumenIa(detalle) {
+    const el = document.getElementById("accionesMejoraResumenIa");
+    if (!el) return;
+    const vencidas = accionesVencidasIa(detalle);
+    const enCurso = detalle.filter(item => ["EN_PROCESO"].includes(String(item.estado_coaching || "").toUpperCase())).length;
+    const programadas = detalle.filter(item => ["PROGRAMADO"].includes(String(item.estado_coaching || "").toUpperCase())).length;
+    const completadas = detalle.filter(item => ["REALIZADO", "CERRADO"].includes(String(item.estado_coaching || "").toUpperCase())).length;
+    const total = vencidas + enCurso + programadas + completadas;
+    const pctVencidas = total ? (vencidas / total) * 100 : 0;
+    const pctCurso = total ? (enCurso / total) * 100 : 0;
+    const pctProgramadas = total ? (programadas / total) * 100 : 0;
+    const proximo = detalle
+        .filter(item => item.fecha_coaching && !["REALIZADO", "CERRADO"].includes(String(item.estado_coaching || "").toUpperCase()))
+        .sort((a, b) => new Date(a.fecha_coaching) - new Date(b.fecha_coaching))[0];
+    el.innerHTML = `
+        <div class="actions-donut-wrap">
+            <div class="actions-donut ${total ? "" : "is-empty"}" style="--vencidas:${pctVencidas}; --curso:${pctCurso}; --programadas:${pctProgramadas};">
+                <strong>${formatoNumero(total)}</strong>
+                <span>acciones</span>
+            </div>
+            <div class="actions-legend">
+                <span><i class="risk"></i>Vencidas <b>${formatoNumero(vencidas)}</b></span>
+                <span><i class="info"></i>En curso <b>${formatoNumero(enCurso)}</b></span>
+                <span><i class="warn"></i>Programadas <b>${formatoNumero(programadas)}</b></span>
+                <span><i class="ok"></i>Completadas <b>${formatoNumero(completadas)}</b></span>
+            </div>
+        </div>
+        <div class="next-action-box">
+            <span>Próximo vencimiento</span>
+            <strong>${proximo ? `Coaching · ${nombreAgenteCortoIa(proximo.agente || "Sin agente")}` : "Sin información disponible"}</strong>
+            <small>${proximo ? formatoFecha(proximo.fecha_coaching) : "Pendiente de integración de fechas de plan."}</small>
+        </div>
+    `;
 }
 
 function pintarResumenGerencialCopcIa(data, detalle) {
@@ -733,11 +1727,9 @@ const SGC_FACTORES_IA = [
 ];
 
 function clasificarSgcItemIa(item = {}) {
-    if (item.grupo_error_sgc && item.factor_sgc) {
+    if (item.grupo_error_sgc && item.factor_sgc && !esValorNoAplicableIa(item.grupo_error_sgc)) {
         return { grupo: item.grupo_error_sgc, factor: item.factor_sgc };
     }
-    const resultado = String(item.resultado || item.calificacion || "").toLowerCase();
-    if (item.aplica === false || resultado.includes("no aplica")) return { grupo: "No aplica", factor: "No aplica" };
     const texto = `${item.item || ""} ${item.segmento || ""} ${item.hallazgo || ""} ${item.evidencia || ""} ${item.recomendacion || ""}`.toLowerCase();
     const match = SGC_FACTORES_IA.find(([, , claves]) => claves.some(clave => texto.includes(String(clave).toLowerCase())));
     if (match) return { grupo: match[0], factor: match[1] };
@@ -755,8 +1747,8 @@ function itemCopcVisibleIa(item) {
 
 function itemSgcIa(item = {}) {
     const clasif = clasificarSgcItemIa(item);
-    const grupo = item.grupo_error_sgc || clasif.grupo;
-    const factor = item.factor_sgc || clasif.factor;
+    const grupo = esValorNoAplicableIa(item.grupo_error_sgc) ? clasif.grupo : (item.grupo_error_sgc || clasif.grupo);
+    const factor = esValorNoAplicableIa(item.factor_sgc) ? clasif.factor : (item.factor_sgc || clasif.factor);
     const calificacion = item.calificacion || normalizarCalificacionItemIa(item);
     return {
         ...item,
@@ -769,14 +1761,18 @@ function itemSgcIa(item = {}) {
     };
 }
 
+function esValorNoAplicableIa(value) {
+    return /^(no aplica|na|n\/a|-|null|undefined)$/i.test(String(value || "").trim());
+}
+
 function clasificarGrupoBaseSgcIa(item = {}) {
     const texto = `${item.item || ""} ${item.segmento || ""} ${item.hallazgo || ""} ${item.evidencia || ""} ${item.recomendacion || ""}`.toLowerCase();
     const match = SGC_FACTORES_IA.find(([, , claves]) => claves.some(clave => texto.includes(String(clave).toLowerCase())));
     if (match) return { grupo: match[0], factor: match[1] };
-    if (texto.includes("cierre") || texto.includes("negoci")) return { grupo: "Errores crÃ­ticos del negocio", factor: "OrientaciÃ³n a resultado" };
-    if (texto.includes("cumpl") || texto.includes("riesgo")) return { grupo: "Errores crÃ­ticos de cumplimiento", factor: "Conducta Ã©tica y no abuso" };
-    if (texto.includes("deuda") || texto.includes("cliente") || texto.includes("explic")) return { grupo: "Errores crÃ­ticos del usuario final", factor: "Claridad de la explicaciÃ³n" };
-    return { grupo: "Errores no crÃ­ticos", factor: item.item || "Error no crÃ­tico" };
+    if (texto.includes("cierre") || texto.includes("negoci")) return { grupo: "Errores críticos del negocio", factor: "Orientación a resultado" };
+    if (texto.includes("cumpl") || texto.includes("riesgo")) return { grupo: "Errores críticos de cumplimiento", factor: "Conducta ética y no abuso" };
+    if (texto.includes("deuda") || texto.includes("cliente") || texto.includes("explic")) return { grupo: "Errores críticos del usuario final", factor: "Claridad de la explicación" };
+    return { grupo: "Errores no críticos", factor: item.item || "Error no crítico" };
 }
 
 function normalizarCalificacionItemIa(item = {}) {
@@ -810,7 +1806,7 @@ function resumenSgcDesdeItemsIa(items = []) {
     items.forEach(raw => {
         const item = itemSgcIa(raw);
         const cal = String(item.calificacion || "").toLowerCase();
-        if (item.grupo_error_sgc !== "No aplica" && !["cumple", "no aplica"].includes(cal)) {
+        if (!esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica"].includes(cal)) {
             resumen[item.grupo_error_sgc] = (resumen[item.grupo_error_sgc] || 0) + 1;
         }
     });
@@ -845,36 +1841,160 @@ function pintarDistribucionSgcIa(data, detalle) {
 function pintarBrechasCriticasPeriodoIa(brechas, detalle, totalEvaluaciones) {
     const el = document.getElementById("repBrechasCriticasPeriodoIa");
     if (!el) return;
-    const rows = brechas.slice(0, 8);
+    const paretoGeneral = construirParetoSgcIa(reporteriaActualIa || {}, detalle);
+    const rows = paretoGeneral.length ? paretoGeneral : brechas.slice(0, 10).map(item => {
+        const itemSgc = itemSgcIa(item);
+        const frecuencia = Number(item.ceros || item.total || 0);
+        return {
+            ...item,
+            frecuencia,
+            factor_sgc: itemSgc.factor_sgc || item.item || "-",
+            grupo_error_sgc: itemSgc.grupo_error_sgc || "-",
+            impacto: itemSgc.grupo_error_sgc.includes("cumplimiento") || itemSgc.grupo_error_sgc.includes("negocio") ? "Alto" : impactoBrechaIa(item.item, frecuencia),
+            accion_recomendada: accionSugeridaSgcIa(itemSgc),
+        };
+    });
     if (!rows.length) {
         el.innerHTML = estadoVacioReporteIa(detalle);
         return;
     }
-    const maxFrecuencia = Math.max(...rows.map(item => Number(item.ceros || item.total || 0)), 1);
+    const normalizados = rows.map(item => {
+        const frecuencia = Number(item.frecuencia || item.ceros || item.total || 0);
+        const itemSgc = itemSgcIa(item);
+        const factor = item.factor_sgc || itemSgc.factor_sgc || item.item || "-";
+        const cartera = carteraMasAfectadaPorFactorSgcIa(detalle, factor) || carteraMasAfectadaPorBrechaIa(detalle, item.item);
+        const impacto = itemSgc.grupo_error_sgc.includes("cumplimiento") || itemSgc.grupo_error_sgc.includes("negocio") ? "Alto" : impactoBrechaIa(item.item, frecuencia);
+        return {
+            ...item,
+            frecuencia,
+            factor_sgc: factor,
+            grupo_error_sgc: itemSgc.grupo_error_sgc || "-",
+            segmento_copc: formatearSegmentoIa(item.segmento || "-"),
+            cartera_afectada: cartera,
+            impacto: item.impacto || impacto,
+            accion_recomendada: item.accion_recomendada || accionSugeridaSgcIa(itemSgc),
+        };
+    });
+    const totalBrechas = normalizados.reduce((sum, item) => sum + item.frecuencia, 0);
     el.innerHTML = `
-        <div class="copc-pareto-list">
-            ${rows.map(item => {
-                const frecuencia = Number(item.ceros || item.total || 0);
-                const pct = totalEvaluaciones ? (frecuencia / totalEvaluaciones) * 100 : null;
-                const itemSgc = itemSgcIa(item);
-                const cartera = carteraMasAfectadaPorBrechaIa(detalle, item.item);
-                const impacto = itemSgc.grupo_error_sgc.includes("cumplimiento") || itemSgc.grupo_error_sgc.includes("negocio") ? "Alto" : impactoBrechaIa(item.item, frecuencia);
+        ${renderParetoSgcChartIa(normalizados, { totalEvaluaciones: totalBrechas || totalEvaluaciones, maxItems: 10, title: "Pareto general SGC/PEC" })}
+        <div class="copc-pareto-table-wrap">
+            <table class="copc-mini-table pareto-support-table">
+                <thead>
+                    <tr><th>Factor SGC</th><th>Grupo</th><th>Frecuencia</th><th>% del Pareto</th><th>Impacto</th><th>Cartera afectada</th><th>Acción recomendada</th></tr>
+                </thead>
+                <tbody>${normalizados.slice(0, 6).map(item => {
+                const pct = totalBrechas ? (item.frecuencia / totalBrechas) * 100 : null;
                 return `
-                    <article class="copc-pareto-row">
-                        <div>
-                            <strong>${escapeHtml(itemSgc.factor_sgc || item.item || "-")}</strong>
-                            <span>${escapeHtml(itemSgc.grupo_error_sgc || "-")} - ${escapeHtml(formatearSegmentoIa(item.segmento || "-"))} - ${escapeHtml(cartera)}</span>
-                        </div>
-                        <div class="copc-pareto-bar"><i style="width:${Math.max(4, (frecuencia / maxFrecuencia) * 100)}%"></i></div>
-                        <b>${formatoNumero(frecuencia)}</b>
-                        <small>${pct == null ? "Sin base" : `${pct.toFixed(1)}% eval.`}</small>
-                        ${badgeGerencialIa(impacto, impacto === "Alto" ? "alto" : "medio")}
-                        <em>${escapeHtml(accionSugeridaSgcIa(itemSgc))}</em>
-                    </article>
+                    <tr>
+                        <td><strong>${escapeHtml(item.factor_sgc)}</strong></td>
+                        <td>${escapeHtml(item.grupo_error_sgc)}</td>
+                        <td>${formatoNumero(item.frecuencia)}</td>
+                        <td>${pct == null ? "Sin base" : `${pct.toFixed(1)}%`}</td>
+                        <td>${badgeGerencialIa(item.impacto, item.impacto === "Alto" ? "alto" : "medio")}</td>
+                        <td>${escapeHtml(item.cartera_afectada)}</td>
+                        <td>${escapeHtml(item.accion_recomendada)}</td>
+                    </tr>
                 `;
-            }).join("")}
+            }).join("")}</tbody>
+            </table>
         </div>
     `;
+}
+
+function renderParetoSgcChartIa(rows, options = {}) {
+    const items = [...(rows || [])]
+        .map(row => ({
+            label: row.factor_sgc || row.item || row.brecha || "-",
+            grupo: row.grupo_error_sgc || row.grupo || "-",
+            frecuencia: Number(row.frecuencia ?? row.ceros ?? row.total ?? 0),
+        }))
+        .filter(row => row.frecuencia > 0)
+        .sort((a, b) => b.frecuencia - a.frecuencia)
+        .slice(0, options.maxItems || 12);
+    const totalErrores = items.reduce((sum, item) => sum + item.frecuencia, 0);
+    if (!items.length || !totalErrores) {
+        return `<div class="empty-report-state"><strong>No hay brechas suficientes para construir Pareto.</strong><small>Amplía el rango de fechas o selecciona todas las carteras.</small></div>`;
+    }
+
+    const width = 1280;
+    const height = 500;
+    const left = 42;
+    const right = 54;
+    const top = 32;
+    const bottom = 176;
+    const chartW = width - left - right;
+    const chartH = height - top - bottom;
+    const maxFrecuencia = Math.max(...items.map(item => item.frecuencia), 1);
+    const slot = chartW / items.length;
+    const barW = Math.max(18, Math.min(42, slot * 0.48));
+    let acumulado = 0;
+    const points = [];
+    const bars = items.map((item, index) => {
+        acumulado += item.frecuencia;
+        const acumPct = acumulado / totalErrores;
+        const barH = (item.frecuencia / maxFrecuencia) * chartH;
+        const x = left + index * slot + (slot - barW) / 2;
+        const y = top + chartH - barH;
+        const lineX = x + barW / 2;
+        const lineY = top + chartH - (acumPct * chartH);
+        points.push(`${lineX.toFixed(1)},${lineY.toFixed(1)}`);
+        const labelLines = partirEtiquetaParetoIa(item.label, options.compactLabels ? 3 : 4);
+        return `
+            <g>
+                <rect class="pareto-bar-rect" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3"></rect>
+                <text class="pareto-count-label" x="${lineX.toFixed(1)}" y="${Math.max(14, y - 7).toFixed(1)}" text-anchor="middle">${formatoNumero(item.frecuencia)}</text>
+                <circle class="pareto-dot" cx="${lineX.toFixed(1)}" cy="${lineY.toFixed(1)}" r="3.5"></circle>
+                <text class="pareto-pct-label" x="${lineX.toFixed(1)}" y="${Math.max(14, lineY - 9).toFixed(1)}" text-anchor="middle">${(acumPct * 100).toFixed(1)}%</text>
+                <text class="pareto-x-label" x="${lineX.toFixed(1)}" y="${height - bottom + 44}" text-anchor="middle">
+                    ${labelLines.map((line, lineIndex) => `<tspan x="${lineX.toFixed(1)}" dy="${lineIndex ? 11 : 0}">${escapeHtml(line)}</tspan>`).join("")}
+                </text>
+            </g>
+        `;
+    }).join("");
+    const yTicks = [0, 25, 50, 75, 100].map(pct => {
+        const y = top + chartH - (pct / 100) * chartH;
+        return `<text class="pareto-axis-label" x="${width - right + 10}" y="${(y + 3).toFixed(1)}">${pct}%</text>`;
+    }).join("");
+    return `
+        <div class="pareto-chart-card">
+            <div class="pareto-chart-head">
+                <div>
+                    <strong>${escapeHtml(options.title || "Pareto de errores SGC/PEC")}</strong>
+                    <span>Barras: frecuencia. Línea: porcentaje acumulado.</span>
+                </div>
+                <div class="pareto-legend"><span><i></i>Frecuencia</span><span><i class="line"></i>% acumulado</span></div>
+            </div>
+            <svg class="pareto-svg-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.title || "Pareto de errores")}">
+                <line class="pareto-axis" x1="${left}" y1="${top + chartH}" x2="${width - right}" y2="${top + chartH}"></line>
+                <line class="pareto-axis" x1="${left}" y1="${top}" x2="${left}" y2="${top + chartH}"></line>
+                <line class="pareto-axis right" x1="${width - right}" y1="${top}" x2="${width - right}" y2="${top + chartH}"></line>
+                ${[0, .25, .5, .75, 1].map(value => {
+                    const y = top + chartH - value * chartH;
+                    return `<line class="pareto-grid-line" x1="${left}" y1="${y.toFixed(1)}" x2="${width - right}" y2="${y.toFixed(1)}"></line>`;
+                }).join("")}
+                ${bars}
+                <polyline class="pareto-acum-line" points="${points.join(" ")}"></polyline>
+                ${yTicks}
+            </svg>
+        </div>
+    `;
+}
+
+function partirEtiquetaParetoIa(texto, maxLineas = 4) {
+    const palabras = String(texto || "-").replace(/\s+/g, " ").trim().split(" ");
+    const lineas = [];
+    let actual = "";
+    palabras.forEach(palabra => {
+        if ((actual + " " + palabra).trim().length > 12 && actual) {
+            lineas.push(actual);
+            actual = palabra;
+        } else {
+            actual = `${actual} ${palabra}`.trim();
+        }
+    });
+    if (actual) lineas.push(actual);
+    return lineas.slice(0, maxLineas).map((linea, index) => index === maxLineas - 1 && lineas.length > maxLineas ? `${linea}...` : linea);
 }
 
 function pintarAgentesPriorizadosGerencialIa(detalle) {
@@ -890,20 +2010,25 @@ function pintarAgentesPriorizadosGerencialIa(detalle) {
             <thead>
                 <tr><th>Agente</th><th>Supervisor</th><th>Cartera</th><th>Eval.</th><th>Score norm.</th><th>Score val.</th><th>% error crit.</th><th>Brecha principal</th><th>Coaching</th><th>Accion</th></tr>
             </thead>
-            <tbody>${rows.map(row => `
-                <tr>
-                    <td><strong>${escapeHtml(row.agente)}</strong></td>
-                    <td>${escapeHtml(row.supervisor)}</td>
-                    <td>${escapeHtml(row.cartera)}</td>
-                    <td>${formatoNumero(row.evaluaciones)}</td>
-                    <td><strong class="${row.scoreNormalizado < 70 ? "score-danger" : "score-ok"}">${row.scoreNormalizado.toFixed(1)}%</strong></td>
-                    <td>${row.scoreValidado.toFixed(1)}%</td>
-                    <td>${row.errorCriticoPct.toFixed(1)}%</td>
-                    <td>${escapeHtml(row.brechaPrincipal)}</td>
-                    <td>${badgeGerencialIa(row.estadoCoaching, claseBadgeEstadoIa(row.estadoCoaching))}</td>
-                    <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.idFeedback || 0)})">${String(row.estadoCoaching || "").toUpperCase() === "PENDIENTE" ? "Programar" : "Ver"}</button></td>
-                </tr>
-            `).join("")}</tbody>
+            <tbody>${rows.map(row => {
+                const scoreIa = row.scoreNormalizado == null ? "-" : `${row.scoreNormalizado.toFixed(1)}%`;
+                const scoreValidado = row.scoreValidado == null ? "Pendiente" : `${row.scoreValidado.toFixed(1)}%`;
+                const claseScoreIa = row.scoreNormalizado != null && row.scoreNormalizado < 70 ? "score-danger" : "score-ok";
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(row.agente)}</strong></td>
+                        <td>${escapeHtml(row.supervisor)}</td>
+                        <td>${escapeHtml(row.cartera)}</td>
+                        <td>${formatoNumero(row.evaluaciones)}</td>
+                        <td><strong class="${claseScoreIa}">${scoreIa}</strong></td>
+                        <td>${scoreValidado}</td>
+                        <td>${row.errorCriticoPct.toFixed(1)}%</td>
+                        <td>${escapeHtml(row.brechaPrincipal)}</td>
+                        <td>${badgeGerencialIa(row.estadoCoaching, claseBadgeEstadoIa(row.estadoCoaching))}</td>
+                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.idFeedback || 0)})">${String(row.estadoCoaching || "").toUpperCase() === "PENDIENTE" ? "Programar" : "Ver"}</button></td>
+                    </tr>
+                `;
+            }).join("")}</tbody>
         </table>
     `;
 }
@@ -1042,8 +2167,7 @@ function pintarVistaCalibracionTabIa(detalle) {
 
 function pintarVistaReportesSgcIa(data, detalle) {
     pintarPrecisionAsesorSgcIa(detalle);
-    pintarParetoErroresSgcIa(data, detalle);
-    pintarParetoGrupoSgcIa(data, detalle);
+    pintarDistribucionGrupoSgcReporteIa(data, detalle);
     pintarEvolucionSgcIa(detalle);
 }
 
@@ -1072,50 +2196,52 @@ function pintarPrecisionAsesorSgcIa(detalle) {
     ` : estadoVacioReporteIa(detalle);
 }
 
-function pintarParetoErroresSgcIa(data, detalle) {
-    const el = document.getElementById("repParetoErroresSgcIa");
-    if (!el) return;
-    const rows = construirParetoSgcIa(data, detalle);
-    const total = detalle.length;
-    let acumulado = 0;
-    el.innerHTML = rows.length ? `
-        <table><thead><tr><th>Factor SGC</th><th>Grupo</th><th>Frecuencia</th><th>% eval.</th><th>% acum.</th><th>Impacto</th><th>Acción</th></tr></thead>
-        <tbody>${rows.slice(0, 12).map(row => {
-            const pct = total ? (row.frecuencia / total) * 100 : 0;
-            acumulado += pct;
-            return `<tr><td>${escapeHtml(row.factor_sgc)}</td><td>${badgeSgcIa(row.grupo_error_sgc)}</td><td>${formatoNumero(row.frecuencia)}</td><td>${total ? `${pct.toFixed(1)}%` : "Sin base"}</td><td>${Math.min(100, acumulado).toFixed(1)}%</td><td>${badgeGerencialIa(row.impacto || "Medio", String(row.impacto || "").toLowerCase() === "alto" ? "alto" : "medio")}</td><td>${escapeHtml(row.accion_recomendada || accionSugeridaSgcIa(row))}</td></tr>`;
-        }).join("")}</tbody></table>
-    ` : estadoVacioReporteIa(detalle);
-}
-
 function construirParetoSgcIa(data, detalle) {
-    if ((data.sgc_factores || []).length) return data.sgc_factores;
+    if (!detalle.length) return [];
     const map = {};
-    detalle.forEach(row => {
+    detalle.forEach((row, rowIndex) => {
+        const idEvaluacion = String(row.id_feedback || row.id_llamada || row.archivo_nombre || rowIndex);
         itemsSgcDetalleIa(row).forEach(raw => {
             const item = itemSgcIa(raw);
             const cal = String(item.calificacion || "").toLowerCase();
-            if (item.grupo_error_sgc === "No aplica" || ["cumple", "no aplica"].includes(cal)) return;
+            if (esValorNoAplicableIa(item.grupo_error_sgc) || ["cumple", "no aplica"].includes(cal)) return;
             const key = `${item.grupo_error_sgc}::${item.factor_sgc}`;
-            const actual = map[key] || { grupo_error_sgc: item.grupo_error_sgc, factor_sgc: item.factor_sgc, frecuencia: 0, impacto: item.grupo_error_sgc.includes("críticos") ? "Alto" : "Medio", accion_recomendada: accionSugeridaSgcIa(item) };
-            actual.frecuencia += 1;
+            const actual = map[key] || {
+                grupo_error_sgc: item.grupo_error_sgc,
+                factor_sgc: item.factor_sgc,
+                frecuencia: 0,
+                evaluaciones_afectadas: 0,
+                hallazgos: 0,
+                evaluaciones_set: new Set(),
+                impacto: item.grupo_error_sgc.includes("críticos") ? "Alto" : "Medio",
+                accion_recomendada: accionSugeridaSgcIa(item),
+            };
+            actual.hallazgos += 1;
+            actual.evaluaciones_set.add(idEvaluacion);
+            actual.evaluaciones_afectadas = actual.evaluaciones_set.size;
+            actual.frecuencia = actual.evaluaciones_afectadas;
             map[key] = actual;
         });
     });
-    return Object.values(map).sort((a, b) => b.frecuencia - a.frecuencia);
+    return Object.values(map)
+        .map(item => {
+            const { evaluaciones_set, ...rest } = item;
+            return rest;
+        })
+        .sort((a, b) => b.frecuencia - a.frecuencia || b.hallazgos - a.hallazgos || String(a.factor_sgc).localeCompare(String(b.factor_sgc)));
 }
 
-function pintarParetoGrupoSgcIa(data, detalle) {
+function pintarDistribucionGrupoSgcReporteIa(data, detalle) {
     const el = document.getElementById("repParetoGrupoSgcIa");
     if (!el) return;
     const conteos = resumenSgcDesdeItemsIa(detalle.flatMap(row => itemsSgcDetalleIa(row)));
     const rows = SGC_GRUPOS_IA.map(grupo => ({ grupo, total: conteos[grupo] || 0 })).sort((a, b) => b.total - a.total);
     el.innerHTML = rows.some(row => row.total) ? `
-        <table><thead><tr><th>Grupo SGC</th><th>Frecuencia</th><th>Participación</th></tr></thead>
+        <table><thead><tr><th>Grupo SGC/PEC</th><th>Frecuencia</th><th>Participación</th></tr></thead>
         <tbody>${rows.map(row => {
             const total = rows.reduce((sum, item) => sum + item.total, 0);
             const pct = total ? (row.total / total) * 100 : 0;
-            return `<tr><td>${badgeSgcIa(row.grupo)}</td><td>${formatoNumero(row.total)}</td><td>${pct.toFixed(1)}%</td></tr>`;
+            return `<tr><td><strong>${escapeHtml(row.grupo)}</strong></td><td>${formatoNumero(row.total)}</td><td><div class="copc-table-meter"><span>${pct.toFixed(1)}%</span><i style="width:${Math.max(3, pct)}%"></i></div></td></tr>`;
         }).join("")}</tbody></table>
     ` : estadoVacioReporteIa(detalle);
 }
@@ -1264,6 +2390,37 @@ function promedioDetalleIa(items, getter) {
     return valores.reduce((sum, value) => sum + value, 0) / valores.length;
 }
 
+function scoreCalidadResumenIa(item) {
+    return esEvaluacionValidadaIa(item) ? scoreValidadoResumenIa(item) : undefined;
+}
+
+function scoreValidadoResumenIa(item) {
+    if (!esEvaluacionValidadaIa(item)) return undefined;
+    const campos = [item?.score_supervisor, item?.score_final_validado, item?.score_final];
+    return primerNumeroIa(campos);
+}
+
+function scoreIaPreliminarResumenIa(item) {
+    const campos = [item?.score_calidad_ia, item?.score_ia, item?.score_normalizado, item?.score_calidad];
+    return primerNumeroIa(campos);
+}
+
+function primerNumeroIa(campos = []) {
+    for (const campo of campos) {
+        if (campo === null || campo === undefined || campo === "") continue;
+        const numero = Number(campo);
+        if (!Number.isNaN(numero)) return numero;
+    }
+    return undefined;
+}
+
+function esEvaluacionValidadaIa(item = {}) {
+    const estado = String(item.estado_revision || "PENDIENTE").toUpperCase();
+    const estadosValidos = ["REVISADO", "FEEDBACK_ENVIADO", "CERRADO"];
+    const tieneScoreFinal = [item.score_supervisor, item.score_final_validado, item.score_final].some(valor => valor !== null && valor !== undefined && valor !== "");
+    return estadosValidos.includes(estado) && tieneScoreFinal;
+}
+
 function requiereCoachingIa(item) {
     const estado = String(item.estado_coaching || "PENDIENTE").toUpperCase();
     const score = Number(item.score_final ?? item.score_calidad ?? 0);
@@ -1312,6 +2469,96 @@ function estadoVacioReporteIa(detalle) {
     `;
 }
 
+function toggleFiltrosResumenIa(force) {
+    const panel = document.getElementById("filtrosReporteIa");
+    if (!panel) return;
+    const mostrar = typeof force === "boolean" ? force : panel.classList.contains("oculto");
+    panel.classList.toggle("oculto", !mostrar);
+    document.getElementById("btnToggleFiltrosIa")?.classList.toggle("active", mostrar);
+}
+
+function aplicarFiltrosResumenIa() {
+    toggleFiltrosResumenIa(false);
+    cargarReporteriaIa();
+}
+
+function actualizarResumenFiltrosIa() {
+    const filtros = [
+        ["Cartera", textoFiltroSelectIa("filtroCarteraIa")],
+        ["Supervisor", textoFiltroSelectIa("filtroSupervisorIa")],
+        ["Agente", valor("filtroAgenteIa")],
+        ["Búsqueda", valor("filtroBusquedaEvaluacionIa")],
+        ["Riesgo", textoFiltroSelectIa("filtroRiesgoIa")],
+        ["Resultado", textoFiltroSelectIa("filtroResultadoIa")],
+        ["Tipo", textoFiltroSelectIa("filtroTipoLlamadaIa")],
+        ["Revisión", textoFiltroSelectIa("filtroRevisionIa")],
+        ["Error crítico", textoFiltroSelectIa("filtroErrorCriticoIa")],
+        ["Plan", textoFiltroSelectIa("filtroCoachingIa")],
+        ["Calibración", textoFiltroSelectIa("filtroCalibracionIa")],
+    ].filter(([, value]) => value);
+    const chips = document.getElementById("chipsFiltrosIa");
+    if (chips) {
+        chips.innerHTML = filtros.length
+            ? filtros.slice(0, 5).map(([label, value]) => `<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join("") + (filtros.length > 5 ? `<span>+${filtros.length - 5} más</span>` : "")
+            : `<span>Todos los filtros</span>`;
+    }
+    setText("contadorFiltrosIa", filtros.length);
+    const estado = document.getElementById("estadoDatosResumenIa");
+    if (estado) estado.textContent = `Datos actualizados ${new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function textoFiltroSelectIa(id) {
+    const el = document.getElementById(id);
+    if (!el) return "";
+    if (!el.value) return "";
+    return el.selectedOptions?.[0]?.textContent?.trim() || el.value;
+}
+
+function evaluacionesAfectadasPorFactorIa(detalle, factor) {
+    const target = String(factor || "").toLowerCase();
+    if (!target) return 0;
+    return detalle.filter(row => itemsSgcDetalleIa(row).some(raw => {
+        const item = itemSgcIa(raw);
+        const cal = String(item.calificacion || "").toLowerCase();
+        return String(item.factor_sgc || "").toLowerCase() === target && !["cumple", "no aplica"].includes(cal);
+    })).length;
+}
+
+function accionesVencidasIa(detalle) {
+    const ahora = new Date();
+    return detalle.filter(item => {
+        const estado = String(item.estado_coaching || "").toUpperCase();
+        if (!item.fecha_coaching || ["REALIZADO", "CERRADO"].includes(estado)) return false;
+        const fecha = new Date(item.fecha_coaching);
+        return !Number.isNaN(fecha.getTime()) && fecha < ahora;
+    }).length;
+}
+
+function nombreAgenteCortoIa(nombre) {
+    const limpio = nombreAgenteLimpioIa(nombre);
+    return limpio.length > 28 ? `${limpio.slice(0, 25)}...` : limpio;
+}
+
+function nombreAgenteLimpioIa(nombre) {
+    const texto = String(nombre || "").trim();
+    if (!texto) return "Sin agente";
+    const partes = texto.split(/\s+-\s+/);
+    return partes.length > 1 ? partes[partes.length - 1] : texto;
+}
+
+function codigoAgenteIa(nombre) {
+    const texto = String(nombre || "").trim();
+    const partes = texto.split(/\s+-\s+/);
+    return partes.length > 1 ? partes[0] : "";
+}
+
+function inicialesAgenteIa(nombre) {
+    const texto = nombreAgenteLimpioIa(nombre);
+    if (!texto) return "SA";
+    const partes = texto.split(/\s+/).filter(Boolean);
+    return partes.slice(0, 2).map(parte => parte.charAt(0).toUpperCase()).join("") || "SA";
+}
+
 function badgeGerencialIa(texto, tipo = "medio") {
     return `<span class="executive-badge ${escapeHtml(tipo)}">${escapeHtml(texto || "-")}</span>`;
 }
@@ -1335,6 +2582,23 @@ function carteraMasAfectadaPorBrechaIa(detalle, itemNombre) {
     return top ? top[0] : "-";
 }
 
+function carteraMasAfectadaPorFactorSgcIa(detalle, factorNombre) {
+    const grupos = {};
+    detalle.forEach(row => {
+        const tieneFactor = itemsSgcDetalleIa(row).some(raw => {
+            const item = itemSgcIa(raw);
+            const calificacion = String(item.calificacion || "").toLowerCase();
+            return !["cumple", "no aplica"].includes(calificacion)
+                && String(item.factor_sgc || "").toLowerCase() === String(factorNombre || "").toLowerCase();
+        });
+        if (!tieneFactor) return;
+        const cartera = row.cartera || "Sin cartera";
+        grupos[cartera] = (grupos[cartera] || 0) + 1;
+    });
+    const top = Object.entries(grupos).sort((a, b) => b[1] - a[1])[0];
+    return top ? top[0] : "";
+}
+
 function impactoBrechaIa(item, frecuencia) {
     const texto = String(item || "").toLowerCase();
     if (texto.includes("etico") || texto.includes("abuso") || texto.includes("identidad") || texto.includes("cierre") || frecuencia >= 5) return "Alto";
@@ -1352,15 +2616,25 @@ function construirAgentesPriorizadosIa(detalle) {
             cartera: row.cartera || "-",
             evaluaciones: 0,
             scoreTotal: 0,
+            scoreValidadoConteo: 0,
             scoreIaTotal: 0,
+            scoreIaConteo: 0,
             criticos: 0,
             coaching: {},
             brechas: {},
             idFeedback: row.id_feedback,
         };
         actual.evaluaciones += 1;
-        actual.scoreTotal += Number(row.score_final ?? row.score_calidad ?? 0);
-        actual.scoreIaTotal += Number(row.score_normalizado ?? row.score_calidad_ia ?? row.score_calidad ?? 0);
+        const scoreValidado = scoreValidadoResumenIa(row);
+        const scoreIa = scoreIaPreliminarResumenIa(row);
+        if (scoreValidado != null) {
+            actual.scoreTotal += scoreValidado;
+            actual.scoreValidadoConteo += 1;
+        }
+        if (scoreIa != null) {
+            actual.scoreIaTotal += scoreIa;
+            actual.scoreIaConteo += 1;
+        }
         actual.criticos += row.error_critico || row.falta_anulante || Number(row.total_puntos_criticos || 0) > 0 ? 1 : 0;
         actual.coaching[row.estado_coaching || "PENDIENTE"] = (actual.coaching[row.estado_coaching || "PENDIENTE"] || 0) + 1;
         const principal = brechaPrincipalDetalleIa(row);
@@ -1375,14 +2649,14 @@ function construirAgentesPriorizadosIa(detalle) {
             const brechaPrincipal = Object.entries(row.brechas).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
             return {
                 ...row,
-                scoreNormalizado: row.evaluaciones ? row.scoreIaTotal / row.evaluaciones : 0,
-                scoreValidado: row.evaluaciones ? row.scoreTotal / row.evaluaciones : 0,
+                scoreNormalizado: row.scoreIaConteo ? row.scoreIaTotal / row.scoreIaConteo : null,
+                scoreValidado: row.scoreValidadoConteo ? row.scoreTotal / row.scoreValidadoConteo : null,
                 errorCriticoPct: row.evaluaciones ? (row.criticos / row.evaluaciones) * 100 : 0,
                 estadoCoaching,
                 brechaPrincipal,
             };
         })
-        .sort((a, b) => b.errorCriticoPct - a.errorCriticoPct || a.scoreValidado - b.scoreValidado || b.evaluaciones - a.evaluaciones);
+        .sort((a, b) => b.errorCriticoPct - a.errorCriticoPct || (a.scoreValidado ?? 999) - (b.scoreValidado ?? 999) || b.evaluaciones - a.evaluaciones);
 }
 
 function brechaPrincipalDetalleIa(row) {
@@ -1414,20 +2688,27 @@ function porcentajeObservadasIa(data) {
 }
 
 function prepararFiltrosReporteIa() {
-    ["filtroFechaIa", "filtroCarteraIa", "filtroSupervisorIa", "filtroAgenteIa", "filtroRiesgoIa", "filtroResultadoIa", "filtroTipoLlamadaIa", "filtroCoachingIa", "filtroCalibracionIa"].forEach(id => {
+    ["filtroCarteraIa", "filtroSupervisorIa", "filtroAgenteIa", "filtroBusquedaEvaluacionIa", "filtroRiesgoIa", "filtroResultadoIa", "filtroTipoLlamadaIa", "filtroRevisionIa", "filtroErrorCriticoIa", "filtroCoachingIa", "filtroCalibracionIa"].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const evento = el.tagName === "INPUT" ? "input" : "change";
         el.addEventListener(evento, () => {
-            if (id === "filtroFechaIa") {
-                periodoAutoAjustadoIa = false;
-                actualizarAvisoPeriodoIa("");
-            }
             detalleReportePaginaIa = 1;
+            evaluacionesPaginaIa = 1;
             if (reporteriaActualIa) renderReporteriaIa(reporteriaActualIa);
         });
     });
-    setValue("filtroFechaIa", rangoMesActualIa());
+    ["filtroFechaDesdeIa", "filtroFechaHastaIa"].forEach(id => {
+        document.getElementById(id)?.addEventListener("change", () => {
+            actualizarRangoFechaDesdeCalendariosIa();
+            periodoAutoAjustadoIa = false;
+            actualizarAvisoPeriodoIa("");
+            detalleReportePaginaIa = 1;
+            evaluacionesPaginaIa = 1;
+            if (reporteriaActualIa) renderReporteriaIa(reporteriaActualIa);
+        });
+    });
+    setRangoFiltroFechaIa(rangoMesActualIa());
 }
 
 function ajustarPeriodoDefaultIa(items) {
@@ -1455,7 +2736,7 @@ function ajustarPeriodoDefaultIa(items) {
     const hasta = fechas[fechas.length - 1];
     const desde = new Date(hasta);
     desde.setDate(hasta.getDate() - 29);
-    setValue("filtroFechaIa", `${formatoFechaCortaIa(desde)} - ${formatoFechaCortaIa(hasta)}`);
+    setRangoFiltroFechaIa(`${formatoFechaCortaIa(desde)} - ${formatoFechaCortaIa(hasta)}`);
     periodoAutoAjustadoIa = true;
     actualizarAvisoPeriodoIa(`Mostrando último periodo con evaluaciones disponibles: ${formatoFechaCortaIa(desde)} - ${formatoFechaCortaIa(hasta)}`);
 }
@@ -1464,18 +2745,27 @@ function aplicarFiltrosDetalleSinFechaIa(items) {
     const cartera = valor("filtroCarteraIa").toLowerCase();
     const supervisor = valor("filtroSupervisorIa").toLowerCase();
     const agente = valor("filtroAgenteIa").toLowerCase();
+    const busqueda = valor("filtroBusquedaEvaluacionIa").toLowerCase();
     const riesgo = valor("filtroRiesgoIa").toLowerCase();
     const resultado = valor("filtroResultadoIa").toLowerCase();
     const tipoLlamada = valor("filtroTipoLlamadaIa").toLowerCase();
+    const revision = valor("filtroRevisionIa").toLowerCase();
+    const errorCritico = valor("filtroErrorCriticoIa").toLowerCase();
     const coaching = valor("filtroCoachingIa").toLowerCase();
     const calibracion = valor("filtroCalibracionIa").toLowerCase();
     return items.filter(item => {
         if (cartera && !String(item.cartera || "").toLowerCase().includes(cartera)) return false;
         if (supervisor && !String(item.supervisor || "").toLowerCase().includes(supervisor)) return false;
         if (agente && !String(item.agente || "").toLowerCase().includes(agente)) return false;
+        if (busqueda && !textoBusquedaEvaluacionIa(item).includes(busqueda)) return false;
         if (riesgo && nivelRiesgoDetalleIa(item).toLowerCase() !== riesgo) return false;
         if (resultado && resultadoIaDetalle(item).toLowerCase() !== resultado) return false;
         if (tipoLlamada && !String(item.tipo_llamada || "").toLowerCase().includes(tipoLlamada)) return false;
+        if (revision === "revision_humana") {
+            if (!item.requiere_revision_humana) return false;
+        } else if (revision && String(item.estado_revision || "PENDIENTE").toLowerCase() !== revision) return false;
+        if (errorCritico === "si" && !tieneErrorCriticoEvaluacionIa(item)) return false;
+        if (errorCritico === "no" && tieneErrorCriticoEvaluacionIa(item)) return false;
         if (coaching && String(item.estado_coaching || "PENDIENTE").toLowerCase() !== coaching) return false;
         if (calibracion && String(item.estado_recalibracion || "SIN_APELACION").toLowerCase() !== calibracion) return false;
         return true;
@@ -1526,15 +2816,39 @@ function prepararAccionesReporteIa() {
         detalleReportePaginaIa += 1;
         pintarDetalleReporteIa(detalleReporteIa);
     });
+    document.getElementById("evaluacionesPageSizeIa")?.addEventListener("change", event => {
+        evaluacionesPageSizeIa = Number(event.target.value || 10);
+        evaluacionesPaginaIa = 1;
+        pintarBandejaEvaluacionesIa(detalleReporteIa);
+    });
+    document.getElementById("evaluacionesPrevIa")?.addEventListener("click", () => {
+        if (evaluacionesPaginaIa <= 1) return;
+        evaluacionesPaginaIa -= 1;
+        pintarBandejaEvaluacionesIa(detalleReporteIa);
+    });
+    document.getElementById("evaluacionesNextIa")?.addEventListener("click", () => {
+        if (evaluacionesPaginaIa >= totalPaginasEvaluacionesIa()) return;
+        evaluacionesPaginaIa += 1;
+        pintarBandejaEvaluacionesIa(detalleReporteIa);
+    });
+    document.getElementById("busquedaRapidaEvaluacionesIa")?.addEventListener("input", event => {
+        setValue("filtroBusquedaEvaluacionIa", event.target.value);
+        evaluacionesPaginaIa = 1;
+        detalleReportePaginaIa = 1;
+        if (reporteriaActualIa) renderReporteriaIa(reporteriaActualIa);
+    });
 }
 
 function aplicarFiltrosDetalleIa(items) {
     const cartera = valor("filtroCarteraIa").toLowerCase();
     const supervisor = valor("filtroSupervisorIa").toLowerCase();
     const agente = valor("filtroAgenteIa").toLowerCase();
+    const busqueda = valor("filtroBusquedaEvaluacionIa").toLowerCase();
     const riesgo = valor("filtroRiesgoIa").toLowerCase();
     const resultado = valor("filtroResultadoIa").toLowerCase();
     const tipoLlamada = valor("filtroTipoLlamadaIa").toLowerCase();
+    const revision = valor("filtroRevisionIa").toLowerCase();
+    const errorCritico = valor("filtroErrorCriticoIa").toLowerCase();
     const coaching = valor("filtroCoachingIa").toLowerCase();
     const calibracion = valor("filtroCalibracionIa").toLowerCase();
     const rango = parseRangoFechasIa(valor("filtroFechaIa"));
@@ -1546,9 +2860,15 @@ function aplicarFiltrosDetalleIa(items) {
         if (cartera && !String(item.cartera || "").toLowerCase().includes(cartera)) return false;
         if (supervisor && !String(item.supervisor || "").toLowerCase().includes(supervisor)) return false;
         if (agente && !String(item.agente || "").toLowerCase().includes(agente)) return false;
+        if (busqueda && !textoBusquedaEvaluacionIa(item).includes(busqueda)) return false;
         if (riesgo && nivelRiesgoDetalleIa(item).toLowerCase() !== riesgo) return false;
         if (resultado && resultadoIaDetalle(item).toLowerCase() !== resultado) return false;
         if (tipoLlamada && !String(item.tipo_llamada || "").toLowerCase().includes(tipoLlamada)) return false;
+        if (revision === "revision_humana") {
+            if (!item.requiere_revision_humana) return false;
+        } else if (revision && String(item.estado_revision || "PENDIENTE").toLowerCase() !== revision) return false;
+        if (errorCritico === "si" && !tieneErrorCriticoEvaluacionIa(item)) return false;
+        if (errorCritico === "no" && tieneErrorCriticoEvaluacionIa(item)) return false;
         if (coaching && String(item.estado_coaching || "PENDIENTE").toLowerCase() !== coaching) return false;
         if (calibracion && String(item.estado_recalibracion || "SIN_APELACION").toLowerCase() !== calibracion) return false;
         return true;
@@ -1963,6 +3283,135 @@ function pintarDetalleReporteIa(items) {
     `).join("");
 }
 
+function pintarBandejaEvaluacionesIa(items) {
+    pintarKpisEvaluacionesIa(items);
+    const tbody = document.getElementById("evaluacionesBodyIa");
+    if (!tbody) return;
+    const total = items.length;
+    const totalPaginas = totalPaginasEvaluacionesIa(items);
+    if (evaluacionesPaginaIa > totalPaginas) evaluacionesPaginaIa = totalPaginas;
+    const inicio = total ? (evaluacionesPaginaIa - 1) * evaluacionesPageSizeIa : 0;
+    const fin = Math.min(inicio + evaluacionesPageSizeIa, total);
+    const pagina = items.slice(inicio, fin);
+    setText("evaluacionesConteoIa", total ? `Mostrando ${formatoNumero(inicio + 1)} a ${formatoNumero(fin)} de ${formatoNumero(total)} evaluaciones` : "Mostrando 0 evaluaciones");
+    setText("evaluacionesPaginaInfoIa", total ? `Mostrando ${formatoNumero(inicio + 1)}-${formatoNumero(fin)} de ${formatoNumero(total)}` : "Mostrando 0 evaluaciones");
+    setText("evaluacionesPaginaIa", `Página ${formatoNumero(evaluacionesPaginaIa)} de ${formatoNumero(totalPaginas)}`);
+    const prev = document.getElementById("evaluacionesPrevIa");
+    const next = document.getElementById("evaluacionesNextIa");
+    if (prev) prev.disabled = evaluacionesPaginaIa <= 1;
+    if (next) next.disabled = evaluacionesPaginaIa >= totalPaginas;
+    setValue("busquedaRapidaEvaluacionesIa", valor("filtroBusquedaEvaluacionIa"));
+    if (!items.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No hay evaluaciones para los filtros seleccionados.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = pagina.map(item => {
+        const agente = item.agente || "Sin agente asociado";
+        const archivo = item.archivo_nombre || "";
+        const revision = estadoRevisionEvaluacionIa(item);
+        const validada = esEvaluacionValidadaIa(item);
+        const accion = validada ? "Ver ficha" : "Revisar";
+        const idFeedback = Number(item.id_feedback || 0);
+        return `
+            <tr class="${tieneErrorCriticoEvaluacionIa(item) ? "has-critical" : ""}">
+                <td><strong>${escapeHtml(formatoFecha(item.fecha_llamada || item.fecha_creacion))}</strong><small>ID ${escapeHtml(item.id_feedback || "-")}</small></td>
+                <td><strong title="${escapeHtml(agente)}">${escapeHtml(nombreAgenteCortoIa(agente))}</strong><small title="${escapeHtml(archivo || "Sin audio disponible")}">${archivo ? "Audio disponible" : "Sin audio disponible"}</small></td>
+                <td>${escapeHtml(item.cartera || "Sin información")}</td>
+                <td>${escapeHtml(tipoLlamadaVisibleIa(item))}</td>
+                <td>${scoreBandejaEvaluacionIa(item)}</td>
+                <td>${badgeEvaluacionIa(tieneErrorCriticoEvaluacionIa(item) ? "Sí" : "No", tieneErrorCriticoEvaluacionIa(item) ? "risk" : "ok")}</td>
+                <td>${badgeEvaluacionIa(formatearRiesgoVisibleIa(item.nivel_oportunidad_mejora || item.nivel_riesgo), claseBadgeRiesgoIa(item.nivel_oportunidad_mejora || item.nivel_riesgo))}</td>
+                <td>${badgeEvaluacionIa(revision.texto, revision.clase)}</td>
+                <td><button class="historial-action" type="button" data-id-feedback="${idFeedback}" onclick="verAnalisisIa(${idFeedback})">${accion}</button></td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function pintarKpisEvaluacionesIa(items) {
+    const el = document.getElementById("evaluacionesKpisIa");
+    if (!el) return;
+    const total = items.length;
+    const pendientes = items.filter(item => !esEvaluacionValidadaIa(item)).length;
+    const validadas = items.filter(esEvaluacionValidadaIa).length;
+    const criticas = items.filter(tieneErrorCriticoEvaluacionIa).length;
+    const revisionHumana = items.filter(item => item.requiere_revision_humana).length;
+    const cards = [
+        ["Total evaluaciones", total, "En el periodo seleccionado", "info"],
+        ["Pendientes de revisión", pendientes, "Requieren atención", pendientes ? "warn" : "ok"],
+        ["Evaluaciones validadas", validadas, "Revisión completada", "ok"],
+        ["Evaluaciones con error crítico", criticas, "Requieren corrección", criticas ? "risk" : "ok"],
+        ["Requieren revisión humana", revisionHumana, "En proceso manual", revisionHumana ? "warn" : "info"],
+    ];
+    el.innerHTML = cards.map(([title, value, meta, color]) => `
+        <article class="evaluation-kpi ${color}">
+            <span>${escapeHtml(title)}</span>
+            <strong>${formatoNumero(value)}</strong>
+            <small>${escapeHtml(meta)}</small>
+        </article>
+    `).join("");
+}
+
+function totalPaginasEvaluacionesIa(items = detalleReporteIa) {
+    return Math.max(1, Math.ceil((items?.length || 0) / evaluacionesPageSizeIa));
+}
+
+function ordenarEvaluacionesPorFechaDescIa(items = []) {
+    return [...items].sort((a, b) => {
+        const fechaA = parseFechaIa(a.fecha_llamada || a.fecha_creacion);
+        const fechaB = parseFechaIa(b.fecha_llamada || b.fecha_creacion);
+        const timeA = fechaA ? fechaA.getTime() : 0;
+        const timeB = fechaB ? fechaB.getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return Number(b.id_feedback || 0) - Number(a.id_feedback || 0);
+    });
+}
+
+function tipoLlamadaVisibleIa(item = {}) {
+    const tipo = String(item.tipo_llamada || "").trim();
+    return tipo || "Por clasificar";
+}
+
+function scoreBandejaEvaluacionIa(item) {
+    const scoreValidado = scoreValidadoResumenIa(item);
+    const scoreIa = scoreIaPreliminarResumenIa(item);
+    if (scoreValidado != null) return `<strong>Score final ${scoreValidado.toFixed(1)}%</strong>`;
+    if (scoreIa != null) return `<strong>Score IA ${scoreIa.toFixed(1)}%</strong>`;
+    return `<span class="muted-cell">Sin score</span>`;
+}
+
+function estadoRevisionEvaluacionIa(item) {
+    if (item.requiere_revision_humana && !esEvaluacionValidadaIa(item)) return { texto: "Requiere revisión humana", clase: "info" };
+    const estado = String(item.estado_revision || "PENDIENTE").toUpperCase();
+    const mapa = {
+        PENDIENTE: ["Pendiente", "warn"],
+        EN_REVISION: ["En revisión", "info"],
+        REVISADO: ["Revisado", "ok"],
+        FEEDBACK_ENVIADO: ["Feedback enviado", "ok"],
+        CERRADO: ["Cerrado", "ok"],
+    };
+    const [texto, clase] = mapa[estado] || [estado.replaceAll("_", " "), "info"];
+    return { texto, clase };
+}
+
+function badgeEvaluacionIa(texto, clase = "info") {
+    return `<span class="evaluation-badge ${escapeHtml(clase)}">${escapeHtml(texto || "Sin información")}</span>`;
+}
+
+function tieneErrorCriticoEvaluacionIa(item = {}) {
+    return Boolean(item.error_critico || item.falta_anulante || Number(item.total_puntos_criticos || 0) > 0);
+}
+
+function textoBusquedaEvaluacionIa(item = {}) {
+    return [
+        item.id_feedback,
+        item.archivo_nombre,
+        item.agente,
+        item.supervisor,
+        item.cartera,
+    ].map(value => String(value || "").toLowerCase()).join(" ");
+}
+
 function totalPaginasDetalleIa() {
     return Math.max(1, Math.ceil((detalleReporteIa?.length || 0) / detalleReportePageSizeIa));
 }
@@ -2001,13 +3450,17 @@ function limpiarFiltrosReporteIa() {
     agenteSemanaCarteraIa = "";
     periodoAutoAjustadoIa = false;
     actualizarAvisoPeriodoIa("");
-    setValue("filtroFechaIa", "");
+    setRangoFiltroFechaIa("");
     setValue("filtroCarteraIa", "");
     setValue("filtroSupervisorIa", "");
     setValue("filtroAgenteIa", "");
+    setValue("filtroBusquedaEvaluacionIa", "");
+    setValue("busquedaRapidaEvaluacionesIa", "");
     setValue("filtroRiesgoIa", "");
     setValue("filtroResultadoIa", "");
     setValue("filtroTipoLlamadaIa", "");
+    setValue("filtroRevisionIa", "");
+    setValue("filtroErrorCriticoIa", "");
     setValue("filtroCoachingIa", "");
     setValue("filtroCalibracionIa", "");
     setValue("repAgenteCarteraIa", "");
@@ -2038,6 +3491,32 @@ function parseRangoFechasIa(value) {
     const hasta = parseFechaManualIa(partes[1]);
     if (hasta) hasta.setHours(23, 59, 59, 999);
     return { desde, hasta };
+}
+
+function setRangoFiltroFechaIa(rango) {
+    setValue("filtroFechaIa", rango || "");
+    const { desde, hasta } = parseRangoFechasIa(rango || "");
+    setValue("filtroFechaDesdeIa", desde ? formatoFechaInputIa(desde) : "");
+    setValue("filtroFechaHastaIa", hasta ? formatoFechaInputIa(hasta) : "");
+}
+
+function actualizarRangoFechaDesdeCalendariosIa() {
+    const desde = parseFechaInputIa(valor("filtroFechaDesdeIa"));
+    const hasta = parseFechaInputIa(valor("filtroFechaHastaIa"));
+    const textoDesde = desde ? formatoFechaCortaIa(desde) : "";
+    const textoHasta = hasta ? formatoFechaCortaIa(hasta) : "";
+    setValue("filtroFechaIa", textoDesde && textoHasta ? `${textoDesde} - ${textoHasta}` : textoDesde || textoHasta || "");
+}
+
+function parseFechaInputIa(value) {
+    if (!value) return null;
+    const [year, month, day] = String(value).split("-").map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+}
+
+function formatoFechaInputIa(fecha) {
+    return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
 }
 
 function parseFechaManualIa(value) {
@@ -2239,7 +3718,7 @@ function pintarSemanasReporte(items) {
     }).join("");
 }
 
-async function guardarRevisionIa() {
+async function guardarRevisionIa(options = {}) {
     const idFeedback = valor("feedbackIdActualIa");
     if (!idFeedback) {
         mostrarMensajeIa("Primero abre o genera un análisis para guardar la revisión.", "error");
@@ -2247,14 +3726,17 @@ async function guardarRevisionIa() {
     }
 
     const btn = document.getElementById("btnGuardarRevisionIa");
-    btn.disabled = true;
-    btn.textContent = "Guardando...";
+    const textoOriginal = btn?.textContent || "Guardar borrador";
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Guardando...";
+    }
 
     try {
         const formData = new FormData();
         formData.append("agente", valor("agenteRevisionIa"));
         formData.append("estado_revision", valor("estadoRevisionIa") || "REVISADO");
-        formData.append("comentario_feedback", valor("comentarioFeedbackIa"));
+        formData.append("comentario_feedback", comentarioRevisionConTrazabilidadIa());
         formData.append("revisado_por", localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
 
         const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}/revision`, {
@@ -2264,19 +3746,38 @@ async function guardarRevisionIa() {
         const data = await leerJsonSeguro(response);
         if (!response.ok) throw new Error(data.detail || "No se pudo guardar la revisión.");
 
-        resultadoActualIa = null;
-        document.getElementById("resultadoContenidoIa")?.classList.add("oculto");
-        document.getElementById("resultadoVacioIa")?.classList.remove("oculto");
-        activarVistaReporteriaIa();
-        await cargarHistorialIa();
-        await cargarReporteriaIa();
-        mostrarMensajeIa("Revisión guardada correctamente.", "ok");
+        if (options.permanecerEnFicha) {
+            renderResultadoIa(data);
+            mostrarMensajeIa("Borrador guardado correctamente.", "ok");
+        } else {
+            resultadoActualIa = null;
+            document.getElementById("resultadoContenidoIa")?.classList.add("oculto");
+            document.getElementById("resultadoVacioIa")?.classList.remove("oculto");
+            activarVistaReporteriaIa();
+            await cargarHistorialIa();
+            await cargarReporteriaIa();
+            mostrarMensajeIa("Revisión guardada correctamente.", "ok");
+        }
     } catch (error) {
         mostrarMensajeIa(error.message || "Error guardando revisión.", "error");
     } finally {
-        btn.disabled = false;
-        btn.textContent = "Guardar revisión";
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = textoOriginal;
+        }
     }
+}
+
+function comentarioRevisionConTrazabilidadIa() {
+    const decision = document.querySelector("input[name='decisionSupervisorIa']:checked")?.value || "sin decisión";
+    const tipoSupervisor = valor("tipoLlamadaSupervisorIa");
+    const comentario = valor("comentarioFeedbackIa");
+    const partes = [];
+    if (comentario) partes.push(comentario);
+    partes.push(`Decisión supervisor: ${decision}`);
+    if (tipoSupervisor) partes.push(`Tipo de llamada supervisor: ${tipoSupervisor}`);
+    if (decision === "modificar") partes.push("Nota: edición pendiente de integración con el backend; no se recalcula ni persiste score final por ítem.");
+    return partes.join("\n");
 }
 
 function abrirRecalibracionIa() {
@@ -2351,10 +3852,21 @@ function cargarRevisionEnFormulario(data) {
     setValue("agenteRevisionIa", data.agente || "");
     setValue("estadoRevisionIa", data.estado_revision || "REVISADO");
     setValue("comentarioFeedbackIa", data.comentario_feedback || data.recomendaciones || "");
+    setValue("agenteRevisionLegacyIa", data.agente || "");
+    setValue("estadoRevisionLegacyIa", data.estado_revision || "REVISADO");
+    setValue("comentarioFeedbackLegacyIa", data.comentario_feedback || data.recomendaciones || "");
+    setText("contadorComentarioIa", `${valor("comentarioFeedbackIa").length} / 1000`);
+}
+
+function sincronizarRevisionLegacyIa() {
+    if (valor("agenteRevisionLegacyIa")) setValue("agenteRevisionIa", valor("agenteRevisionLegacyIa"));
+    if (valor("estadoRevisionLegacyIa")) setValue("estadoRevisionIa", valor("estadoRevisionLegacyIa"));
+    if (valor("comentarioFeedbackLegacyIa")) setValue("comentarioFeedbackIa", valor("comentarioFeedbackLegacyIa"));
 }
 
 function pintarLista(id, items) {
     const el = document.getElementById(id);
+    if (!el) return;
     el.innerHTML = items.length
         ? items.map(item => `<li class="${esAlertaCritica(item) ? "critical-alert" : ""}">${escapeHtml(item)}</li>`).join("")
         : `<li>-</li>`;
@@ -2376,32 +3888,71 @@ function esAlertaCritica(texto) {
 }
 
 function pintarEvaluacionCalidad(items) {
-    const tbody = document.getElementById("evaluacionCalidadIa");
-    if (!tbody) return;
+    const contenedor = document.getElementById("evaluacionCalidadIa");
+    if (!contenedor) return;
 
     if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="11">Sin evaluación de calidad registrada.</td></tr>`;
+        contenedor.innerHTML = `<div class="empty-segment">Sin evaluación de calidad registrada.</div>`;
         return;
     }
 
-    tbody.innerHTML = items.map(raw => {
-        const item = itemSgcIa(raw);
-        return `
-        <tr class="${claseFilaEvaluacion(item)}">
-            <td>${escapeHtml(formatearSegmentoIa(item.segmento))}</td>
-            <td>${escapeHtml(item.item || "-")}</td>
-            <td>${formatoPeso(item.peso)}</td>
-            <td><strong class="${Number(item.nota || 0) === 0 ? "critical-score" : ""}">${formatoPeso(item.nota)}</strong></td>
+    const grupos = new Map();
+    items.map(itemSgcIa).forEach(item => {
+        const segmento = formatearSegmentoIa(item.segmento || "Sin segmento");
+        const grupo = item.grupo_error_sgc || "No aplica";
+        const key = `${grupo}||${segmento}`;
+        const actual = grupos.get(key) || { grupo, segmento, peso: 0, nota: 0, brechas: 0, items: [] };
+        actual.peso += Number(item.peso || 0);
+        actual.nota += Number(item.nota || 0);
+        if (claseFilaEvaluacion(item)) actual.brechas += 1;
+        actual.items.push(item);
+        grupos.set(key, actual);
+    });
+
+    const filas = [...grupos.values()].map(grupo => {
+        const porcentaje = grupo.peso ? Math.round((grupo.nota / grupo.peso) * 100) : 0;
+        const estado = porcentaje >= 85 ? "Cumple" : porcentaje >= 60 ? "Parcial" : "Crítico";
+        return grupo.items.map((item, index) => `
+            <tr class="${claseFilaEvaluacion(item)}">
+                ${index === 0 ? `
+                    <td class="matrix-group-cell" rowspan="${grupo.items.length}">
+                        <strong>${escapeHtml(grupo.grupo)}</strong>
+                    </td>
+                    <td class="matrix-segment-cell ${porcentaje < 60 ? "is-critical" : porcentaje < 85 ? "is-partial" : "is-ok"}" rowspan="${grupo.items.length}">
+                        <span>Segmento COPC</span>
+                        <strong>${escapeHtml(grupo.segmento)}</strong>
+                        <small>${formatoPeso(grupo.nota)} / ${formatoPeso(grupo.peso)} · ${escapeHtml(estado)} · ${formatoNumero(grupo.brechas)} brecha(s)</small>
+                    </td>
+                ` : ""}
+                <td class="matrix-item-cell"><strong>${escapeHtml(item.item || "-")}</strong><small>${escapeHtml(item.factor_sgc || "-")}</small></td>
+                <td class="matrix-score-cell">${formatoPeso(item.peso)}</td>
+                <td class="matrix-score-cell"><strong class="${Number(item.nota || 0) === 0 ? "critical-score" : ""}">${formatoPeso(item.nota)}</strong></td>
                 <td>${badgeResultadoCalidadIa(item.resultado)}</td>
-                <td>${badgeSgcIa(item.grupo_error_sgc)}</td>
-                <td>${escapeHtml(item.factor_sgc || "-")}</td>
-                <td>${escapeHtml(item.hallazgo || "-")}</td>
-            <td>${escapeHtml(item.momento || "No disponible")}</td>
-            <td>${escapeHtml(item.evidencia || "-")}</td>
-            <td>${escapeHtml(item.recomendacion || "-")}</td>
-        </tr>
-    `;
+                <td><b>Hallazgo</b><p>${escapeHtml(item.hallazgo || "-")}</p></td>
+                <td><b>Evidencia</b><p>${escapeHtml(item.evidencia || "-")}</p></td>
+                <td><b>Recomendación</b><p>${escapeHtml(item.recomendacion || "-")}</p></td>
+            </tr>
+        `).join("");
     }).join("");
+
+    contenedor.innerHTML = `
+        <table class="quality-grouped-table">
+            <thead>
+                <tr>
+                    <th>Grupo SGC/PEC</th>
+                    <th>Segmento COPC</th>
+                    <th>Ítem COPC</th>
+                    <th>Peso</th>
+                    <th>Nota</th>
+                    <th>Resultado</th>
+                    <th>Hallazgo</th>
+                    <th>Evidencia</th>
+                    <th>Recomendación</th>
+                </tr>
+            </thead>
+            <tbody>${filas}</tbody>
+        </table>
+    `;
 }
 
 function badgeResultadoCalidadIa(resultado) {
@@ -2548,7 +4099,7 @@ function pintarTablaSgcDetalleIa(items) {
         .map(itemSgcIa)
         .filter(item => {
             const cal = String(item.calificacion || "").toLowerCase();
-            return item.grupo_error_sgc !== "No aplica" && !["cumple", "no aplica"].includes(cal);
+            return !esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica"].includes(cal);
         });
     if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="8" class="empty-row">Sin brechas SGC / PEC para mostrar en la vista ejecutiva.</td></tr>`;
@@ -2566,6 +4117,28 @@ function pintarTablaSgcDetalleIa(items) {
             <td>${badgeGerencialIa(item.requiere_coaching ? "Sí" : "No", item.requiere_coaching ? "alto" : "bajo")}</td>
         </tr>
     `).join("");
+}
+
+function pintarCabeceraFichaSgcIa(data = {}) {
+    const el = document.getElementById("cabeceraFichaSgcIa");
+    if (!el) return;
+    const score = data.score_final ?? data.score_normalizado ?? data.score_calidad;
+    el.innerHTML = `
+        <article><span>Evaluación</span><strong>${escapeHtml(data.id_feedback || "-")}</strong></article>
+        <article><span>Cartera</span><strong>${escapeHtml(data.cartera || "-")}</strong></article>
+        <article><span>Supervisor</span><strong>${escapeHtml(data.supervisor || "-")}</strong></article>
+        <article><span>Fecha llamada</span><strong>${escapeHtml(formatoFecha(data.fecha_llamada || data.fecha_creacion))}</strong></article>
+        <article><span>Score COPC</span><strong>${score != null ? `${Number(score).toFixed(1)} / 100` : "-"}</strong></article>
+        <article><span>Riesgo</span><strong>${escapeHtml(formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo))}</strong></article>
+        <p>Base técnica: matriz COPC adaptada a cobranza telefónica. Lectura gerencial: homologación SGC/PEC para clasificar hallazgos y orientar feedback o coaching.</p>
+    `;
+}
+
+function pintarCierreFichaSgcIa(data = {}) {
+    const items = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const prioridad = seleccionarFeedbackAlarmanteSgcIa(items, data);
+    setText("fichaFeedbackSgcIa", prioridad || data.recomendaciones || data.recomendacion_feedback_supervisor || "Sin feedback crítico sugerido registrado.");
+    setText("fichaObservacionSgcIa", data.comentario_feedback || data.comentario_supervisor || "Sin observación del supervisor registrada.");
 }
 
 function calificacionCortaSgcIa(value) {
@@ -2589,8 +4162,8 @@ function itemsFichaAuditoriaSgcIa(items = []) {
     return items.map(item => {
         const base = itemSgcIa(item);
         const fallback = clasificarGrupoBaseSgcIa(base);
-        const grupo = base.grupo_error_sgc === "No aplica" ? fallback.grupo : base.grupo_error_sgc;
-        const factor = (base.factor_sgc && base.factor_sgc !== "No aplica") ? base.factor_sgc : fallback.factor;
+        const grupo = esValorNoAplicableIa(base.grupo_error_sgc) ? fallback.grupo : base.grupo_error_sgc;
+        const factor = !esValorNoAplicableIa(base.factor_sgc) ? base.factor_sgc : fallback.factor;
         return {
             ...base,
             grupo_auditoria_sgc: grupo,
@@ -2603,23 +4176,67 @@ function itemsFichaAuditoriaSgcIa(items = []) {
 function badgeFichaCalificacionSgcIa(corta, completa) {
     const key = String(corta || "").toUpperCase();
     const clase = key === "NC" ? "nocumple" : key === "P" ? "parcial" : key === "C" ? "cumple" : "noaplica";
-    return `<span class="audit-sgc-badge ${clase}" title="${escapeHtml(completa || "-")}">${escapeHtml(key || "-")}</span>`;
+    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", NA: "NA - No aplica" };
+    return `<span class="audit-sgc-badge ${clase}" title="${escapeHtml(completa || "-")}">${escapeHtml(textos[key] || "-")}</span>`;
+}
+
+function prioridadFichaSgcIa(item = {}) {
+    const cal = String(item.calificacion_corta || "").toUpperCase();
+    if (cal === "NC") return 0;
+    if (cal === "P") return 1;
+    if (cal === "NA") return 3;
+    return 2;
+}
+
+function seleccionarFeedbackAlarmanteSgcIa(items = [], data = {}) {
+    const rows = itemsFichaAuditoriaSgcIa(items);
+    const prioridadGrupo = grupo => {
+        const value = String(grupo || "").toLowerCase();
+        if (value.includes("cumplimiento")) return 1;
+        if (value.includes("negocio")) return 2;
+        if (value.includes("usuario")) return 3;
+        return 4;
+    };
+    const prioridadCal = item => {
+        const cal = String(item.calificacion_corta || "").toUpperCase();
+        if (cal === "NC") return 0;
+        if (cal === "P") return 1;
+        return 9;
+    };
+    const brecha = rows
+        .filter(item => ["NC", "P"].includes(String(item.calificacion_corta || "").toUpperCase()))
+        .sort((a, b) =>
+            prioridadCal(a) - prioridadCal(b)
+            || prioridadGrupo(a.grupo_auditoria_sgc) - prioridadGrupo(b.grupo_auditoria_sgc)
+        )[0];
+    if (data.falta_anulante && (data.frase_anulante || data.momento_falta_anulante)) {
+        return `Prioridad máxima: revisar falta anulante${data.frase_anulante ? ` (${data.frase_anulante})` : ""}. Aplicar feedback formal y coaching inmediato.`;
+    }
+    if (!brecha) return "";
+    const accion = brecha.requiere_coaching ? "Requiere coaching estructurado" : "Requiere feedback puntual";
+    return `${accion}: ${brecha.factor_auditoria_sgc || "factor SGC/PEC"} - ${brecha.motivo || brecha.hallazgo || "hallazgo crítico sin detalle"}.`;
 }
 
 function pintarFichaAuditoriaSgcIa(items) {
     const el = document.getElementById("fichaAuditoriaSgcIa");
     if (!el) return;
     const rows = itemsFichaAuditoriaSgcIa(items);
+    const esBrecha = item => ["NC", "P"].includes(String(item.calificacion_corta || "").toUpperCase());
     if (!rows.length) {
         el.innerHTML = `<div class="empty-report-state"><strong>Sin ficha SGC/PEC disponible.</strong><small>La evaluación no contiene ítems suficientes para construir la ficha de auditoría.</small></div>`;
         return;
     }
     el.innerHTML = SGC_GRUPOS_IA.map(grupo => {
         const grupoRows = rows.filter(item => item.grupo_auditoria_sgc === grupo);
+        const brechas = grupoRows.filter(esBrecha);
+        const visibles = brechas.length
+            ? brechas.sort((a, b) => prioridadFichaSgcIa(a) - prioridadFichaSgcIa(b)).slice(0, 5)
+            : grupoRows.slice(0, 2);
+        const estadoGrupo = brechas.length ? `${brechas.length} factor(es) observado(s)` : "Sin errores observados";
         return `
             <section class="audit-sgc-group">
-                <header class="audit-sgc-header">${escapeHtml(grupo.toUpperCase())}</header>
-                <div class="table-wrap audit-sgc-table-wrap">
+                <header class="audit-sgc-header"><span>${escapeHtml(grupo.toUpperCase())}</span><small>${escapeHtml(estadoGrupo)}</small></header>
+                <div class="audit-sgc-table-wrap">
                     <table class="audit-sgc-table">
                         <thead>
                             <tr>
@@ -2631,7 +4248,7 @@ function pintarFichaAuditoriaSgcIa(items) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${grupoRows.length ? grupoRows.map(item => `
+                            ${visibles.length ? visibles.map(item => `
                                 <tr class="${claseFilaFichaSgcIa(item)}">
                                     <td><strong>${escapeHtml(item.factor_auditoria_sgc || "-")}</strong></td>
                                     <td>${badgeFichaCalificacionSgcIa(item.calificacion_corta, item.calificacion)}</td>
@@ -2674,6 +4291,7 @@ function mostrarTabDetalleIa(tab = "resumen") {
     });
 
     const paneles = {
+        revision: "detalleRevisionPanelIa",
         resumen: "detalleResumenPanelIa",
         matriz: "detalleMatrizPanelIa",
         ficha_sgc: "detalleFichaSgcPanelIa",
@@ -2695,7 +4313,8 @@ function pintarEvidenciasClaveIa(items) {
         el.innerHTML = `<div class="empty-segment">Sin evidencias clave registradas.</div>`;
         return;
     }
-    el.innerHTML = items.map(item => `
+    const visibles = items.slice(0, 6);
+    el.innerHTML = visibles.map(item => `
         <article class="evidence-card">
             <div><span>${escapeHtml(item.tipo || "Evidencia")}</span><strong>${escapeHtml(item.momento || "No disponible")}</strong></div>
             <div class="evidence-meta">
@@ -3000,12 +4619,13 @@ async function guardarPromptIa() {
 
 function pintarPuntosCriticos(items) {
     const tbody = document.getElementById("puntosCriticosIa");
+    if (!tbody) return;
     if (!items.length) {
         tbody.innerHTML = `<tr><td colspan="9">Sin puntos criticos registrados.</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = items.map(item => `
+    tbody.innerHTML = items.slice(0, 5).map(item => `
         <tr class="${claseFilaPuntoCriticoIa(item)}">
             <td>${escapeHtml(formatearSegmentoIa(item.segmento))}</td>
             <td>${escapeHtml(item.categoria || "-")}</td>
@@ -3338,6 +4958,8 @@ window.volverResultadoIa = volverResultadoIa;
 window.cargarReporteriaIa = cargarReporteriaIa;
 window.exportarReporteIa = exportarReporteIa;
 window.limpiarFiltrosReporteIa = limpiarFiltrosReporteIa;
+window.toggleFiltrosResumenIa = toggleFiltrosResumenIa;
+window.aplicarFiltrosResumenIa = aplicarFiltrosResumenIa;
 window.abrirPromptIa = abrirPromptIa;
 window.cerrarPromptIa = cerrarPromptIa;
 window.mostrarSeccionPromptIa = mostrarSeccionPromptIa;
@@ -3346,11 +4968,21 @@ window.cargarPromptIa = cargarPromptIa;
 window.abrirRecalibracionIa = abrirRecalibracionIa;
 window.cerrarRecalibracionIa = cerrarRecalibracionIa;
 window.mostrarTabDetalleIa = mostrarTabDetalleIa;
+window.mostrarTranscripcionIa = mostrarTranscripcionIa;
+window.cambiarVelocidadAudioIa = cambiarVelocidadAudioIa;
+window.irAEvidenciaAudioIa = irAEvidenciaAudioIa;
+window.toggleHallazgoGrupoIa = toggleHallazgoGrupoIa;
+window.filtrarHallazgosFichaIa = filtrarHallazgosFichaIa;
+window.prepararRecalibracionItemIa = prepararRecalibracionItemIa;
+window.guardarBorradorRevisionIa = guardarBorradorRevisionIa;
+window.validarEvaluacionDesdeFichaIa = validarEvaluacionDesdeFichaIa;
 window.toggleDetalleSgcIa = toggleDetalleSgcIa;
 window.exportarFichaSgcIa = exportarFichaSgcIa;
 window.guardarCoachingIa = guardarCoachingIa;
 window.mostrarVistaCalibracionIa = mostrarVistaCalibracionIa;
 window.mostrarVistaCoachingIa = mostrarVistaCoachingIa;
+window.mostrarVistaEvaluacionesIa = mostrarVistaEvaluacionesIa;
 window.mostrarVistaAlertasIa = mostrarVistaAlertasIa;
 window.mostrarVistaReportesIa = mostrarVistaReportesIa;
 window.mostrarVistaPromptIa = mostrarVistaPromptIa;
+
