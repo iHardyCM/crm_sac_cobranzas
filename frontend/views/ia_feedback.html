@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
     <link rel="stylesheet" href="/frontend/css/app_layout.css?v=20260616b">
-    <link rel="stylesheet" href="/frontend/css/ia_feedback.css?v=20260720a">
+    <link rel="stylesheet" href="/frontend/css/ia_feedback.css?v=20260802l">
 </head>
 <body>
     <main class="ia-page copc-shell">
@@ -228,14 +228,15 @@
                 <div id="resultadoContenidoIa" class="resultado-contenido oculto">
                     <nav class="detail-tabs" aria-label="Detalle de evaluación">
                         <button class="active" type="button" data-detail-tab="revision" onclick="mostrarTabDetalleIa('revision')">Ficha de evaluación</button>
-                        <button type="button" data-detail-tab="matriz" onclick="mostrarTabDetalleIa('matriz')">Matriz COPC</button>
                         <button type="button" data-detail-tab="ficha_sgc" onclick="mostrarTabDetalleIa('ficha_sgc')">Ficha SGC/PEC</button>
+                        <button type="button" data-detail-tab="matriz" onclick="mostrarTabDetalleIa('matriz')">Matriz técnica</button>
                         <button type="button" data-detail-tab="evidencias" onclick="mostrarTabDetalleIa('evidencias')">Evidencias</button>
                         <button type="button" data-detail-tab="coaching" onclick="mostrarTabDetalleIa('coaching')">Feedback y coaching</button>
                         <button type="button" data-detail-tab="calibracion" onclick="mostrarTabDetalleIa('calibracion')">Calibración</button>
                         <button type="button" data-detail-tab="historial" onclick="mostrarTabDetalleIa('historial')">Historial</button>
                     </nav>
                     <section id="detalleRevisionPanelIa" class="evaluation-review-shell">
+                        <div id="descalificacionBannerIa" class="disqualification-banner oculto"></div>
                         <div id="detalleMetaIa" class="evaluation-meta-strip"></div>
 
                         <section class="evaluation-review-grid">
@@ -286,48 +287,74 @@
                             <article class="review-card findings-card">
                                 <div class="review-card-head compact">
                                     <div>
-                                        <h4>Hallazgos de la evaluación</h4>
-                                        <p>SGC/PEC organiza la lectura gerencial; COPC sigue siendo la base técnica.</p>
+                                        <h4>Hallazgos SGC</h4>
+                                        <p>Principales hallazgos accionables de la evaluación. La matriz técnica queda como respaldo de cálculo.</p>
+                                    </div>
+                                    <div class="finding-head-actions">
+                                        <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('ficha_sgc')">Ver ficha SGC/PEC</button>
+                                        <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('matriz')">Ver matriz técnica</button>
                                     </div>
                                     <div id="filtrosHallazgosIa" class="findings-filter-pills"></div>
                                 </div>
                                 <div id="hallazgosAcordeonIa" class="findings-accordion"></div>
                             </article>
 
-                            <article class="review-card decision-card">
-                                <h4>Decisión del supervisor</h4>
-                                <form id="formDecisionSupervisorIa" class="review-form decision-form">
-                                    <label class="decision-option">
-                                        <input type="radio" name="decisionSupervisorIa" value="confirmar">
-                                        <span>Confirmar evaluación IA</span>
-                                    </label>
-                                    <label class="decision-option">
-                                        <input type="radio" name="decisionSupervisorIa" value="modificar">
-                                        <span>Modificar evaluación</span>
-                                    </label>
-                                    <label class="decision-option">
-                                        <input type="radio" name="decisionSupervisorIa" value="recalibrar">
-                                        <span>Solicitar recalibración</span>
-                                    </label>
-                                    <input id="feedbackIdActualIa" type="hidden">
-                                    <input id="agenteRevisionIa" type="hidden">
-                                    <select id="estadoRevisionIa" class="oculto">
-                                        <option value="REVISADO">Revisado</option>
-                                        <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
-                                        <option value="CERRADO">Cerrado</option>
-                                        <option value="PENDIENTE">Pendiente</option>
-                                    </select>
-                                    <div class="field">
-                                        <label for="comentarioFeedbackIa">Comentario del supervisor</label>
-                                        <textarea id="comentarioFeedbackIa" rows="5" maxlength="1000" placeholder="Escriba su comentario aquí..."></textarea>
-                                        <small id="contadorComentarioIa">0 / 1000</small>
+                            <aside class="review-right-column">
+                                <article class="review-card decision-card">
+                                    <h4>Decisión del supervisor</h4>
+                                    <form id="formDecisionSupervisorIa" class="review-form decision-form">
+                                        <label class="decision-option">
+                                            <input type="radio" name="decisionSupervisorIa" value="confirmar">
+                                            <span>Confirmar evaluación IA</span>
+                                        </label>
+                                        <label class="decision-option">
+                                            <input type="radio" name="decisionSupervisorIa" value="modificar">
+                                            <span>Modificar evaluación</span>
+                                        </label>
+                                        <label class="decision-option">
+                                            <input type="radio" name="decisionSupervisorIa" value="recalibrar">
+                                            <span>Solicitar recalibración</span>
+                                        </label>
+                                        <input id="feedbackIdActualIa" type="hidden">
+                                        <input id="agenteRevisionIa" type="hidden">
+                                        <select id="estadoRevisionIa" class="oculto">
+                                            <option value="REVISADO">Revisado</option>
+                                            <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
+                                            <option value="CERRADO">Cerrado</option>
+                                            <option value="PENDIENTE">Pendiente</option>
+                                        </select>
+                                        <div class="field">
+                                            <label for="comentarioFeedbackIa">Comentario del supervisor</label>
+                                            <textarea id="comentarioFeedbackIa" rows="5" maxlength="1000" placeholder="Escriba su comentario aquí..."></textarea>
+                                            <small id="contadorComentarioIa">0 / 1000</small>
+                                        </div>
+                                        <div class="review-actions decision-actions">
+                                            <button id="btnGuardarRevisionIa" class="btn-light" type="submit">Guardar borrador</button>
+                                            <button class="btn-primary btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
+                                        </div>
+                                    </form>
+                                </article>
+
+                                <article id="feedbackCoachingCardIa" class="review-card sgc-side-card">
+                                    <h4>Feedback o Coaching</h4>
+                                    <div class="sgc-side-list">
+                                        <p><span>Último feedback</span><strong id="feedbackUltimoIa">Sin registro</strong></p>
+                                        <p><span>Resumen</span><strong id="feedbackResumenIa">Sin información</strong></p>
+                                        <p><span>Conducta prioritaria</span><strong id="feedbackConductaIa">Sin información</strong></p>
+                                        <p><span>Acción entrenable</span><strong id="feedbackAccionIa">Sin información</strong></p>
+                                        <p><span>Objetivo siguiente llamada</span><strong id="feedbackObjetivoIa">Sin información</strong></p>
                                     </div>
-                                    <div class="review-actions decision-actions">
-                                        <button id="btnGuardarRevisionIa" class="btn-light" type="submit">Guardar borrador</button>
-                                    <button class="btn-primary btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
+                                </article>
+
+                                <article id="observacionesGestorCardIa" class="review-card sgc-side-card">
+                                    <h4>Observaciones del gestor</h4>
+                                    <div class="sgc-side-list">
+                                        <p><span>Última actualización</span><strong id="gestorActualizacionIa">Sin registro</strong></p>
+                                        <p><span>Compromiso del asesor</span><strong id="gestorCompromisoIa">Sin compromiso registrado</strong></p>
+                                        <p><span>Estado del compromiso</span><strong id="gestorEstadoIa">Sin información</strong></p>
                                     </div>
-                                </form>
-                            </article>
+                                </article>
+                            </aside>
                         </section>
                     </section>
 
@@ -365,7 +392,7 @@
                         <section class="detail-card">
                             <div class="section-title-row">
                                 <h4>Resumen por segmento COPC</h4>
-                                <button id="btnDetalleCalidadIa" class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('matriz')">Ver matriz completa</button>
+                                <button id="btnDetalleCalidadIa" class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('matriz')">Ver matriz técnica</button>
                             </div>
                             <div id="resumenSegmentosIa" class="segment-summary"></div>
                         </section>
@@ -391,7 +418,8 @@
                         <div class="section-title-row">
                             <div>
                                 <h4>Ficha de errores SGC/PEC</h4>
-                                <p class="detail-panel-copy">Vista de auditoría completa agrupada por clasificación gerencial SGC/PEC, manteniendo COPC como evaluación técnica base.</p>
+                                <p class="detail-panel-copy">Documento oficial de auditoría agrupado por clasificación gerencial.</p>
+                                <p class="detail-muted">La matriz técnica sustenta el score; la Ficha SGC/PEC consolida los hallazgos para supervisión, feedback y coaching.</p>
                             </div>
                             <div class="sgc-summary-actions">
                                 <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('revision')">Volver a ficha de evaluación</button>
@@ -415,14 +443,19 @@
                     <section id="detalleMatrizPanelIa" class="detail-tab-panel oculto">
                         <div class="section-title-row">
                             <div>
-                                <h4>Matriz técnica COPC adaptada</h4>
-                                <p class="detail-panel-copy">Evaluación ítem por ítem de la llamada. La columna SGC/PEC solo traduce el hallazgo para reportería gerencial.</p>
+                                <h4>Matriz técnica SGC</h4>
+                                <p class="detail-panel-copy">Detalle técnico de criterios, pesos, puntajes, resultados y evidencias.</p>
+                                <p class="detail-muted">Base metodológica inspirada en buenas prácticas COPC y adaptada al proceso de cobranza.</p>
+                            </div>
+                            <div class="sgc-summary-actions">
+                                <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('revision')">Volver a ficha de evaluación</button>
+                                <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('ficha_sgc')">Ver ficha SGC/PEC</button>
                             </div>
                         </div>
                         <div class="matrix-context-strip">
-                            <span><strong>COPC</strong> mide cumplimiento operativo de la llamada.</span>
-                            <span><strong>SGC/PEC</strong> clasifica brechas para Pareto, feedback y coaching.</span>
-                            <span><strong>Color mínimo</strong> solo resalta incumplimientos o parciales.</span>
+                            <span><strong>Score</strong> calculado sobre 100 puntos.</span>
+                            <span><strong>SGC/PEC</strong> traduce resultados para lectura gerencial.</span>
+                            <span><strong>Colores</strong> reservados para incumplimientos, parciales o revisiones.</span>
                         </div>
                         <div id="evaluacionCalidadIa" class="quality-grouped-matrix"></div>
                     </section>
@@ -431,118 +464,230 @@
                         <div class="section-title-row">
                             <div>
                                 <h4>Evidencias</h4>
-                                <p class="detail-panel-copy">Frases, momentos y hallazgos que sustentan la evaluación.</p>
+                                <p class="detail-panel-copy">Fragmentos del audio y la transcripción que sustentan los resultados técnicos y SGC.</p>
                             </div>
+                            <button class="btn-light btn-small" type="button" onclick="mostrarTabDetalleIa('revision'); setTimeout(() => document.getElementById('transcripcionDetalleIa')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);">Ver transcripción completa</button>
                         </div>
-                        <div id="evidenciasClaveIa" class="evidence-grid"></div>
-                        <div class="section-title-row compact-section-title">
-                            <h4>Puntos críticos principales</h4>
-                            <span class="detail-muted">Máximo 5 hallazgos para mantener foco operativo.</span>
+                        <div id="filtrosEvidenciasIa" class="evidence-filter-pills"></div>
+                        <div id="resumenOperativoEvidenciasIa" class="evidence-summary-strip"></div>
+                        <div class="evidence-info-note">
+                            Solo se muestran evidencias con frase, hablante y criterio relacionado. Si no existe sustento suficiente, el criterio queda en revisión humana dentro de la matriz técnica.
                         </div>
-                        <div class="table-wrap compact-critical-table">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Segmento</th>
-                                        <th>Categoria</th>
-                                        <th>Severidad</th>
-                                        <th>Momento</th>
-                                        <th>Frase textual</th>
-                                        <th>Hallazgo</th>
-                                        <th>Evidencia</th>
-                                        <th>Impacto</th>
-                                        <th>Recomendacion</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="puntosCriticosIa"></tbody>
-                            </table>
+                        <div class="evidence-tab-layout">
+                            <div class="evidence-table-wrap">
+                                <table class="evidence-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Tiempo</th>
+                                            <th>Hablante</th>
+                                            <th>Evidencia textual</th>
+                                            <th>Tipo</th>
+                                            <th>Confianza</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tablaEvidenciasIa"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </section>
 
-                    <section id="detalleCoachingPanelIa" class="detail-tab-panel oculto coaching-layout">
-                        <section class="detail-card feedback-box">
-                            <h4>Feedback sugerido por IA</h4>
-                            <span class="detail-muted">Observación puntual asociada a esta llamada.</span>
-                            <p id="recomendacionIa">-</p>
+                    <section id="detalleCoachingPanelIa" class="detail-tab-panel oculto coaching-workspace">
+                        <div class="coaching-top-grid">
+                            <section class="detail-card coaching-card">
+                                <div class="coaching-card-head">
+                                    <span>Feedback accionable</span>
+                                    <h4>Resumen de feedback IA</h4>
+                                </div>
+                                <div class="coaching-insight-list">
+                                    <article>
+                                        <span>Fortalezas observadas</span>
+                                        <p id="coachingFortalezasIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                    <article>
+                                        <span>Brecha prioritaria</span>
+                                        <p id="coachingBrechaIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                    <article>
+                                        <span>Impacto en la gestión</span>
+                                        <p id="coachingImpactoIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                    <article>
+                                        <span>Recomendación principal</span>
+                                        <p id="coachingRecomendacionIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                </div>
+                            </section>
+
+                            <section class="detail-card coaching-card">
+                                <div class="coaching-card-head">
+                                    <span>Guion entrenable</span>
+                                    <h4>Guion recomendado</h4>
+                                </div>
+                                <div class="coaching-script-list">
+                                    <article>
+                                        <span>Lo que ocurrió</span>
+                                        <p id="coachingOcurrioIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                    <article>
+                                        <span>Cómo podría abordarse</span>
+                                        <p id="coachingGuionIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                    <article>
+                                        <span>Objetivo del guion</span>
+                                        <p id="coachingObjetivoGuionIa">Requiere revisión del supervisor.</p>
+                                    </article>
+                                </div>
+                            </section>
+                        </div>
+
+                        <section class="detail-card coaching-priority-strip">
+                            <div class="section-title-row">
+                                <h4>Conducta prioritaria de entrenamiento</h4>
+                                <button id="btnVerEvidenciaCoachingIa" class="btn-light btn-small" type="button">Ver evidencia</button>
+                            </div>
+                            <div class="coaching-priority-grid">
+                                <article>
+                                    <span>Conducta prioritaria</span>
+                                    <strong id="coachingConductaPrioritariaIa">Manejo de objeciones.</strong>
+                                </article>
+                                <article>
+                                    <span>Acción entrenable</span>
+                                    <strong id="coachingAccionEntrenableIa">Preguntar monto y fecha antes de cerrar.</strong>
+                                </article>
+                                <article>
+                                    <span>Objetivo siguiente llamada</span>
+                                    <strong id="coachingObjetivoSiguienteIa">Obtener monto, fecha, canal y confirmación expresa.</strong>
+                                </article>
+                                <article>
+                                    <span>Evidencia que origina el coaching</span>
+                                    <strong id="coachingEvidenciaOrigenIa">Requiere revisión del supervisor.</strong>
+                                </article>
+                            </div>
                         </section>
-                        <section class="detail-card script-box">
-                            <h4>Guion sugerido</h4>
-                            <span class="detail-muted">Texto breve para bajar el feedback sin perder el foco.</span>
-                            <p id="guionIa">-</p>
-                        </section>
-                        <section class="detail-card review-box">
+
+                        <section class="detail-card coaching-plan-card">
                             <div>
                                 <h4>Plan de coaching</h4>
-                                <p>Plan estructurado solo para errores críticos, reincidencias o brechas de alto impacto.</p>
+                                <p>Plan aplicable a errores críticos, reincidencias o brechas de alto impacto.</p>
                             </div>
-                            <form id="formCoachingIa" class="review-form coaching-form">
-                                <div class="form-row">
+                            <form id="formCoachingIa" class="review-form coaching-form coaching-plan-form">
+                                <div class="coaching-form-grid">
                                     <div class="field">
                                         <label for="estadoCoachingIa">Estado coaching</label>
                                         <select id="estadoCoachingIa">
-                                            <option value="PENDIENTE">Pendiente</option>
+                                            <option value="NO_PROGRAMADO">No programado</option>
                                             <option value="PROGRAMADO">Programado</option>
-                                            <option value="EN_PROCESO">En proceso</option>
+                                            <option value="EN_PROCESO">En curso</option>
                                             <option value="REALIZADO">Realizado</option>
                                             <option value="CERRADO">Cerrado</option>
+                                            <option value="CANCELADO">Cancelado</option>
                                         </select>
                                     </div>
                                     <div class="field">
                                         <label for="fechaCoachingIa">Fecha programada</label>
                                         <input id="fechaCoachingIa" type="datetime-local">
                                     </div>
-                                </div>
-                                <div class="field">
-                                    <label for="compromisoAgenteIa">Compromiso del agente</label>
-                                    <textarea id="compromisoAgenteIa" rows="2" placeholder="Ejemplo: confirmar 3C en cada cierre y validar titularidad antes de informar deuda."></textarea>
-                                </div>
-                                <div class="field">
-                                    <label for="resultadoCoachingIa">Resultado o seguimiento</label>
-                                    <textarea id="resultadoCoachingIa" rows="2" placeholder="Resultado de la sesion, acuerdos o evidencia de mejora."></textarea>
-                                </div>
-                                <div class="review-actions">
-                                    <button id="btnGuardarCoachingIa" class="btn-light" type="submit">Guardar coaching</button>
-                                </div>
-                                <p id="ayudaCoachingIa" class="form-help">Para cerrar el coaching, cambia el estado a Realizado o Cerrado y guarda el seguimiento.</p>
-                            </form>
-                        </section>
-                        <section class="detail-card review-box">
-                            <div>
-                                <h4>Cierre del supervisor</h4>
-                                <p>La nota IA no se edita desde supervisión. Si discrepas, solicita recalibración con motivo y trazabilidad.</p>
-                            </div>
-                            <form id="formRevisionIa" class="review-form legacy-review-form">
-                                <div class="form-row">
                                     <div class="field">
-                                        <label>Agente identificado</label>
-                                        <input id="agenteRevisionLegacyIa" type="text" placeholder="Opcional: DNI - Nombre del agente">
+                                        <label for="responsableCoachingIa">Responsable del coaching</label>
+                                        <select id="responsableCoachingIa">
+                                            <option value="">Sin asignar</option>
+                                        </select>
                                     </div>
                                     <div class="field">
-                                        <label>Estado revisión</label>
-                                        <select id="estadoRevisionLegacyIa">
-                                            <option value="REVISADO">Revisado</option>
-                                            <option value="FEEDBACK_ENVIADO">Feedback enviado</option>
+                                        <label for="tipoIntervencionCoachingIa">Tipo de intervención</label>
+                                        <select id="tipoIntervencionCoachingIa">
+                                            <option value="FEEDBACK_PUNTUAL">Feedback puntual</option>
+                                            <option value="COACHING_INDIVIDUAL">Coaching individual</option>
+                                            <option value="ESCUCHA_CONJUNTA">Escucha conjunta</option>
+                                            <option value="ROLE_PLAY">Role play</option>
+                                            <option value="SEGUIMIENTO">Seguimiento</option>
+                                            <option value="PLAN_MEJORA">Plan de mejora</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label for="conductaPlanCoachingIa">Conducta prioritaria</label>
+                                        <input id="conductaPlanCoachingIa" type="text" placeholder="Ejemplo: Manejo de objeciones">
+                                    </div>
+                                    <div class="field coaching-field-wide">
+                                        <label for="objetivoMedibleCoachingIa">Objetivo medible</label>
+                                        <textarea id="objetivoMedibleCoachingIa" rows="2" placeholder="Ejemplo: obtener monto, fecha, canal y confirmación."></textarea>
+                                    </div>
+                                    <div class="field coaching-field-wide">
+                                        <label for="compromisoAgenteIa">Compromiso del agente</label>
+                                        <textarea id="compromisoAgenteIa" rows="2" placeholder="Compromiso editable antes de guardar el plan."></textarea>
+                                    </div>
+                                </div>
+                                <div class="review-actions coaching-actions">
+                                    <button id="btnGuardarCoachingIa" class="btn-primary" type="submit">Guardar plan</button>
+                                    <button id="btnMarcarCoachingRealizadoIa" class="btn-light" type="button">Marcar coaching realizado</button>
+                                </div>
+                                <p id="ayudaCoachingIa" class="form-help">Completa fecha y responsable para marcar el coaching como realizado.</p>
+                            </form>
+                        </section>
+
+                        <section class="detail-card coaching-followup-card">
+                            <div>
+                                <h4>Seguimiento</h4>
+                                <p>Registra la ejecución del coaching y la evidencia de mejora observada.</p>
+                            </div>
+                            <form id="formSeguimientoCoachingIa" class="review-form coaching-form coaching-followup-form">
+                                <div class="coaching-form-grid">
+                                    <div class="field">
+                                        <label for="fechaEjecucionCoachingIa">Fecha de ejecución</label>
+                                        <input id="fechaEjecucionCoachingIa" type="datetime-local">
+                                    </div>
+                                    <div class="field">
+                                        <label for="resultadoObservadoCoachingIa">Resultado observado</label>
+                                        <textarea id="resultadoObservadoCoachingIa" rows="2" placeholder="Ejemplo: aplicó preguntas abiertas y buscó monto viable."></textarea>
+                                    </div>
+                                    <div class="field">
+                                        <label for="cumplioObjetivoCoachingIa">¿Cumplió el objetivo?</label>
+                                        <select id="cumplioObjetivoCoachingIa">
+                                            <option value="">Seleccionar</option>
+                                            <option value="SI">Sí</option>
+                                            <option value="PARCIAL">Parcial</option>
+                                            <option value="NO">No</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label for="evidenciaMejoraCoachingIa">Evidencia de mejora</label>
+                                        <textarea id="evidenciaMejoraCoachingIa" rows="2" placeholder="Evidencia o justificación del seguimiento."></textarea>
+                                    </div>
+                                    <div class="field">
+                                        <label for="proximaRevisionCoachingIa">Próxima revisión</label>
+                                        <input id="proximaRevisionCoachingIa" type="date">
+                                    </div>
+                                    <div class="field">
+                                        <label for="estadoFinalCoachingIa">Estado final</label>
+                                        <select id="estadoFinalCoachingIa">
+                                            <option value="">Seleccionar</option>
+                                            <option value="EN_SEGUIMIENTO">En seguimiento</option>
+                                            <option value="CUMPLIDO">Cumplido</option>
+                                            <option value="REQUIERE_REFUERZO">Requiere refuerzo</option>
                                             <option value="CERRADO">Cerrado</option>
-                                            <option value="PENDIENTE">Pendiente</option>
                                         </select>
                                     </div>
                                 </div>
-                                <div class="field">
-                                    <label>Feedback final</label>
-                                    <textarea id="comentarioFeedbackLegacyIa" rows="3" placeholder="Comentario final del supervisor para el agente."></textarea>
+                                <div class="review-actions coaching-actions">
+                                    <button id="btnGuardarSeguimientoCoachingIa" class="btn-primary" type="submit">Guardar seguimiento</button>
+                                    <button id="btnCerrarCoachingIa" class="btn-light" type="button">Cerrar coaching</button>
                                 </div>
-                                <div class="review-actions">
-                                    <button id="btnGuardarRevisionLegacyIa" class="btn-primary" type="submit">Guardar revisión</button>
-                                    <button class="btn-light" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
-                                </div>
+                                <p id="ayudaSeguimientoCoachingIa" class="form-help">El seguimiento se habilita cuando el coaching está en curso o realizado.</p>
                             </form>
                         </section>
                     </section>
 
                     <section id="calibracionDetalleIa" class="detail-tab-panel calibration-detail oculto">
-                        <div class="section-title-row">
-                            <h4>Calibración y recalibración</h4>
-                            <button class="btn-light btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
+                        <div class="calibration-page-head">
+                            <div>
+                                <h4>Calibración y recalibración</h4>
+                                <p>Resuelve discrepancias entre la evaluación IA y la validación humana con trazabilidad por criterio.</p>
+                            </div>
+                            <div class="calibration-actions">
+                                <button id="btnNuevaRecalibracionIa" class="btn-light btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
+                                <button id="btnExportarTrazabilidadIa" class="btn-light btn-small" type="button" onclick="exportarTrazabilidadCalibracionIa()">Exportar trazabilidad</button>
+                            </div>
                         </div>
                         <div id="calibracionResumenIa"></div>
                     </section>
@@ -985,45 +1130,88 @@
                 <div class="modal-head">
                     <div>
                         <h3 id="tituloModalRecalibracionIa">Solicitud de recalibración</h3>
-                        <p>Registra una apelacion sin modificar la nota IA inicial.</p>
+                        <p>Cuestiona un criterio específico sin modificar la evaluación original.</p>
                     </div>
                     <button class="modal-close" type="button" onclick="cerrarRecalibracionIa()">X</button>
                 </div>
-                <section class="prompt-section">
+                <section class="prompt-section recalibration-modal-body">
                     <div class="recalibration-summary">
                         <article><span>Evaluación</span><strong id="recalibracionIdIa">-</strong></article>
-                        <article><span>Nota IA inicial</span><strong id="recalibracionNotaIa">-</strong></article>
+                        <article><span>Score IA original</span><strong id="recalibracionScoreIaOriginalIa">-</strong></article>
+                        <article><span>Score técnico actual</span><strong id="recalibracionScoreTecnicoIa">-</strong></article>
                         <article><span>Riesgo IA</span><strong id="recalibracionNivelIa">-</strong></article>
                     </div>
                     <form id="formRecalibracionIa" class="review-form">
-                        <div class="form-row">
+                        <input id="itemRecalibracionIa" type="hidden">
+                        <input id="scoreSugeridoIa" type="hidden">
+                        <input id="nivelSugeridoIa" type="hidden">
+                        <textarea id="evidenciaRecalibracionIa" class="oculto" aria-hidden="true"></textarea>
+
+                        <div class="recalibration-form-grid">
                             <div class="field">
-                                <label for="itemRecalibracionIa">Ítem cuestionado</label>
-                                <input id="itemRecalibracionIa" type="text" placeholder="Ejemplo: 4.1 Cierre 3C">
+                                <label for="criterioRecalibracionIa">Criterio cuestionado</label>
+                                <select id="criterioRecalibracionIa" onchange="actualizarCriterioRecalibracionIa()">
+                                    <option value="">Seleccionar criterio de la matriz técnica</option>
+                                </select>
                             </div>
                             <div class="field">
-                                <label for="scoreSugeridoIa">Nota sugerida</label>
-                                <input id="scoreSugeridoIa" type="number" min="0" max="100" step="0.1" placeholder="0 a 100">
+                                <label for="resultadoPropuestoRecalibracionIa">Resultado propuesto</label>
+                                <select id="resultadoPropuestoRecalibracionIa" onchange="actualizarPropuestaRecalibracionIa()">
+                                    <option value="">Sin cambio sugerido</option>
+                                    <option value="CUMPLE">Cumple</option>
+                                    <option value="PARCIAL">Parcial</option>
+                                    <option value="NO_CUMPLE">No cumple</option>
+                                    <option value="NO_APLICA">No aplica</option>
+                                    <option value="REVISION_HUMANA">Revisión humana</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="field">
-                            <label for="nivelSugeridoIa">Nivel sugerido</label>
-                            <select id="nivelSugeridoIa">
-                                <option value="">Sin cambio sugerido</option>
-                                <option value="BAJA">BAJA</option>
-                                <option value="MEDIA">MEDIA</option>
-                                <option value="ALTA">ALTA</option>
-                            </select>
-                        </div>
+
+                        <section id="detalleCriterioRecalibracionIa" class="recalibration-criterion-detail">
+                            <div class="empty-segment">Selecciona un criterio técnico para ver resultado, evidencia e impacto estimado.</div>
+                        </section>
+
+                        <section class="recalibration-proposal-box">
+                            <h4>Impacto estimado</h4>
+                            <div class="recalibration-proposal-grid">
+                                <article><span>Nota actual</span><strong id="notaActualRecalibracionIa">-</strong></article>
+                                <article><span>Nota propuesta</span><strong id="notaPropuestaRecalibracionIa">-</strong></article>
+                                <article><span>Impacto estimado</span><strong id="impactoRecalibracionIa">0.0 pts</strong></article>
+                            </div>
+                            <p>La solicitud no modifica el score técnico hasta que Calidad emita una resolución.</p>
+                        </section>
+
                         <div class="field">
                             <label for="motivoRecalibracionIa">Motivo de discrepancia *</label>
-                            <textarea id="motivoRecalibracionIa" rows="3" placeholder="Explica por qué discrepas con el criterio IA."></textarea>
+                            <textarea id="motivoRecalibracionIa" rows="4" placeholder="Explica por qué el resultado actual no representa correctamente la conducta observada."></textarea>
                         </div>
-                        <div class="field">
-                            <label for="evidenciaRecalibracionIa">Evidencia del supervisor</label>
-                            <textarea id="evidenciaRecalibracionIa" rows="3" placeholder="Minuto, frase o contexto que justifica la apelación."></textarea>
+
+                        <section class="recalibration-evidence-box">
+                            <div class="section-title-row">
+                                <h4>Evidencia vinculada</h4>
+                                <button class="btn-light btn-small" type="button" onclick="alternarSelectorEvidenciaRecalibracionIa()">Seleccionar otra evidencia</button>
+                            </div>
+                            <div id="evidenciaVinculadaRecalibracionIa" class="recalibration-linked-evidence">Sin evidencia vinculada.</div>
+                            <div id="selectorEvidenciaRecalibracionIaWrap" class="field oculto">
+                                <label for="selectorEvidenciaRecalibracionIa">Evidencia existente</label>
+                                <select id="selectorEvidenciaRecalibracionIa" onchange="actualizarEvidenciaRecalibracionIa()"></select>
+                            </div>
+                            <div class="field">
+                                <label for="comentarioEvidenciaRecalibracionIa">Comentario adicional del supervisor</label>
+                                <textarea id="comentarioEvidenciaRecalibracionIa" rows="2" placeholder="Contexto adicional que sustenta la solicitud."></textarea>
+                            </div>
+                        </section>
+
+                        <section class="recalibration-request-summary">
+                            <h4>Resumen de la solicitud</h4>
+                            <div id="resumenSolicitudRecalibracionIa"></div>
+                        </section>
+
+                        <div class="recalibration-modal-actions">
+                            <button class="btn-light" type="button" onclick="cancelarRecalibracionIa()">Cancelar</button>
+                            <button id="btnGuardarBorradorRecalibracionIa" class="btn-light" type="button" disabled title="El backend actual no soporta borradores de recalibración.">Guardar borrador</button>
+                            <button id="btnEnviarRecalibracionIa" class="btn-primary" type="submit">Enviar solicitud</button>
                         </div>
-                        <button id="btnEnviarRecalibracionIa" class="btn-primary" type="submit">Enviar solicitud</button>
                     </form>
                 </section>
             </div>
@@ -1033,7 +1221,7 @@
 
     <script src="/frontend/js/session.js"></script>
     <script src="/frontend/js/app_layout.js?v=20260623a"></script>
-    <script src="/frontend/js/ia_feedback.js?v=20260720a"></script>
+    <script src="/frontend/js/ia_feedback.js?v=20260807a"></script>
 </body>
 </html>
 

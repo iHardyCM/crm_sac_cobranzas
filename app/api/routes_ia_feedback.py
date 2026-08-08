@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -287,6 +288,43 @@ def reporteria_ia_feedback(
         return obtener_reporteria_calidad(limit=limit, supervisor=supervisor_filtro)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error obteniendo reporteria IA: {exc}")
+
+
+@router.get("/{id_feedback}/audio")
+def audio_ia_feedback(id_feedback: int):
+    try:
+        data = obtener_feedback(id_feedback)
+        ruta = data.get("ruta_archivo")
+        if not ruta:
+            raise HTTPException(status_code=404, detail="Audio no registrado para esta evaluacion.")
+        root = Path(__file__).resolve().parents[2]
+        archivo = Path(ruta)
+        if not archivo.is_absolute():
+            archivo = root / archivo
+        archivo = archivo.resolve()
+        uploads_root = (root / "uploads" / "ia_feedback").resolve()
+        if uploads_root not in [archivo, *archivo.parents]:
+            raise HTTPException(status_code=403, detail="Ruta de audio no permitida.")
+        if not archivo.exists():
+            raise HTTPException(status_code=404, detail="Archivo de audio no encontrado.")
+        media_type = {
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".ogg": "audio/ogg",
+        }.get(archivo.suffix.lower(), "application/octet-stream")
+        nombre = data.get("archivo_nombre") or archivo.name
+        headers = {
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(str(nombre))}",
+            "Cache-Control": "private, max-age=3600",
+        }
+        return FileResponse(archivo, media_type=media_type, headers=headers)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo audio IA: {exc}")
 
 
 @router.get("/{id_feedback}")

@@ -231,6 +231,178 @@ def enriquecer_por_usuario(rows, mapa_id, mapa_usuario, incluir_apoyo_recupero=F
     return data
 
 
+def obtener_clientes_unicos_control(cursor, fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
+    fecha_base = fecha_desde_parametro(fecha)
+    fecha_fin = fecha_base + timedelta(days=1)
+    params = [fecha_base, fecha_fin]
+    filtros = [
+        "G.FECHA >= ?",
+        "G.FECHA < ?",
+        "G.IDCLIENTE IS NOT NULL",
+        "G.IDUSUARIO IS NOT NULL",
+        "G.IDCARTERA IS NOT NULL",
+        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
+        "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
+    ]
+
+    if incluir_apoyo_recupero:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
+    else:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+
+    if idcartera is not None:
+        filtros.append("G.IDCARTERA = ?")
+        params.append(idcartera)
+
+    if idusuario is not None:
+        filtros.append("G.IDUSUARIO = ?")
+        params.append(idusuario)
+
+    cursor.execute(
+        f"""
+        SELECT
+            G.IDUSUARIO,
+            G.IDCARTERA,
+            COUNT(DISTINCT G.IDCLIENTE) AS CLIENTES_UNICOS_GESTION,
+            COUNT(DISTINCT CASE
+                WHEN UPPER(LTRIM(RTRIM(ISNULL(I.TIPOCONTACTO, '')))) = 'CEF'
+                THEN G.IDCLIENTE
+            END) AS CLIENTES_UNICOS_CEF
+        FROM SISCOB.DBO.GESTION G WITH(NOLOCK)
+        LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
+            ON U.IDUSUARIO = G.IDUSUARIO
+        LEFT JOIN SISCOB.DBO.INDICADOR I WITH(NOLOCK)
+            ON I.IDINDICADOR = G.IDINDICADOR
+        WHERE {" AND ".join(filtros)}
+        GROUP BY G.IDUSUARIO, G.IDCARTERA
+        """,
+        *params
+    )
+
+    resultado = {}
+    for id_usuario, id_cartera, clientes_gestion, clientes_cef in cursor.fetchall():
+        try:
+            key = (int(id_usuario), int(id_cartera))
+        except (TypeError, ValueError):
+            continue
+
+        resultado[key] = {
+            "CLIENTES_UNICOS_GESTION": int(clientes_gestion or 0),
+            "CLIENTES_UNICOS_CEF": int(clientes_cef or 0),
+        }
+
+    return resultado
+
+
+def aplicar_clientes_unicos(detalle, clientes_unicos):
+    for row in detalle:
+        try:
+            idusuario = int(row.get("IDUSUARIO"))
+            idcartera = int(row.get("IDCARTERA_ORIGINAL", row.get("IDCARTERA")))
+        except (TypeError, ValueError):
+            continue
+
+        valores = clientes_unicos.get((idusuario, idcartera), {})
+        row["CLIENTES_UNICOS_GESTION"] = valores.get("CLIENTES_UNICOS_GESTION", 0)
+        row["CLIENTES_UNICOS_CEF"] = valores.get("CLIENTES_UNICOS_CEF", 0)
+
+
+def obtener_compromisos_activos_control(cursor, fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
+    fecha_base = fecha_desde_parametro(fecha)
+    fecha_fin = fecha_base + timedelta(days=1)
+    params = [fecha_base, fecha_fin, fecha_base, fecha_fin]
+    filtros = [
+        "((C.FECHAGENERO >= ? AND C.FECHAGENERO < ?) OR (C.FECHACOMPROMISO >= ? AND C.FECHACOMPROMISO < ?))",
+        "ISNULL(C.MONTO, 0) > 0",
+        "G.IDUSUARIO IS NOT NULL",
+        "G.IDCARTERA IS NOT NULL",
+        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
+        "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
+        "UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')",
+    ]
+
+    if incluir_apoyo_recupero:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
+    else:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+
+    if idcartera is not None:
+        filtros.append("G.IDCARTERA = ?")
+        params.append(idcartera)
+
+    if idusuario is not None:
+        filtros.append("G.IDUSUARIO = ?")
+        params.append(idusuario)
+
+    cursor.execute(
+        f"""
+        SELECT
+            G.IDUSUARIO,
+            G.IDCARTERA,
+            SUM(CASE WHEN C.FECHAGENERO >= ? AND C.FECHAGENERO < ? THEN 1 ELSE 0 END) AS Q_PDP_ACTIVO,
+            SUM(CASE WHEN C.FECHAGENERO >= ? AND C.FECHAGENERO < ? THEN ISNULL(C.MONTO, 0) ELSE 0 END) AS PDP_ACTIVO,
+            SUM(CASE WHEN C.FECHACOMPROMISO >= ? AND C.FECHACOMPROMISO < ? THEN 1 ELSE 0 END) AS Q_PROYECTADO_ACTIVO,
+            SUM(CASE WHEN C.FECHACOMPROMISO >= ? AND C.FECHACOMPROMISO < ? THEN ISNULL(C.MONTO, 0) ELSE 0 END) AS PROYECTADO_ACTIVO
+        FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
+        LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
+            ON G.IDGESTION = C.IDGESTION
+        LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
+            ON U.IDUSUARIO = G.IDUSUARIO
+        LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+            ON CL.IDCLIENTE = G.IDCLIENTE
+        WHERE {" AND ".join(filtros)}
+        GROUP BY G.IDUSUARIO, G.IDCARTERA
+        """,
+        fecha_base,
+        fecha_fin,
+        fecha_base,
+        fecha_fin,
+        fecha_base,
+        fecha_fin,
+        fecha_base,
+        fecha_fin,
+        *params
+    )
+
+    resultado = {}
+    for id_usuario, id_cartera, q_pdp, pdp, q_proyectado, proyectado in cursor.fetchall():
+        try:
+            key = (int(id_usuario), int(id_cartera))
+        except (TypeError, ValueError):
+            continue
+
+        resultado[key] = {
+            "Q_PDP_GEN": int(q_pdp or 0),
+            "PDP_GEN": float(pdp or 0),
+            "Q_PROYECTADO": int(q_proyectado or 0),
+            "PROYECTADO": float(proyectado or 0),
+        }
+
+    return resultado
+
+
+def aplicar_compromisos_activos(detalle, compromisos_activos):
+    for row in detalle:
+        try:
+            idusuario = int(row.get("IDUSUARIO"))
+            idcartera = int(row.get("IDCARTERA_ORIGINAL", row.get("IDCARTERA")))
+        except (TypeError, ValueError):
+            continue
+
+        valores = compromisos_activos.get(
+            (idusuario, idcartera),
+            {"Q_PDP_GEN": 0, "PDP_GEN": 0, "Q_PROYECTADO": 0, "PROYECTADO": 0}
+        )
+        pago = float(valor_por_claves(row, ["PAGO", "pago", "PAGO_HOY", "pago_hoy", "MONTO_PAGO"]) or 0)
+        proyectado = float(valores.get("PROYECTADO") or 0)
+        row["Q_PDP_GEN"] = valores.get("Q_PDP_GEN", 0)
+        row["PDP_GEN"] = valores.get("PDP_GEN", 0)
+        row["Q_PROYECTADO"] = valores.get("Q_PROYECTADO", 0)
+        row["PROYECTADO"] = proyectado
+        row["PENDIENTE"] = max(proyectado - pago, 0)
+        row["AVANCE"] = (pago * 100 / proyectado) if proyectado else 0
+
+
 def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
     conn = None
     cursor = None
@@ -275,6 +447,22 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             mapa_usuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         )
+        clientes_unicos = obtener_clientes_unicos_control(
+            cursor,
+            fecha=fecha,
+            idcartera=idcartera,
+            idusuario=idusuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
+        )
+        compromisos_activos = obtener_compromisos_activos_control(
+            cursor,
+            fecha=fecha,
+            idcartera=idcartera,
+            idusuario=idusuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
+        )
+        aplicar_clientes_unicos(detalle, clientes_unicos)
+        aplicar_compromisos_activos(detalle, compromisos_activos)
 
         return {
             "detalle": detalle,
@@ -414,16 +602,27 @@ def construir_detalle_agentes_export(detalle):
             "Cartera": texto_export(row, ["CARTERA", "cartera"], ""),
             "Cartera usuario": texto_export(row, ["CARTERA_USUARIO", "cartera_usuario"], ""),
             "Gestiones": 0,
+            "Clientes gestion": 0,
             "CEF": 0,
+            "Clientes CEF": 0,
             "% CEF": 0,
             "PDP generado": 0,
             "Proyectado": 0,
             "Pago": 0,
             "Avance": 0,
             "Pendiente": 0,
+            "_fuentes_clientes_unicos": set(),
         })
 
         item["Gestiones"] += numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"])
+        fuente_clientes = (
+            str(idusuario or agente),
+            str(texto_export(row, ["IDCARTERA_ORIGINAL", "idcartera_original", "IDCARTERA", "idcartera"], "")),
+        )
+        if fuente_clientes not in item["_fuentes_clientes_unicos"]:
+            item["Clientes gestion"] += numero_export(row, ["CLIENTES_UNICOS_GESTION", "clientes_unicos_gestion"])
+            item["Clientes CEF"] += numero_export(row, ["CLIENTES_UNICOS_CEF", "clientes_unicos_cef"])
+            item["_fuentes_clientes_unicos"].add(fuente_clientes)
         item["CEF"] += numero_export(row, ["CEF", "cef"])
         item["PDP generado"] += numero_export(row, ["PDP_GEN", "pdp_gen", "PDP_GENERADO", "MONTO_GENERADO"])
         item["Proyectado"] += numero_export(row, ["PROYECTADO", "proyectado", "PROYECTADO_HOY"])
@@ -432,7 +631,12 @@ def construir_detalle_agentes_export(detalle):
         item["% CEF"] = pct_export(item["CEF"], item["Gestiones"])
         item["Avance"] = pct_export(item["Pago"], item["Proyectado"])
 
-    return list(agentes.values())
+    data = []
+    for item in agentes.values():
+        item.pop("_fuentes_clientes_unicos", None)
+        data.append(item)
+
+    return data
 
 
 def construir_detalle_base_export(detalle):
@@ -447,7 +651,9 @@ def construir_detalle_base_export(detalle):
             "Cartera usuario": texto_export(row, ["CARTERA_USUARIO", "cartera_usuario"], ""),
             "Gestiones": numero_export(row, ["GESTIONES", "gestiones", "TOTAL_GESTIONES"]),
             "Clientes mes": numero_export(row, ["CLIENTES_GESTIONADOS_MES", "clientes_gestionados_mes"]),
+            "Clientes gestion": numero_export(row, ["CLIENTES_UNICOS_GESTION", "clientes_unicos_gestion"]),
             "CEF": numero_export(row, ["CEF", "cef"]),
+            "Clientes CEF": numero_export(row, ["CLIENTES_UNICOS_CEF", "clientes_unicos_cef"]),
             "CNE": numero_export(row, ["CNE", "cne"]),
             "NOC": numero_export(row, ["NOC", "noc"]),
             "Q PDP": numero_export(row, ["Q_PDP_GEN", "q_pdp_gen", "Q_PDP"]),
@@ -667,6 +873,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
             "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'"
         )
         where_perfiles = f"{where_base} AND {filtro_perfiles}"
+        where_perfiles_activos = f"{where_perfiles} AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')"
 
         query = f"""
             WITH MOVIMIENTOS AS (
@@ -683,11 +890,13 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHAGENERO >= ?
                     AND C.FECHAGENERO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_perfiles}
+                    AND {where_perfiles_activos}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -709,6 +918,8 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHAPAGO >= ?
                     AND C.FECHAPAGO < ?
@@ -735,11 +946,13 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHACOMPROMISO >= ?
                     AND C.FECHACOMPROMISO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_perfiles}
+                    AND {where_perfiles_activos}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -811,11 +1024,13 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHAGENERO >= ?
                     AND C.FECHAGENERO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_perfiles}
+                    AND {where_perfiles_activos}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),
@@ -835,6 +1050,8 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHAPAGO >= ?
                     AND C.FECHAPAGO < ?
@@ -859,11 +1076,13 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
                     ON G.IDGESTION = C.IDGESTION
                 LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
                     ON U.IDUSUARIO = G.IDUSUARIO
+                LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+                    ON CL.IDCLIENTE = G.IDCLIENTE
                 WHERE
                     C.FECHACOMPROMISO >= ?
                     AND C.FECHACOMPROMISO < ?
                     AND ISNULL(C.MONTO, 0) > 0
-                    AND {where_perfiles}
+                    AND {where_perfiles_activos}
                 GROUP BY
                     G.IDUSUARIO,
                     CONCAT(U.USUARIO, ' - ', U.Nombres, ' ', U.Apellidos),

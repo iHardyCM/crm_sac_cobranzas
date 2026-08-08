@@ -15,10 +15,13 @@ from app.core.db_siscob import engine_siscob
 from app.services.ia_analysis_service import (
     analizar_transcripcion_mock,
     analizar_transcripcion_real,
+    calcular_score_normalizado,
     construir_resumen_sgc,
     enriquecer_evaluacion_sgc,
     generar_transcripcion_mock,
     ia_real_configurada,
+    normalizar_interlocutores_v2,
+    reparar_evaluacion_contextual_v2,
     transcribir_audio_real,
 )
 
@@ -1226,6 +1229,16 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
         falta_anulante=bool(data.get("falta_anulante")),
     )
     resumen_sgc = cargar_json_dict(data.get("resumen_sgc"))
+    json_copc_v2 = resumen_sgc.get("json_copc_v2") if isinstance(resumen_sgc, dict) else {}
+    if isinstance(json_copc_v2, dict) and str(resumen_sgc.get("version_evaluacion") or data.get("version_evaluacion") or "").startswith("2"):
+        evaluacion = reparar_evaluacion_contextual_v2(evaluacion, json_copc_v2, data.get("transcripcion") or "")
+        score_bruto_ctx, peso_ctx, score_ctx = calcular_score_normalizado(evaluacion)
+        data["score_bruto"] = score_bruto_ctx
+        data["peso_aplicable"] = peso_ctx
+        data["score_normalizado"] = score_ctx
+        if not data.get("score_final") or str(data.get("estado_revision") or "").upper() == "PENDIENTE":
+            data["score_final"] = score_ctx
+        score_final_num = score_ctx
     resumen_sgc = construir_resumen_sgc(
         evaluacion,
         resumen_sgc,
@@ -1239,6 +1252,19 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
     data["estado_tecnico"] = resumen_sgc.get("estado_tecnico")
     data["tipificaciones_sugeridas"] = resumen_sgc.get("tipificaciones_sugeridas") or []
     data["feedback_asesor"] = resumen_sgc.get("feedback_asesor") or {}
+    data["audio_url"] = f"/ia-feedback/{data.get('id_feedback')}/audio" if data.get("id_feedback") and data.get("ruta_archivo") else None
+    if isinstance(json_copc_v2, dict):
+        interlocutores = json_copc_v2.get("interlocutores") if isinstance(json_copc_v2.get("interlocutores"), dict) else {}
+        segmentos = interlocutores.get("segmentos") if isinstance(interlocutores.get("segmentos"), list) else []
+        if not segmentos:
+            interlocutores = normalizar_interlocutores_v2(json_copc_v2, data.get("transcripcion") or "")
+            segmentos = interlocutores.get("segmentos") if isinstance(interlocutores.get("segmentos"), list) else []
+        data["interlocutores"] = interlocutores
+        data["segmentos_interlocutores"] = segmentos
+    else:
+        interlocutores = normalizar_interlocutores_v2({}, data.get("transcripcion") or "")
+        data["interlocutores"] = interlocutores
+        data["segmentos_interlocutores"] = interlocutores.get("segmentos", [])
     data["requiere_feedback"] = bool(data.get("requiere_feedback") or resumen_sgc.get("requiere_feedback"))
     data["requiere_coaching"] = bool(data.get("requiere_coaching") or resumen_sgc.get("requiere_coaching"))
     data["estado_feedback"] = data.get("estado_feedback") or ("PENDIENTE" if data["requiere_feedback"] else "NO_REQUIERE")

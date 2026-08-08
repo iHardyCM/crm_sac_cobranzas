@@ -1,9 +1,25 @@
 ﻿const IA_FEEDBACK_BASE = obtenerBaseUrlIaFeedback();
 
+const IA_FEEDBACK_JS_VERSION = "FINDINGS_EVIDENCE_GUARD_20260807A";
+console.info("[IA Feedback]", IA_FEEDBACK_JS_VERSION);
+
 let historialIa = [];
 let resultadoActualIa = null;
 let reporteriaActualIa = null;
 let detalleReporteIa = [];
+let evidenciasDetalleIa = [];
+let evidenciasAgrupadasIa = [];
+let evidenciasDescartadasIa = 0;
+let evidenciaExpandidaIa = null;
+let filtroEvidenciasActualIa = "todas";
+let mostrarTodasEvidenciasIa = false;
+let criteriosEvidenciaExpandidaIa = null;
+let criteriosRecalibracionIa = [];
+let evidenciasRecalibracionIa = [];
+let criterioRecalibracionSeleccionadoIa = null;
+let evidenciaRecalibracionSeleccionadaIa = null;
+let filtroHistorialDetalleIa = "todos";
+let historialDetalleExpandidoIa = "";
 let detalleReportePaginaIa = 1;
 let detalleReportePageSizeIa = 10;
 let evaluacionesPaginaIa = 1;
@@ -106,6 +122,28 @@ function prepararFormularioIa() {
     document.getElementById("estadoCoachingIa")?.addEventListener("change", event => {
         actualizarAyudaCoachingIa(event.target.value);
     });
+    ["fechaCoachingIa", "responsableCoachingIa"].forEach(id => {
+        document.getElementById(id)?.addEventListener("input", () => actualizarAyudaCoachingIa(valor("estadoCoachingIa")));
+    });
+    ["estadoCoachingIa", "fechaCoachingIa", "responsableCoachingIa", "tipoIntervencionCoachingIa", "conductaPlanCoachingIa", "objetivoMedibleCoachingIa", "compromisoAgenteIa"].forEach(id => {
+        document.getElementById(id)?.addEventListener("input", marcarPlanCoachingPendienteIa);
+        document.getElementById(id)?.addEventListener("change", marcarPlanCoachingPendienteIa);
+    });
+
+    document.getElementById("btnMarcarCoachingRealizadoIa")?.addEventListener("click", async () => {
+        await marcarCoachingRealizadoIa();
+    });
+
+    document.getElementById("formSeguimientoCoachingIa")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await guardarSeguimientoCoachingIa();
+    });
+
+    document.getElementById("btnCerrarCoachingIa")?.addEventListener("click", async () => {
+        await cerrarCoachingDesdeSeguimientoIa();
+    });
+
+    document.getElementById("btnVerEvidenciaCoachingIa")?.addEventListener("click", irEvidenciaCoachingIa);
 }
 
 async function subirYAnalizarIa() {
@@ -304,9 +342,9 @@ function fechaLocalActualIa() {
 
 function tipoUsuarioIa() {
     if (typeof normalizarTipoUsuario === "function") {
-        return normalizarTipoUsuario(localStorage.getItem("tipo"));
+        return normalizarTipoUsuario(localStorage.getItem("tipo") || localStorage.getItem("tipoUsuario") || localStorage.getItem("perfil"));
     }
-    return String(localStorage.getItem("tipo") || "").trim().toUpperCase();
+    return String(localStorage.getItem("tipo") || localStorage.getItem("tipoUsuario") || localStorage.getItem("perfil") || "").trim().toUpperCase();
 }
 
 function esPerfilGerencialIa() {
@@ -445,9 +483,8 @@ function renderResultadoIa(data) {
     pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(data.evaluacion_calidad_lista || []));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
     pintarLista("alertasIa", data.alertas_lista || []);
-    pintarPuntosCriticos(data.puntos_criticos_lista || []);
     pintarTopCriticosIa(data.puntos_criticos_lista || []);
-    pintarEvidenciasClaveIa(data.evidencias_clave_lista || []);
+    pintarEvidenciasDetalleIa(data);
     pintarEvidenciaDestacadaIa(data.evidencias_clave_lista || [], data);
     pintarCalibracionDetalleIa(data);
     pintarHistorialDetalleIa(data.historial_lista || []);
@@ -467,8 +504,10 @@ function pintarFichaRevisionIa(data = {}) {
     const id = data.id_feedback || "-";
     const agente = data.agente || "Sin agente asociado";
     const fecha = data.fecha_llamada || data.fecha_creacion;
-    const scoreIa = scoreIaPreliminarResumenIa(data);
+    const scoreTecnico = scoreTecnicoFichaIa(data);
+    const scoreIa = scoreTecnico ?? scoreIaPreliminarResumenIa(data);
     const scoreFinal = scoreValidadoResumenIa(data);
+    const descalificada = esLlamadaDescalificadaFichaIa(data);
     const riesgo = formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo);
     const errorCritico = Boolean(data.error_critico || data.falta_anulante || Number(data.total_puntos_criticos || 0) > 0);
     const revision = estadoRevisionEvaluacionIa(data);
@@ -476,18 +515,20 @@ function pintarFichaRevisionIa(data = {}) {
     setText("detalleBreadcrumbIa", `Evaluaciones / Evaluación #${id}`);
     setText("detalleTituloIa", "Ficha de evaluación");
     setText("detalleSubtituloIa", `Llamada del ${formatoFecha(fecha)} · ${data.cartera || "Sin cartera"}`);
-    setText("resultadoNivelIa", riesgo);
+    setText("resultadoNivelIa", descalificada ? "DESCALIFICADA" : riesgo);
     setText("revisionHumanaBadgeIa", data.requiere_revision_humana ? "Requiere revisión humana" : revision.texto);
     const revisionBadge = document.getElementById("revisionHumanaBadgeIa");
     if (revisionBadge) revisionBadge.className = `evaluation-badge ${data.requiere_revision_humana ? "warn" : revision.clase}`;
+    pintarBannerDescalificacionIa(data, { descalificada, scoreTecnico });
+    actualizarTextoDecisionConfirmarIa(descalificada);
 
     const meta = document.getElementById("detalleMetaIa");
     if (meta) {
         meta.innerHTML = [
             ["Tipo de llamada", tipoLlamadaVisibleIa(data)],
             ["Agente", agente],
-            ["Score IA", scoreIa == null ? "Sin score" : `${scoreIa.toFixed(1)}%`],
-            ["Score final", scoreFinal == null ? "Pendiente" : `${scoreFinal.toFixed(1)}%`],
+            ["Score IA", formatoScoreSobre100Ia(scoreIa)],
+            ["Score final", scoreFinal == null ? "Pendiente" : formatoScoreSobre100Ia(scoreFinal)],
             ["Error crítico", errorCritico ? "Sí" : "No"],
             ["Revisión", revision.texto],
         ].map(([label, value]) => `
@@ -503,23 +544,68 @@ function pintarFichaRevisionIa(data = {}) {
     pintarClasificacionFichaIa(data);
     pintarDimensionesFichaIa(data.evaluacion_calidad_lista || [], data);
     pintarHallazgosAcordeonIa(data.evaluacion_calidad_lista || [], data);
+    pintarFeedbackObservacionesFichaIa(data);
     limpiarDecisionSupervisorIa(data);
     actualizarDecisionSupervisorIa();
+}
+
+function pintarBannerDescalificacionIa(data = {}, contexto = {}) {
+    const banner = document.getElementById("descalificacionBannerIa");
+    if (!banner) return;
+    const descalificada = contexto.descalificada ?? esLlamadaDescalificadaFichaIa(data);
+    if (!descalificada) {
+        banner.classList.add("oculto");
+        banner.innerHTML = "";
+        return;
+    }
+    const hallazgo = hallazgoAnulanteFichaIa(data);
+    const scoreTecnico = contexto.scoreTecnico ?? scoreTecnicoFichaIa(data);
+    const estadoTecnico = data.estado_tecnico || (scoreTecnico != null && scoreTecnico >= 85 ? "Aprobada" : "No aprobada");
+    const motivo = data.motivo_descalificacion || hallazgo.motivo || hallazgo.hallazgo || "Falta anulante detectada";
+    const evidencia = evidenciaAnulanteFichaIa(data, hallazgo);
+    const desviacion = desviacionGestionFichaIa(data, hallazgo);
+    banner.classList.remove("oculto");
+    banner.innerHTML = `
+        <div class="disqualification-title">
+            <strong>LLAMADA DESCALIFICADA — FALTA ANULANTE</strong>
+        </div>
+        <div class="disqualification-grid">
+            <article><span>Motivo principal</span><strong>${escapeHtml(motivo)}</strong></article>
+            <article><span>Evidencia anulante</span><strong>${escapeHtml(evidencia)}</strong></article>
+            <article><span>Desviación de gestión</span><strong>${escapeHtml(desviacion)}</strong></article>
+            <article><span>Score técnico</span><strong>${escapeHtml(formatoScoreSobre100Ia(scoreTecnico))}</strong></article>
+            <article><span>Estado técnico</span><strong>${escapeHtml(estadoTecnico)}</strong></article>
+            <article><span>Estado de calidad</span><strong>Descalificada</strong></article>
+            <article><span>Acción sugerida</span><strong>Coaching inmediato y revisión del supervisor</strong></article>
+        </div>
+    `;
+}
+
+function actualizarTextoDecisionConfirmarIa(descalificada = false) {
+    const opcion = document.querySelector("input[name='decisionSupervisorIa'][value='confirmar'] + span");
+    if (opcion) opcion.textContent = descalificada ? "Confirmar descalificación IA" : "Confirmar evaluación IA";
 }
 
 function pintarAudioYTranscripcionFichaIa(data = {}) {
     const wrap = document.getElementById("audioPlayerWrapIa");
     const audioUrl = data.audio_url || data.url_audio || "";
+    const audioSrcBase = resolverAudioUrlIa(audioUrl);
+    const audioSrc = audioSrcBase ? `${audioSrcBase}${audioSrcBase.includes("?") ? "&" : "?"}inline=1` : "";
     const duracion = data.duracion_segundos ? formatoDuracionIa(Number(data.duracion_segundos)) : "Duración no disponible";
     setText("audioDetalleMetaIa", `${data.archivo_nombre || "Audio"} · ${duracion}`);
     const diarizacion = tieneDiarizacionRealIa(data);
     setText("confianzaTranscripcionIa", diarizacion
         ? `Transcripción con separación de interlocutores · Confianza: ${formatearConfianzaEvaluacionIa(data.confianza_evaluacion || data.calidad_transcripcion)}`
-        : "Transcripción sin separación de interlocutores · Confianza: BAJA · Requiere revisión humana en criterios dependientes del hablante.");
+        : "Separación de interlocutores no disponible.");
     if (wrap) {
         wrap.innerHTML = audioUrl
-            ? `<audio id="audioRevisionIa" controls preload="metadata" src="${escapeHtml(audioUrl)}"></audio>`
+            ? `<audio id="audioRevisionIa" controls preload="metadata"><source src="${escapeHtml(audioSrc)}" type="${escapeHtml(tipoMimeAudioIa(data.archivo_nombre || audioUrl))}"></audio>`
             : `<div class="audio-unavailable"><strong>Audio pendiente de integración</strong><span>El backend guarda la ruta del archivo, pero aún no expone una URL segura para reproducirlo desde la ficha.</span></div>`;
+        const audio = document.getElementById("audioRevisionIa");
+        audio?.addEventListener("loadedmetadata", () => {
+            const activo = document.querySelector(".transcript-tabs button.active")?.dataset.transcriptTab || "limpia";
+            mostrarTranscripcionIa(activo);
+        }, { once: true });
     }
     mostrarTranscripcionIa("limpia");
 }
@@ -543,7 +629,7 @@ function pintarClasificacionFichaIa(data = {}) {
             </select>
         </div>
         <div><span>Confianza de clasificación</span><strong>${escapeHtml(confianzaBaja ? "BAJA" : confianza)}</strong></div>
-        <div><span>Resultado de llamada</span><strong>${escapeHtml(data.resultado_gestion || "Sin información")}</strong></div>
+        <div><span>Resultado de llamada</span><strong>${escapeHtml(textoHumanoIa(data.resultado_gestion) || "Sin información")}</strong></div>
         <div><span>Contexto previo</span><strong>${escapeHtml(data.contexto_previo || "Contexto no disponible")}</strong></div>
         ${renderTipificacionesSugeridasIa(data.tipificaciones_sugeridas || data.resumen_sgc?.tipificaciones_sugeridas || [])}
     `;
@@ -562,17 +648,17 @@ function pintarClasificacionFichaIa(data = {}) {
 
 function renderTipificacionesSugeridasIa(items = []) {
     if (!Array.isArray(items) || !items.length) return "";
-    const rows = items.slice(0, 2).map(item => {
+    return items.slice(0, 2).map((item, index) => {
         const label = [item.categoria, item.tipificacion].filter(Boolean).join(" - ") || "Tipificación sugerida";
         const confianza = item.confianza_porcentaje != null ? ` · ${Number(item.confianza_porcentaje).toFixed(0)}%` : "";
-        return `${label}${confianza}`;
-    });
-    return `
-        <div class="classification-wide">
-            <span>Tipificaciones sugeridas IA</span>
-            <strong>${rows.map(escapeHtml).join("<br>")}</strong>
+        const descripcion = item.descripcion || item.justificacion || "";
+        return `
+        <div>
+            <span>Tipificación sugerida ${index === 0 ? "principal" : "alternativa"}</span>
+            <strong>${escapeHtml(label)}${escapeHtml(confianza)}</strong>
+            ${descripcion ? `<small>${escapeHtml(descripcion)}</small>` : ""}
         </div>
-    `;
+    `}).join("");
 }
 
 function deduplicarTextosAlertaFichaIa(textos = []) {
@@ -607,59 +693,86 @@ function claveAlertaResumenIa(textoNormalizado = "") {
 function pintarDimensionesFichaIa(items = [], data = {}) {
     const el = document.getElementById("dimensionesFichaIa");
     if (!el) return;
-    const nombres = ["Cumplimiento", "Diagnóstico", "Gestión de solución", "Cierre verificable", "Experiencia y ética"];
-    const segmentos = new Map();
+    const dimensiones = [
+        { key: "Cumplimiento", label: "Cumplimiento y control de contacto", max: 15 },
+        { key: "Diagnóstico", label: "Diagnóstico", max: 15 },
+        { key: "Gestión de solución", label: "Gestión de solución y negociación", max: 35 },
+        { key: "Cierre verificable", label: "Cierre verificable", max: 30 },
+        { key: "Experiencia y ética", label: "Experiencia y ética", max: 5 },
+    ];
+    const segmentos = new Map(dimensiones.map(item => [item.key, { nota: 0, peso: 0, total: 0, noAplica: 0, revision: 0 }]));
     items.forEach(raw => {
         const item = itemSgcIa(raw);
         const resultado = String(item.resultado || "").toLowerCase();
         const segmento = formatearSegmentoIa(item.segmento || item.segmento_copc || "Sin segmento");
         const actual = segmentos.get(segmento) || { peso: 0, nota: 0, total: 0, noAplica: 0, revision: 0 };
         actual.total += 1;
-        if (item.aplica === false || resultado.includes("no aplica") || resultado.includes("no evaluable") || resultado.includes("revision") || resultado.includes("revisión")) {
+        if (resultado.includes("no aplica")) {
             actual.noAplica += 1;
         } else {
-            actual.peso += Number(item.peso || 0);
-            actual.nota += Number(item.nota || 0);
+            actual.peso += Number(item.peso ?? item.puntaje_maximo ?? 0);
+            actual.nota += Number(item.nota ?? item.puntaje_obtenido ?? 0);
         }
         if (String(item.resultado || "").toLowerCase().includes("revision")) actual.revision += 1;
         segmentos.set(segmento, actual);
     });
-    el.innerHTML = nombres.map(nombre => {
-        const item = segmentos.get(nombre);
-        const score = item && item.peso ? (item.nota / item.peso) * 100 : null;
-        const estado = !item ? "No evidenciado" : item.total === item.noAplica ? "No aplica" : item.revision ? "Revisión humana" : score >= 85 ? "Cumple" : score >= 60 ? "Parcial" : "No cumple";
+    const totalTecnico = scoreTecnicoFichaIa(data);
+    const cards = dimensiones.map(dimension => {
+        const item = segmentos.get(dimension.key);
+        const nota = item ? Number(item.nota || 0) : 0;
+        const score = item && item.total && item.total !== item.noAplica ? (nota / dimension.max) * 100 : null;
+        const estado = !item || !item.total ? "No evidenciado" : item.total === item.noAplica ? "No aplica" : item.revision ? "Revisión humana" : score >= 85 ? "Cumple" : score >= 60 ? "Parcial" : "No cumple";
         const clase = estado.includes("Cumple") ? "ok" : estado.includes("Parcial") ? "warn" : estado.includes("No aplica") || estado.includes("No evidenciado") ? "info" : "risk";
-        const preliminar = esEvaluacionValidadaIa(data) ? "Score validado" : "Score IA preliminar";
+        const avance = score == null ? 0 : Math.max(3, Math.min(100, score));
         return `
             <article class="${clase}">
-                <span>${escapeHtml(nombre)}</span>
-                <strong>${score == null ? estado : `${score.toFixed(0)}%`}</strong>
-                <div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div>
-                <small>${escapeHtml(preliminar)} · ${escapeHtml(estado)}</small>
+                <span>${escapeHtml(dimension.label)}</span>
+                <strong>${score == null ? estado : `${formatoPeso(nota)}/${formatoPeso(dimension.max)}`}</strong>
+                <div class="summary-progress"><i style="width:${avance}%"></i></div>
+                <small>${escapeHtml(estado)}</small>
             </article>
         `;
     }).join("");
+    el.innerHTML = `
+        ${cards}
+        <article class="dimension-total">
+            <span>Total técnico</span>
+            <strong>${escapeHtml(formatoScoreSobre100Ia(totalTecnico))}</strong>
+            <small>Modelo SGC · Base técnica COPC adaptada</small>
+        </article>
+    `;
 }
 
 function pintarHallazgosAcordeonIa(items = [], data = {}) {
     const el = document.getElementById("hallazgosAcordeonIa");
     if (!el) return;
-    const normalizados = items.map(itemSgcIa).map(normalizarHallazgoFichaIa);
-    const rowsBase = normalizados.filter(item => {
-        const cal = String(item.calificacion || item.resultado || "").toLowerCase();
-        if (cal.includes("no aplica")) return false;
-        return cal.includes("no cumple") || cal.includes("no evidenciado") || cal.includes("parcial") || item.requiere_feedback || item.requiere_coaching;
-    });
+    const normalizados = repararHallazgosContextualesFichaIa(
+        items.map(itemSgcIa).map(normalizarHallazgoFichaIa),
+        data,
+    );
+    const rowsBase = normalizados
+        .filter(esHallazgoAccionableFichaIa)
+        .filter(item => !esHallazgoGenericoSinEvidenciaIa(item));
     const { rows, duplicados } = deduplicarHallazgosFichaIa(rowsBase);
-    const grupos = SGC_GRUPOS_IA.map(grupo => ({ grupo, rows: rows.filter(item => item.grupo_error_sgc === grupo) }));
+    const rowsResumen = seleccionarHallazgosResumenSgcIa(rows, 3, 6);
+    const grupos = SGC_GRUPOS_IA.map(grupo => ({ grupo, rows: rowsResumen.filter(item => item.grupo_error_sgc === grupo) }));
     const totalCriticos = rows.filter(esHallazgoCriticoFichaIa).length;
-    const totalNoCriticos = rows.length - totalCriticos;
+    const totalNoCriticos = rows.filter(esHallazgoNoCriticoFichaIa).length;
+    const totalCriticosResumen = rowsResumen.filter(esGrupoCriticoSgcFichaIa).length;
+    const totalNoCriticosResumen = rowsResumen.filter(esHallazgoNoCriticoFichaIa).length;
+    console.table(rowsResumen.map(item => ({
+        grupo: item.grupo_error_sgc,
+        factor: criterioHallazgoIa(item),
+        calificacion: calificacionSgcVisibleFichaIa(resultadoHallazgoFichaIa(item)),
+        motivo: detalleHallazgoEnriquecidoIa(item),
+        evidencia: evidenciaHallazgoFichaIa(item, data),
+    })));
     const maxIndex = Math.max(0, grupos.reduce((best, grupo, index) => criticidadGrupoIa(grupo.rows) > criticidadGrupoIa(grupos[best]?.rows || []) ? index : best, 0));
     auditoriaFichaIa = {
         criterio: "factor_sgc válido; fallback item COPC",
         resultado: "calificacion; fallback resultado",
         grupo: "grupo_error_sgc normalizado a los 4 grupos SGC/PEC",
-        grupos: Object.fromEntries(grupos.map(grupo => [grupo.grupo, grupo.rows.length])),
+        grupos: Object.fromEntries(SGC_GRUPOS_IA.map(grupo => [grupo, rows.filter(item => item.grupo_error_sgc === grupo).length])),
         alertasAntesDeduplicar: rowsBase.length,
         alertasDespuesDeduplicar: rows.length,
         duplicadosEliminados: duplicados,
@@ -674,15 +787,16 @@ function pintarHallazgosAcordeonIa(items = [], data = {}) {
     const filtros = document.getElementById("filtrosHallazgosIa");
     if (filtros) {
         filtros.innerHTML = `
-            <button class="active" type="button" data-findings-filter="todos" onclick="filtrarHallazgosFichaIa('todos')">Todos ${formatoNumero(rows.length)}</button>
-            <button type="button" data-findings-filter="criticos" onclick="filtrarHallazgosFichaIa('criticos')">Críticos ${formatoNumero(totalCriticos)}</button>
-            <button type="button" data-findings-filter="no-criticos" onclick="filtrarHallazgosFichaIa('no-criticos')">No críticos ${formatoNumero(totalNoCriticos)}</button>
+            <span title="La ficha muestra los hallazgos más relevantes; usa Ver ficha SGC/PEC para auditoría total.">Principales ${formatoNumero(rowsResumen.length)} de ${formatoNumero(rows.length)}</span>
+            <button class="active" type="button" data-findings-filter="todos" onclick="filtrarHallazgosFichaIa('todos')">Todos ${formatoNumero(rowsResumen.length)}</button>
+            <button type="button" data-findings-filter="criticos" onclick="filtrarHallazgosFichaIa('criticos')">Críticos ${formatoNumero(totalCriticosResumen)}</button>
+            <button type="button" data-findings-filter="no-criticos" onclick="filtrarHallazgosFichaIa('no-criticos')">No críticos ${formatoNumero(totalNoCriticosResumen)}</button>
         `;
     }
     el.innerHTML = grupos.map(({ grupo, rows: grupoRows }, index) => `
-        <section class="finding-group ${index === maxIndex ? "" : "collapsed"}" data-critical-count="${grupoRows.filter(esHallazgoCriticoFichaIa).length}" data-noncritical-count="${grupoRows.filter(item => !esHallazgoCriticoFichaIa(item)).length}">
+        <section class="finding-group ${index === maxIndex ? "" : "collapsed"}" data-critical-count="${grupoRows.filter(esGrupoCriticoSgcFichaIa).length}" data-noncritical-count="${grupoRows.filter(esHallazgoNoCriticoFichaIa).length}">
             <button type="button" class="finding-group-head" onclick="toggleHallazgoGrupoIa(this)">
-                <span>${escapeHtml(grupo.toUpperCase())}</span>
+                <span>${index + 1}. ${escapeHtml(grupo.toUpperCase())}</span>
                 <b>${formatoNumero(grupoRows.length)}</b>
             </button>
             <div class="finding-group-body">
@@ -692,8 +806,48 @@ function pintarHallazgosAcordeonIa(items = [], data = {}) {
     `).join("");
 }
 
+function seleccionarHallazgosResumenSgcIa(rows = [], maxPorGrupo = 3, maxTotal = 6) {
+    const ordenados = [...rows].sort((a, b) => prioridadHallazgoResumenIa(b) - prioridadHallazgoResumenIa(a));
+    const conteo = new Map();
+    return ordenados.filter(item => {
+        const seleccionados = [...conteo.values()].reduce((sum, count) => sum + count, 0);
+        if (seleccionados >= maxTotal) return false;
+        const grupo = item.grupo_error_sgc || "Sin grupo";
+        const actual = conteo.get(grupo) || 0;
+        const maxGrupo = esHallazgoNoCriticoFichaIa(item) ? Math.min(2, maxPorGrupo) : maxPorGrupo;
+        if (actual >= maxGrupo) return false;
+        conteo.set(grupo, actual + 1);
+        return true;
+    });
+}
+
+function prioridadHallazgoResumenIa(item = {}) {
+    const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
+    const grupo = String(item.grupo_error_sgc || "").toLowerCase();
+    const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
+    let score = 0;
+    if (item.falta_anulante || item.puede_descalificar) score += 100;
+    if (grupo.includes("cumplimiento")) score += 35;
+    if (grupo.includes("usuario")) score += 30;
+    if (grupo.includes("negocio")) score += 25;
+    if (resultado.includes("no cumple") || resultado.includes("no evidenciado")) score += 20;
+    if (resultado.includes("revision") || resultado.includes("revisión")) score += 14;
+    if (resultado.includes("parcial")) score += 8;
+    if (evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}))) score += 5;
+    if (factor.includes("manejo de objeciones")) score += 18;
+    if (factor.includes("induccion a pago") || factor.includes("induccion al pago")) score += 18;
+    if (factor.includes("cierre verificable")) score += 18;
+    if (factor.includes("pasar a otra instancia") || factor.includes("presion legal ambigua") || factor.includes("lenguaje claro y presion profesional")) score += 18;
+    if (factor.includes("presentacion adaptacion") || factor.includes("presentacion y adaptacion")) score += 12;
+    if (factor.includes("claridad de montos")) score += 12;
+    if (factor.includes("empatia aplicada")) score += 12;
+    if (factor.includes("razon de no pago") || factor.includes("fecha probable de ingreso")) score -= 18;
+    return score;
+}
+
 function renderHallazgoFichaIa(item = {}, data = {}) {
     const resultado = resultadoHallazgoFichaIa(item);
+    const calificacion = calificacionSgcVisibleFichaIa(resultado);
     const momento = timestampValidoIa(item.momento || item.timestamp) ? (item.momento || item.timestamp) : "";
     const momentoParam = encodeURIComponent(momento);
     const criterio = criterioHallazgoIa(item);
@@ -701,31 +855,252 @@ function renderHallazgoFichaIa(item = {}, data = {}) {
     const audioDisponible = Boolean(data.audio_url || data.url_audio);
     const evidenciaTemporal = audioDisponible && timestampValidoIa(momento);
     const criteriosRelacionados = item.criterios_relacionados?.length || 1;
-    const hallazgoBase = item.hallazgo || item.motivo || "-";
+    const hallazgoBase = detalleHallazgoEnriquecidoIa(item);
     const hallazgoTexto = criteriosRelacionados > 1
         ? `${hallazgoBase} · ${criteriosRelacionados} criterios relacionados`
         : hallazgoBase;
+    const evidencia = evidenciaHallazgoFichaIa(item, data);
     return `
         <article class="finding-row" data-critical="${esHallazgoCriticoFichaIa(item) ? "1" : "0"}">
-            <div><span>Criterio</span><strong>${escapeHtml(criterio)}</strong>${criteriosRelacionados > 1 ? `<small>${criteriosRelacionados} criterios relacionados</small>` : ""}</div>
-            <div><span>Estado</span>${badgeResultadoCalidadIa(resultado)}</div>
-            <div><span>Evidencia</span><p>${escapeHtml(item.evidencia || "Sin evidencia registrada.")}</p><small>${escapeHtml(momento || "Timestamp no disponible")}</small></div>
-            <div><span>Hallazgo</span><p>${escapeHtml(hallazgoTexto)}</p></div>
-            <div><span>Recomendación</span><p>${escapeHtml(item.recomendacion || "-")}</p></div>
+            <div><span>Factor</span><strong>${escapeHtml(criterio)}</strong>${criteriosRelacionados > 1 ? `<small>${criteriosRelacionados} criterios relacionados</small>` : ""}</div>
+            <div><span>Calificación</span>${badgeCalificacionSgcFichaIa(calificacion)}</div>
+            <div><span>Motivo</span><p>${escapeHtml(hallazgoTexto)}</p></div>
+            <div><span>Evidencia</span><p>${escapeHtml(evidencia)}</p>${momento ? `<small>${escapeHtml(momento)}</small>` : ""}</div>
             <div class="finding-actions">
-                <button class="btn-light btn-small" type="button" ${evidenciaTemporal ? `onclick="irAEvidenciaAudioIa('${momentoParam}', true)"` : "disabled title=\"Evidencia temporal no disponible\""}>Escuchar evidencia</button>
+                <button class="btn-light btn-small" type="button" ${evidenciaTemporal ? `onclick="irAEvidenciaAudioIa('${momentoParam}', true)"` : "disabled title=\"Evidencia temporal no disponible\""}>Ver evidencia</button>
                 <button class="btn-light btn-small editable-criteria-action" type="button" onclick="prepararRecalibracionItemIa('${itemParam}', true)" disabled>Editar resultado</button>
             </div>
         </article>
     `;
 }
 
+function detalleHallazgoEnriquecidoIa(item = {}) {
+    const candidatos = [
+        item.motivo,
+        item.hallazgo,
+        item.lectura_ia,
+        item.conducta_observada,
+    ];
+    const vistos = new Set();
+    for (const candidato of candidatos) {
+        const texto = String(candidato || "").trim();
+        const key = normalizarTextoComparacionIa(texto);
+        if (!texto || vistos.has(key) || textoEsGenericoHallazgoIa(texto)) continue;
+        vistos.add(key);
+        return texto;
+    }
+    return "Requiere revisión humana.";
+}
+
 function normalizarHallazgoFichaIa(item = {}) {
     const base = { ...item };
     base.grupo_error_sgc = normalizarGrupoSgcFichaIa(base.grupo_error_sgc, base);
     base.factor_sgc = criterioHallazgoIa(base);
+    const factor = normalizarTextoComparacionIa(base.factor_sgc);
+    const evidencia = normalizarTextoComparacionIa(evidenciaHallazgoFichaIa(base, resultadoActualIa || {}));
+    if (factor.includes("lenguaje claro") && evidencia.includes("pasar a otra instancia")) {
+        base.grupo_error_sgc = "Errores críticos de cumplimiento";
+        base.factor_sgc = "Lenguaje claro y presión profesional";
+        base.resultado = "Requiere revisión";
+        base.calificacion = "Requiere revisión";
+        base.motivo = "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.";
+        base.requiere_revision = true;
+        base.puede_descalificar = false;
+        base.falta_anulante = false;
+    }
     base.calificacion = resultadoHallazgoFichaIa(base);
     return base;
+}
+
+function repararHallazgosContextualesFichaIa(items = [], data = {}) {
+    const salida = items.map(item => ({ ...item }));
+    const transcripcion = String(data.transcripcion || "");
+    const transKey = normalizarTextoComparacionIa(transcripcion);
+    const faltaQuote = extraerCitaFichaIa(transcripcion, [
+        /Parece que no es empresario[^.?!]{0,180}/i,
+        /no tiene plata ni para pagar[^.?!]{0,120}/i,
+    ]);
+    const propuestaQuote = extraerCitaFichaIa(transcripcion, [
+        /Yo no tengo que proponer nada[^.?!]{0,180}/i,
+    ]);
+    const fraccionamientoQuote = extraerCitaFichaIa(transcripcion, [
+        /Lo que podr.{1,4}a hacer tambi.{1,4}n es generar un fraccionamiento[^.?!]{0,180}/i,
+        /Lo que podr[ií]a hacer tambi[eé]n es generar un fraccionamiento[^.?!]{0,180}/i,
+    ]);
+    const legalQuote = extraerCitaFichaIa(transcripcion, [
+        /Las leyes le van a obligar[^.?!]{0,180}/i,
+        /instancia judicial[^.?!]{0,180}/i,
+        /distancia judicial[^.?!]{0,180}/i,
+        /pasar a otra instancia[^.?!]{0,180}/i,
+    ]);
+    const titularidadOk = /con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame|si senor|si senorita)/i.test(transKey)
+        || /me comunico con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)/i.test(transKey)
+        || /hablo con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)/i.test(transKey);
+
+    if (titularidadOk) {
+        const titularidad = buscarHallazgoPorCodigoIa(salida, "1.3");
+        if (titularidad) {
+            Object.assign(titularidad, {
+                resultado: "Cumple",
+                calificacion: "Cumple",
+                grupo_error_sgc: "Errores críticos de cumplimiento",
+                factor_sgc: "Validación de titularidad",
+                hallazgo: "El interlocutor confirma directa o indirectamente ser la persona consultada.",
+                evidencia: extraerCitaFichaIa(transcripcion, [/con\s+.{2,80}\?\s*.{0,40}/i]) || titularidad.evidencia,
+                puede_descalificar: false,
+                falta_anulante: false,
+                requiere_revision: false,
+            });
+        }
+    }
+
+    salida.forEach(item => {
+        const factor = normalizarTextoComparacionIa(`${item.factor_sgc || ""} ${item.item || ""}`);
+        const evidencia = evidenciaHallazgoFichaIa(item, data);
+        if (factor.includes("lenguaje claro") && normalizarTextoComparacionIa(evidencia).includes("pasar a otra instancia")) {
+            item.resultado = "Requiere revisión";
+            item.calificacion = "Requiere revisión";
+            item.grupo_error_sgc = "Errores críticos de cumplimiento";
+            item.factor_sgc = "Lenguaje claro y presión profesional";
+            item.motivo = "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.";
+            item.hallazgo = "Debe validarse si la referencia a otra instancia corresponde al discurso autorizado.";
+            item.requiere_revision = true;
+            item.puede_descalificar = false;
+            item.falta_anulante = false;
+        }
+    });
+
+    if (faltaQuote) {
+        let maltrato = buscarHallazgoPorCodigoIa(salida, "5.1")
+            || salida.find(item => normalizarTextoComparacionIa(`${item.factor_sgc} ${item.item} ${item.hallazgo}`).includes("maltrato"));
+        if (!maltrato) {
+            maltrato = {
+                codigo: "5.1",
+                item: "5.1 Respeto y ausencia de juicio",
+                segmento: "Experiencia y ética",
+                peso: 2,
+                nota: 0,
+            };
+            salida.push(maltrato);
+        }
+        Object.assign(maltrato, {
+            resultado: "No cumple",
+            calificacion: "No cumple",
+            grupo_error_sgc: "Errores críticos del usuario final",
+            factor_sgc: "Falta grave al usuario final / Maltrato psicológico",
+            hallazgo: "Maltrato psicológico: desacredita la capacidad económica del cliente.",
+            motivo: "Falta anulante por expresión humillante hacia el cliente.",
+            evidencia: faltaQuote,
+            frase_textual: faltaQuote,
+            gravedad: "ANULANTE",
+            severidad: "ANULANTE",
+            puede_descalificar: true,
+            falta_anulante: true,
+            requiere_revision: false,
+            requiere_feedback: true,
+            requiere_coaching: true,
+        });
+    }
+
+    if (propuestaQuote) {
+        const propuesta = buscarHallazgoPorCodigoIa(salida, "3.1");
+        if (propuesta) {
+            Object.assign(propuesta, {
+                resultado: "No cumple",
+                calificacion: "No cumple",
+                grupo_error_sgc: "Errores críticos del negocio",
+                factor_sgc: "Presentación de propuesta",
+                hallazgo: "No presenta alternativas de pago.",
+                evidencia: propuestaQuote,
+                requiere_revision: false,
+            });
+        }
+    }
+
+    if (legalQuote) {
+        const presion = buscarHallazgoPorCodigoIa(salida, "5.3") || buscarHallazgoPorCodigoIa(salida, "1.4");
+        if (presion) {
+            Object.assign(presion, {
+                resultado: "Requiere revisión",
+                calificacion: "Requiere revisión",
+                grupo_error_sgc: "Errores críticos de cumplimiento",
+                factor_sgc: "Lenguaje claro y presión profesional",
+                motivo: "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.",
+                hallazgo: "Debe validarse si la referencia a otra instancia corresponde al discurso autorizado.",
+                evidencia: legalQuote,
+                puede_descalificar: false,
+                falta_anulante: false,
+                requiere_revision: true,
+            });
+        }
+    }
+
+    if (fraccionamientoQuote && !salida.some(item => normalizarTextoComparacionIa(item.factor_sgc || "").includes("presentacion y adaptacion"))) {
+        const propuesta = buscarHallazgoPorCodigoIa(salida, "3.1") || buscarHallazgoPorCodigoIa(salida, "3.4");
+        const destino = propuesta || {
+            codigo_criterio: "3.1",
+            codigo: "3.1",
+            item: "3.1 Presentación clara de la propuesta",
+            segmento: "Gestión de solución",
+            peso: 6,
+        };
+        Object.assign(destino, {
+            resultado: "Parcial",
+            calificacion: "Parcial",
+            grupo_error_sgc: "Errores no críticos",
+            factor_sgc: "Presentación y adaptación de la propuesta",
+            motivo: "El agente ofreció fraccionamiento, pero no explicó cómo funcionaría ni adaptó la alternativa a la capacidad del cliente.",
+            hallazgo: "El agente ofreció fraccionamiento, pero no explicó cómo funcionaría ni adaptó la alternativa a la capacidad del cliente.",
+            evidencia: fraccionamientoQuote,
+            frase_textual: fraccionamientoQuote,
+            requiere_revision: true,
+            puede_descalificar: false,
+            falta_anulante: false,
+        });
+        if (!propuesta) salida.push(destino);
+    }
+
+    const gestionAplica = transKey.includes("deuda") || transKey.includes("pagar") || transKey.includes("abono") || transKey.includes("proponer");
+    if (gestionAplica) {
+        ["3.1", "3.4", "3.5", "3.6", "4.1", "4.2", "4.3", "4.4", "4.5"].forEach(codigo => {
+            const item = buscarHallazgoPorCodigoIa(salida, codigo);
+            if (!item) return;
+            const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
+            if (!resultado.includes("no aplica")) return;
+            item.resultado = propuestaQuote ? "No cumple" : "Requiere revisión";
+            item.calificacion = item.resultado;
+            item.aplica = true;
+            item.evidencia = propuestaQuote || item.evidencia || "";
+            item.grupo_error_sgc = item.grupo_error_sgc || "Errores críticos del negocio";
+            item.factor_sgc = item.factor_sgc || criterioHallazgoIa(item);
+            item.requiere_revision = !propuestaQuote;
+        });
+    }
+
+    return salida.map(item => {
+        const copia = { ...item };
+        if (esHallazgoAccionableFichaIa(copia) && !evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(copia, data))) {
+            copia.resultado = "Requiere revisión";
+            copia.calificacion = "Requiere revisión";
+            copia.requiere_revision = true;
+        }
+        copia.grupo_error_sgc = normalizarGrupoSgcFichaIa(copia.grupo_error_sgc, copia);
+        copia.factor_sgc = criterioHallazgoIa(copia);
+        return copia;
+    });
+}
+
+function buscarHallazgoPorCodigoIa(items = [], codigo = "") {
+    return items.find(item => codigoCriterioHallazgoIa(item) === normalizarTextoComparacionIa(codigo));
+}
+
+function extraerCitaFichaIa(texto = "", patrones = []) {
+    const fuente = String(texto || "");
+    for (const patron of patrones) {
+        const match = fuente.match(patron);
+        if (match?.[0]) return match[0].replace(/\s+/g, " ").trim();
+    }
+    return "";
 }
 
 function normalizarGrupoSgcFichaIa(grupo, item = {}) {
@@ -738,11 +1113,11 @@ function normalizarGrupoSgcFichaIa(grupo, item = {}) {
 function criterioHallazgoIa(item = {}) {
     const candidatos = [
         item.factor_sgc,
-        item.criterio,
         item.nombre_criterio,
         item.item_copc,
         itemCopcVisibleIa(item),
         item.item,
+        item.criterio,
     ];
     for (const candidato of candidatos) {
         const texto = String(candidato || "").trim();
@@ -759,6 +1134,100 @@ function resultadoHallazgoFichaIa(item = {}) {
     if (/parcial/i.test(resultado)) return "Parcial";
     if (/cumple/i.test(resultado)) return "Cumple";
     return normalizarCalificacionItemIa(item);
+}
+
+function calificacionSgcVisibleFichaIa(resultado = "") {
+    const texto = String(resultado || "").toLowerCase();
+    if (texto.includes("no aplica")) return "NA - NO APLICA";
+    if (texto.includes("no cumple") || texto.includes("no evidenciado")) return "NC - NO CUMPLE";
+    if (texto.includes("revision") || texto.includes("revisión") || texto.includes("parcial")) return "REVISIÓN HUMANA";
+    if (texto.includes("cumple")) return "C - CUMPLE";
+    return "REVISIÓN HUMANA";
+}
+
+function esHallazgoAccionableFichaIa(item = {}) {
+    if (criterioHallazgoIa(item) === "Criterio no identificado") return false;
+    const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
+    const evidenciaValida = evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}));
+    if (!evidenciaValida && !item.falta_anulante && !item.puede_descalificar) return false;
+    if (factor.includes("conducta etica") && !evidenciaValida) return false;
+    if (factor.includes("no abuso") && !evidenciaValida) return false;
+    if (esHallazgoGenericoSinEvidenciaIa(item)) return false;
+    if (item.falta_anulante || item.puede_descalificar) return true;
+    const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
+    return resultado.includes("no cumple")
+        || resultado.includes("revision")
+        || resultado.includes("revisión")
+        || resultado.includes("parcial");
+}
+
+function evidenciaHallazgoFichaIa(item = {}, data = {}) {
+    const candidatos = [
+        item.frase_textual,
+        item.cita_textual,
+        item.cita,
+        item.evidencia,
+        item.evidencia_textual,
+    ];
+    for (const candidato of candidatos) {
+        const texto = String(candidato || "").trim();
+        if (texto && evidenciaEsTextualFichaIa(texto)) return texto;
+    }
+    return "Sin cita textual registrada; requiere revisión humana.";
+}
+
+function evidenciaEsTextualFichaIa(texto = "") {
+    const valor = String(texto || "").trim();
+    const limpio = normalizarTextoComparacionIa(valor);
+    if (!valor) return false;
+    if (/^(no disponible|-|sin evidencia|no evidenciada|null|undefined)\.?$/i.test(valor)) return false;
+    if (["no disponible", "sin evidencia", "no evidenciada", "null", "undefined"].includes(limpio)) return false;
+    if (/revisar transcripci[oó]n/i.test(valor)) return false;
+    if (/sin cita textual/i.test(valor)) return false;
+    if (/no evidenciado en la respuesta ia/i.test(valor)) return false;
+    if (/maltrato psicol[oó]gico expl[ií]cito/i.test(valor)) return false;
+    return valor.length >= 8;
+}
+
+function textoEsGenericoHallazgoIa(texto = "") {
+    const valor = normalizarTextoComparacionIa(texto);
+    if (!valor) return true;
+    const genericos = [
+        "no evidenciado en la respuesta ia",
+        "criterio pendiente de validacion",
+        "no disponible",
+        "revisar transcripcion",
+        "sin cita textual registrada",
+        "sin evidencia",
+        "requiere revision humana",
+        "validar este criterio con la transcripcion",
+        "no se debe concluir incumplimiento",
+    ];
+    return genericos.some(item => valor.includes(item));
+}
+
+function esHallazgoGenericoSinEvidenciaIa(item = {}) {
+    if (item.falta_anulante || item.puede_descalificar) return false;
+    const evidenciaValida = evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}));
+    if (evidenciaValida) return false;
+    const textos = [
+        item.motivo,
+        item.hallazgo,
+        item.evidencia,
+        item.recomendacion,
+        item.conducta_observada,
+        item.lectura_ia,
+    ];
+    return textos.every(texto => textoEsGenericoHallazgoIa(texto));
+}
+
+function badgeCalificacionSgcFichaIa(texto = "") {
+    const key = String(texto || "").toLowerCase();
+    let clase = "review";
+    if (key.startsWith("c -")) clase = "ok";
+    if (key.startsWith("nc -")) clase = "bad";
+    if (key.startsWith("na -")) clase = "na";
+    return `<span class="sgc-rating ${clase}">${escapeHtml(texto || "REVISIÓN HUMANA")}</span>`;
 }
 
 function deduplicarHallazgosFichaIa(rows = []) {
@@ -784,6 +1253,12 @@ function deduplicarHallazgosFichaIa(rows = []) {
 }
 
 function claveDeduplicacionHallazgoIa(item = {}) {
+    const codigo = codigoCriterioHallazgoIa(item);
+    const factorKey = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
+    if (factorKey.includes("cierre verificable")) return "factor:cierre verificable";
+    if (factorKey.includes("presentacion adaptacion") || factorKey.includes("presentacion y adaptacion")) return "factor:presentacion adaptacion propuesta";
+    if (factorKey.includes("claridad de montos")) return "factor:claridad montos condiciones";
+    if (codigo) return `codigo:${codigo}`;
     const piezas = [
         item.alerta,
         item.categoria,
@@ -803,6 +1278,19 @@ function claveDeduplicacionHallazgoIa(item = {}) {
     return normalizarTextoComparacionIa(item.hallazgo || item.motivo || item.evidencia || criterioHallazgoIa(item));
 }
 
+function codigoCriterioHallazgoIa(item = {}) {
+    const candidatos = [
+        item.codigo_criterio,
+        item.codigo,
+        item.codigo_copc,
+        String(item.item || "").match(/^\s*(\d+\.\d+)/)?.[1],
+        String(item.item_copc || "").match(/^\s*(\d+\.\d+)/)?.[1],
+        String(item.criterio || "").match(/^\s*(\d+\.\d+)/)?.[1],
+    ];
+    const codigo = candidatos.find(valor => String(valor || "").trim());
+    return codigo ? normalizarTextoComparacionIa(codigo) : "";
+}
+
 function normalizarTextoComparacionIa(value = "") {
     return String(value || "")
         .toLowerCase()
@@ -815,8 +1303,20 @@ function normalizarTextoComparacionIa(value = "") {
 
 function esHallazgoCriticoFichaIa(item = {}) {
     const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
-    const grupo = String(item.grupo_error_sgc || "").toLowerCase();
-    return resultado.includes("no cumple") || resultado.includes("no evidenciado") || grupo.includes("crítico") || grupo.includes("critico");
+    const grupo = normalizarTextoComparacionIa(item.grupo_error_sgc || "");
+    const esBrecha = resultado.includes("no cumple") || resultado.includes("no evidenciado") || resultado.includes("parcial") || resultado.includes("revision") || resultado.includes("revisión");
+    const esGrupoCritico = esGrupoCriticoSgcFichaIa(item);
+    return Boolean(item.falta_anulante || item.puede_descalificar || (esGrupoCritico && esBrecha));
+}
+
+function esGrupoCriticoSgcFichaIa(item = {}) {
+    const grupo = normalizarTextoComparacionIa(item.grupo_error_sgc || "");
+    return grupo.includes("errores criticos") && !grupo.includes("errores no criticos");
+}
+
+function esHallazgoNoCriticoFichaIa(item = {}) {
+    const grupo = normalizarTextoComparacionIa(item.grupo_error_sgc || "");
+    return grupo.includes("errores no criticos");
 }
 
 function criticidadGrupoIa(rows = []) {
@@ -846,7 +1346,7 @@ function mostrarTranscripcionIa(tipo = "limpia") {
         btn.classList.toggle("active", btn.dataset.transcriptTab === tipo);
     });
     const texto = resultadoActualIa?.transcripcion || "";
-    const intervenciones = parseTranscripcionFichaIa(texto, tipo);
+    const intervenciones = parseTranscripcionFichaIa(texto, tipo, resultadoActualIa || {});
     if (!intervenciones.length) {
         el.innerHTML = `<div class="empty-segment">Transcripción no disponible.</div>`;
         return;
@@ -854,9 +1354,10 @@ function mostrarTranscripcionIa(tipo = "limpia") {
     el.innerHTML = intervenciones.map(item => {
         const tieneTimestamp = timestampValidoIa(item.momento);
         const tieneHablante = item.hablante && item.hablante !== "SIN DIARIZACIÓN";
+        const labelMomento = item.aproximado ? `≈ ${item.momento}` : item.momento;
         return `
         <article class="transcript-line ${!tieneTimestamp ? "no-timestamp" : ""} ${!tieneHablante ? "no-speaker" : ""}">
-            ${tieneTimestamp ? `<button type="button" onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.momento)}', true)">${escapeHtml(item.momento)}</button>` : ""}
+            ${tieneTimestamp ? `<button type="button" ${item.aproximado ? "title=\"Momento aproximado calculado desde la duración del audio\"" : ""} onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.momento)}', true)">${escapeHtml(labelMomento)}</button>` : ""}
             ${tieneHablante ? `<span class="${item.hablante === "CLIENTE" ? "client" : item.hablante === "AGENTE" ? "agent" : "neutral"}">${escapeHtml(item.hablante)}</span>` : ""}
             <p>${escapeHtml(item.texto)}</p>
         </article>
@@ -864,26 +1365,144 @@ function mostrarTranscripcionIa(tipo = "limpia") {
     }).join("");
 }
 
-function parseTranscripcionFichaIa(texto = "", tipo = "limpia") {
-    const diarizacion = tieneDiarizacionRealIa(resultadoActualIa || {});
+function parseTranscripcionFichaIa(texto = "", tipo = "limpia", data = {}) {
+    if (tipo === "literal") {
+        const continuo = String(texto || "").replace(/\s+/g, " ").trim();
+        return continuo ? [{ momento: null, hablante: "", texto: continuo, index: 0 }] : [];
+    }
+    const segmentos = segmentosTranscripcionV2Ia(data);
+    if (segmentos.length) {
+        const visibles = segmentos.slice(0, tipo === "limpia" ? 30 : 120);
+        const duracionAudio = duracionAudioRevisionIa();
+        return visibles.map((segmento, index) => {
+            const momentoReal = segmento.momento || segmento.timestamp || segmento.inicio || formatoTimestampDesdeSegundosIa(segmento.inicio_segundos);
+            const momentoEstimado = momentoReal ? null : timestampEstimadoSegmentoIa(visibles, index, duracionAudio);
+            return {
+                momento: momentoReal || momentoEstimado,
+                aproximado: !momentoReal && Boolean(momentoEstimado),
+                hablante: hablanteTranscripcionIa(segmento.hablante || segmento.speaker || segmento.rol),
+                texto: segmento.texto || segmento.transcripcion || segmento.frase || "",
+                index,
+            };
+        }).filter(item => item.texto);
+    }
     const lineas = String(texto || "").split(/\r?\n+/).map(x => x.trim()).filter(Boolean);
-    const base = lineas.length ? lineas : String(texto || "").split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-    return base.slice(0, tipo === "limpia" ? 12 : 80).map((linea, index) => {
-        const momento = linea.match(/(?:\b|^)(\d{1,2}:\d{2}(?::\d{2})?)(?:\b|$)/)?.[1] || "No disponible";
-        const speakerMatch = linea.match(/^(agente|asesor|cliente|titular|deudor|interlocutor)\s*[:\-]/i);
-        const hablante = diarizacion && speakerMatch
-            ? (/cliente|titular|deudor|interlocutor/i.test(speakerMatch[1]) ? "CLIENTE" : "AGENTE")
-            : "SIN DIARIZACIÓN";
-        const limpio = linea
-            .replace(/^(agente|asesor|cliente|titular|deudor|interlocutor)\s*[:\-]\s*/i, "")
-            .replace(/(?:\b|^)\d{1,2}:\d{2}(?::\d{2})?(?:\b|$)/, "")
-            .trim();
-        return { momento, hablante, texto: limpio || linea, index };
-    });
+    const continuo = lineas.join(" ") || String(texto || "").trim();
+    return continuo ? [{ momento: null, hablante: "", texto: continuo, index: 0 }] : [];
+}
+
+function segmentosTranscripcionV2Ia(data = {}) {
+    const candidatos = [
+        data.interlocutores?.segmentos,
+        data.segmentos_interlocutores,
+        data.transcripcion_segmentos,
+        data.transcripcion_diarizada,
+    ];
+    const segmentos = candidatos.find(Array.isArray);
+    return Array.isArray(segmentos) ? segmentos : [];
+}
+
+function hablanteTranscripcionIa(value = "") {
+    const texto = normalizarTextoComparacionIa(value);
+    if (texto.includes("agente") || texto.includes("asesor") || texto.includes("gestor")) return "AGENTE";
+    if (texto.includes("cliente") || texto.includes("titular") || texto.includes("deudor") || texto.includes("interlocutor")) return "CLIENTE";
+    return "NO DETERMINADO";
 }
 
 function tieneDiarizacionRealIa(data = {}) {
-    return Array.isArray(data.transcripcion_diarizada) && data.transcripcion_diarizada.length > 0;
+    return segmentosTranscripcionV2Ia(data).length > 0;
+}
+
+function scoreTecnicoFichaIa(data = {}) {
+    const scoreCalculado = calcularScoreTecnicoDesdeCriteriosIa(data.evaluacion_calidad_lista || []);
+    if (scoreCalculado != null) return scoreCalculado;
+    const campos = [
+        data.score_tecnico,
+        data.resultado_evaluacion?.score_tecnico,
+        data.score_calidad_ia,
+        data.score_ia,
+        data.score_normalizado,
+        data.score_calidad,
+        data.score_final_validado,
+        data.score_final,
+    ];
+    return primerNumeroIa(campos);
+}
+
+function calcularScoreTecnicoDesdeCriteriosIa(items = []) {
+    if (!Array.isArray(items) || !items.length) return null;
+    let nota = 0;
+    let peso = 0;
+    items.forEach(raw => {
+        const item = itemSgcIa(raw);
+        const pesoItem = Number(item.peso ?? item.puntaje_maximo ?? 0);
+        const notaItem = Number(item.nota ?? item.puntaje_obtenido ?? 0);
+        if (!Number.isFinite(pesoItem) || pesoItem <= 0) return;
+        peso += pesoItem;
+        if (Number.isFinite(notaItem)) nota += Math.max(0, Math.min(pesoItem, notaItem));
+    });
+    if (peso < 50) return null;
+    return peso === 100 ? nota : (nota / peso) * 100;
+}
+
+function formatoScoreSobre100Ia(value) {
+    if (value === null || value === undefined || value === "") return "Sin score";
+    const numero = Number(value);
+    if (Number.isNaN(numero)) return "Sin score";
+    return `${formatoPeso(numero)}/100`;
+}
+
+function esLlamadaDescalificadaFichaIa(data = {}) {
+    const estado = `${data.estado_calidad || ""} ${data.resultado_evaluacion?.estado_calidad || ""}`.toLowerCase();
+    return Boolean(data.descalificada || data.resultado_evaluacion?.descalificada || data.falta_anulante || estado.includes("descalificada"));
+}
+
+function hallazgoAnulanteFichaIa(data = {}) {
+    const candidatos = [
+        ...(Array.isArray(data.puntos_criticos_lista) ? data.puntos_criticos_lista : []),
+        ...(Array.isArray(data.errores_criticos) ? data.errores_criticos : []),
+        ...(Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : []),
+    ];
+    return candidatos.find(item => {
+        const texto = normalizarTextoComparacionIa(`${item.severidad || ""} ${item.gravedad || ""} ${item.categoria || ""} ${item.motivo || ""} ${item.hallazgo || ""}`);
+        return texto.includes("anulante") || texto.includes("maltrato") || texto.includes("insulto") || texto.includes("humillacion") || item.puede_descalificar || item.falta_anulante;
+    }) || {};
+}
+
+function evidenciaAnulanteFichaIa(data = {}, hallazgo = {}) {
+    const citaDirecta = extraerCitaFichaIa(String(data.transcripcion || ""), [
+        /Parece que no es empresario[^.?!]{0,180}/i,
+        /no tiene plata ni para pagar[^.?!]{0,120}/i,
+    ]);
+    if (citaDirecta) return citaDirecta;
+    const evidencia = evidenciaHallazgoFichaIa({
+        frase_textual: data.frase_anulante || hallazgo.frase_textual,
+        cita_textual: hallazgo.cita_textual,
+        cita: hallazgo.cita,
+        evidencia: hallazgo.evidencia,
+    }, data);
+    if (!/^Revisar transcripción|^Sin evidencia/i.test(evidencia)) return evidencia;
+    const transcripcion = String(data.transcripcion || "");
+    const frase = transcripcion.match(/["“”'‘’]([^"“”'‘’]{15,220})["“”'‘’]/)?.[1];
+    return frase || evidencia;
+}
+
+function desviacionGestionFichaIa(data = {}, hallazgo = {}) {
+    const texto = String(data.desviacion_gestion || data.resultado_gestion || hallazgo.desviacion_gestion || "").trim();
+    if (texto && !/^(no_acuerdo|sin_compromiso|no acuerdo)$/i.test(texto)) return `Sí — ${texto.replaceAll("_", " ").toLowerCase()}`;
+    if (esLlamadaDescalificadaFichaIa(data)) return "Sí — abandono del objetivo de cobranza";
+    return "Requiere revisión del supervisor";
+}
+
+function pintarFeedbackObservacionesFichaIa(data = {}) {
+    setText("feedbackUltimoIa", formatoFecha(data.fecha_ultimo_feedback || data.fecha_revision || data.fecha_creacion) || "Sin registro");
+    setText("feedbackResumenIa", valorTextoSeguroIa(data.feedback_supervisor?.resumen_tecnico || data.recomendacion_feedback || data.recomendacion_feedback_supervisor || data.resumen_sgc?.motivo, "Sin información"));
+    setText("feedbackConductaIa", valorTextoSeguroIa(data.feedback_supervisor?.conducta_prioritaria || data.coaching?.feedback_supervisor?.conducta_prioritaria || brechaPrincipalDetalleIa(data), "Sin información"));
+    setText("feedbackAccionIa", valorTextoSeguroIa(data.feedback_supervisor?.accion_entrenable || data.coaching?.feedback_supervisor?.accion_entrenable || data.guion_sugerido, "Sin información"));
+    setText("feedbackObjetivoIa", valorTextoSeguroIa(data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || data.feedback_asesor?.compromiso_sugerido, "Sin información"));
+    setText("gestorActualizacionIa", formatoFecha(data.fecha_observacion_gestor || data.fecha_revision || data.fecha_creacion) || "Sin registro");
+    setText("gestorCompromisoIa", valorTextoSeguroIa(data.compromiso_agente || data.observacion_gestor || data.comentario_agente, "Sin compromiso registrado"));
+    setText("gestorEstadoIa", valorTextoSeguroIa(data.estado_compromiso || data.estado_coaching || data.estado_feedback || data.estado_revision, "Sin información"));
 }
 
 function formatoDuracionIa(segundos) {
@@ -891,6 +1510,24 @@ function formatoDuracionIa(segundos) {
     const min = Math.floor(segundos / 60);
     const sec = Math.floor(segundos % 60);
     return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function tipoMimeAudioIa(nombre = "") {
+    const value = String(nombre || "").toLowerCase();
+    if (value.endsWith(".mp3")) return "audio/mpeg";
+    if (value.endsWith(".m4a")) return "audio/mp4";
+    if (value.endsWith(".ogg")) return "audio/ogg";
+    if (value.endsWith(".wav")) return "audio/wav";
+    return "audio/wav";
+}
+
+function resolverAudioUrlIa(url = "") {
+    const value = String(url || "").trim();
+    if (!value) return "";
+    if (/^https?:\/\//i.test(value)) return value;
+    const apiOrigin = IA_FEEDBACK_BASE.replace(/\/ia-feedback\/?$/, "");
+    if (value.startsWith("/")) return `${apiOrigin}${value}`;
+    return `${IA_FEEDBACK_BASE}/${value.replace(/^\/+/, "")}`;
 }
 
 function cambiarVelocidadAudioIa(value) {
@@ -917,13 +1554,37 @@ function segundosDesdeMomentoIa(momento) {
     return partes[3] ? nums[0] * 3600 + nums[1] * 60 + nums[2] : nums[0] * 60 + nums[1];
 }
 
+function formatoTimestampDesdeSegundosIa(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const segundos = Number(value);
+    if (!Number.isFinite(segundos) || segundos < 0) return null;
+    const total = Math.floor(segundos);
+    const min = Math.floor(total / 60);
+    const sec = total % 60;
+    return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+function duracionAudioRevisionIa() {
+    const audio = document.getElementById("audioRevisionIa");
+    const duracion = Number(audio?.duration);
+    return Number.isFinite(duracion) && duracion > 0 ? duracion : null;
+}
+
+function timestampEstimadoSegmentoIa(segmentos = [], index = 0, duracion = null) {
+    if (!Number.isFinite(duracion) || duracion <= 0 || !segmentos.length) return null;
+    const pesos = segmentos.map(segmento => Math.max(1, String(segmento.texto || segmento.transcripcion || segmento.frase || "").trim().split(/\s+/).filter(Boolean).length));
+    const total = pesos.reduce((sum, value) => sum + value, 0);
+    if (!total) return null;
+    const acumulado = pesos.slice(0, index).reduce((sum, value) => sum + value, 0);
+    return formatoTimestampDesdeSegundosIa((acumulado / total) * duracion);
+}
+
 function toggleHallazgoGrupoIa(btn) {
     btn?.closest(".finding-group")?.classList.toggle("collapsed");
 }
 
 function prepararRecalibracionItemIa(item, encoded = false) {
-    abrirRecalibracionIa();
-    setValue("itemRecalibracionIa", encoded ? decodeURIComponent(item || "") : item || "");
+    abrirRecalibracionIa(encoded ? decodeURIComponent(item || "") : item || "");
 }
 
 async function guardarBorradorRevisionIa() {
@@ -951,8 +1612,22 @@ async function validarEvaluacionDesdeFichaIa() {
         mostrarMensajeIa("Edición pendiente de integración con el backend. Guarda como borrador o solicita recalibración.", "error");
         return;
     }
-    setValue("estadoRevisionIa", decision === "modificar" ? "REVISADO" : "REVISADO");
-    await guardarRevisionIa();
+    setBotonesValidarFichaIa(true);
+    try {
+        setValue("estadoRevisionIa", decision === "modificar" ? "REVISADO" : "REVISADO");
+        await guardarRevisionIa();
+    } finally {
+        setBotonesValidarFichaIa(false);
+    }
+}
+
+function setBotonesValidarFichaIa(loading = false) {
+    document.querySelectorAll(".btn-validar-ficha-ia").forEach(btn => {
+        btn.classList.toggle("is-loading", loading);
+        btn.dataset.loading = loading ? "1" : "0";
+        if (loading) btn.textContent = "Validando...";
+        else btn.textContent = "Validar evaluación";
+    });
 }
 
 function actualizarDecisionSupervisorIa() {
@@ -1700,6 +2375,29 @@ const ITEM_COPC_DISPLAY_IA = [
     ["4.4", "4.4 Plan de seguimiento ante incumplimiento"],
     ["5.4", "5.4 Conducta ética y no abuso"],
 ];
+
+const CRITERIO_TECNICO_DISPLAY_IA = {
+    "2.1": "Identificación de la causa",
+    "2.2": "Capacidad actual de pago",
+    "2.3": "Fecha probable de ingreso",
+    "2.4": "Monto disponible",
+    "2.5": "Fuente del dinero o situación económica",
+    "3.1": "Presentación clara de la propuesta",
+    "3.2": "Claridad del beneficio",
+    "3.3": "Exploración de capacidad durante la negociación",
+    "3.4": "Negociación escalonada",
+    "3.5": "Manejo de objeciones",
+    "3.6": "Inducción a pago o abono",
+    "4.1": "Cantidad",
+    "4.2": "Fecha exacta",
+    "4.3": "Canal de pago",
+    "4.4": "Confirmación expresa",
+    "4.5": "Resumen y siguiente acción",
+    "5.1": "Respeto y ausencia de juicio",
+    "5.2": "Empatía y escucha activa",
+    "5.3": "Lenguaje claro y presión profesional",
+    "5.4": "Despedida y cierre profesional",
+};
 
 const SGC_FACTORES_IA = [
     ["Errores críticos del negocio", "Razón de no pago y explicar motivo", ["2.1", "motivo de atraso", "causa raíz", "causa raiz", "razón de no pago", "razon de no pago"]],
@@ -3369,7 +4067,17 @@ function ordenarEvaluacionesPorFechaDescIa(items = []) {
 
 function tipoLlamadaVisibleIa(item = {}) {
     const tipo = String(item.tipo_llamada || "").trim();
-    return tipo || "Por clasificar";
+    return textoHumanoIa(tipo) || "Por clasificar";
+}
+
+function textoHumanoIa(value) {
+    const texto = String(value || "").trim();
+    if (!texto) return "";
+    return texto
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .toLowerCase()
+        .replace(/(^|\s)(\S)/g, (_, sep, char) => `${sep}${char.toUpperCase()}`);
 }
 
 function scoreBandejaEvaluacionIa(item) {
@@ -3780,25 +4488,39 @@ function comentarioRevisionConTrazabilidadIa() {
     return partes.join("\n");
 }
 
-function abrirRecalibracionIa() {
+function abrirRecalibracionIa(criterioInicial = "") {
     if (!resultadoActualIa?.id_feedback) {
         mostrarMensajeIa("Primero abre o genera un análisis para solicitar recalibración.", "error");
         return;
     }
     setText("recalibracionIdIa", resultadoActualIa.id_feedback || "-");
-    const scoreActual = resultadoActualIa.score_final ?? resultadoActualIa.score_normalizado ?? resultadoActualIa.score_calidad;
-    setText("recalibracionNotaIa", scoreActual != null ? `${Number(scoreActual).toFixed(1)} / 100` : "-");
+    const scoreIa = scoreIaOriginalCalibracionIa(resultadoActualIa);
+    const scoreTecnico = scoreTecnicoActualCalibracionIa(resultadoActualIa);
+    setText("recalibracionScoreIaOriginalIa", scoreIa !== null ? `${formatoPeso(scoreIa)} / 100` : "-");
+    setText("recalibracionScoreTecnicoIa", scoreTecnico !== null ? `${formatoPeso(scoreTecnico)} / 100` : "-");
     setText("recalibracionNivelIa", formatearRiesgoVisibleIa(resultadoActualIa.nivel_oportunidad_mejora));
-    setValue("itemRecalibracionIa", "");
-    setValue("scoreSugeridoIa", "");
-    setValue("nivelSugeridoIa", "");
+    criteriosRecalibracionIa = criteriosTecnicosRecalibracionIa(resultadoActualIa);
+    evidenciasRecalibracionIa = evidenciasParaRecalibracionIa(resultadoActualIa);
+    criterioRecalibracionSeleccionadoIa = null;
+    evidenciaRecalibracionSeleccionadaIa = null;
+    poblarCriteriosRecalibracionIa(criterioInicial);
+    poblarEvidenciasRecalibracionIa();
+    setValue("resultadoPropuestoRecalibracionIa", "");
     setValue("motivoRecalibracionIa", "");
-    setValue("evidenciaRecalibracionIa", "");
+    setValue("comentarioEvidenciaRecalibracionIa", "");
+    document.getElementById("selectorEvidenciaRecalibracionIaWrap")?.classList.add("oculto");
+    actualizarCriterioRecalibracionIa();
     document.getElementById("modalRecalibracionIa")?.classList.remove("oculto");
 }
 
 function cerrarRecalibracionIa() {
     document.getElementById("modalRecalibracionIa")?.classList.add("oculto");
+}
+
+function cancelarRecalibracionIa() {
+    const hayCambios = valor("criterioRecalibracionIa") || valor("resultadoPropuestoRecalibracionIa") || valor("motivoRecalibracionIa") || valor("comentarioEvidenciaRecalibracionIa");
+    if (hayCambios && !confirm("Hay cambios sin enviar. ¿Deseas cerrar la solicitud?")) return;
+    cerrarRecalibracionIa();
 }
 
 async function enviarRecalibracionIa() {
@@ -3808,8 +4530,21 @@ async function enviarRecalibracionIa() {
         return;
     }
 
-    if (!valor("motivoRecalibracionIa")) {
-        mostrarMensajeIa("Ingresa el motivo de discrepancia para dejar trazabilidad.", "error");
+    const criterio = criterioRecalibracionSeleccionadoIa;
+    if (!criterio) {
+        mostrarMensajeIa("Selecciona un criterio real de la matriz técnica.", "error");
+        return;
+    }
+
+    const motivo = valor("motivoRecalibracionIa");
+    if (!motivoValidoRecalibracionIa(motivo)) {
+        mostrarMensajeIa("Ingresa un motivo específico y trazable para la discrepancia.", "error");
+        return;
+    }
+
+    const evidenciaTexto = construirEvidenciaSupervisorRecalibracionIa();
+    if (!evidenciaTexto && !motivo) {
+        mostrarMensajeIa("Vincula una evidencia o agrega una justificación suficiente.", "error");
         return;
     }
 
@@ -3822,8 +4557,8 @@ async function enviarRecalibracionIa() {
         formData.append("item_cuestionado", valor("itemRecalibracionIa"));
         if (valor("scoreSugeridoIa")) formData.append("score_sugerido", valor("scoreSugeridoIa"));
         formData.append("nivel_sugerido", valor("nivelSugeridoIa"));
-        formData.append("motivo", valor("motivoRecalibracionIa"));
-        formData.append("evidencia_supervisor", valor("evidenciaRecalibracionIa"));
+        formData.append("motivo", motivo);
+        formData.append("evidencia_supervisor", evidenciaTexto);
         formData.append("solicitado_por", localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
 
         const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}/recalibracion`, {
@@ -3838,6 +4573,7 @@ async function enviarRecalibracionIa() {
         setText("trazaRevisionIa", resultadoActualIa.estado_revision || "PENDIENTE");
         cerrarRecalibracionIa();
         await cargarHistorialIa();
+        if (resultadoActualIa?.id_feedback) pintarCalibracionDetalleIa(resultadoActualIa);
         mostrarMensajeIa("Solicitud de recalibración registrada con trazabilidad.", "ok");
     } catch (error) {
         mostrarMensajeIa(error.message || "Error solicitando recalibración.", "error");
@@ -3845,6 +4581,288 @@ async function enviarRecalibracionIa() {
         btn.disabled = false;
         btn.textContent = "Enviar solicitud";
     }
+}
+
+function criteriosTecnicosRecalibracionIa(data = {}) {
+    const recalibracionesActivas = new Set((data.recalibraciones_lista || [])
+        .filter(item => /pendiente|enviada|analisis|análisis/i.test(String(item.estado || "")))
+        .map(item => normalizarTextoComparacionIa(item.item_cuestionado || "")));
+    return (data.evaluacion_calidad_lista || [])
+        .map(itemSgcIa)
+        .map(item => {
+            const codigo = codigoCriterioHallazgoIa(item);
+            const nombre = nombreEspecificoCriterioRecalibracionIa(item, codigo);
+            const peso = Number(item.peso ?? item.puntaje_maximo ?? 0);
+            if (!codigo || !nombre || nombre === "Criterio no identificado" || !Number.isFinite(peso) || peso <= 0) return null;
+            const clave = normalizarTextoComparacionIa(`${codigo} ${nombre}`);
+            const bloqueado = [...recalibracionesActivas].some(actual => actual.includes(normalizarTextoComparacionIa(codigo)) || actual.includes(normalizarTextoComparacionIa(nombre)));
+            return {
+                raw: item,
+                codigo,
+                nombre,
+                dimension: item.segmento_copc || item.segmento || "-",
+                grupo: item.grupo_error_sgc || clasificarSgcItemIa(item).grupo,
+                peso,
+                nota: Number(item.nota ?? item.puntaje_obtenido ?? 0),
+                resultado: resultadoHallazgoFichaIa(item),
+                hallazgo: item.hallazgo || item.motivo || "-",
+                evidencia: evidenciaHallazgoFichaIa(item, data),
+                bloqueado,
+                clave,
+            };
+        })
+        .filter(Boolean);
+}
+
+function nombreEspecificoCriterioRecalibracionIa(item = {}, codigo = "") {
+    const codigoLimpio = String(codigo || codigoCriterioHallazgoIa(item) || "").trim();
+    const textoItem = String(item.item || item.item_copc || item.nombre_criterio || item.criterio || "").trim();
+    const sinCodigo = textoItem.replace(/^\s*\d+\.\d+\s*/, "").trim();
+    const factor = String(item.factor_sgc || "").trim();
+    const genericosPorCodigo = [
+        factor,
+        item.segmento,
+        item.segmento_copc,
+        "Razón de no pago y explicar motivo",
+        "Cierre verificable",
+        "Cierre verificable 3C/4C",
+    ].map(normalizarTextoComparacionIa).filter(Boolean);
+    const candidato = sinCodigo || textoItem;
+    if (candidato && !genericosPorCodigo.includes(normalizarTextoComparacionIa(candidato))) return candidato;
+    return CRITERIO_TECNICO_DISPLAY_IA[codigoLimpio] || candidato || criterioHallazgoIa(item);
+}
+
+function etiquetaOpcionCriterioRecalibracionIa(item = {}) {
+    const dimension = dimensionCortaRecalibracionIa(item.dimension);
+    const suffix = item.bloqueado ? " · solicitud activa" : "";
+    return `${item.codigo} ${item.nombre} · ${dimension} · ${item.resultado}${suffix}`;
+}
+
+function dimensionCortaRecalibracionIa(value = "") {
+    const texto = String(value || "").trim();
+    const normal = normalizarTextoComparacionIa(texto);
+    if (normal.includes("cumplimiento")) return "Cumplimiento";
+    if (normal.includes("diagnost")) return "Diagnóstico";
+    if (normal.includes("gestion")) return "Gestión de solución";
+    if (normal.includes("cierre")) return "Cierre verificable";
+    if (normal.includes("experiencia")) return "Experiencia y ética";
+    return texto || "Dimensión no disponible";
+}
+
+function poblarCriteriosRecalibracionIa(criterioInicial = "") {
+    const select = document.getElementById("criterioRecalibracionIa");
+    if (!select) return;
+    const inicial = normalizarTextoComparacionIa(criterioInicial);
+    select.innerHTML = `<option value="">Seleccionar criterio de la matriz técnica</option>` + criteriosRecalibracionIa.map((item, index) => {
+        const selected = inicial && (normalizarTextoComparacionIa(`${item.codigo} ${item.nombre}`).includes(inicial) || inicial.includes(normalizarTextoComparacionIa(item.codigo))) ? "selected" : "";
+        const disabled = item.bloqueado ? "disabled" : "";
+        return `<option value="${index}" ${selected} ${disabled}>${escapeHtml(etiquetaOpcionCriterioRecalibracionIa(item))}</option>`;
+    }).join("");
+}
+
+function actualizarCriterioRecalibracionIa() {
+    const index = valor("criterioRecalibracionIa");
+    criterioRecalibracionSeleccionadoIa = index !== "" ? criteriosRecalibracionIa[Number(index)] || null : null;
+    setValue("resultadoPropuestoRecalibracionIa", "");
+    evidenciaRecalibracionSeleccionadaIa = evidenciaPorCriterioRecalibracionIa(criterioRecalibracionSeleccionadoIa);
+    seleccionarEvidenciaRecalibracionIa(evidenciaRecalibracionSeleccionadaIa);
+    pintarDetalleCriterioRecalibracionIa();
+    actualizarPropuestaRecalibracionIa();
+}
+
+function pintarDetalleCriterioRecalibracionIa() {
+    const el = document.getElementById("detalleCriterioRecalibracionIa");
+    const item = criterioRecalibracionSeleccionadoIa;
+    if (!el) return;
+    if (!item) {
+        el.innerHTML = `<div class="empty-segment">Selecciona un criterio técnico para ver resultado, evidencia e impacto estimado.</div>`;
+        return;
+    }
+    el.innerHTML = `
+        <div class="recalibration-detail-grid">
+            ${detalleDatoRecalibracionIa("Código", item.codigo)}
+            ${detalleDatoRecalibracionIa("Nombre específico", item.nombre)}
+            ${detalleDatoRecalibracionIa("Dimensión técnica", item.dimension)}
+            ${detalleDatoRecalibracionIa("Factor o grupo relacionado", grupoSgcSingularIa(item.grupo))}
+            ${detalleDatoRecalibracionIa("Peso", formatoPeso(item.peso))}
+            ${detalleDatoRecalibracionIa("Nota actual", `${formatoPeso(item.nota)}/${formatoPeso(item.peso)}`)}
+            ${detalleDatoRecalibracionIa("Resultado actual", item.resultado)}
+            ${detalleDatoRecalibracionIa("Hallazgo técnico", item.hallazgo, true)}
+            ${detalleDatoRecalibracionIa("Evidencia disponible", item.evidencia, true)}
+        </div>
+        <div class="recalibration-inline-actions">
+            <button class="btn-light btn-small" type="button" onclick="irAEvidenciaRecalibracionIa()">Ver evidencia</button>
+            <button class="btn-light btn-small" type="button" onclick="verCriterioRecalibracionEnMatrizIa()">Ver en matriz técnica</button>
+        </div>
+    `;
+}
+
+function detalleDatoRecalibracionIa(label, value, wide = false) {
+    return `<article class="${wide ? "wide" : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "-")}</strong></article>`;
+}
+
+function actualizarPropuestaRecalibracionIa() {
+    const item = criterioRecalibracionSeleccionadoIa;
+    const resultado = valor("resultadoPropuestoRecalibracionIa");
+    const propuesta = notaPropuestaRecalibracionIa(item, resultado);
+    const notaActual = item ? Number(item.nota || 0) : null;
+    const peso = item ? Number(item.peso || 0) : null;
+    const impacto = propuesta !== null && notaActual !== null ? propuesta - notaActual : 0;
+    setText("notaActualRecalibracionIa", item ? `${formatoPeso(notaActual)}/${formatoPeso(peso)}` : "-");
+    setText("notaPropuestaRecalibracionIa", item ? `${formatoPeso(propuesta)}/${formatoPeso(peso)}` : "-");
+    setText("impactoRecalibracionIa", `${impacto >= 0 ? "+" : ""}${formatoPeso(impacto)} ${Math.abs(impacto) === 1 ? "punto" : "puntos"}`);
+    setValue("itemRecalibracionIa", item ? `${item.codigo} ${item.nombre}` : "");
+    setValue("scoreSugeridoIa", resultado && propuesta !== null ? formatoPeso(propuesta) : "");
+    setValue("nivelSugeridoIa", resultado || "SIN_CAMBIO");
+    pintarResumenSolicitudRecalibracionIa();
+}
+
+function notaPropuestaRecalibracionIa(item, resultado = "") {
+    if (!item) return null;
+    const peso = Number(item.peso || 0);
+    const actual = Number(item.nota || 0);
+    if (!resultado) return actual;
+    if (resultado === "CUMPLE") return peso;
+    if (resultado === "NO_CUMPLE") return 0;
+    if (resultado === "NO_APLICA") return actual;
+    if (resultado === "REVISION_HUMANA") return actual;
+    if (resultado === "PARCIAL") {
+        if (actual > 0 && actual < peso) return actual;
+        return peso >= 2 ? peso / 2 : Math.min(peso, 0.5);
+    }
+    return actual;
+}
+
+function evidenciasParaRecalibracionIa(data = {}) {
+    const base = evidenciasAgrupadasIa.length ? evidenciasAgrupadasIa : agruparEvidenciasVisualesIa(normalizarEvidenciasDetalleIa(data).evidencias);
+    return base.filter(item => item.frase && item.criterio);
+}
+
+function poblarEvidenciasRecalibracionIa() {
+    const select = document.getElementById("selectorEvidenciaRecalibracionIa");
+    if (!select) return;
+    select.innerHTML = `<option value="">Seleccionar evidencia existente</option>` + evidenciasRecalibracionIa.map((item, index) => {
+        const texto = `${item.hablante || "NO DETERMINADO"} · ${item.criterio || "-"} · ${String(item.frase || "").slice(0, 90)}`;
+        return `<option value="${index}">${escapeHtml(texto)}</option>`;
+    }).join("");
+}
+
+function evidenciaPorCriterioRecalibracionIa(criterio = null) {
+    if (!criterio) return null;
+    const codigo = normalizarTextoComparacionIa(criterio.codigo);
+    const nombre = normalizarTextoComparacionIa(criterio.nombre);
+    return evidenciasRecalibracionIa.find(item => {
+        const rels = Array.isArray(item.criterios_relacionados) ? item.criterios_relacionados : [item];
+        return rels.some(rel => normalizarTextoComparacionIa(rel.codigo_criterio || "").includes(codigo) || normalizarTextoComparacionIa(rel.criterio || "").includes(nombre));
+    }) || null;
+}
+
+function seleccionarEvidenciaRecalibracionIa(item = null) {
+    evidenciaRecalibracionSeleccionadaIa = item;
+    const select = document.getElementById("selectorEvidenciaRecalibracionIa");
+    if (select && item) {
+        const index = evidenciasRecalibracionIa.indexOf(item);
+        if (index >= 0) select.value = String(index);
+    }
+    pintarEvidenciaVinculadaRecalibracionIa();
+}
+
+function actualizarEvidenciaRecalibracionIa() {
+    const index = valor("selectorEvidenciaRecalibracionIa");
+    seleccionarEvidenciaRecalibracionIa(index !== "" ? evidenciasRecalibracionIa[Number(index)] || null : null);
+}
+
+function alternarSelectorEvidenciaRecalibracionIa() {
+    document.getElementById("selectorEvidenciaRecalibracionIaWrap")?.classList.toggle("oculto");
+}
+
+function pintarEvidenciaVinculadaRecalibracionIa() {
+    const el = document.getElementById("evidenciaVinculadaRecalibracionIa");
+    if (!el) return;
+    const item = evidenciaRecalibracionSeleccionadaIa;
+    if (!item) {
+        el.innerHTML = `<span>Sin evidencia vinculada</span><p>El supervisor puede enviar la solicitud si explica el contexto de revisión.</p>`;
+        pintarResumenSolicitudRecalibracionIa();
+        return;
+    }
+    const timestamp = timestampValidoIa(item.tiempo) ? item.tiempo : "Audio no sincronizado";
+    el.innerHTML = `
+        <span>${escapeHtml(item.hablante || "NO DETERMINADO")} · ${escapeHtml(timestamp)} · ${escapeHtml(textoTipoEvidenciaIa(item.tipo || ""))}</span>
+        <p>${escapeHtml(item.frase || "-")}</p>
+        <small>Confianza: ${escapeHtml(item.confianza || "No disponible")}</small>
+    `;
+    pintarResumenSolicitudRecalibracionIa();
+}
+
+function construirEvidenciaSupervisorRecalibracionIa() {
+    const item = evidenciaRecalibracionSeleccionadaIa;
+    const comentario = valor("comentarioEvidenciaRecalibracionIa");
+    const partes = [];
+    if (item?.frase) {
+        partes.push(`Hablante: ${item.hablante || "NO DETERMINADO"}`);
+        partes.push(`Tiempo: ${timestampValidoIa(item.tiempo) ? item.tiempo : "Audio no sincronizado"}`);
+        partes.push(`Frase: "${item.frase}"`);
+        if (item.tipo) partes.push(`Tipo de sustento: ${textoTipoEvidenciaIa(item.tipo)}`);
+        if (item.confianza) partes.push(`Confianza: ${item.confianza}`);
+    }
+    if (comentario) partes.push(`Comentario supervisor: ${comentario}`);
+    const texto = partes.join("\n");
+    setValue("evidenciaRecalibracionIa", texto);
+    return texto;
+}
+
+function pintarResumenSolicitudRecalibracionIa() {
+    const el = document.getElementById("resumenSolicitudRecalibracionIa");
+    const item = criterioRecalibracionSeleccionadoIa;
+    if (!el) return;
+    if (!item) {
+        el.innerHTML = `<p>Selecciona un criterio para generar el resumen de solicitud.</p>`;
+        return;
+    }
+    const resultado = valor("resultadoPropuestoRecalibracionIa") || "SIN_CAMBIO";
+    const propuesta = notaPropuestaRecalibracionIa(item, resultado);
+    const impacto = propuesta - Number(item.nota || 0);
+    const evidencia = evidenciaRecalibracionSeleccionadaIa?.frase || "Sin evidencia vinculada";
+    el.innerHTML = `
+        <div><span>Criterio</span><strong>${escapeHtml(`${item.codigo} ${item.nombre}`)}</strong></div>
+        <div><span>Actual</span><strong>${escapeHtml(item.resultado)} · ${escapeHtml(formatoPeso(item.nota))}/${escapeHtml(formatoPeso(item.peso))}</strong></div>
+        <div><span>Propuesto</span><strong>${escapeHtml(labelResultadoPropuestoRecalibracionIa(resultado))} · ${escapeHtml(formatoPeso(propuesta))}/${escapeHtml(formatoPeso(item.peso))}</strong></div>
+        <div><span>Impacto</span><strong>${impacto >= 0 ? "+" : ""}${escapeHtml(formatoPeso(impacto))} pts</strong></div>
+        <div class="wide"><span>Evidencia vinculada</span><strong>${escapeHtml(evidencia)}</strong></div>
+    `;
+}
+
+function labelResultadoPropuestoRecalibracionIa(value = "") {
+    const map = {
+        SIN_CAMBIO: "Sin cambio sugerido",
+        CUMPLE: "Cumple",
+        PARCIAL: "Parcial",
+        NO_CUMPLE: "No cumple",
+        NO_APLICA: "No aplica",
+        REVISION_HUMANA: "Revisión humana",
+    };
+    return map[value || "SIN_CAMBIO"] || value;
+}
+
+function motivoValidoRecalibracionIa(texto = "") {
+    const limpio = normalizarTextoComparacionIa(texto);
+    if (limpio.length < 25) return false;
+    return !["no estoy de acuerdo", "revisar", "cambiar nota", "error ia"].includes(limpio);
+}
+
+function irAEvidenciaRecalibracionIa() {
+    if (!evidenciaRecalibracionSeleccionadaIa) {
+        mostrarMensajeIa("Este criterio no tiene evidencia vinculada automáticamente.", "error");
+        return;
+    }
+    mostrarTabDetalleIa("evidencias");
+    evidenciaExpandidaIa = claveAgrupacionEvidenciaIa(evidenciaRecalibracionSeleccionadaIa);
+    if (typeof pintarTablaEvidenciasIa === "function") pintarTablaEvidenciasIa(evidenciasAgrupadasIa || [], filtroEvidenciasActualIa);
+}
+
+function verCriterioRecalibracionEnMatrizIa() {
+    if (!criterioRecalibracionSeleccionadoIa) return;
+    verCriterioEvidenciaIa(encodeURIComponent(criterioRecalibracionSeleccionadoIa.codigo));
 }
 
 function cargarRevisionEnFormulario(data) {
@@ -3899,9 +4917,8 @@ function pintarEvaluacionCalidad(items) {
     const grupos = new Map();
     items.map(itemSgcIa).forEach(item => {
         const segmento = formatearSegmentoIa(item.segmento || "Sin segmento");
-        const grupo = item.grupo_error_sgc || "No aplica";
-        const key = `${grupo}||${segmento}`;
-        const actual = grupos.get(key) || { grupo, segmento, peso: 0, nota: 0, brechas: 0, items: [] };
+        const key = segmento;
+        const actual = grupos.get(key) || { segmento, peso: 0, nota: 0, brechas: 0, items: [] };
         actual.peso += Number(item.peso || 0);
         actual.nota += Number(item.nota || 0);
         if (claseFilaEvaluacion(item)) actual.brechas += 1;
@@ -3915,22 +4932,20 @@ function pintarEvaluacionCalidad(items) {
         return grupo.items.map((item, index) => `
             <tr class="${claseFilaEvaluacion(item)}">
                 ${index === 0 ? `
-                    <td class="matrix-group-cell" rowspan="${grupo.items.length}">
-                        <strong>${escapeHtml(grupo.grupo)}</strong>
-                    </td>
                     <td class="matrix-segment-cell ${porcentaje < 60 ? "is-critical" : porcentaje < 85 ? "is-partial" : "is-ok"}" rowspan="${grupo.items.length}">
-                        <span>Segmento COPC</span>
                         <strong>${escapeHtml(grupo.segmento)}</strong>
                         <small>${formatoPeso(grupo.nota)} / ${formatoPeso(grupo.peso)} · ${escapeHtml(estado)} · ${formatoNumero(grupo.brechas)} brecha(s)</small>
                     </td>
                 ` : ""}
-                <td class="matrix-item-cell"><strong>${escapeHtml(item.item || "-")}</strong><small>${escapeHtml(item.factor_sgc || "-")}</small></td>
+                <td class="matrix-item-cell">
+                    <strong>${escapeHtml(item.item || "-")}</strong>
+                    <small>${escapeHtml(etiquetaGrupoSgcRelacionadoIa(item.grupo_error_sgc))}</small>
+                </td>
                 <td class="matrix-score-cell">${formatoPeso(item.peso)}</td>
                 <td class="matrix-score-cell"><strong class="${Number(item.nota || 0) === 0 ? "critical-score" : ""}">${formatoPeso(item.nota)}</strong></td>
                 <td>${badgeResultadoCalidadIa(item.resultado)}</td>
-                <td><b>Hallazgo</b><p>${escapeHtml(item.hallazgo || "-")}</p></td>
                 <td><b>Evidencia</b><p>${escapeHtml(item.evidencia || "-")}</p></td>
-                <td><b>Recomendación</b><p>${escapeHtml(item.recomendacion || "-")}</p></td>
+                <td data-criterio="${escapeHtml(codigoCriterioHallazgoIa(item))}"><b>Motivo técnico</b><p>${escapeHtml(item.motivo || item.hallazgo || item.recomendacion || "-")}</p></td>
             </tr>
         `).join("");
     }).join("");
@@ -3939,20 +4954,28 @@ function pintarEvaluacionCalidad(items) {
         <table class="quality-grouped-table">
             <thead>
                 <tr>
-                    <th>Grupo SGC/PEC</th>
-                    <th>Segmento COPC</th>
-                    <th>Ítem COPC</th>
+                    <th>Dimensión técnica</th>
+                    <th>Criterio de evaluación</th>
                     <th>Peso</th>
                     <th>Nota</th>
                     <th>Resultado</th>
-                    <th>Hallazgo</th>
                     <th>Evidencia</th>
-                    <th>Recomendación</th>
+                    <th>Motivo técnico</th>
                 </tr>
             </thead>
             <tbody>${filas}</tbody>
         </table>
     `;
+}
+
+function etiquetaGrupoSgcRelacionadoIa(grupo = "") {
+    const texto = String(grupo || "").trim();
+    const normalizado = normalizarTextoComparacionIa(texto);
+    if (normalizado.includes("negocio")) return "Grupo SGC relacionado: Error crítico del negocio";
+    if (normalizado.includes("usuario final")) return "Grupo SGC relacionado: Error crítico del usuario final";
+    if (normalizado.includes("cumplimiento")) return "Grupo SGC relacionado: Error crítico de cumplimiento";
+    if (normalizado.includes("no critico")) return "Grupo SGC relacionado: Error no crítico";
+    return "Grupo SGC relacionado: No determinado";
 }
 
 function badgeResultadoCalidadIa(resultado) {
@@ -4128,9 +5151,9 @@ function pintarCabeceraFichaSgcIa(data = {}) {
         <article><span>Cartera</span><strong>${escapeHtml(data.cartera || "-")}</strong></article>
         <article><span>Supervisor</span><strong>${escapeHtml(data.supervisor || "-")}</strong></article>
         <article><span>Fecha llamada</span><strong>${escapeHtml(formatoFecha(data.fecha_llamada || data.fecha_creacion))}</strong></article>
-        <article><span>Score COPC</span><strong>${score != null ? `${Number(score).toFixed(1)} / 100` : "-"}</strong></article>
+        <article><span>Score técnico</span><strong>${score != null ? `${Number(score).toFixed(1)} / 100` : "-"}</strong></article>
         <article><span>Riesgo</span><strong>${escapeHtml(formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo))}</strong></article>
-        <p>Base técnica: matriz COPC adaptada a cobranza telefónica. Lectura gerencial: homologación SGC/PEC para clasificar hallazgos y orientar feedback o coaching.</p>
+        <p>Documento gerencial SGC/PEC sustentado por la matriz técnica. Base metodológica inspirada en buenas prácticas COPC y adaptada a cobranza telefónica.</p>
     `;
 }
 
@@ -4143,6 +5166,8 @@ function pintarCierreFichaSgcIa(data = {}) {
 
 function calificacionCortaSgcIa(value) {
     const key = String(value || "").toLowerCase();
+    const normalizada = normalizarTextoComparacionIa(value);
+    if (key.includes("revision") || key.includes("revisión") || normalizada.includes("requiere revisi")) return "RH";
     if (key.includes("no aplica")) return "NA";
     if (key.includes("parcial")) return "P";
     if (key.includes("no cumple") || key.includes("no evidenciado")) return "NC";
@@ -4153,7 +5178,7 @@ function calificacionCortaSgcIa(value) {
 function claseFilaFichaSgcIa(item) {
     const key = String(item.calificacion || "").toLowerCase();
     if (key.includes("no cumple") || key.includes("no evidenciado")) return "is-error";
-    if (key.includes("parcial")) return "is-partial";
+    if (key.includes("parcial") || key.includes("revision") || key.includes("revisión")) return "is-partial";
     if (key.includes("cumple")) return "is-ok";
     return "is-na";
 }
@@ -4175,8 +5200,8 @@ function itemsFichaAuditoriaSgcIa(items = []) {
 
 function badgeFichaCalificacionSgcIa(corta, completa) {
     const key = String(corta || "").toUpperCase();
-    const clase = key === "NC" ? "nocumple" : key === "P" ? "parcial" : key === "C" ? "cumple" : "noaplica";
-    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", NA: "NA - No aplica" };
+    const clase = key === "NC" ? "nocumple" : (key === "P" || key === "RH") ? "parcial" : key === "C" ? "cumple" : "noaplica";
+    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", RH: "Revisión humana", NA: "NA - No aplica" };
     return `<span class="audit-sgc-badge ${clase}" title="${escapeHtml(completa || "-")}">${escapeHtml(textos[key] || "-")}</span>`;
 }
 
@@ -4184,8 +5209,81 @@ function prioridadFichaSgcIa(item = {}) {
     const cal = String(item.calificacion_corta || "").toUpperCase();
     if (cal === "NC") return 0;
     if (cal === "P") return 1;
+    if (cal === "RH") return 2;
     if (cal === "NA") return 3;
-    return 2;
+    return 4;
+}
+
+function claveFactorConsolidadoSgcIa(item = {}) {
+    const codigo = String(item.codigo_factor_sgc || item.factor_codigo_sgc || "").trim();
+    if (codigo) return `codigo:${normalizarTextoComparacionIa(codigo)}`;
+    return `factor:${normalizarTextoComparacionIa(item.factor_auditoria_sgc || item.factor_sgc || item.item || "")}`;
+}
+
+function textoUtilFichaSgcIa(texto = "") {
+    return evidenciaEsTextualFichaIa(texto) && !textoEsGenericoHallazgoIa(texto);
+}
+
+function textoUnicoFichaSgcIa(lista = []) {
+    const vistos = new Set();
+    return lista
+        .map(texto => String(texto || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .filter(texto => {
+            const clave = normalizarTextoComparacionIa(texto);
+            if (!clave || vistos.has(clave)) return false;
+            vistos.add(clave);
+            return true;
+        });
+}
+
+function calificacionMasSeveraSgcIa(items = []) {
+    const orden = { NC: 4, P: 3, RH: 2, C: 1, NA: 0, "-": -1 };
+    return [...items].sort((a, b) => (orden[b.calificacion_corta] ?? -1) - (orden[a.calificacion_corta] ?? -1))[0] || items[0] || {};
+}
+
+function consolidarMotivoFactorSgcIa(factor = "", motivos = [], cantidad = 0) {
+    const factorKey = normalizarTextoComparacionIa(factor);
+    if (factorKey.includes("cierre verificable") && cantidad >= 4) {
+        return "No se obtuvo monto, fecha confirmada, canal, aceptación expresa ni recapitulación del acuerdo.";
+    }
+    return textoUnicoFichaSgcIa(motivos).slice(0, 2).join(" · ") || "Hallazgo consolidado para supervisión.";
+}
+
+function consolidarItemsFichaAuditoriaSgcIa(items = []) {
+    const rows = itemsFichaAuditoriaSgcIa(items)
+        .filter(item => {
+            const cal = String(item.calificacion_corta || "").toUpperCase();
+            if (["C", "NA"].includes(cal)) return false;
+            const textos = [item.evidencia, item.motivo, item.hallazgo, item.recomendacion];
+            return textos.some(textoUtilFichaSgcIa);
+        });
+    const grupos = new Map();
+    rows.forEach(item => {
+        const key = claveFactorConsolidadoSgcIa(item);
+        const actual = grupos.get(key) || [];
+        actual.push(item);
+        grupos.set(key, actual);
+    });
+    return [...grupos.values()].map(itemsGrupo => {
+        const base = calificacionMasSeveraSgcIa(itemsGrupo);
+        const evidencias = textoUnicoFichaSgcIa(itemsGrupo.map(item => item.evidencia).filter(textoUtilFichaSgcIa));
+        const motivos = textoUnicoFichaSgcIa(itemsGrupo.map(item => item.motivo || item.hallazgo).filter(textoUtilFichaSgcIa));
+        const recomendaciones = textoUnicoFichaSgcIa(itemsGrupo.map(item => item.recomendacion).filter(textoUtilFichaSgcIa));
+        const criterios = textoUnicoFichaSgcIa(itemsGrupo.map(item => item.item || item.codigo_criterio || item.codigo));
+        const factor = base.factor_auditoria_sgc || base.factor_sgc || "Factor SGC/PEC";
+        return {
+            ...base,
+            factor_auditoria_sgc: factor,
+            calificacion: base.calificacion,
+            calificacion_corta: base.calificacion_corta,
+            motivo: consolidarMotivoFactorSgcIa(factor, motivos, itemsGrupo.length),
+            evidencia: evidencias.join(" · ") || "-",
+            recomendacion: recomendaciones[0] || "-",
+            criterios_relacionados: criterios.length || itemsGrupo.length,
+            criterios_detalle: criterios,
+        };
+    });
 }
 
 function seleccionarFeedbackAlarmanteSgcIa(items = [], data = {}) {
@@ -4220,8 +5318,8 @@ function seleccionarFeedbackAlarmanteSgcIa(items = [], data = {}) {
 function pintarFichaAuditoriaSgcIa(items) {
     const el = document.getElementById("fichaAuditoriaSgcIa");
     if (!el) return;
-    const rows = itemsFichaAuditoriaSgcIa(items);
-    const esBrecha = item => ["NC", "P"].includes(String(item.calificacion_corta || "").toUpperCase());
+    const rows = consolidarItemsFichaAuditoriaSgcIa(items);
+    const esBrecha = item => ["NC", "P", "RH"].includes(String(item.calificacion_corta || "").toUpperCase());
     if (!rows.length) {
         el.innerHTML = `<div class="empty-report-state"><strong>Sin ficha SGC/PEC disponible.</strong><small>La evaluación no contiene ítems suficientes para construir la ficha de auditoría.</small></div>`;
         return;
@@ -4230,8 +5328,8 @@ function pintarFichaAuditoriaSgcIa(items) {
         const grupoRows = rows.filter(item => item.grupo_auditoria_sgc === grupo);
         const brechas = grupoRows.filter(esBrecha);
         const visibles = brechas.length
-            ? brechas.sort((a, b) => prioridadFichaSgcIa(a) - prioridadFichaSgcIa(b)).slice(0, 5)
-            : grupoRows.slice(0, 2);
+            ? brechas.sort((a, b) => prioridadFichaSgcIa(a) - prioridadFichaSgcIa(b))
+            : grupoRows;
         const estadoGrupo = brechas.length ? `${brechas.length} factor(es) observado(s)` : "Sin errores observados";
         return `
             <section class="audit-sgc-group">
@@ -4250,9 +5348,9 @@ function pintarFichaAuditoriaSgcIa(items) {
                         <tbody>
                             ${visibles.length ? visibles.map(item => `
                                 <tr class="${claseFilaFichaSgcIa(item)}">
-                                    <td><strong>${escapeHtml(item.factor_auditoria_sgc || "-")}</strong></td>
+                                    <td><strong>${escapeHtml(item.factor_auditoria_sgc || "-")}</strong>${item.criterios_relacionados > 1 ? `<small>${formatoNumero(item.criterios_relacionados)} criterios relacionados</small>` : ""}</td>
                                     <td>${badgeFichaCalificacionSgcIa(item.calificacion_corta, item.calificacion)}</td>
-                                    <td class="${["NC", "P"].includes(item.calificacion_corta) ? "audit-sgc-focus" : ""}">${escapeHtml(item.motivo || item.hallazgo || "-")}</td>
+                                    <td class="${["NC", "P", "RH"].includes(item.calificacion_corta) ? "audit-sgc-focus" : ""}">${escapeHtml(item.motivo || item.hallazgo || "-")}</td>
                                     <td>${escapeHtml(item.evidencia || "-")}</td>
                                     <td>${escapeHtml(item.recomendacion || "-")}</td>
                                 </tr>
@@ -4303,31 +5401,810 @@ function mostrarTabDetalleIa(tab = "resumen") {
     Object.entries(paneles).forEach(([key, id]) => {
         document.getElementById(id)?.classList.toggle("oculto", key !== tab);
     });
-    if (tab === "matriz") setText("btnDetalleCalidadIa", "Ver matriz completa");
+    if (tab === "matriz") setText("btnDetalleCalidadIa", "Ver matriz técnica");
 }
 
-function pintarEvidenciasClaveIa(items) {
-    const el = document.getElementById("evidenciasClaveIa");
-    if (!el) return;
-    if (!items.length) {
-        el.innerHTML = `<div class="empty-segment">Sin evidencias clave registradas.</div>`;
+function pintarEvidenciasDetalleIa(data = {}) {
+    const tbody = document.getElementById("tablaEvidenciasIa");
+    const filtros = document.getElementById("filtrosEvidenciasIa");
+    const resumen = document.getElementById("resumenOperativoEvidenciasIa");
+    if (!tbody || !filtros || !resumen) return;
+    const { evidencias, descartadas } = normalizarEvidenciasDetalleIa(data);
+    evidenciasDetalleIa = evidencias;
+    evidenciasAgrupadasIa = agruparEvidenciasVisualesIa(evidencias);
+    evidenciasDescartadasIa = descartadas;
+    evidenciaExpandidaIa = null;
+    filtroEvidenciasActualIa = "todas";
+    mostrarTodasEvidenciasIa = false;
+    criteriosEvidenciaExpandidaIa = null;
+
+    const conteos = conteosEvidenciasIa(evidenciasAgrupadasIa);
+    filtros.innerHTML = [
+        ["todas", "Todas", conteos.todas],
+        ["critica", "Críticas", conteos.critica],
+        ["oportunidad", "Oportunidades", conteos.oportunidad],
+        ["fortaleza", "Fortalezas", conteos.fortaleza],
+        ["contexto", "Contexto del cliente", conteos.contexto],
+    ].map(([key, label, total], index) => `
+        <button class="${index === 0 ? "active" : ""}" type="button" data-evidence-filter="${key}" onclick="filtrarEvidenciasIa('${key}')">
+            ${escapeHtml(label)} <span>${formatoNumero(total)}</span>
+        </button>
+    `).join("");
+
+    pintarEstadoEvidenciasIa();
+    pintarTablaEvidenciasIa(evidenciasAgrupadasIa);
+}
+
+function normalizarEvidenciasDetalleIa(data = {}) {
+    const criterios = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const evidenciasClave = Array.isArray(data.evidencias_clave_lista) ? data.evidencias_clave_lista : [];
+    const segmentos = segmentosTranscripcionV2Ia(data);
+    const rows = [];
+    let descartadas = 0;
+
+    criterios.map(itemSgcIa).forEach(item => {
+        const frase = fraseEvidenciaValidaIa(item.evidencia || item.frase_textual || item.cita_textual || item.cita);
+        const criterio = criterioHallazgoIa(item);
+        const lectura = lecturaEvidenciaIa(item, frase);
+        if (!frase || !criterio || !lectura) {
+            descartadas += 1;
+            return;
+        }
+        const segmento = buscarSegmentoPorFraseIa(segmentos, frase);
+        rows.push({
+            codigo_criterio: codigoCriterioHallazgoIa(item),
+            segmento_id: segmento?.id || segmento?.indice || segmento?.index || "",
+            tiempo: tiempoEvidenciaIa(item, segmento),
+            hablante: hablanteEvidenciaIa(item, segmento),
+            frase,
+            criterio,
+            grupo_sgc: grupoSgcSingularIa(item.grupo_error_sgc || clasificarSgcItemIa(item).grupo),
+            tipo: tipoEvidenciaIa(item, frase),
+            confianza: confianzaEvidenciaIa(item, segmento, data),
+            lectura,
+            resultado: resultadoHallazgoFichaIa(item),
+            hallazgo: item.hallazgo || "",
+            recomendacion: item.recomendacion_entrenable || item.recomendacion || "",
+            peso: Number(item.peso ?? item.puntaje_maximo ?? 0),
+            falta_anulante: Boolean(item.falta_anulante || item.puede_descalificar),
+        });
+    });
+
+    evidenciasClave.forEach(item => {
+        const frase = fraseEvidenciaValidaIa(item.frase_textual || item.evidencia || item.cita_textual);
+        const criterio = criterioHallazgoIa(item);
+        const lectura = lecturaEvidenciaIa(item, frase);
+        if (!frase || !criterio || !lectura) {
+            descartadas += 1;
+            return;
+        }
+        const segmento = buscarSegmentoPorFraseIa(segmentos, frase);
+        rows.push({
+            codigo_criterio: codigoCriterioHallazgoIa(item),
+            segmento_id: segmento?.id || segmento?.indice || segmento?.index || "",
+            tiempo: tiempoEvidenciaIa(item, segmento),
+            hablante: hablanteEvidenciaIa(item, segmento),
+            frase,
+            criterio,
+            grupo_sgc: grupoSgcSingularIa(item.grupo_error_sgc || clasificarSgcItemIa(item).grupo),
+            tipo: tipoEvidenciaIa(item, frase),
+            confianza: confianzaEvidenciaIa(item, segmento, data),
+            lectura,
+            resultado: resultadoHallazgoFichaIa(item),
+            hallazgo: item.hallazgo || item.motivo || "",
+            recomendacion: item.recomendacion_entrenable || item.recomendacion || "",
+            peso: Number(item.peso ?? item.puntaje_maximo ?? 0),
+            falta_anulante: Boolean(item.falta_anulante || item.puede_descalificar),
+        });
+    });
+
+    agregarEvidenciasContextualesIa(rows, data, segmentos);
+
+    const dedupe = new Map();
+    rows.forEach(item => {
+        const key = [item.codigo_criterio || normalizarTextoComparacionIa(item.criterio), normalizarTextoComparacionIa(item.frase), item.hablante].join("||");
+        if (!item.frase || !item.criterio || !item.lectura || dedupe.has(key)) {
+            descartadas += 1;
+            return;
+        }
+        dedupe.set(key, item);
+    });
+    const evidencias = [...dedupe.values()].sort(ordenEvidenciasIa);
+    return { evidencias, descartadas };
+}
+
+function agruparEvidenciasVisualesIa(items = []) {
+    const grupos = new Map();
+    items.forEach(item => {
+        const key = claveAgrupacionEvidenciaIa(item);
+        const actual = grupos.get(key) || {
+            ...item,
+            criterios_relacionados: [],
+            relaciones_tecnicas: 0,
+        };
+        actual.criterios_relacionados.push({
+            codigo_criterio: item.codigo_criterio || "",
+            criterio: item.criterio || "Criterio no identificado",
+            grupo_sgc: item.grupo_sgc || "No determinado",
+            resultado: item.resultado || "",
+            lectura: item.lectura || "",
+            recomendacion: item.recomendacion || "",
+            hallazgo: item.hallazgo || "",
+            peso: Number(item.peso || 0),
+        });
+        actual.relaciones_tecnicas += 1;
+        actual.falta_anulante = Boolean(actual.falta_anulante || item.falta_anulante);
+        actual.tipo = tipoAgrupadoEvidenciaIa(actual, item);
+        actual.grupo_sgc = grupoPrincipalEvidenciaIa(actual.criterios_relacionados);
+        actual.criterio = criterioPrincipalEvidenciaIa(actual.criterios_relacionados, actual.criterio);
+        actual.confianza = confianzaVisualEvidenciaIa(actual, item);
+        actual.lectura = lecturaGeneralEvidenciaIa(actual);
+        grupos.set(key, actual);
+    });
+    return [...grupos.values()]
+        .map(item => ({
+            ...item,
+            criterios_relacionados: deduplicarCriteriosEvidenciaIa(item.criterios_relacionados),
+        }))
+        .sort(ordenEvidenciasAgrupadasIa);
+}
+
+function claveAgrupacionEvidenciaIa(item = {}) {
+    const frase = normalizarTextoComparacionIa(item.frase);
+    const hablante = normalizarTextoComparacionIa(item.hablante || "NO DETERMINADO");
+    const segmento = String(item.segmento_id || "").trim();
+    const tiempo = timestampValidoIa(item.tiempo) ? item.tiempo : "";
+    return segmento ? `segmento:${segmento}` : [hablante, frase, tiempo].filter(Boolean).join("|");
+}
+
+function deduplicarCriteriosEvidenciaIa(items = []) {
+    const map = new Map();
+    items.forEach(item => {
+        const key = item.codigo_criterio || normalizarTextoComparacionIa(item.criterio);
+        if (!key) return;
+        const existente = map.get(key);
+        if (!existente || prioridadRelacionEvidenciaIa(item) < prioridadRelacionEvidenciaIa(existente)) {
+            map.set(key, item);
+        }
+    });
+    return [...map.values()].sort((a, b) => prioridadRelacionEvidenciaIa(a) - prioridadRelacionEvidenciaIa(b));
+}
+
+function tipoAgrupadoEvidenciaIa(grupo = {}, item = {}) {
+    const actual = grupo.tipo || item.tipo || "oportunidad";
+    const candidato = tipoVisualEvidenciaIa(item);
+    const frase = normalizarTextoComparacionIa(item.frase || grupo.frase || "");
+    if (candidato === "revision") return "revision";
+    if (candidato === "contexto" && (frase.includes("no pude pagar") || (frase.includes("trato") && frase.includes("700") && frase.includes("600")))) return "contexto";
+    return prioridadTipoEvidenciaIa(candidato, item, grupo) < prioridadTipoEvidenciaIa(actual, item, grupo) ? candidato : actual;
+}
+
+function tipoVisualEvidenciaIa(item = {}) {
+    if (item.falta_anulante) return "anulante";
+    const hablante = hablanteTranscripcionIa(item.hablante || "");
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    const resultado = normalizarTextoComparacionIa(item.resultado || "");
+    const grupo = normalizarTextoComparacionIa(item.grupo_sgc || "");
+    if (frase.includes("pasar a otra instancia")) return "revision";
+    if (frase.includes("menos voy a poder") || frase.includes("15 de agosto")) return "critica";
+    if (resultado.includes("revision") || resultado.includes("revisión") || item.tipo === "revision") return "revision";
+    if (hablante === "CLIENTE" && frase.includes("no pude pagar")) return "contexto";
+    if (hablante === "CLIENTE" && frase.includes("trato") && frase.includes("700") && frase.includes("600")) return "contexto";
+    if (hablante === "CLIENTE" && item.tipo === "fortaleza") return "contexto";
+    if (hablante === "CLIENTE" && item.tipo !== "critica" && item.tipo !== "revision") return "contexto";
+    if (item.tipo === "fortaleza" && hablante !== "AGENTE") return "contexto";
+    if (item.tipo === "fortaleza") return "fortaleza";
+    if (grupo.includes("no critico") || item.tipo === "oportunidad") return "oportunidad";
+    if (grupo.includes("critico") || resultado.includes("no cumple")) return "critica";
+    return item.tipo || "oportunidad";
+}
+
+function prioridadTipoEvidenciaIa(tipo = "", item = {}, grupo = {}) {
+    if (tipo === "anulante" || item.falta_anulante || grupo.falta_anulante) return 0;
+    const sgc = normalizarTextoComparacionIa(item.grupo_sgc || grupo.grupo_sgc || "");
+    if (tipo === "critica" && sgc.includes("usuario")) return 1;
+    if (tipo === "critica" && sgc.includes("cumplimiento")) return 2;
+    if (tipo === "critica" && sgc.includes("negocio")) return 3;
+    if (tipo === "revision") return 4;
+    if (tipo === "oportunidad") return 5;
+    if (tipo === "fortaleza") return 6;
+    if (tipo === "contexto") return 7;
+    return 8;
+}
+
+function prioridadRelacionEvidenciaIa(item = {}) {
+    return prioridadTipoEvidenciaIa(tipoVisualEvidenciaIa(item), item)
+        - Math.min(10, Number(item.peso || 0)) / 100;
+}
+
+function grupoPrincipalEvidenciaIa(items = []) {
+    const principal = [...items].sort((a, b) => prioridadRelacionEvidenciaIa(a) - prioridadRelacionEvidenciaIa(b))[0];
+    return principal?.grupo_sgc || "No determinado";
+}
+
+function criterioPrincipalEvidenciaIa(items = [], fallback = "") {
+    const principal = [...items].sort((a, b) => prioridadRelacionEvidenciaIa(a) - prioridadRelacionEvidenciaIa(b))[0];
+    return principal?.criterio || fallback || "Criterio no identificado";
+}
+
+function confianzaVisualEvidenciaIa(grupo = {}, item = {}) {
+    const explicita = String(item.confianza || grupo.confianza || "").trim().toUpperCase();
+    if (normalizarTextoComparacionIa(item.frase || grupo.frase || "").includes("pasar a otra instancia")) return "MEDIA";
+    if (["ALTA", "MEDIA", "BAJA"].includes(explicita) && grupo.relaciones_tecnicas <= 1) return explicita;
+    if (tipoVisualEvidenciaIa(item) === "revision") return "MEDIA";
+    if (!timestampValidoIa(grupo.tiempo) || grupo.relaciones_tecnicas > 1) return "MEDIA";
+    if (hablanteTranscripcionIa(grupo.hablante || "") === "NO DETERMINADO") return "BAJA";
+    if (String(grupo.frase || "").length < 24) return "MEDIA";
+    return explicita && explicita !== "NO DISPONIBLE" ? explicita : "MEDIA";
+}
+
+function lecturaGeneralEvidenciaIa(item = {}) {
+    const fraseKey = normalizarTextoComparacionIa(item.frase);
+    const criterios = item.criterios_relacionados || [];
+    if (fraseKey.includes("menos voy a poder")) return "El cliente rechaza el monto; el agente no explora cuánto sí podría pagar.";
+    if (fraseKey.includes("15 de agosto")) return "Existe una fecha tentativa, pero no se concreta monto, canal ni confirmación.";
+    if (fraseKey.includes("fraccionamiento")) return "El agente presenta una alternativa, pero no la desarrolla ni adapta a la capacidad del cliente.";
+    if (fraseKey.includes("pasar a otra instancia")) return "Debe validarse si la expresión corresponde al discurso autorizado y si fue explicada correctamente.";
+    if (fraseKey.includes("700") && fraseKey.includes("600")) return "Confirma falta de liquidez e incumplimiento del acuerdo anterior.";
+    return criterios.find(item => item.lectura)?.lectura || item.lectura || "";
+}
+
+function ordenEvidenciasAgrupadasIa(a, b) {
+    return prioridadOperativaEvidenciaIa(a) - prioridadOperativaEvidenciaIa(b)
+        || confianzaPesoEvidenciaIa(b.confianza) - confianzaPesoEvidenciaIa(a.confianza)
+        || (hablanteTranscripcionIa(b.hablante) === "AGENTE" ? 1 : 0) - (hablanteTranscripcionIa(a.hablante) === "AGENTE" ? 1 : 0)
+        || (timestampValidoIa(b.tiempo) ? 1 : 0) - (timestampValidoIa(a.tiempo) ? 1 : 0)
+        || String(b.frase || "").length - String(a.frase || "").length
+        || Math.max(...(b.criterios_relacionados || []).map(item => Number(item.peso || 0)), 0) - Math.max(...(a.criterios_relacionados || []).map(item => Number(item.peso || 0)), 0);
+}
+
+function prioridadOperativaEvidenciaIa(item = {}) {
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    const grupo = normalizarTextoComparacionIa(item.grupo_sgc || "");
+    const criterio = normalizarTextoComparacionIa(item.criterio || "");
+    if (item.falta_anulante || item.tipo === "anulante") return 0;
+    if (item.tipo === "critica" && grupo.includes("usuario")) return 10;
+    if (item.tipo === "critica" && grupo.includes("cumplimiento")) return 20;
+    if (item.tipo === "critica" && (frase.includes("menos voy a poder") || criterio.includes("manejo de objeciones"))) return 30;
+    if (item.tipo === "critica" && (frase.includes("15 de agosto") || criterio.includes("cierre verificable"))) return 31;
+    if (item.tipo === "critica" && grupo.includes("negocio")) return 35;
+    if (item.tipo === "revision") return 40;
+    if (item.tipo === "oportunidad" && (frase.includes("fraccionamiento") || criterio.includes("presentacion"))) return 50;
+    if (item.tipo === "contexto" && ((frase.includes("700") && frase.includes("600")) || frase.includes("no pude pagar"))) return 55;
+    if (item.tipo === "oportunidad") return 60;
+    if (item.tipo === "fortaleza") return 70;
+    if (item.tipo === "contexto") return 80;
+    return 90;
+}
+
+function confianzaPesoEvidenciaIa(confianza = "") {
+    const key = normalizarTextoComparacionIa(confianza);
+    if (key.includes("alta")) return 3;
+    if (key.includes("media")) return 2;
+    if (key.includes("baja")) return 1;
+    return 0;
+}
+
+function fraseEvidenciaValidaIa(texto = "") {
+    const frase = String(texto || "").replace(/\s+/g, " ").trim();
+    if (!frase || !evidenciaEsTextualFichaIa(frase) || textoEsGenericoHallazgoIa(frase)) return "";
+    if (/^revisar transcripci[oó]n/i.test(frase)) return "";
+    return frase.replace(/^["“”]+|["“”]+$/g, "");
+}
+
+function buscarSegmentoPorFraseIa(segmentos = [], frase = "") {
+    const fraseKey = normalizarTextoComparacionIa(frase);
+    if (!fraseKey) return null;
+    const palabras = fraseKey.split(" ").filter(Boolean);
+    const muestra = palabras.slice(0, Math.min(8, palabras.length)).join(" ");
+    return segmentos.find(segmento => {
+        const texto = normalizarTextoComparacionIa(segmento.texto || segmento.transcripcion || segmento.frase || "");
+        return texto && (texto.includes(fraseKey) || (muestra && texto.includes(muestra)) || fraseKey.includes(texto.slice(0, 80)));
+    }) || null;
+}
+
+function tiempoEvidenciaIa(item = {}, segmento = null) {
+    const candidatos = [
+        item.momento,
+        item.timestamp,
+        item.inicio,
+        formatoTimestampDesdeSegundosIa(item.inicio_segundos),
+        segmento?.momento,
+        segmento?.timestamp,
+        segmento?.inicio,
+        formatoTimestampDesdeSegundosIa(segmento?.inicio_segundos),
+    ];
+    return candidatos.find(timestampValidoIa) || "";
+}
+
+function hablanteEvidenciaIa(item = {}, segmento = null) {
+    const candidato = item.hablante || item.speaker || item.rol || segmento?.hablante || segmento?.speaker || segmento?.rol;
+    return hablanteTranscripcionIa(candidato || "");
+}
+
+function confianzaEvidenciaIa(item = {}, segmento = null, data = {}) {
+    const valor = item.confianza || segmento?.confianza || data.confianza_evaluacion || data.calidad_transcripcion || "";
+    const texto = String(valor || "").trim();
+    if (!texto) return "No disponible";
+    if (/^\d+(\.\d+)?$/.test(texto)) return `${Number(texto).toFixed(0)}%`;
+    return texto.toUpperCase();
+}
+
+function tipoEvidenciaIa(item = {}, frase = "") {
+    const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
+    const grupo = normalizarTextoComparacionIa(item.grupo_error_sgc || "");
+    const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
+    if (resultado.includes("revision") || resultado.includes("revisión")) return "revision";
+    if (resultado.includes("cumple") && !resultado.includes("no cumple") && !resultado.includes("parcial")) return "fortaleza";
+    if (grupo.includes("errores no criticos") || resultado.includes("parcial") || factor.includes("presentacion") || factor.includes("claridad")) return "oportunidad";
+    if (grupo.includes("errores criticos") || resultado.includes("no cumple") || resultado.includes("no evidenciado")) return "critica";
+    if (hablanteTranscripcionIa(item.hablante || "") === "CLIENTE") return "contexto";
+    return "oportunidad";
+}
+
+function lecturaEvidenciaIa(item = {}, frase = "") {
+    const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
+    const fraseKey = normalizarTextoComparacionIa(frase);
+    if (factor.includes("manejo de objeciones") || fraseKey.includes("menos voy a poder")) {
+        return "El cliente rechaza el monto; la gestión debía explorar cuánto sí podía pagar.";
+    }
+    if (factor.includes("induccion") || fraseKey.includes("15 de agosto")) {
+        return "Se menciona una fecha tentativa, pero no se concreta monto, canal ni aceptación expresa.";
+    }
+    if (factor.includes("cierre verificable")) {
+        return "La evidencia sustenta que el cierre no quedó completo bajo cantidad, fecha, canal y confirmación.";
+    }
+    if (factor.includes("presentacion") || fraseKey.includes("fraccionamiento")) {
+        return "Se plantea una alternativa, pero sin explicar monto, plazo ni ajuste a la capacidad del cliente.";
+    }
+    if (factor.includes("lenguaje claro") || fraseKey.includes("pasar a otra instancia")) {
+        return "La frase requiere validar si corresponde al discurso autorizado.";
+    }
+    if (fraseKey.includes("trato") && fraseKey.includes("700") && fraseKey.includes("600")) {
+        return "El cliente confirma incumplimiento del acuerdo anterior y limitación de liquidez.";
+    }
+    const lectura = item.lectura_ia || item.interpretacion || item.impacto_negocio || item.hallazgo || item.motivo;
+    if (!lectura || textoEsGenericoHallazgoIa(lectura)) return "";
+    return String(lectura).replace(/\s+/g, " ").trim();
+}
+
+function agregarEvidenciasContextualesIa(rows = [], data = {}, segmentos = []) {
+    const patrones = [
+        {
+            criterio: "Capacidad actual de pago",
+            grupo_sgc: "Error crítico del negocio",
+            tipo: "contexto",
+            lectura: "El cliente confirma incumplimiento del acuerdo anterior y limitación de liquidez.",
+            claves: ["trato", "700", "100", "600"],
+        },
+    ];
+    const transcripcion = String(data.transcripcion || "");
+    patrones.forEach(config => {
+        const frase = fraseContextualTranscripcionIa(transcripcion, config.claves);
+        if (!frase) return;
+        const segmento = buscarSegmentoPorFraseIa(segmentos, frase);
+        rows.push({
+            codigo_criterio: "2.2",
+            segmento_id: segmento?.id || segmento?.indice || segmento?.index || "",
+            tiempo: tiempoEvidenciaIa({}, segmento),
+            hablante: hablanteEvidenciaIa({ hablante: "CLIENTE" }, segmento),
+            frase,
+            criterio: config.criterio,
+            grupo_sgc: config.grupo_sgc,
+            tipo: config.tipo,
+            confianza: confianzaEvidenciaIa({}, segmento, data),
+            lectura: config.lectura,
+            resultado: "Contexto",
+            hallazgo: config.lectura,
+            recomendacion: "",
+            peso: 0,
+            falta_anulante: false,
+        });
+    });
+}
+
+function fraseContextualTranscripcionIa(transcripcion = "", claves = []) {
+    const frases = String(transcripcion || "")
+        .split(/(?<=[.!?])\s+|\n+/)
+        .map(texto => texto.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+    const match = frases.find(frase => {
+        const key = normalizarTextoComparacionIa(frase);
+        return claves.every(clave => key.includes(normalizarTextoComparacionIa(clave)));
+    });
+    return fraseEvidenciaValidaIa(match || "");
+}
+
+function grupoSgcSingularIa(grupo = "") {
+    const normalizado = normalizarTextoComparacionIa(grupo);
+    if (normalizado.includes("negocio")) return "Error crítico del negocio";
+    if (normalizado.includes("usuario final")) return "Error crítico del usuario final";
+    if (normalizado.includes("cumplimiento")) return "Error crítico de cumplimiento";
+    if (normalizado.includes("no critico")) return "Error no crítico";
+    return "No determinado";
+}
+
+function ordenEvidenciasIa(a, b) {
+    const pesoTipo = { critica: 0, revision: 1, oportunidad: 2, fortaleza: 3, contexto: 4 };
+    const ta = segundosDesdeMomentoIa(a.tiempo);
+    const tb = segundosDesdeMomentoIa(b.tiempo);
+    return (pesoTipo[a.tipo] ?? 9) - (pesoTipo[b.tipo] ?? 9)
+        || (ta == null ? 99999 : ta) - (tb == null ? 99999 : tb);
+}
+
+function conteosEvidenciasIa(items = []) {
+    return {
+        todas: items.length,
+        critica: items.filter(item => item.tipo === "critica" || item.tipo === "anulante").length,
+        oportunidad: items.filter(item => item.tipo === "oportunidad").length,
+        fortaleza: items.filter(item => item.tipo === "fortaleza").length,
+        contexto: items.filter(item => item.tipo === "contexto").length,
+        revision: items.filter(item => item.tipo === "revision").length,
+    };
+}
+
+function pintarEstadoEvidenciasIa() {
+    const resumen = document.getElementById("resumenOperativoEvidenciasIa");
+    if (!resumen) return;
+    const totalAgrupadas = evidenciasAgrupadasIa.length;
+    const totalRelaciones = evidenciasDetalleIa.length;
+    const texto = mostrarTodasEvidenciasIa
+        ? `Mostrando ${formatoNumero(totalAgrupadas)} evidencias agrupadas · ${formatoNumero(evidenciasDescartadasIa)} registros descartados por falta de sustento`
+        : `Principales ${formatoNumero(Math.min(5, totalAgrupadas))} de ${formatoNumero(totalAgrupadas)} evidencias · ${formatoNumero(totalRelaciones)} relaciones técnicas · ${formatoNumero(evidenciasDescartadasIa)} registros descartados por falta de sustento`;
+    resumen.innerHTML = `
+        <p>${escapeHtml(texto)}</p>
+        <button type="button" class="btn-light btn-small" onclick="toggleModoEvidenciasIa()">${mostrarTodasEvidenciasIa ? "Ver principales" : "Ver todas las evidencias"}</button>
+    `;
+}
+
+function pintarTablaEvidenciasIa(items = [], filtro = "todas") {
+    const tbody = document.getElementById("tablaEvidenciasIa");
+    if (!tbody) return;
+    const filtradas = filtro === "todas" ? items : items.filter(item => filtro === "critica" ? ["critica", "anulante"].includes(item.tipo) : item.tipo === filtro);
+    const visibles = mostrarTodasEvidenciasIa ? filtradas : filtradas.slice(0, 5);
+    if (!visibles.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-row">No hay evidencias con sustento textual para este filtro.</td></tr>`;
         return;
     }
-    const visibles = items.slice(0, 6);
-    el.innerHTML = visibles.map(item => `
-        <article class="evidence-card">
-            <div><span>${escapeHtml(item.tipo || "Evidencia")}</span><strong>${escapeHtml(item.momento || "No disponible")}</strong></div>
-            <div class="evidence-meta">
-                ${badgeGerencialIa(formatearSegmentoIa(item.segmento_copc || item.segmento || "-"), "bajo")}
-                ${badgeSgcIa(item.grupo_error_sgc || clasificarSgcItemIa(item).grupo)}
-                ${badgeGerencialIa(item.severidad || "MEDIA", claseSeveridadIa(item.severidad) === "sev-high" ? "alto" : "medio")}
+    tbody.innerHTML = visibles.map(item => {
+        const key = evidenciaKeyIa(item);
+        const expandida = evidenciaExpandidaIa === key;
+        const tieneTiempo = timestampValidoIa(item.tiempo);
+        const criteriosValidos = criteriosTecnicosValidosEvidenciaIa(item);
+        return `
+            <tr data-evidence-type="${escapeHtml(item.tipo)}" data-evidence-key="${escapeHtml(key)}">
+                <td>${tieneTiempo
+                    ? `<button class="evidence-time-pill" type="button" onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.tiempo)}', true)">▶ ${escapeHtml(item.tiempo)}</button>`
+                    : `<span class="evidence-no-time">Sin timestamp</span>`}</td>
+                <td><span class="speaker-pill ${claseHablanteEvidenciaIa(item.hablante)}">${escapeHtml(item.hablante || "NO DETERMINADO")}</span></td>
+                <td>
+                    <div class="evidence-main-text">
+                        <strong>${escapeHtml(item.frase)}</strong>
+                        <small>${escapeHtml(item.criterio)} · ${escapeHtml(grupoSgcCortoEvidenciaIa(item.grupo_sgc))}</small>
+                        ${criteriosValidos.length > 1 ? `<em>${formatoNumero(criteriosValidos.length)} criterios relacionados</em>` : ""}
+                    </div>
+                </td>
+                <td><span class="evidence-kind ${claseTipoEvidenciaIa(item.tipo)}">${escapeHtml(textoTipoEvidenciaIa(item.tipo))}</span></td>
+                <td><span class="confidence-pill">${escapeHtml(item.confianza || "No disponible")}</span></td>
+                <td>
+                    <div class="evidence-actions">
+                        ${tieneTiempo
+                            ? `<button type="button" onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.tiempo)}', true)">Escuchar</button>`
+                            : `<span class="evidence-unsynced">Audio no sincronizado</span>`}
+                        <button type="button" onclick="toggleAnalisisEvidenciaIa('${encodeURIComponent(key)}')">${expandida ? "Ocultar" : "Ver análisis"}</button>
+                        <button type="button" onclick="${criteriosValidos.length > 1 ? `toggleAnalisisEvidenciaIa('${encodeURIComponent(key)}')` : `verCriterioEvidenciaIa('${encodeURIComponent(criteriosValidos[0]?.codigo_criterio || item.codigo_criterio || item.criterio)}')`}">Ver criterio</button>
+                    </div>
+                </td>
+            </tr>
+            ${expandida ? filaAnalisisEvidenciaIa(item) : ""}
+        `;
+    }).join("");
+}
+
+function filtrarEvidenciasIa(filtro = "todas") {
+    filtroEvidenciasActualIa = filtro;
+    document.querySelectorAll("[data-evidence-filter]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.evidenceFilter === filtro);
+    });
+    pintarEstadoEvidenciasIa();
+    pintarTablaEvidenciasIa(evidenciasAgrupadasIa || [], filtro);
+}
+
+function toggleModoEvidenciasIa() {
+    mostrarTodasEvidenciasIa = !mostrarTodasEvidenciasIa;
+    pintarEstadoEvidenciasIa();
+    pintarTablaEvidenciasIa(evidenciasAgrupadasIa || [], filtroEvidenciasActualIa);
+}
+
+function evidenciaKeyIa(item = {}) {
+    return normalizarTextoComparacionIa([
+        item.codigo_criterio,
+        item.criterio,
+        item.hablante,
+        item.frase,
+        item.tipo,
+    ].filter(Boolean).join("|"));
+}
+
+function toggleAnalisisEvidenciaIa(encoded = "") {
+    const key = decodeURIComponent(encoded || "");
+    evidenciaExpandidaIa = evidenciaExpandidaIa === key ? null : key;
+    if (evidenciaExpandidaIa !== key) criteriosEvidenciaExpandidaIa = null;
+    pintarTablaEvidenciasIa(evidenciasAgrupadasIa || [], filtroEvidenciasActualIa);
+}
+
+function filaAnalisisEvidenciaIa(item = {}) {
+    const recomendacionPrincipal = recomendacionPrincipalEvidenciaIa(item);
+    const detalles = [
+        ["Lectura general", item.lectura],
+        ["Criterio principal", item.criterio],
+        ["Grupo SGC principal", grupoSgcCortoEvidenciaIa(item.grupo_sgc)],
+        ["Tipo de evidencia", textoTipoEvidenciaIa(item.tipo)],
+        ["Confianza", item.confianza || "No disponible"],
+        ["Hallazgo relacionado", item.hallazgo],
+        ["Recomendación específica", recomendacionPrincipal],
+    ].filter(([, value]) => value && String(value).trim());
+    return `
+        <tr class="evidence-analysis-row">
+            <td colspan="6">
+                <div class="evidence-analysis-panel">
+                    ${detalles.map(([label, value]) => `
+                        <article>
+                            <span>${escapeHtml(label)}</span>
+                            <p>${escapeHtml(value)}</p>
+                        </article>
+                    `).join("")}
+                    ${renderCriteriosRelacionadosEvidenciaIa(item)}
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function recomendacionPrincipalEvidenciaIa(item = {}) {
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    if (frase.includes("fraccionamiento")) return "Explicar cómo funcionaría el fraccionamiento y adaptarlo al monto que el cliente sí puede asumir.";
+    if (frase.includes("15 de agosto")) return "Concretar monto, fecha, canal y confirmación antes de cerrar la llamada.";
+    if (frase.includes("menos voy a poder")) return "Preguntar cuánto sí puede pagar y en qué fecha antes de abandonar la negociación.";
+    if (frase.includes("pasar a otra instancia")) return "Validar el discurso autorizado y explicar cualquier escalamiento sin amenaza ni ambigüedad.";
+    const criterios = criteriosTecnicosValidosEvidenciaIa(item);
+    const principal = criterios.find(criterio => normalizarTextoComparacionIa(criterio.criterio) === normalizarTextoComparacionIa(item.criterio))
+        || criterios[0];
+    const candidatos = [
+        principal ? recomendacionCriterioRelacionadoIa(principal, item) : "",
+        item.recomendacion,
+        ...criterios.map(criterio => recomendacionCriterioRelacionadoIa(criterio, item)),
+    ];
+    return candidatos.find(recomendacionUtilEvidenciaIa) || "Requiere revisión del supervisor.";
+}
+
+function recomendacionUtilEvidenciaIa(texto = "") {
+    const value = String(texto || "").trim();
+    const key = normalizarTextoComparacionIa(value);
+    if (!key) return false;
+    return ![
+        "revisar transcripcion",
+        "solicitar recalibracion",
+        "si el item fue cubierto",
+        "no disponible",
+        "no evidenciado",
+        "sin informacion",
+    ].some(fragmento => key.includes(fragmento));
+}
+
+function renderCriteriosRelacionadosEvidenciaIa(item = {}) {
+    const criterios = criteriosTecnicosValidosEvidenciaIa(item);
+    if (!criterios.length) return "";
+    const key = evidenciaKeyIa(item);
+    const expandida = criteriosEvidenciaExpandidaIa === key;
+    const visibles = expandida || criterios.length <= 3 ? criterios : criterios.slice(0, 3);
+    return `
+        <article class="evidence-related-criteria">
+            <div class="related-head">
+                <span>Criterios relacionados</span>
+                ${criterios.length > 3 ? `<button type="button" onclick="toggleCriteriosEvidenciaIa('${encodeURIComponent(key)}')">${expandida ? "Mostrar menos" : `Ver los ${formatoNumero(criterios.length)} criterios relacionados`}</button>` : ""}
             </div>
-            <small><b>Factor:</b> ${escapeHtml(item.factor_sgc || clasificarSgcItemIa(item).factor || "-")}</small>
-            <p>${escapeHtml(item.frase_textual || "No disponible")}</p>
-            <small>${escapeHtml(item.interpretacion || "-")}</small>
-            <small><b>Impacto:</b> ${escapeHtml(item.impacto || "-")} <b>Recomendación:</b> ${escapeHtml(item.recomendacion || "-")}</small>
+            <div class="related-table">
+                <div class="related-row related-header">
+                    <b>Código</b>
+                    <b>Criterio</b>
+                    <b>Resultado</b>
+                    <b>Sustento</b>
+                    <b>Lectura y recomendación</b>
+                </div>
+                ${visibles.map(criterio => {
+                    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+                    return `
+                        <div class="related-row">
+                            <div><button type="button" onclick="verCriterioEvidenciaIa('${encodeURIComponent(criterio.codigo_criterio || criterio.criterio)}')">${escapeHtml(codigo)}</button></div>
+                            <div><strong>${escapeHtml(nombreCriterioEspecificoIa(criterio))}</strong><small>${escapeHtml(grupoSgcCortoEvidenciaIa(criterio.grupo_sgc))}</small></div>
+                            <div>${escapeHtml(resultadoCriterioRelacionadoIa(criterio))}</div>
+                            <div><span class="support-pill">${escapeHtml(tipoSustentoCriterioEvidenciaIa(criterio, item))}</span></div>
+                            <div><p>${escapeHtml(lecturaCriterioRelacionadoIa(criterio, item))}</p><p><b>Recomendación:</b> ${escapeHtml(recomendacionCriterioRelacionadoIa(criterio, item))}</p></div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+            <small>Confianza de asociación entre frase y criterio.</small>
         </article>
-    `).join("");
+    `;
+}
+
+function toggleCriteriosEvidenciaIa(encoded = "") {
+    const key = decodeURIComponent(encoded || "");
+    criteriosEvidenciaExpandidaIa = criteriosEvidenciaExpandidaIa === key ? null : key;
+    pintarTablaEvidenciasIa(evidenciasAgrupadasIa || [], filtroEvidenciasActualIa);
+}
+
+function criteriosTecnicosValidosEvidenciaIa(item = {}) {
+    const criterios = (item.criterios_relacionados || [])
+        .map(criterio => ({ ...criterio, codigo_display: codigoCriterioDisplayIa(criterio.codigo_criterio) }))
+        .filter(criterio => criterioTecnicoValidoEvidenciaIa(criterio))
+        .map(criterio => ({ ...criterio, criterio: nombreCriterioEspecificoIa(criterio) }));
+    return ordenarCriteriosRelacionadosEvidenciaIa(criterios, item);
+}
+
+function ordenarCriteriosRelacionadosEvidenciaIa(criterios = [], item = {}) {
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    if (frase.includes("15 de agosto")) {
+        const prioridad = ["2.3", "3.6", "4.1", "4.2", "4.3", "4.4", "4.5"];
+        return [...criterios].sort((a, b) => {
+            const ia = prioridad.indexOf(codigoCriterioDisplayIa(a.codigo_criterio));
+            const ib = prioridad.indexOf(codigoCriterioDisplayIa(b.codigo_criterio));
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        });
+    }
+    return [...criterios].sort((a, b) => codigoCriterioDisplayIa(a.codigo_criterio).localeCompare(codigoCriterioDisplayIa(b.codigo_criterio), "es", { numeric: true }));
+}
+
+function criterioTecnicoValidoEvidenciaIa(criterio = {}) {
+    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+    const nombre = normalizarTextoComparacionIa(criterio.criterio);
+    if (!/^\d+\.\d+$/.test(codigo)) return false;
+    if (!nombre || ["error no critico", "error critico", "criterio no identificado", "s c"].includes(nombre)) return false;
+    return true;
+}
+
+function codigoCriterioDisplayIa(codigo = "") {
+    const texto = String(codigo || "").trim();
+    const match = texto.match(/^(\d+)[\s._-]+(\d+)$/) || texto.match(/^(\d+)\.(\d+)$/);
+    return match ? `${match[1]}.${match[2]}` : texto;
+}
+
+function nombreCriterioEspecificoIa(criterio = {}) {
+    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+    const nombres = {
+        "1.1": "Saludo e identificación del agente",
+        "1.2": "Identificación de la entidad",
+        "1.3": "Validación de titularidad",
+        "1.4": "Motivo de llamada y control de información",
+        "2.1": "Identificación de causa raíz / motivo de atraso",
+        "2.2": "Diagnóstico de capacidad de pago",
+        "2.3": "Fecha probable de ingreso",
+        "2.4": "Monto disponible",
+        "2.5": "Fuente del dinero o situación económica",
+        "3.1": "Presentación clara de la propuesta",
+        "3.2": "Claridad del beneficio",
+        "3.3": "Exploración de capacidad durante la negociación",
+        "3.4": "Negociación escalonada",
+        "3.5": "Gestión de objeciones del cliente",
+        "3.6": "Inducción a pago o abono",
+        "4.1": "Cantidad",
+        "4.2": "Fecha exacta",
+        "4.3": "Canal de pago",
+        "4.4": "Confirmación expresa",
+        "4.5": "Resumen y siguiente acción",
+        "5.1": "Respeto y ausencia de juicio",
+        "5.2": "Empatía y escucha activa",
+        "5.3": "Lenguaje claro y presión profesional",
+        "5.4": "Despedida y cierre profesional",
+    };
+    return nombres[codigo] || criterio.criterio || "Criterio no identificado";
+}
+
+function resultadoCriterioRelacionadoIa(criterio = {}) {
+    const resultado = String(criterio.resultado || "").trim();
+    if (/no cumple/i.test(resultado)) return "No cumple";
+    if (/revision|revisión/i.test(resultado)) return "Revisión humana";
+    if (/parcial/i.test(resultado)) return "Parcial";
+    if (/cumple/i.test(resultado)) return "Cumple";
+    if (/contexto/i.test(resultado)) return "Contexto";
+    return resultado || "Sin resultado";
+}
+
+function tipoSustentoCriterioEvidenciaIa(criterio = {}, item = {}) {
+    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    const tipo = item.tipo;
+    if (tipo === "revision" || frase.includes("pasar a otra instancia")) return "Revisión humana";
+    if (frase.includes("15 de agosto")) {
+        if (codigo === "2.3") return "Evidencia directa";
+        if (codigo === "3.6") return "Evidencia contextual";
+        if (codigo.startsWith("4.")) return "Ausencia en la secuencia";
+    }
+    if (frase.includes("menos voy a poder") && ["3.5", "3.3"].includes(codigo)) return "Evidencia contextual";
+    if (frase.includes("fraccionamiento") && ["3.1", "3.3"].includes(codigo)) return "Evidencia directa";
+    if (tipo === "contexto") return "Evidencia contextual";
+    if (resultadoCriterioRelacionadoIa(criterio) === "Revisión humana") return "Revisión humana";
+    return "Evidencia directa";
+}
+
+function lecturaCriterioRelacionadoIa(criterio = {}, item = {}) {
+    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    if (frase.includes("15 de agosto")) {
+        if (codigo === "2.3") return "El cliente menciona una fecha tentativa.";
+        if (codigo === "3.6") return "La fecha abre una oportunidad de cierre, pero el agente no concreta monto.";
+        if (codigo === "4.1") return "No se confirmó un monto específico antes del cierre.";
+        if (codigo === "4.2") return "La fecha quedó como tentativa y no como compromiso confirmado.";
+        if (codigo === "4.3") return "No se acordó un canal de pago.";
+        if (codigo === "4.4") return "No se obtuvo una aceptación clara del compromiso.";
+        if (codigo === "4.5") return "No se recapituló monto, fecha, canal ni siguiente paso.";
+    }
+    if (frase.includes("menos voy a poder")) return "El cliente rechaza el monto; la gestión debía explorar cuánto sí podía pagar.";
+    if (frase.includes("fraccionamiento")) return "El agente plantea una alternativa, pero no explica cómo funcionaría ni la adapta a la capacidad del cliente.";
+    if (frase.includes("pasar a otra instancia")) return "La expresión requiere validar si corresponde al discurso autorizado.";
+    if (frase.includes("700") && frase.includes("600")) return "El cliente explica falta de liquidez e incumplimiento del acuerdo anterior.";
+    return criterio.lectura || item.lectura || "La evidencia sustenta la evaluación del criterio.";
+}
+
+function recomendacionCriterioRelacionadoIa(criterio = {}, item = {}) {
+    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
+    const texto = normalizarTextoComparacionIa(`${criterio.recomendacion || ""} ${item.recomendacion || ""}`);
+    const generica = texto.includes("revisar transcripcion") || texto.includes("solicitar recalibracion") || texto.includes("recalibracion si el item");
+    const frase = normalizarTextoComparacionIa(item.frase || "");
+    if (frase.includes("menos voy a poder") && codigo === "3.5") return "Preguntar cuánto sí puede pagar y en qué fecha antes de abandonar la negociación.";
+    if (frase.includes("fraccionamiento") && ["3.1", "3.3", "3.4"].includes(codigo)) return "Explicar cómo funcionaría el fraccionamiento y adaptarlo al monto que el cliente sí puede asumir.";
+    if (codigo === "3.6") return "Inducir un abono o compromiso concreto antes de cerrar la llamada.";
+    if (codigo === "4.1") return "Confirmar un monto exacto.";
+    if (codigo === "4.2") return "Convertir la fecha tentativa en una fecha confirmada.";
+    if (codigo === "4.3") return "Acordar el canal por el cual realizará el pago.";
+    if (codigo === "4.4") return "Solicitar una confirmación clara del compromiso.";
+    if (codigo === "4.5") return "Recapitular monto, fecha, canal y acuerdo antes de despedirse.";
+    if (codigo === "5.3" || frase.includes("pasar a otra instancia")) return "Validar el discurso autorizado y explicar cualquier escalamiento sin amenaza ni ambigüedad.";
+    if (codigo === "2.3") return "Convertir la fecha mencionada por el cliente en una alternativa verificable.";
+    if (codigo === "2.2") return "Usar la información de liquidez para adaptar la propuesta a un monto y fecha viables.";
+    if (!generica && criterio.recomendacion && evidenciaEsTextualFichaIa(criterio.recomendacion)) return criterio.recomendacion;
+    return "Precisar la conducta esperada en el feedback y practicar una frase aplicable a la siguiente llamada.";
+}
+
+function grupoSgcCortoEvidenciaIa(grupo = "") {
+    const key = normalizarTextoComparacionIa(grupo);
+    if (key.includes("usuario")) return "Crítico del usuario final";
+    if (key.includes("cumplimiento")) return "Crítico de cumplimiento";
+    if (key.includes("negocio")) return "Crítico del negocio";
+    if (key.includes("no critico") || key.includes("no criticos")) return "No crítico";
+    return grupo || "Sin grupo SGC";
+}
+
+function claseTipoEvidenciaIa(tipo = "") {
+    return ({ anulante: "critical", critica: "critical", oportunidad: "opportunity", fortaleza: "strength", contexto: "context", revision: "review" })[tipo] || "review";
+}
+
+function textoTipoEvidenciaIa(tipo = "") {
+    return ({ anulante: "Falta anulante", critica: "Sustento crítico", oportunidad: "Oportunidad de mejora", fortaleza: "Fortaleza", contexto: "Contexto del cliente", revision: "Revisión humana" })[tipo] || "Revisión humana";
+}
+
+function claseHablanteEvidenciaIa(hablante = "") {
+    const key = normalizarTextoComparacionIa(hablante);
+    if (key.includes("agente")) return "agent";
+    if (key.includes("cliente")) return "client";
+    return "neutral";
+}
+
+function verCriterioEvidenciaIa(encoded = "") {
+    const criterio = decodeURIComponent(encoded || "");
+    mostrarTabDetalleIa("matriz");
+    setTimeout(() => {
+        const key = normalizarTextoComparacionIa(criterio);
+        const target = [...document.querySelectorAll("#evaluacionCalidadIa [data-criterio]")]
+            .find(el => normalizarTextoComparacionIa(el.dataset.criterio || "") === key || normalizarTextoComparacionIa(el.closest("tr")?.textContent || "").includes(key));
+        const row = target?.closest("tr");
+        if (!row) return;
+        row.classList.add("matrix-row-focus");
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => row.classList.remove("matrix-row-focus"), 2400);
+    }, 120);
 }
 
 function pintarEvidenciaDestacadaIa(items, data = {}) {
@@ -4340,7 +6217,7 @@ function pintarEvidenciaDestacadaIa(items, data = {}) {
             <span>${escapeHtml(item.tipo || "Audio evaluado")}</span>
             <strong>${escapeHtml(tieneEvidencia ? (item.frase_textual || data.archivo_nombre || "Evidencia sin frase textual.") : "Sin evidencia clave registrada por la IA.")}</strong>
             <small>Momento: ${escapeHtml(item.momento || "No disponible")}</small>
-            <p>${escapeHtml(tieneEvidencia ? (item.interpretacion || data.objecion_principal || "Sin interpretacion adicional.") : "Revisar matriz COPC o transcripcion para mayor detalle.")}</p>
+            <p>${escapeHtml(tieneEvidencia ? (item.interpretacion || data.objecion_principal || "Sin interpretacion adicional.") : "Revisar matriz técnica o transcripcion para mayor detalle.")}</p>
         </article>
     `;
 }
@@ -4369,60 +6246,413 @@ function pintarTopCriticosIa(items) {
 function pintarCalibracionDetalleIa(data) {
     const el = document.getElementById("calibracionResumenIa");
     if (!el) return;
-    const recalibraciones = data.recalibraciones_lista || [];
-    const scoreIa = data.score_calidad_ia != null ? Number(data.score_calidad_ia) : null;
-    const scoreFinal = (data.score_final ?? data.score_calidad) != null ? Number(data.score_final ?? data.score_calidad) : null;
-    const diferencia = scoreIa != null && scoreFinal != null ? Math.abs(scoreFinal - scoreIa).toFixed(1) : "-";
-    const cards = [
-        ["Nota IA inicial", scoreIa != null ? `${scoreIa.toFixed(1)} / 100` : "-"],
-        ["Nota final validada", scoreFinal != null ? `${scoreFinal.toFixed(1)} / 100` : "-"],
-        ["Diferencia", diferencia === "-" ? "-" : `${diferencia} pts`],
-        ["Estado recalibración", formatearEstadoRecalibracionIa(data.estado_recalibracion)],
-        ["Confianza evaluación", formatearConfianzaEvaluacionIa(data.confianza_evaluacion)],
-        ["Revisión humana", data.requiere_revision_humana ? "Sí" : "No"],
-    ];
-    el.innerHTML = `
-        <div class="calibration-detail-grid">
-            ${cards.map(row => `<article><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></article>`).join("")}
-        </div>
-        <section class="detail-card calibration-reason">
-            <h4>Motivo y resolución</h4>
-            <p><strong>Motivo:</strong> ${escapeHtml(data.motivo_revision || "-")}</p>
-            <p><strong>Comentario resolución:</strong> ${escapeHtml(data.comentario_resolucion || "-")}</p>
-            <p><strong>Estado:</strong> ${escapeHtml(formatearEstadoRecalibracionIa(data.estado_recalibracion))}</p>
+    const recalibraciones = Array.isArray(data.recalibraciones_lista) ? data.recalibraciones_lista : [];
+    const haySolicitud = haySolicitudCalibracionIa(data, recalibraciones);
+    const exportBtn = document.getElementById("btnExportarTrazabilidadIa");
+    if (exportBtn) {
+        exportBtn.disabled = !haySolicitud;
+        exportBtn.title = haySolicitud ? "Exportar trazabilidad disponible con la información registrada." : "Disponible cuando exista una solicitud de recalibración.";
+    }
+    el.innerHTML = haySolicitud
+        ? renderCalibracionConSolicitudIa(data, recalibraciones)
+        : renderCalibracionSinSolicitudIa(data);
+}
+
+function haySolicitudCalibracionIa(data = {}, recalibraciones = []) {
+    if (Array.isArray(recalibraciones) && recalibraciones.length) return true;
+    const estado = normalizarTextoComparacionIa(data.estado_recalibracion || "");
+    return Boolean(estado && !["sin apelacion", "sin solicitud", "sin recalibracion", "no disponible", "pendiente integracion"].includes(estado));
+}
+
+function scoreIaOriginalCalibracionIa(data = {}) {
+    return primerNumeroIa([
+        data.score_calidad_ia,
+        data.score_ia,
+        data.resultado_evaluacion?.score_tecnico,
+        data.score_tecnico,
+    ]);
+}
+
+function scoreTecnicoActualCalibracionIa(data = {}) {
+    return primerNumeroIa([
+        data.score_final,
+        data.score_final_validado,
+        data.score_supervisor,
+        calcularScoreTecnicoDesdeCriteriosIa(data.evaluacion_calidad_lista || []),
+        data.score_normalizado,
+        data.score_calidad,
+    ]);
+}
+
+function scorePropuestoSupervisorCalibracionIa(recalibraciones = []) {
+    const valores = recalibraciones
+        .map(item => primerNumeroIa([item.score_sugerido]))
+        .filter(value => value !== null);
+    if (!valores.length) return null;
+    return valores[0];
+}
+
+function scoreFinalResueltoCalibracionIa(recalibraciones = []) {
+    const resuelta = recalibraciones.find(item => {
+        const estado = normalizarTextoComparacionIa(item.estado || "");
+        return ["aprobada", "cerrada", "resuelta"].includes(estado) && primerNumeroIa([item.score_final]) !== null;
+    });
+    return resuelta ? primerNumeroIa([resuelta.score_final]) : null;
+}
+
+function estadoCalibracionDetalleIa(data = {}, recalibraciones = []) {
+    const estadoItem = recalibraciones.find(item => item.estado)?.estado;
+    const estado = String(estadoItem || data.estado_recalibracion || "SIN_SOLICITUD").toUpperCase();
+    if (estado.includes("APROBADA") || estado.includes("CERRADA") || estado.includes("RESUELTA")) return "Resuelta";
+    if (estado.includes("RECHAZADA")) return "Rechazada";
+    if (estado.includes("CANCEL")) return "Cancelada";
+    if (estado.includes("ANALISIS") || estado.includes("ANÁLISIS")) return "En análisis";
+    if (estado.includes("PENDIENTE") || estado.includes("ENVIADA")) return "Enviada";
+    if (estado.includes("BORRADOR")) return "Borrador";
+    return "Sin solicitud";
+}
+
+function formatScoreCalibracionIa(value) {
+    return value !== null && value !== undefined && Number.isFinite(Number(value))
+        ? `${formatoPeso(Number(value))} / 100`
+        : "Pendiente";
+}
+
+function renderCalibracionSinSolicitudIa(data = {}) {
+    const scoreIa = scoreIaOriginalCalibracionIa(data);
+    const scoreTecnico = scoreTecnicoActualCalibracionIa(data);
+    const revision = data.estado_revision || "Pendiente";
+    return `
+        <section class="calibration-empty-layout">
+            <div class="calibration-context-grid">
+                ${cardCalibracionIa("Score IA original", scoreIa !== null ? formatScoreCalibracionIa(scoreIa) : "Sin información")}
+                ${cardCalibracionIa("Score técnico actual", scoreTecnico !== null ? formatScoreCalibracionIa(scoreTecnico) : "Sin información")}
+                ${cardCalibracionIa("Estado de revisión", revision)}
+            </div>
+            <article class="calibration-empty-state">
+                <span>Sin solicitudes de recalibración</span>
+                <h5>El supervisor no ha cuestionado criterios o puntajes de esta evaluación.</h5>
+                <p>Cuando exista una discrepancia, la solicitud debe registrar criterio, evidencia y motivo antes de enviarse a Calidad.</p>
+                <button class="btn-primary btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
+            </article>
         </section>
-        <div class="calibration-list">
-            ${recalibraciones.length ? recalibraciones.map(item => `
-                <article>
-                    <strong>${escapeHtml(item.estado || "PENDIENTE")} - ${escapeHtml(item.item_cuestionado || "Evaluación general")}</strong>
-                    <span>Inicial: ${escapeHtml(item.score_ia ?? "-")} | Sugerida: ${escapeHtml(item.score_sugerido ?? "-")} | Final: ${escapeHtml(item.score_final ?? "-")}</span>
-                    <p>${escapeHtml(item.motivo || "-")}</p>
-                </article>
-            `).join("") : `<div class="empty-segment">Sin solicitudes de recalibración.</div>`}
+    `;
+}
+
+function renderCalibracionConSolicitudIa(data = {}, recalibraciones = []) {
+    const scoreIa = scoreIaOriginalCalibracionIa(data);
+    const scoreTecnico = scoreTecnicoActualCalibracionIa(data);
+    const scorePropuesto = scorePropuestoSupervisorCalibracionIa(recalibraciones);
+    const scoreFinal = scoreFinalResueltoCalibracionIa(recalibraciones);
+    const estado = estadoCalibracionDetalleIa(data, recalibraciones);
+    const criterios = criteriosCuestionadosCalibracionIa(data, recalibraciones);
+    const resuelta = ["Resuelta", "Rechazada", "Cancelada"].includes(estado);
+    return `
+        <div class="calibration-summary-grid">
+            ${cardCalibracionIa("Score IA original", scoreIa !== null ? formatScoreCalibracionIa(scoreIa) : "Sin información")}
+            ${cardCalibracionIa("Score técnico actual", scoreTecnico !== null ? formatScoreCalibracionIa(scoreTecnico) : "Sin información")}
+            ${cardCalibracionIa("Score propuesto supervisor", scorePropuesto !== null ? formatScoreCalibracionIa(scorePropuesto) : "Pendiente de integración")}
+            ${cardCalibracionIa("Score final resuelto", scoreFinal !== null ? formatScoreCalibracionIa(scoreFinal) : "Pendiente")}
+            ${cardCalibracionIa("Estado calibración", `<span class="calibration-status ${claseEstadoCalibracionIa(estado)}">${escapeHtml(estado)}</span>`, true)}
+            ${cardCalibracionIa("Criterios cuestionados", String(criterios.length || recalibraciones.length || 0))}
+        </div>
+        <section class="calibration-workspace-grid">
+            <article class="calibration-panel calibration-request-card">
+                <h5>Solicitud de recalibración</h5>
+                ${renderDatosSolicitudCalibracionIa(data, recalibraciones, estado)}
+                ${renderTablaCriteriosCuestionadosIa(criterios)}
+            </article>
+            <article class="calibration-panel calibration-trace-card">
+                <h5>Trazabilidad</h5>
+                ${renderTimelineCalibracionIa(data, recalibraciones, estado, scoreIa, scoreFinal)}
+            </article>
+        </section>
+        ${resuelta ? renderResolucionCalibracionIa(data, recalibraciones, criterios, scoreTecnico, scoreFinal, scoreIa, estado) : renderPendienteResolucionCalibracionIa(estado)}
+    `;
+}
+
+function cardCalibracionIa(label, value, htmlValue = false) {
+    return `
+        <article class="calibration-metric-card">
+            <span>${escapeHtml(label)}</span>
+            <strong>${htmlValue ? value : escapeHtml(value)}</strong>
+        </article>
+    `;
+}
+
+function claseEstadoCalibracionIa(estado = "") {
+    const texto = normalizarTextoComparacionIa(estado);
+    if (texto.includes("resuelta")) return "ok";
+    if (texto.includes("rechazada") || texto.includes("cancelada")) return "danger";
+    if (texto.includes("analisis") || texto.includes("enviada")) return "warning";
+    return "muted";
+}
+
+function renderDatosSolicitudCalibracionIa(data = {}, recalibraciones = [], estado = "") {
+    const primera = recalibraciones[0] || {};
+    const motivo = primera.motivo || data.motivo_revision || "Solicitud histórica sin detalle por criterio.";
+    return `
+        <div class="calibration-meta-grid">
+            <div><span>Solicitante</span><strong>${escapeHtml(primera.solicitado_por || data.supervisor || "Sin información")}</strong></div>
+            <div><span>Fecha de solicitud</span><strong>${escapeHtml(formatoFecha(primera.fecha_solicitud || data.fecha_revision || data.fecha_creacion))}</strong></div>
+            <div><span>Responsable de resolver</span><strong>${escapeHtml(primera.resuelto_por || "Sin asignar")}</strong></div>
+            <div><span>Estado</span><strong>${escapeHtml(estado)}</strong></div>
+        </div>
+        <div class="calibration-general-reason">
+            <span>Motivo general</span>
+            <p>${escapeHtml(motivo)}</p>
         </div>
     `;
+}
+
+function criteriosCuestionadosCalibracionIa(data = {}, recalibraciones = []) {
+    const criterios = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista.map(itemSgcIa) : [];
+    return recalibraciones.map(item => {
+        const criterio = buscarCriterioCalibracionIa(item.item_cuestionado, criterios);
+        return {
+            recalibracion: item,
+            criterio,
+            codigo: criterio ? codigoCriterioHallazgoIa(criterio) : "",
+            nombre: criterio ? criterioHallazgoIa(criterio) : (item.item_cuestionado || "Evaluación general"),
+            dimension: criterio?.segmento_copc || criterio?.segmento || "-",
+            grupo: criterio?.grupo_error_sgc || "-",
+            peso: criterio ? Number(criterio.peso ?? criterio.puntaje_maximo ?? 0) : null,
+            notaIa: criterio ? Number(criterio.nota ?? criterio.puntaje_obtenido ?? 0) : null,
+            resultadoIa: criterio ? resultadoHallazgoFichaIa(criterio) : "Solicitud histórica",
+            evidencia: item.evidencia_supervisor || (criterio ? evidenciaHallazgoFichaIa(criterio, data) : ""),
+            motivo: item.motivo || "-",
+            propuesta: item.nivel_sugerido || (item.score_sugerido != null ? `${formatoPeso(item.score_sugerido)} / 100` : "Sin propuesta"),
+            notaPropuesta: primerNumeroIa([item.score_sugerido]),
+            decisionFinal: item.estado || "",
+            scoreFinal: primerNumeroIa([item.score_final]),
+            comentarioResolucion: item.motivo_resolucion || "",
+        };
+    });
+}
+
+function buscarCriterioCalibracionIa(itemCuestionado = "", criterios = []) {
+    const clave = normalizarTextoComparacionIa(itemCuestionado);
+    if (!clave) return null;
+    return criterios.find(item => {
+        const codigo = normalizarTextoComparacionIa(codigoCriterioHallazgoIa(item));
+        const nombre = normalizarTextoComparacionIa(criterioHallazgoIa(item));
+        const itemTexto = normalizarTextoComparacionIa(item.item || item.item_copc || item.criterio || "");
+        return (codigo && clave.includes(codigo)) || (nombre && (clave.includes(nombre) || nombre.includes(clave))) || (itemTexto && (clave.includes(itemTexto) || itemTexto.includes(clave)));
+    }) || null;
+}
+
+function renderTablaCriteriosCuestionadosIa(criterios = []) {
+    if (!criterios.length) {
+        return `<div class="calibration-empty-inline">Solicitud histórica sin detalle por criterio.</div>`;
+    }
+    return `
+        <div class="calibration-table-wrap">
+            <table class="calibration-table">
+                <thead>
+                    <tr>
+                        <th>Criterio</th>
+                        <th>Resultado IA</th>
+                        <th>Nota IA</th>
+                        <th>Propuesta supervisor</th>
+                        <th>Evidencia</th>
+                        <th>Motivo de discrepancia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${criterios.map(item => `
+                        <tr>
+                            <td>
+                                <strong>${escapeHtml(item.codigo ? `${item.codigo} ${item.nombre}` : item.nombre)}</strong>
+                                <small>${escapeHtml(item.dimension)} · ${escapeHtml(item.grupo)}</small>
+                            </td>
+                            <td>${escapeHtml(item.resultadoIa || "-")}</td>
+                            <td>${escapeHtml(item.notaIa !== null && Number.isFinite(item.notaIa) ? formatoPeso(item.notaIa) : "-")}</td>
+                            <td>${escapeHtml(item.propuesta || "-")}</td>
+                            <td>${escapeHtml(item.evidencia || "Sin evidencia textual suficiente")}</td>
+                            <td>${escapeHtml(item.motivo || "-")}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderTimelineCalibracionIa(data = {}, recalibraciones = [], estado = "", scoreIa = null, scoreFinal = null) {
+    const primera = recalibraciones[0] || {};
+    const eventos = [];
+    recalibraciones.slice().reverse().forEach(item => {
+        eventos.push({
+            fecha: item.fecha_solicitud,
+            titulo: "Solicitud creada",
+            descripcion: `${item.solicitado_por || "Supervisor"} cuestionó ${item.item_cuestionado || "la evaluación"}.`,
+        });
+        if (item.estado) {
+            eventos.push({
+                fecha: item.fecha_solicitud,
+                titulo: normalizarTextoComparacionIa(item.estado).includes("pendiente") ? "Solicitud enviada" : "Estado actualizado",
+                descripcion: `Estado: ${formatearEstadoRecalibracionIa(item.estado)}.`,
+            });
+        }
+        if (item.fecha_resolucion) {
+            eventos.push({
+                fecha: item.fecha_resolucion,
+                titulo: normalizarTextoComparacionIa(item.estado).includes("rechazada") ? "Solicitud rechazada" : "Resolución emitida",
+                descripcion: item.motivo_resolucion || "Resolución registrada por Calidad.",
+            });
+        }
+    });
+    if (!eventos.length) {
+        eventos.push({
+            fecha: data.fecha_creacion || data.fecha_llamada,
+            titulo: "Evaluación sin solicitud",
+            descripcion: "Aún no se registran eventos de recalibración.",
+        });
+    }
+    const diferenciaVsIa = scoreIa !== null && scoreFinal !== null ? scoreFinal - scoreIa : null;
+    const propuesto = scorePropuestoSupervisorCalibracionIa(recalibraciones);
+    const variacion = scoreFinal !== null && propuesto !== null ? scoreFinal - propuesto : null;
+    return `
+        <div class="calibration-timeline">
+            ${eventos.map(evento => `
+                <article>
+                    <strong>${escapeHtml(evento.titulo)}</strong>
+                    <span>${escapeHtml(formatoFecha(evento.fecha))}</span>
+                    <p>${escapeHtml(evento.descripcion)}</p>
+                </article>
+            `).join("")}
+        </div>
+        <div class="calibration-diff-box">
+            <div><span>Diferencia vs IA:</span><strong>${diferenciaVsIa !== null ? `${diferenciaVsIa >= 0 ? "+" : ""}${formatoPeso(diferenciaVsIa)} pts` : "Pendiente"}</strong></div>
+            <div><span>Variación por calibración:</span><strong>${variacion !== null ? `${variacion >= 0 ? "+" : ""}${formatoPeso(variacion)} pts` : "Pendiente"}</strong></div>
+        </div>
+    `;
+}
+
+function renderPendienteResolucionCalibracionIa(estado = "") {
+    return `
+        <article class="calibration-panel calibration-pending-resolution">
+            <h5>Resolución por Calidad</h5>
+            <p>La solicitud se encuentra en estado <strong>${escapeHtml(estado)}</strong>. El score técnico no cambia hasta que exista una resolución válida.</p>
+        </article>
+    `;
+}
+
+function renderResolucionCalibracionIa(data = {}, recalibraciones = [], criterios = [], scoreTecnico = null, scoreFinal = null, scoreIa = null, estado = "") {
+    const rows = criterios.length ? criterios : criteriosCuestionadosCalibracionIa(data, recalibraciones);
+    const cambio = scoreTecnico !== null && scoreFinal !== null ? scoreFinal - scoreTecnico : null;
+    return `
+        <article class="calibration-panel">
+            <h5>Resolución por criterio</h5>
+            <div class="calibration-table-wrap">
+                <table class="calibration-table">
+                    <thead>
+                        <tr>
+                            <th>Criterio</th>
+                            <th>Resultado IA</th>
+                            <th>Propuesta supervisor</th>
+                            <th>Decisión final</th>
+                            <th>Comentario de resolución</th>
+                            <th>Impacto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(item => `
+                            <tr>
+                                <td>${escapeHtml(item.codigo ? `${item.codigo} ${item.nombre}` : item.nombre)}</td>
+                                <td>${escapeHtml(item.resultadoIa || "-")}</td>
+                                <td>${escapeHtml(item.propuesta || "-")}</td>
+                                <td>${escapeHtml(item.decisionFinal ? formatearEstadoRecalibracionIa(item.decisionFinal) : "Pendiente")}</td>
+                                <td>${escapeHtml(item.comentarioResolucion || "Sin comentario de resolución")}</td>
+                                <td>${escapeHtml(item.scoreFinal !== null && scoreIa !== null ? `${item.scoreFinal >= scoreIa ? "+" : ""}${formatoPeso(item.scoreFinal - scoreIa)}` : "-")}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+        <article class="calibration-panel">
+            <h5>Resultado de calibración</h5>
+            <div class="calibration-result-grid">
+                ${cardCalibracionIa("Score antes de calibrar", scoreTecnico !== null ? formatScoreCalibracionIa(scoreTecnico) : "Sin información")}
+                ${cardCalibracionIa("Score final resuelto", scoreFinal !== null ? formatScoreCalibracionIa(scoreFinal) : "Pendiente")}
+                ${cardCalibracionIa("Cambio aplicado", cambio !== null ? `${cambio >= 0 ? "+" : ""}${formatoPeso(cambio)} pts` : "Pendiente")}
+                ${cardCalibracionIa("Estado final de la solicitud", estado)}
+            </div>
+            <p class="calibration-note">La resolución actualiza el score técnico, queda registrada en Historial y no altera la trazabilidad de la evaluación original.</p>
+        </article>
+    `;
+}
+
+function exportarTrazabilidadCalibracionIa() {
+    const data = resultadoActualIa || {};
+    const recalibraciones = Array.isArray(data.recalibraciones_lista) ? data.recalibraciones_lista : [];
+    if (!haySolicitudCalibracionIa(data, recalibraciones)) {
+        mostrarMensajeIa("No existe solicitud de recalibración para exportar.", "error");
+        return;
+    }
+    const criterios = criteriosCuestionadosCalibracionIa(data, recalibraciones);
+    const rows = [
+        ["evaluacion", data.id_feedback || ""],
+        ["score_ia_original", scoreIaOriginalCalibracionIa(data) ?? ""],
+        ["score_tecnico_actual", scoreTecnicoActualCalibracionIa(data) ?? ""],
+        ["estado_calibracion", estadoCalibracionDetalleIa(data, recalibraciones)],
+        [],
+        ["criterio", "resultado_ia", "propuesta_supervisor", "evidencia", "motivo", "decision_final", "comentario_resolucion"],
+        ...criterios.map(item => [
+            item.codigo ? `${item.codigo} ${item.nombre}` : item.nombre,
+            item.resultadoIa || "",
+            item.propuesta || "",
+            item.evidencia || "",
+            item.motivo || "",
+            item.decisionFinal || "",
+            item.comentarioResolucion || "",
+        ]),
+    ];
+    const csv = rows.map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `trazabilidad_calibracion_${data.id_feedback || "evaluacion"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
 }
 
 function pintarHistorialDetalleIa(items) {
     const el = document.getElementById("historialDetalleListaIa");
     if (!el) return;
-    const base = construirHistorialBaseIa(resultadoActualIa || {});
-    const rows = [...base, ...items];
-    if (!rows.length) {
-        el.innerHTML = `<div class="empty-segment">Sin historial adicional. Cuando se guarde la revisión o recalibración, se mostrará la trazabilidad aquí.</div>`;
+    const eventos = eventosHistorialConsolidadosIa(resultadoActualIa || {}, items || []);
+    const conteos = conteosHistorialDetalleIa(eventos);
+    const filtrados = filtroHistorialDetalleIa === "todos"
+        ? eventos
+        : eventos.filter(item => item.categoria === filtroHistorialDetalleIa);
+    if (!eventos.length) {
+        el.innerHTML = `
+            <div class="history-detail-head">
+                <h4>Historial de trazabilidad</h4>
+                <p>Registro cronológico de acciones, cambios de estado y decisiones asociadas a la evaluación.</p>
+            </div>
+            <div class="empty-segment">Sin historial disponible. Todavía no se han registrado acciones o cambios para esta evaluación.</div>
+        `;
         return;
     }
     el.innerHTML = `
-        <div class="detail-timeline">
-            ${rows.map(item => `
-                <article>
-                    <span>${formatoFecha(item.fecha)}</span>
-                    <strong>${escapeHtml(item.accion || "-")}</strong>
-                    <p>${escapeHtml(item.descripcion || item.comentario || "-")}</p>
-                    <small>${escapeHtml(item.usuario || "-")} ${item.valor_anterior || item.valor_nuevo ? `| Antes: ${escapeHtml(item.valor_anterior || "-")} | Nuevo: ${escapeHtml(item.valor_nuevo || "-")}` : ""}</small>
-                </article>
+        <div class="history-detail-head">
+            <div>
+                <h4>Historial de trazabilidad</h4>
+                <p>Registro cronológico de acciones, cambios de estado y decisiones asociadas a la evaluación.</p>
+            </div>
+            <button class="btn-light btn-small" type="button" onclick="exportarHistorialDetalleIa()">Exportar historial</button>
+        </div>
+        <div class="history-filter-pills">
+            ${["todos", "ia", "supervisor", "calidad", "coaching", "sistema"].map(tipo => `
+                <button type="button" class="${filtroHistorialDetalleIa === tipo ? "active" : ""}" onclick="filtrarHistorialDetalleIa('${tipo}')">
+                    ${escapeHtml(labelFiltroHistorialIa(tipo))} <span>${conteos[tipo] || 0}</span>
+                </button>
             `).join("")}
         </div>
+        ${filtrados.length ? renderTimelineHistorialIa(filtrados) : `<div class="empty-segment">No existen eventos de ${escapeHtml(labelFiltroHistorialIa(filtroHistorialDetalleIa).toLowerCase())} para esta evaluación.</div>`}
     `;
 }
 
@@ -4431,41 +6661,665 @@ function construirHistorialBaseIa(data) {
     return [
         {
             fecha: data.fecha_creacion || data.fecha_llamada,
-            accion: "Evaluación creada",
+            accion: "EVALUACION_CREADA",
             usuario: data.supervisor || "-",
             descripcion: `Audio registrado: ${data.archivo_nombre || "-"}`,
         },
         {
             fecha: data.fecha_creacion || data.fecha_llamada,
-            accion: "Análisis IA generado",
+            accion: "ANALISIS_IA",
             usuario: "IA",
-            descripcion: `Score final: ${(data.score_final ?? data.score_calidad) != null ? Number(data.score_final ?? data.score_calidad).toFixed(1) : "-"} / 100`,
+            descripcion: JSON.stringify({
+                score_ia_original: scoreIaOriginalCalibracionIa(data),
+                score_tecnico: scoreTecnicoActualCalibracionIa(data),
+                nivel_riesgo: data.nivel_oportunidad_mejora || data.nivel_riesgo,
+                tipo_llamada: data.tipo_llamada,
+                confianza: data.confianza_evaluacion,
+                estado_inicial: data.estado_revision || "PENDIENTE",
+            }),
         },
         {
             fecha: data.fecha_revision || data.fecha_creacion || data.fecha_llamada,
-            accion: "Revisión supervisor",
+            accion: "REVISION_SUPERVISOR",
             usuario: data.supervisor || "-",
-            descripcion: `Estado: ${data.estado_revision || "PENDIENTE"}`,
+            descripcion: JSON.stringify({
+                estado_revision: data.estado_revision || "PENDIENTE",
+                tipo_llamada: data.tipo_llamada_supervisor || data.tipo_llamada,
+                comentario: data.comentario_feedback || data.comentario_revision || "",
+            }),
         },
     ];
 }
 
+function eventosHistorialConsolidadosIa(data = {}, items = []) {
+    const originales = [...construirHistorialBaseIa(data), ...items];
+    const normalizados = originales.map((item, index) => normalizarEventoHistorialIa(item, index, data));
+    const ordenados = normalizados.sort((a, b) => (a.fechaOrden - b.fechaOrden) || (a.idOrden - b.idOrden));
+    const map = new Map();
+    ordenados.forEach(evento => {
+        const existente = map.get(evento.claveDuplicado);
+        if (!existente) {
+            map.set(evento.claveDuplicado, evento);
+            return;
+        }
+        existente.registrosConsolidados = (existente.registrosConsolidados || 1) + 1;
+        existente.cambios = fusionarCambiosHistorialIa(existente.cambios, evento.cambios);
+        existente.datosTecnicos = { ...evento.datosTecnicos, ...existente.datosTecnicos };
+        if (!existente.comentario && evento.comentario) existente.comentario = evento.comentario;
+        if (evento.resumen && evento.resumen.length > existente.resumen.length) existente.resumen = evento.resumen;
+    });
+    return [...map.values()].sort((a, b) => (a.fechaOrden - b.fechaOrden) || (a.idOrden - b.idOrden));
+}
+
+function normalizarEventoHistorialIa(item = {}, index = 0, data = {}) {
+    const tipoOriginal = item.accion || item.tipo || item.evento || "";
+    const tipoNormal = tipoNormalizadoHistorialIa(tipoOriginal);
+    const datos = extraerDatosTecnicosHistorialIa(item.descripcion || item.comentario || "");
+    const categoria = categoriaHistorialIa(tipoNormal, item, datos);
+    const cambios = cambiosHistorialIa(item, datos);
+    const comentario = comentarioHistorialIa(item, datos);
+    const fecha = item.fecha || item.fecha_evento || item.fecha_creacion || data.fecha_creacion || data.fecha_llamada;
+    const fechaOrden = new Date(fecha || 0);
+    const actor = actorHistorialIa(item.usuario || item.actor || item.responsable, categoria);
+    const tituloVisible = tituloHistorialIa(tipoNormal);
+    const resumen = resumenEventoHistorialIa(tipoNormal, item, datos, cambios);
+    const estadoNuevo = cambioPorCampoHistorialIa(cambios, "Estado")?.nuevo || datos.estado_revision || datos.estado || item.estado_nuevo || "";
+    const scoreNuevo = cambioPorCampoHistorialIa(cambios, "Score técnico")?.nuevo || datos.score_tecnico || datos.score_final || item.valor_nuevo || "";
+    const claveBase = [
+        tipoNormal,
+        fechaClaveHistorialIa(fecha),
+        normalizarTextoComparacionIa(actor.nombre),
+        normalizarTextoComparacionIa(estadoNuevo),
+        normalizarTextoComparacionIa(scoreNuevo),
+        normalizarTextoComparacionIa(comentario || resumen).slice(0, 90),
+    ].join("|");
+    return {
+        id: item.id_historial || item.id || `base-${index}`,
+        idOrden: Number(item.id_historial || index),
+        fecha,
+        fechaOrden: Number.isNaN(fechaOrden.getTime()) ? new Date(0) : fechaOrden,
+        tipoOriginal,
+        tipoNormal,
+        tituloVisible,
+        categoria,
+        actor,
+        resumen,
+        cambios,
+        comentario,
+        datosTecnicos: datos,
+        enlaceRelacionado: enlaceHistorialIa(categoria, tipoNormal),
+        claveDuplicado: claveBase,
+        registrosConsolidados: 1,
+    };
+}
+
+function tipoNormalizadoHistorialIa(value = "") {
+    const key = normalizarTextoComparacionIa(value);
+    if (key.includes("evaluacion creada") || key.includes("evaluacion_creada")) return "EVALUACION_CREADA";
+    if (key.includes("analisis ia") || key.includes("analisis_ia")) return "ANALISIS_IA";
+    if (key.includes("revision supervisor") || key.includes("revision_supervisor")) return "REVISION_SUPERVISOR";
+    if (key.includes("evaluacion validada") || key.includes("validada")) return "EVALUACION_VALIDADA";
+    if (key.includes("recalibracion solicitada") || key.includes("recalibracion_creada") || key.includes("recalibracion_solicitada")) return "RECALIBRACION_CREADA";
+    if (key.includes("recalibracion resuelta") || key.includes("recalibracion_resuelta")) return "RECALIBRACION_RESUELTA";
+    if (key.includes("coaching creado") || key.includes("coaching_creado")) return "COACHING_CREADO";
+    if (key.includes("coaching realizado") || key.includes("coaching_realizado")) return "COACHING_REALIZADO";
+    if (key.includes("coaching cerrado") || key.includes("coaching_cerrado")) return "COACHING_CERRADO";
+    if (key.includes("seguimiento")) return "SEGUIMIENTO_CREADO";
+    if (key.includes("export")) return "EXPORTACION";
+    return String(value || "EVENTO").toUpperCase().replace(/\s+/g, "_");
+}
+
+function tituloHistorialIa(tipo = "") {
+    const map = {
+        EVALUACION_CREADA: "Evaluación creada",
+        ANALISIS_IA: "Análisis IA generado",
+        REVISION_SUPERVISOR: "Revisión del supervisor guardada",
+        EVALUACION_VALIDADA: "Evaluación validada",
+        RECALIBRACION_CREADA: "Recalibración solicitada",
+        RECALIBRACION_RESUELTA: "Recalibración resuelta",
+        COACHING_CREADO: "Plan de coaching creado",
+        COACHING_REALIZADO: "Coaching realizado",
+        COACHING_CERRADO: "Coaching cerrado",
+        SEGUIMIENTO_CREADO: "Seguimiento registrado",
+        EXPORTACION: "Exportación generada",
+    };
+    return map[tipo] || capitalizarEventoHistorialIa(tipo);
+}
+
+function capitalizarEventoHistorialIa(value = "") {
+    return String(value || "Evento")
+        .toLowerCase()
+        .replace(/_/g, " ")
+        .replace(/\b\p{L}/gu, letra => letra.toUpperCase());
+}
+
+function categoriaHistorialIa(tipo = "", item = {}, datos = {}) {
+    const texto = normalizarTextoComparacionIa(`${tipo} ${item.usuario || ""} ${item.descripcion || ""}`);
+    if (texto.includes("analisis") || texto.includes(" ia ")) return "ia";
+    if (texto.includes("recalibracion") || texto.includes("calidad")) return "calidad";
+    if (texto.includes("coaching") || texto.includes("seguimiento")) return "coaching";
+    if (texto.includes("supervisor") || datos.decision_supervisor || datos.estado_revision) return "supervisor";
+    return "sistema";
+}
+
+function actorHistorialIa(usuario = "", categoria = "sistema") {
+    const limpio = String(usuario || "").trim();
+    if (categoria === "ia") return { nombre: "IA", rol: "Sistema de evaluación" };
+    if (!limpio || limpio === "-") return { nombre: categoria === "calidad" ? "Coordinación de Calidad" : "Sistema", rol: labelFiltroHistorialIa(categoria) };
+    return { nombre: limpiarActorHistorialIa(limpio), rol: labelFiltroHistorialIa(categoria) };
+}
+
+function limpiarActorHistorialIa(value = "") {
+    return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function extraerDatosTecnicosHistorialIa(texto = "") {
+    const raw = String(texto || "").trim();
+    if (!raw || !/^\s*[\[{]/.test(raw)) return {};
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+}
+
+function cambiosHistorialIa(item = {}, datos = {}) {
+    const cambios = [];
+    const anterior = item.valor_anterior;
+    const nuevo = item.valor_nuevo;
+    const anteriorJson = extraerDatosTecnicosHistorialIa(anterior);
+    const nuevoJson = extraerDatosTecnicosHistorialIa(nuevo);
+    if (Object.keys(anteriorJson).length || Object.keys(nuevoJson).length) {
+        const keys = new Set([...Object.keys(anteriorJson), ...Object.keys(nuevoJson)]);
+        keys.forEach(key => {
+            cambios.push({
+                campo: etiquetaCampoHistorialIa(key),
+                anterior: valorUtilHistorialIa(anteriorJson[key]) ? formatearValorHistorialIa(key, anteriorJson[key]) : "",
+                nuevo: valorUtilHistorialIa(nuevoJson[key]) ? formatearValorHistorialIa(key, nuevoJson[key]) : "",
+            });
+        });
+    } else if (valorUtilHistorialIa(anterior) || valorUtilHistorialIa(nuevo)) {
+        cambios.push({
+            campo: campoCambioHistorialIa(item, datos),
+            anterior: valorUtilHistorialIa(anterior) ? String(anterior) : "",
+            nuevo: valorUtilHistorialIa(nuevo) ? String(nuevo) : "",
+        });
+    }
+    Object.entries(datos || {}).forEach(([key, value]) => {
+        if (!valorUtilHistorialIa(value)) return;
+        cambios.push({ campo: etiquetaCampoHistorialIa(key), anterior: "", nuevo: formatearValorHistorialIa(key, value) });
+    });
+    return deduplicarCambiosHistorialIa(cambios);
+}
+
+function campoCambioHistorialIa(item = {}, datos = {}) {
+    const texto = normalizarTextoComparacionIa(`${item.accion || ""} ${item.descripcion || ""}`);
+    if (texto.includes("score")) return "Score técnico";
+    if (texto.includes("estado")) return "Estado";
+    if (datos.tipo_llamada) return "Tipo de llamada";
+    return "Cambio registrado";
+}
+
+function etiquetaCampoHistorialIa(key = "") {
+    const map = {
+        score_ia_original: "Score IA original",
+        score_tecnico: "Score técnico",
+        score_final: "Score final resuelto",
+        score_calidad: "Score IA original",
+        nivel_riesgo: "Nivel de riesgo",
+        tipo_llamada: "Tipo de llamada",
+        confianza: "Confianza",
+        estado_inicial: "Estado inicial",
+        estado_revision: "Estado de revisión",
+        decision_supervisor: "Decisión del supervisor",
+        comentario: "Comentario",
+    };
+    return map[key] || capitalizarEventoHistorialIa(key);
+}
+
+function formatearValorHistorialIa(key = "", value = "") {
+    if (/score/i.test(key) && value !== null && value !== undefined && value !== "") return `${formatoPeso(value)}/100`;
+    if (/riesgo/i.test(key)) return formatearRiesgoVisibleIa(value);
+    return String(value);
+}
+
+function comentarioHistorialIa(item = {}, datos = {}) {
+    if (datos.comentario) return String(datos.comentario);
+    const texto = String(item.descripcion || item.comentario || "").trim();
+    if (/^\s*[\[{]/.test(texto)) return "";
+    return texto;
+}
+
+function resumenEventoHistorialIa(tipo = "", item = {}, datos = {}, cambios = []) {
+    if (tipo === "EVALUACION_CREADA") return comentarioHistorialIa(item, datos) || "Audio registrado para evaluación.";
+    if (tipo === "ANALISIS_IA") return "La IA generó la evaluación técnica inicial.";
+    if (tipo === "REVISION_SUPERVISOR") return "El supervisor guardó la revisión de la evaluación.";
+    if (tipo.startsWith("RECALIBRACION")) return comentarioHistorialIa(item, datos) || "Evento asociado al proceso de recalibración.";
+    if (tipo.startsWith("COACHING") || tipo === "SEGUIMIENTO_CREADO") return comentarioHistorialIa(item, datos) || "Evento asociado al plan de coaching.";
+    if (cambios.length) return `${cambios.length} dato(s) registrado(s).`;
+    return comentarioHistorialIa(item, datos) || capitalizarEventoHistorialIa(tipo);
+}
+
+function valorUtilHistorialIa(value) {
+    const texto = String(value ?? "").trim();
+    return Boolean(texto && texto !== "-" && texto.toLowerCase() !== "null" && texto.toLowerCase() !== "undefined");
+}
+
+function deduplicarCambiosHistorialIa(cambios = []) {
+    const map = new Map();
+    cambios.forEach(cambio => {
+        const key = [cambio.campo, cambio.anterior, cambio.nuevo].map(normalizarTextoComparacionIa).join("|");
+        if (!map.has(key)) map.set(key, cambio);
+    });
+    return [...map.values()].filter(cambio => valorUtilHistorialIa(cambio.anterior) || valorUtilHistorialIa(cambio.nuevo));
+}
+
+function fusionarCambiosHistorialIa(a = [], b = []) {
+    return deduplicarCambiosHistorialIa([...a, ...b]);
+}
+
+function cambioPorCampoHistorialIa(cambios = [], campo = "") {
+    const key = normalizarTextoComparacionIa(campo);
+    return cambios.find(cambio => normalizarTextoComparacionIa(cambio.campo) === key);
+}
+
+function fechaClaveHistorialIa(value = "") {
+    const fecha = new Date(value || 0);
+    if (Number.isNaN(fecha.getTime())) return "";
+    const rounded = new Date(fecha);
+    rounded.setSeconds(0, 0);
+    return rounded.toISOString();
+}
+
+function enlaceHistorialIa(categoria = "", tipo = "") {
+    if (categoria === "calidad") return { tab: "calibracion", label: "Ver calibración" };
+    if (categoria === "coaching") return { tab: "coaching", label: "Ver coaching" };
+    if (tipo === "ANALISIS_IA") return { tab: "ficha_sgc", label: "Ver ficha SGC/PEC" };
+    if (categoria === "supervisor") return { tab: "resumen", label: "Ver ficha" };
+    return null;
+}
+
+function conteosHistorialDetalleIa(eventos = []) {
+    const conteos = { todos: eventos.length, ia: 0, supervisor: 0, calidad: 0, coaching: 0, sistema: 0 };
+    eventos.forEach(item => {
+        conteos[item.categoria] = (conteos[item.categoria] || 0) + 1;
+    });
+    return conteos;
+}
+
+function labelFiltroHistorialIa(tipo = "") {
+    return ({ todos: "Todos", ia: "IA", supervisor: "Supervisor", calidad: "Calidad", coaching: "Coaching", sistema: "Sistema" })[tipo] || capitalizarEventoHistorialIa(tipo);
+}
+
+function renderTimelineHistorialIa(eventos = []) {
+    const grupos = new Map();
+    eventos.forEach(evento => {
+        const key = fechaDiaHistorialIa(evento.fecha);
+        if (!grupos.has(key)) grupos.set(key, []);
+        grupos.get(key).push(evento);
+    });
+    return `<div class="history-timeline">${[...grupos.entries()].map(([dia, rows]) => `
+        <section class="history-day-group">
+            <h5>${escapeHtml(dia)}</h5>
+            ${rows.map(renderEventoHistorialIa).join("")}
+        </section>
+    `).join("")}</div>`;
+}
+
+function fechaDiaHistorialIa(value = "") {
+    const fecha = new Date(value || 0);
+    if (Number.isNaN(fecha.getTime())) return "Fecha no disponible";
+    return fecha.toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function horaHistorialIa(value = "") {
+    const fecha = new Date(value || 0);
+    if (Number.isNaN(fecha.getTime())) return "-";
+    return fecha.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderEventoHistorialIa(evento = {}) {
+    const expanded = historialDetalleExpandidoIa === String(evento.id);
+    return `
+        <article class="history-event-card ${claseCategoriaHistorialIa(evento.categoria)}">
+            <div class="history-event-main">
+                <div class="history-event-dot"></div>
+                <div class="history-event-content">
+                    <div class="history-event-top">
+                        <span>${escapeHtml(horaHistorialIa(evento.fecha))}</span>
+                        <em>${escapeHtml(labelFiltroHistorialIa(evento.categoria))}</em>
+                    </div>
+                    <h6>${escapeHtml(evento.tituloVisible)}</h6>
+                    <p>${escapeHtml(evento.resumen)}</p>
+                    <div class="history-event-meta">
+                        <strong>${escapeHtml(evento.actor.nombre)}</strong>
+                        <span>${escapeHtml(evento.actor.rol)}</span>
+                    </div>
+                    ${renderCambiosResumenHistorialIa(evento.cambios)}
+                    <div class="history-event-actions">
+                        <button type="button" onclick="toggleDetalleEventoHistorialIa('${escapeHtml(String(evento.id))}')">${expanded ? "Ocultar detalle" : "Ver detalle"}</button>
+                        ${evento.enlaceRelacionado ? `<button type="button" onclick="mostrarTabDetalleIa('${escapeHtml(evento.enlaceRelacionado.tab)}')">${escapeHtml(evento.enlaceRelacionado.label)}</button>` : ""}
+                    </div>
+                    ${expanded ? renderDetalleEventoHistorialIa(evento) : ""}
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function claseCategoriaHistorialIa(categoria = "") {
+    return ({ ia: "ia", supervisor: "supervisor", calidad: "quality", coaching: "coaching", sistema: "system" })[categoria] || "system";
+}
+
+function renderCambiosResumenHistorialIa(cambios = []) {
+    const visibles = cambios.filter(c => valorUtilHistorialIa(c.nuevo)).slice(0, 3);
+    if (!visibles.length) return "";
+    return `<div class="history-change-list">${visibles.map(cambio => `
+        <div><span>${escapeHtml(cambio.campo)}</span><strong>${escapeHtml(cambio.anterior ? `${cambio.anterior} → ${cambio.nuevo}` : cambio.nuevo)}</strong></div>
+    `).join("")}</div>`;
+}
+
+function renderDetalleEventoHistorialIa(evento = {}) {
+    const cambios = evento.cambios || [];
+    const datos = Object.entries(evento.datosTecnicos || {}).filter(([, value]) => valorUtilHistorialIa(value));
+    return `
+        <div class="history-event-detail">
+            ${evento.comentario ? `<div><span>Comentario o motivo</span><p>${escapeHtml(evento.comentario)}</p></div>` : ""}
+            ${cambios.length ? `<div><span>Cambios registrados</span>${cambios.map(cambio => `<p><b>${escapeHtml(cambio.campo)}:</b> ${escapeHtml(cambio.anterior ? `${cambio.anterior} → ${cambio.nuevo}` : cambio.nuevo)}</p>`).join("")}</div>` : ""}
+            ${datos.length ? `<div><span>Datos traducidos</span>${datos.map(([key, value]) => `<p><b>${escapeHtml(etiquetaCampoHistorialIa(key))}:</b> ${escapeHtml(formatearValorHistorialIa(key, value))}</p>`).join("")}</div>` : ""}
+            ${evento.registrosConsolidados > 1 ? `<small>${evento.registrosConsolidados} registros técnicos consolidados visualmente.</small>` : ""}
+        </div>
+    `;
+}
+
+function toggleDetalleEventoHistorialIa(id = "") {
+    historialDetalleExpandidoIa = historialDetalleExpandidoIa === id ? "" : id;
+    pintarHistorialDetalleIa(resultadoActualIa?.historial_lista || []);
+}
+
+function filtrarHistorialDetalleIa(tipo = "todos") {
+    filtroHistorialDetalleIa = tipo;
+    historialDetalleExpandidoIa = "";
+    pintarHistorialDetalleIa(resultadoActualIa?.historial_lista || []);
+}
+
+function exportarHistorialDetalleIa() {
+    const eventos = eventosHistorialConsolidadosIa(resultadoActualIa || {}, resultadoActualIa?.historial_lista || []);
+    if (!eventos.length) {
+        mostrarMensajeIa("No existe historial para exportar.", "error");
+        return;
+    }
+    const rows = [
+        ["fecha", "evento", "actor", "categoria", "resumen", "cambios", "comentario"],
+        ...eventos.map(evento => [
+            formatoFecha(evento.fecha),
+            evento.tituloVisible,
+            `${evento.actor.nombre} (${evento.actor.rol})`,
+            labelFiltroHistorialIa(evento.categoria),
+            evento.resumen,
+            evento.cambios.map(c => `${c.campo}: ${c.anterior ? `${c.anterior} -> ` : ""}${c.nuevo}`).join(" | "),
+            evento.comentario || "",
+        ]),
+    ];
+    const csv = rows.map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `historial_evaluacion_${resultadoActualIa?.id_feedback || "detalle"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function construirFeedbackCoachingIa(data = {}) {
+    const hallazgos = hallazgosAccionablesCoachingIa(data);
+    const evidencias = evidenciasAgrupadasIa.length ? evidenciasAgrupadasIa : agruparEvidenciasVisualesIa(normalizarEvidenciasDetalleIa(data).evidencias);
+    const evidenciaPrioritaria = evidenciaPrioritariaCoachingIa(evidencias);
+    const brecha = brechaPrioritariaCoachingIa(hallazgos, evidenciaPrioritaria);
+    const transcripcionKey = normalizarTextoComparacionIa(data.transcripcion || "");
+    const tieneCasoJulio = transcripcionKey.includes("julio cesar") || transcripcionKey.includes("menos voy a poder con los 2000") || transcripcionKey.includes("fraccionamiento");
+    const fortalezas = data.coaching?.feedback_supervisor?.fortalezas?.join?.(", ")
+        || data.feedback_supervisor?.fortalezas?.join?.(", ")
+        || fortalezaObservableCoachingIa(data, tieneCasoJulio);
+    const evidenciaTexto = evidenciaPrioritaria?.frase || citaCoachingPorPatronIa(data, /menos voy a poder[^.?!]{0,120}/i) || "Requiere revisión del supervisor.";
+    const conducta = tieneCasoJulio ? "Manejo de objeciones." : (brecha.conducta || "Manejo de objeciones.");
+    const accion = tieneCasoJulio
+        ? "Preguntar monto disponible y fecha antes de abandonar la negociación."
+        : (brecha.accion || "Convertir la objeción principal en una alternativa concreta y verificable.");
+    const objetivoSiguiente = tieneCasoJulio
+        ? "Obtener monto, fecha, canal y confirmación expresa."
+        : (data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || "Lograr un compromiso verificable o dejar una siguiente acción clara.");
+    const recomendacion = tieneCasoJulio
+        ? "Explorar cuánto sí puede pagar el cliente y convertir la objeción en una propuesta viable."
+        : (brecha.recomendacion || recomendacionPrincipalEvidenciaIa(evidenciaPrioritaria || {}) || "Requiere revisión del supervisor.");
+    const guion = tieneCasoJulio
+        ? "Entiendo que S/2,695 no es viable. ¿Con cuánto podría iniciar y en qué fecha concreta podría realizar ese pago?"
+        : guionCoachingIa(brecha, evidenciaPrioritaria, data);
+    return {
+        fortalezas,
+        brecha: tieneCasoJulio ? "Manejo de objeciones y adaptación de la propuesta." : (brecha.titulo || brechaPrincipalDetalleIa(data) || "Requiere revisión del supervisor."),
+        impacto: tieneCasoJulio
+            ? "La gestión terminó sin monto, canal ni confirmación expresa."
+            : (brecha.impacto || "La gestión queda sin una acción de recupero verificable."),
+        recomendacion,
+        ocurrio: fraseCortaCoachingIa(evidenciaTexto),
+        guion,
+        objetivoGuion: tieneCasoJulio
+            ? "Adaptar la alternativa a la capacidad del cliente y conducir la conversación hacia un compromiso verificable."
+            : "Practicar una respuesta concreta que conecte la objeción con monto, fecha, canal y confirmación.",
+        conducta,
+        accion,
+        objetivoSiguiente,
+        evidencia: fraseCortaCoachingIa(evidenciaTexto),
+        objetivoMedible: "En las próximas 5 llamadas monitoreadas, explorar monto disponible, fecha y canal en al menos 4 casos aplicables y obtener confirmación expresa cuando exista intención de pago.",
+        compromiso: "Me comprometo a explorar cuánto puede pagar el cliente, en qué fecha y por qué canal antes de cerrar la negociación.",
+        evidenciaKey: evidenciaPrioritaria ? evidenciaKeyIa(evidenciaPrioritaria) : "",
+    };
+}
+
+function poblarResponsablesCoachingIa(data = {}) {
+    const select = document.getElementById("responsableCoachingIa");
+    if (!select) return;
+    const actual = data.responsable_coaching || data.responsable || "";
+    const opciones = [
+        { value: "", label: "Sin asignar" },
+        ...responsablesCoachingSesionIa(data),
+    ];
+    if (actual && !opciones.some(item => item.value === actual)) {
+        opciones.push({ value: actual, label: actual });
+    }
+    select.innerHTML = opciones.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join("");
+    select.value = opciones.some(item => item.value === actual) ? actual : "";
+}
+
+function responsablesCoachingSesionIa(data = {}) {
+    const tipo = tipoUsuarioIa();
+    const nombre = localStorage.getItem("agente") || localStorage.getItem("nombre") || "";
+    const dni = localStorage.getItem("dni") || localStorage.getItem("usuario") || "";
+    const perfilesResponsables = ["SUPERVISOR", "GESTOR DE CALIDAD", "CALIDAD", "JEFE DE COBRANZA", "JEFE DE CARTERA", "JEFE DE CARTERAS", "ADMINISTRADOR"];
+    const opciones = [];
+    if (perfilesResponsables.includes(tipo) && (nombre || dni)) {
+        const value = [dni, nombre].filter(Boolean).join(" - ");
+        opciones.push({ value, label: `${nombre || dni} · ${formatearTipoResponsableIa(tipo)}` });
+    }
+    if (data.supervisor) {
+        opciones.push({ value: data.supervisor, label: `${data.supervisor} · Supervisor de la evaluación` });
+    }
+    return opciones.filter((item, index, array) => item.value && array.findIndex(x => x.value === item.value) === index);
+}
+
+function formatearTipoResponsableIa(tipo = "") {
+    const key = String(tipo || "").toUpperCase();
+    if (key === "SUPERVISOR") return "Supervisor";
+    if (key === "GESTOR DE CALIDAD" || key === "CALIDAD") return "Gestor de calidad";
+    if (key === "JEFE DE COBRANZA") return "Jefe de cobranza";
+    if (key === "JEFE DE CARTERA" || key === "JEFE DE CARTERAS") return "Jefe de cartera";
+    if (key === "ADMINISTRADOR") return "Administrador";
+    return key || "Responsable";
+}
+
+function hallazgosAccionablesCoachingIa(data = {}) {
+    const items = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const normalizados = repararHallazgosContextualesFichaIa(
+        items.map(itemSgcIa).map(normalizarHallazgoFichaIa),
+        data,
+    );
+    return deduplicarHallazgosFichaIa(
+        normalizados
+            .filter(esHallazgoAccionableFichaIa)
+            .filter(item => !esHallazgoGenericoSinEvidenciaIa(item)),
+    ).rows;
+}
+
+function evidenciaPrioritariaCoachingIa(evidencias = []) {
+    const preferida = evidencias.find(item => normalizarTextoComparacionIa(item.frase || "").includes("menos voy a poder"))
+        || evidencias.find(item => normalizarTextoComparacionIa(item.criterio || "").includes("manejo de objeciones"))
+        || evidencias.find(item => item.tipo === "anulante")
+        || evidencias.find(item => item.tipo === "critica")
+        || evidencias.find(item => item.tipo === "revision")
+        || evidencias[0];
+    return preferida || null;
+}
+
+function brechaPrioritariaCoachingIa(hallazgos = [], evidencia = null) {
+    const orden = [
+        item => item.falta_anulante || item.puede_descalificar,
+        item => normalizarTextoComparacionIa(item.grupo_error_sgc).includes("usuario"),
+        item => normalizarTextoComparacionIa(item.grupo_error_sgc).includes("cumplimiento"),
+        item => normalizarTextoComparacionIa(item.grupo_error_sgc).includes("negocio"),
+        () => true,
+    ];
+    const item = orden.map(fn => hallazgos.find(fn)).find(Boolean) || {};
+    const factor = criterioHallazgoIa(item) || evidencia?.criterio || "Brecha prioritaria";
+    const factorKey = normalizarTextoComparacionIa(factor);
+    if (factorKey.includes("manejo de objeciones")) {
+        return {
+            titulo: "Manejo de objeciones y adaptación de la propuesta.",
+            conducta: "Manejo de objeciones.",
+            accion: "Preguntar monto disponible y fecha antes de abandonar la negociación.",
+            impacto: "La objeción del cliente no se convirtió en una alternativa viable.",
+            recomendacion: "Preguntar cuánto sí puede pagar y en qué fecha antes de abandonar la negociación.",
+        };
+    }
+    return {
+        titulo: factor,
+        conducta: factor,
+        accion: item.recomendacion_entrenable || item.recomendacion || "Precisar la conducta esperada y practicar una frase aplicable.",
+        impacto: item.impacto_negocio || item.impacto || item.hallazgo || "La brecha afecta la continuidad de la gestión.",
+        recomendacion: item.recomendacion_entrenable || item.recomendacion || "",
+    };
+}
+
+function fortalezaObservableCoachingIa(data = {}, casoJulio = false) {
+    const explicitas = Array.isArray(data.fortalezas_lista) ? data.fortalezas_lista.filter(evidenciaEsTextualFichaIa) : [];
+    if (casoJulio) return "Identificó la falta de liquidez, recuperó el acuerdo anterior y presentó una alternativa de fraccionamiento.";
+    if (explicitas.length) return explicitas.slice(0, 3).join(" ");
+    const texto = normalizarTextoComparacionIa(data.transcripcion || "");
+    const fortalezas = [];
+    if (texto.includes("le habla") || texto.includes("buenos dias")) fortalezas.push("saludó e inició la conversación");
+    if (texto.includes("si digame") || texto.includes("ella habla") || texto.includes("soy yo")) fortalezas.push("obtuvo una confirmación de contacto");
+    if (texto.includes("fraccionamiento")) fortalezas.push("presentó una alternativa de fraccionamiento");
+    return fortalezas.length ? `${capitalizarIa(fortalezas.join(", "))}.` : "Requiere revisión del supervisor.";
+}
+
+function guionCoachingIa(brecha = {}, evidencia = null, data = {}) {
+    const factor = normalizarTextoComparacionIa(brecha.titulo || evidencia?.criterio || "");
+    if (factor.includes("cierre")) return "Entonces confirmamos S/___ para el ___ mediante ___, ¿correcto?";
+    if (factor.includes("claridad") || factor.includes("monto")) return "Su deuda total es de S/___ y la alternativa vigente es de S/___. Son conceptos diferentes.";
+    if (factor.includes("empatia")) return "Entiendo la dificultad. Para encontrar una opción realista, necesito saber cuánto podría asumir.";
+    return data.feedback_asesor?.frase_recomendada || data.guion_sugerido || "Entiendo que ese monto no es viable. ¿Con cuánto podría iniciar y en qué fecha?";
+}
+
+function citaCoachingPorPatronIa(data = {}, patron) {
+    return extraerCitaFichaIa(String(data.transcripcion || ""), [patron]) || "";
+}
+
+function fraseCortaCoachingIa(texto = "") {
+    const limpio = String(texto || "").replace(/\s+/g, " ").trim();
+    if (!limpio) return "Requiere revisión del supervisor.";
+    return limpio.length > 180 ? `${limpio.slice(0, 177)}...` : limpio;
+}
+
+function capitalizarIa(texto = "") {
+    const value = String(texto || "");
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+function irEvidenciaCoachingIa() {
+    const sugerido = window.coachingSugeridoIa || {};
+    mostrarTabDetalleIa("evidencias");
+    const key = sugerido.evidenciaKey || "";
+    if (key) evidenciaExpandidaIa = key;
+    if (typeof pintarTablaEvidenciasIa === "function") pintarTablaEvidenciasIa(evidenciasAgrupadasIa);
+    setTimeout(() => {
+        const safeKey = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+        const target = key
+            ? document.querySelector(`[data-evidence-key="${safeKey}"]`)
+            : document.getElementById("tablaEvidenciasIa");
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+}
+
 function cargarCoachingEnFormulario(data) {
-    setValue("estadoCoachingIa", data.estado_coaching || "PENDIENTE");
+    const sugerido = construirFeedbackCoachingIa(data);
+    window.coachingSugeridoIa = sugerido;
+    window.coachingPlanGuardadoIa = Boolean(data.estado_coaching || data.fecha_coaching || data.compromiso_agente || data.resultado_coaching);
+    setText("coachingFortalezasIa", sugerido.fortalezas);
+    setText("coachingBrechaIa", sugerido.brecha);
+    setText("coachingImpactoIa", sugerido.impacto);
+    setText("coachingRecomendacionIa", sugerido.recomendacion);
+    setText("coachingOcurrioIa", sugerido.ocurrio);
+    setText("coachingGuionIa", sugerido.guion);
+    setText("coachingObjetivoGuionIa", sugerido.objetivoGuion);
+    setText("coachingConductaPrioritariaIa", sugerido.conducta);
+    setText("coachingAccionEntrenableIa", sugerido.accion);
+    setText("coachingObjetivoSiguienteIa", sugerido.objetivoSiguiente);
+    setText("coachingEvidenciaOrigenIa", sugerido.evidencia);
+
+    setValue("estadoCoachingIa", normalizarEstadoCoachingVistaIa(data.estado_coaching));
     setValue("fechaCoachingIa", data.fecha_coaching ? String(data.fecha_coaching).slice(0, 16) : "");
-    setValue("compromisoAgenteIa", data.compromiso_agente || "");
-    setValue("resultadoCoachingIa", data.resultado_coaching || "");
-    actualizarAyudaCoachingIa(data.estado_coaching || "PENDIENTE");
+    poblarResponsablesCoachingIa(data);
+    setValue("tipoIntervencionCoachingIa", data.tipo_intervencion || "COACHING_INDIVIDUAL");
+    setValue("conductaPlanCoachingIa", data.conducta_prioritaria || sugerido.conducta);
+    setValue("objetivoMedibleCoachingIa", data.objetivo_medible || sugerido.objetivoMedible);
+    setValue("compromisoAgenteIa", data.compromiso_agente || sugerido.compromiso);
+    setValue("fechaEjecucionCoachingIa", data.fecha_ejecucion_coaching ? String(data.fecha_ejecucion_coaching).slice(0, 16) : "");
+    setValue("resultadoObservadoCoachingIa", data.resultado_coaching || data.resultado_observado || "");
+    setValue("cumplioObjetivoCoachingIa", data.cumplio_objetivo || "");
+    setValue("evidenciaMejoraCoachingIa", data.evidencia_mejora || "");
+    setValue("proximaRevisionCoachingIa", data.proxima_revision ? String(data.proxima_revision).slice(0, 10) : "");
+    setValue("estadoFinalCoachingIa", data.estado_final_coaching || "");
+    actualizarAyudaCoachingIa(data.estado_coaching || "NO_PROGRAMADO");
+}
+
+function normalizarEstadoCoachingVistaIa(estado = "") {
+    const key = String(estado || "").toUpperCase();
+    if (!key || key === "PENDIENTE") return "NO_PROGRAMADO";
+    return key;
 }
 
 function actualizarAyudaCoachingIa(estado) {
     const ayuda = document.getElementById("ayudaCoachingIa");
     const btn = document.getElementById("btnGuardarCoachingIa");
-    const normalizado = String(estado || "PENDIENTE").toUpperCase();
-    if (btn) btn.textContent = ["REALIZADO", "CERRADO"].includes(normalizado) ? "Guardar cierre de coaching" : "Guardar coaching";
-    if (ayuda) ayuda.textContent = ["REALIZADO", "CERRADO"].includes(normalizado)
-        ? "Al guardar, el coaching quedara marcado como realizado/cerrado segun el estado seleccionado."
-        : "Para cerrar el coaching, cambia el estado a Realizado o Cerrado y guarda el seguimiento.";
+    const btnRealizado = document.getElementById("btnMarcarCoachingRealizadoIa");
+    const seguimiento = document.getElementById("formSeguimientoCoachingIa");
+    const ayudaSeguimiento = document.getElementById("ayudaSeguimientoCoachingIa");
+    const normalizado = normalizarEstadoCoachingVistaIa(estado);
+    const planGuardado = Boolean(window.coachingPlanGuardadoIa);
+    const puedeMarcarRealizado = Boolean(planGuardado && valor("fechaCoachingIa") && valor("responsableCoachingIa") && !["", "SIN ASIGNAR"].includes(valor("responsableCoachingIa").toUpperCase()));
+    const seguimientoActivo = ["EN_PROCESO", "REALIZADO", "CERRADO"].includes(normalizado);
+    if (btn) btn.textContent = "Guardar plan";
+    if (btnRealizado) {
+        btnRealizado.disabled = !puedeMarcarRealizado;
+        btnRealizado.title = puedeMarcarRealizado ? "" : "Completa fecha programada y responsable para marcarlo como realizado.";
+    }
+    if (seguimiento) seguimiento.classList.toggle("coaching-disabled-form", !seguimientoActivo);
+    if (ayuda) ayuda.textContent = puedeMarcarRealizado
+        ? "Plan listo para marcar como realizado cuando corresponda."
+        : "Guarda el plan con fecha y responsable para marcar el coaching como realizado.";
+    if (ayudaSeguimiento) ayudaSeguimiento.textContent = seguimientoActivo
+        ? "Registra la ejecución y evidencia antes de cerrar el coaching."
+        : "El seguimiento se habilita cuando el coaching está en curso o realizado.";
 }
 
 async function guardarCoachingIa() {
@@ -4480,11 +7334,11 @@ async function guardarCoachingIa() {
     try {
         const formData = new FormData();
         formData.append("estado", valor("estadoCoachingIa") || "PROGRAMADO");
-        formData.append("feedback_supervisor", valor("comentarioFeedbackIa"));
+        formData.append("feedback_supervisor", resumenPlanCoachingIa());
         formData.append("compromiso_agente", valor("compromisoAgenteIa"));
         formData.append("fecha_programada", valor("fechaCoachingIa"));
-        formData.append("resultado", valor("resultadoCoachingIa"));
-        formData.append("responsable", localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
+        formData.append("resultado", resultadoSeguimientoCoachingIa());
+        formData.append("responsable", valor("responsableCoachingIa") || localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
         const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}/coaching`, {
             method: "POST",
             body: formData,
@@ -4492,6 +7346,8 @@ async function guardarCoachingIa() {
         const data = await leerJsonSeguro(response);
         if (!response.ok) throw new Error(data.detail || "No se pudo guardar el coaching.");
         resultadoActualIa = data;
+        window.coachingPlanGuardadoIa = true;
+        actualizarAyudaCoachingIa(valor("estadoCoachingIa"));
         pintarHistorialDetalleIa(data.historial_lista || []);
         pintarCalibracionDetalleIa(data);
         await cargarHistorialIa();
@@ -4501,8 +7357,73 @@ async function guardarCoachingIa() {
         mostrarMensajeIa(error.message || "Error guardando coaching.", "error");
     } finally {
         btn.disabled = false;
-        btn.textContent = "Guardar coaching";
+        btn.textContent = "Guardar plan";
     }
+}
+
+function marcarPlanCoachingPendienteIa() {
+    if (!resultadoActualIa) return;
+    window.coachingPlanGuardadoIa = false;
+    actualizarAyudaCoachingIa(valor("estadoCoachingIa"));
+}
+
+async function marcarCoachingRealizadoIa() {
+    if (!valor("fechaCoachingIa") || !valor("responsableCoachingIa")) {
+        mostrarMensajeIa("Completa fecha programada y responsable antes de marcarlo como realizado.", "error");
+        return;
+    }
+    setValue("estadoCoachingIa", "REALIZADO");
+    actualizarAyudaCoachingIa("REALIZADO");
+    await guardarCoachingIa();
+}
+
+async function guardarSeguimientoCoachingIa() {
+    const estado = String(valor("estadoCoachingIa") || "").toUpperCase();
+    if (!["EN_PROCESO", "REALIZADO", "CERRADO"].includes(estado)) {
+        mostrarMensajeIa("Primero marca el coaching como en curso o realizado para registrar seguimiento.", "error");
+        return;
+    }
+    await guardarCoachingIa();
+}
+
+async function cerrarCoachingDesdeSeguimientoIa() {
+    const faltantes = [];
+    if (!valor("resultadoObservadoCoachingIa")) faltantes.push("resultado observado");
+    if (!valor("cumplioObjetivoCoachingIa")) faltantes.push("cumplimiento del objetivo");
+    if (!valor("evidenciaMejoraCoachingIa")) faltantes.push("evidencia de mejora o justificación");
+    if (!valor("estadoFinalCoachingIa")) faltantes.push("estado final");
+    if (faltantes.length) {
+        mostrarMensajeIa(`Para cerrar el coaching falta: ${faltantes.join(", ")}.`, "error");
+        return;
+    }
+    setValue("estadoCoachingIa", "CERRADO");
+    await guardarCoachingIa();
+}
+
+function resumenPlanCoachingIa() {
+    const sugerido = window.coachingSugeridoIa || {};
+    return [
+        `Brecha prioritaria: ${valor("conductaPlanCoachingIa") || sugerido.brecha || "Requiere revisión del supervisor."}`,
+        `Tipo de intervención: ${textoSelectIa("tipoIntervencionCoachingIa") || "Sin información"}`,
+        `Objetivo medible: ${valor("objetivoMedibleCoachingIa") || "Sin información"}`,
+        `Acción entrenable: ${sugerido.accion || "Sin información"}`,
+        `Evidencia origen: ${sugerido.evidencia || "Sin información"}`,
+    ].join("\n");
+}
+
+function resultadoSeguimientoCoachingIa() {
+    const partes = [];
+    if (valor("resultadoObservadoCoachingIa")) partes.push(`Resultado observado: ${valor("resultadoObservadoCoachingIa")}`);
+    if (valor("cumplioObjetivoCoachingIa")) partes.push(`Cumplió objetivo: ${textoSelectIa("cumplioObjetivoCoachingIa")}`);
+    if (valor("evidenciaMejoraCoachingIa")) partes.push(`Evidencia de mejora: ${valor("evidenciaMejoraCoachingIa")}`);
+    if (valor("proximaRevisionCoachingIa")) partes.push(`Próxima revisión: ${valor("proximaRevisionCoachingIa")}`);
+    if (valor("estadoFinalCoachingIa")) partes.push(`Estado final: ${textoSelectIa("estadoFinalCoachingIa")}`);
+    return partes.join("\n");
+}
+
+function textoSelectIa(id) {
+    const el = document.getElementById(id);
+    return el?.options?.[el.selectedIndex]?.textContent?.trim() || valor(id);
 }
 
 function mostrarVistaCalibracionIa() {

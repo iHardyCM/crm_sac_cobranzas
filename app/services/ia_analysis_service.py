@@ -24,10 +24,10 @@ TRANSCRIPTION_MODEL = os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL", "gpt-4o-mini-
 ANALYSIS_MODEL = os.getenv("IA_FEEDBACK_ANALYSIS_MODEL", "gpt-4o-mini")
 PROMPT_CONFIG_TABLE = "CobAuto.dbo.ia_feedback_prompt_config"
 
-SGC_GRUPO_NEGOCIO = "Errores críticos del negocio"
-SGC_GRUPO_USUARIO = "Errores críticos del usuario final"
-SGC_GRUPO_CUMPLIMIENTO = "Errores críticos de cumplimiento"
-SGC_GRUPO_NO_CRITICO = "Errores no críticos"
+SGC_GRUPO_NEGOCIO = "Errores crÃ­ticos del negocio"
+SGC_GRUPO_USUARIO = "Errores crÃ­ticos del usuario final"
+SGC_GRUPO_CUMPLIMIENTO = "Errores crÃ­ticos de cumplimiento"
+SGC_GRUPO_NO_CRITICO = "Errores no crÃ­ticos"
 SGC_GRUPO_NO_APLICA = "No aplica"
 SGC_GRUPOS_VALIDOS = {
     SGC_GRUPO_NEGOCIO,
@@ -38,65 +38,97 @@ SGC_GRUPOS_VALIDOS = {
 }
 
 SGC_FACTORES = [
-    (SGC_GRUPO_NEGOCIO, "Razón de no pago y explicar motivo", ("2.1", "motivo de atraso", "causa raiz", "causa raíz", "razon de no pago", "razón de no pago")),
-    (SGC_GRUPO_NEGOCIO, "Urgencia y persistencia en el pago", ("3.5", "orientacion a resultado", "orientación a resultado", "urgencia", "persistencia")),
-    (SGC_GRUPO_NEGOCIO, "Gestión de objeciones del cliente", ("3.2", "objeciones")),
+    (SGC_GRUPO_NEGOCIO, "RazÃ³n de no pago y explicar motivo", ("2.1", "motivo de atraso", "causa raiz", "causa raÃ­z", "razon de no pago", "razÃ³n de no pago")),
+    (SGC_GRUPO_NEGOCIO, "Urgencia y persistencia en el pago", ("3.5", "orientacion a resultado", "orientaciÃ³n a resultado", "urgencia", "persistencia")),
+    (SGC_GRUPO_NEGOCIO, "GestiÃ³n de objeciones del cliente", ("3.2", "objeciones")),
     (SGC_GRUPO_NEGOCIO, "Uso de aplicativo si aplica", ("aplicativo", "uso de aplicativo")),
-    (SGC_GRUPO_NEGOCIO, "Asesorar", ("asesorar", "asesoria", "asesoría")),
-    (SGC_GRUPO_NEGOCIO, "Dominio de la llamada", ("dominio", "control de conversacion", "control de conversación")),
-    (SGC_GRUPO_NEGOCIO, "Parafraseo / reafirmar acuerdo de pagos", ("4.3", "recapitulacion", "recapitulación", "parafraseo", "reafirmar")),
-    (SGC_GRUPO_NEGOCIO, "Tipificación correcta", ("tipificacion", "tipificación", "registro", "trazabilidad")),
+    (SGC_GRUPO_NEGOCIO, "Asesorar", ("asesorar", "asesoria", "asesorÃ­a")),
+    (SGC_GRUPO_NEGOCIO, "Dominio de la llamada", ("dominio", "control de conversacion", "control de conversaciÃ³n")),
+    (SGC_GRUPO_NEGOCIO, "Parafraseo / reafirmar acuerdo de pagos", ("4.3", "recapitulacion", "recapitulaciÃ³n", "parafraseo", "reafirmar")),
+    (SGC_GRUPO_NEGOCIO, "TipificaciÃ³n correcta", ("tipificacion", "tipificaciÃ³n", "registro", "trazabilidad")),
     (SGC_GRUPO_NEGOCIO, "Falta grave para el negocio", ("falta grave para el negocio",)),
-    (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C", ("4.1", "cierre 3c", "cierre verificable", "cuanto paga", "cuánto paga")),
-    (SGC_GRUPO_NEGOCIO, "Negociación escalonada", ("3.1", "negociacion escalonada", "negociación escalonada")),
+    (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C", ("4.1", "cierre 3c", "cierre verificable", "cuanto paga", "cuÃ¡nto paga")),
+    (SGC_GRUPO_NEGOCIO, "NegociaciÃ³n escalonada", ("3.1", "negociacion escalonada", "negociaciÃ³n escalonada")),
     (SGC_GRUPO_NEGOCIO, "Propuesta de alternativas", ("3.3", "alternativas")),
-    (SGC_GRUPO_NEGOCIO, "Orientación a resultado", ("3.5", "compromiso concreto", "resultado")),
-    (SGC_GRUPO_USUARIO, "Información de la deuda", ("1.3", "informacion correcta", "información correcta", "deuda")),
+    (SGC_GRUPO_NEGOCIO, "OrientaciÃ³n a resultado", ("3.5", "compromiso concreto", "resultado")),
+    (SGC_GRUPO_USUARIO, "InformaciÃ³n de la deuda", ("1.3", "informacion correcta", "informaciÃ³n correcta", "deuda")),
     (SGC_GRUPO_USUARIO, "Agilidad / escucha activa", ("2.3", "escucha activa", "agilidad", "interrup")),
     (SGC_GRUPO_USUARIO, "Falta grave para el usuario final", ("falta grave para el usuario",)),
-    (SGC_GRUPO_USUARIO, "Claridad de la explicación", ("5.2", "claridad", "explicacion", "explicación")),
-    (SGC_GRUPO_USUARIO, "Confusión generada al cliente", ("confusion", "confusión")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Ley de protección y defensa del consumidor", ("proteccion", "protección", "defensa del consumidor")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Validación de titularidad", ("1.2", "validacion de titularidad", "validación de titularidad", "titularidad")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Exposición de deuda a tercero", ("tercero", "exponer deuda", "exposicion de deuda", "exposición de deuda")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Información falsa o riesgosa", ("informacion falsa", "información falsa", "riesgosa", "legal")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Amenazas, presión indebida o trato abusivo", ("amenaza", "presion indebida", "presión indebida", "trato abusivo", "insulto", "humilla", "carcel", "cárcel")),
-    (SGC_GRUPO_CUMPLIMIENTO, "Conducta ética y no abuso", ("5.4", "conducta etica", "conducta ética", "cumplimiento etico", "cumplimiento ético", "no abuso")),
-    (SGC_GRUPO_NO_CRITICO, "Identificación del cliente", ("identificacion del cliente", "identificación del cliente")),
-    (SGC_GRUPO_NO_CRITICO, "Identificación del gestor", ("1.1", "apertura", "identificacion", "identificación", "gestor")),
-    (SGC_GRUPO_NO_CRITICO, "Entonación, dicción y empatía", ("5.1", "5.2", "empatia", "empatía", "diccion", "dicción", "entonacion", "entonación")),
+    (SGC_GRUPO_USUARIO, "Claridad de la explicaciÃ³n", ("5.2", "claridad", "explicacion", "explicaciÃ³n")),
+    (SGC_GRUPO_USUARIO, "ConfusiÃ³n generada al cliente", ("confusion", "confusiÃ³n")),
+    (SGC_GRUPO_CUMPLIMIENTO, "Ley de protecciÃ³n y defensa del consumidor", ("proteccion", "protecciÃ³n", "defensa del consumidor")),
+    (SGC_GRUPO_CUMPLIMIENTO, "ValidaciÃ³n de titularidad", ("1.2", "validacion de titularidad", "validaciÃ³n de titularidad", "titularidad")),
+    (SGC_GRUPO_CUMPLIMIENTO, "ExposiciÃ³n de deuda a tercero", ("tercero", "exponer deuda", "exposicion de deuda", "exposiciÃ³n de deuda")),
+    (SGC_GRUPO_CUMPLIMIENTO, "InformaciÃ³n falsa o riesgosa", ("informacion falsa", "informaciÃ³n falsa", "riesgosa", "legal")),
+    (SGC_GRUPO_CUMPLIMIENTO, "Amenazas, presiÃ³n indebida o trato abusivo", ("amenaza", "presion indebida", "presiÃ³n indebida", "trato abusivo", "insulto", "humilla", "carcel", "cÃ¡rcel")),
+    (SGC_GRUPO_CUMPLIMIENTO, "Conducta Ã©tica y no abuso", ("5.4", "conducta etica", "conducta Ã©tica", "cumplimiento etico", "cumplimiento Ã©tico", "no abuso")),
+    (SGC_GRUPO_NO_CRITICO, "IdentificaciÃ³n del cliente", ("identificacion del cliente", "identificaciÃ³n del cliente")),
+    (SGC_GRUPO_NO_CRITICO, "IdentificaciÃ³n del gestor", ("1.1", "apertura", "identificacion", "identificaciÃ³n", "gestor")),
+    (SGC_GRUPO_NO_CRITICO, "EntonaciÃ³n, dicciÃ³n y empatÃ­a", ("5.1", "5.2", "empatia", "empatÃ­a", "diccion", "dicciÃ³n", "entonacion", "entonaciÃ³n")),
     (SGC_GRUPO_NO_CRITICO, "TMO / ACW", ("tmo", "acw")),
     (SGC_GRUPO_NO_CRITICO, "Lenguaje formal", ("lenguaje formal",)),
     (SGC_GRUPO_NO_CRITICO, "Despedida profesional", ("4.5", "despedida")),
-    (SGC_GRUPO_NO_CRITICO, "Actualización de números telefónicos si aplica", ("telefono", "teléfono", "numeros telefonicos", "números telefónicos")),
+    (SGC_GRUPO_NO_CRITICO, "ActualizaciÃ³n de nÃºmeros telefÃ³nicos si aplica", ("telefono", "telÃ©fono", "numeros telefonicos", "nÃºmeros telefÃ³nicos")),
 ]
 
 COPC_ITEMS_CANONICOS = [
-    ("Cumplimiento", "1.1 Saludo e identificación del agente", 3),
-    ("Cumplimiento", "1.2 Identificación de la entidad", 3),
-    ("Cumplimiento", "1.3 Validación de titularidad", 4),
-    ("Cumplimiento", "1.4 Motivo de llamada y control de información", 5),
-    ("Diagnóstico", "2.1 Identificación de la causa", 5),
-    ("Diagnóstico", "2.2 Capacidad actual de pago", 4),
-    ("Diagnóstico", "2.3 Fecha probable de ingreso", 2),
-    ("Diagnóstico", "2.4 Monto disponible", 2),
-    ("Diagnóstico", "2.5 Fuente del dinero o situación económica", 2),
-    ("Gestión de solución", "3.1 Presentación clara de la propuesta", 6),
-    ("Gestión de solución", "3.2 Claridad del beneficio", 4),
-    ("Gestión de solución", "3.3 Exploración de capacidad durante la negociación", 5),
-    ("Gestión de solución", "3.4 Negociación escalonada", 8),
-    ("Gestión de solución", "3.5 Manejo de objeciones", 7),
-    ("Gestión de solución", "3.6 Inducción a pago o abono", 5),
+    ("Cumplimiento", "1.1 Saludo e identificaciÃ³n del agente", 3),
+    ("Cumplimiento", "1.2 IdentificaciÃ³n de la entidad", 3),
+    ("Cumplimiento", "1.3 ValidaciÃ³n de titularidad", 4),
+    ("Cumplimiento", "1.4 Motivo de llamada y control de informaciÃ³n", 5),
+    ("DiagnÃ³stico", "2.1 IdentificaciÃ³n de la causa", 5),
+    ("DiagnÃ³stico", "2.2 Capacidad actual de pago", 4),
+    ("DiagnÃ³stico", "2.3 Fecha probable de ingreso", 2),
+    ("DiagnÃ³stico", "2.4 Monto disponible", 2),
+    ("DiagnÃ³stico", "2.5 Fuente del dinero o situaciÃ³n econÃ³mica", 2),
+    ("GestiÃ³n de soluciÃ³n", "3.1 PresentaciÃ³n clara de la propuesta", 6),
+    ("GestiÃ³n de soluciÃ³n", "3.2 Claridad del beneficio", 4),
+    ("GestiÃ³n de soluciÃ³n", "3.3 ExploraciÃ³n de capacidad durante la negociaciÃ³n", 5),
+    ("GestiÃ³n de soluciÃ³n", "3.4 NegociaciÃ³n escalonada", 8),
+    ("GestiÃ³n de soluciÃ³n", "3.5 Manejo de objeciones", 7),
+    ("GestiÃ³n de soluciÃ³n", "3.6 InducciÃ³n a pago o abono", 5),
     ("Cierre verificable", "4.1 Cantidad", 7),
     ("Cierre verificable", "4.2 Fecha exacta", 7),
     ("Cierre verificable", "4.3 Canal de pago", 5),
-    ("Cierre verificable", "4.4 Confirmación expresa", 7),
-    ("Cierre verificable", "4.5 Resumen y siguiente acción", 4),
-    ("Experiencia y ética", "5.1 Respeto y ausencia de juicio", 2),
-    ("Experiencia y ética", "5.2 Empatía y escucha activa", 1),
-    ("Experiencia y ética", "5.3 Lenguaje claro y presión profesional", 1),
-    ("Experiencia y ética", "5.4 Despedida y cierre profesional", 1),
+    ("Cierre verificable", "4.4 ConfirmaciÃ³n expresa", 7),
+    ("Cierre verificable", "4.5 Resumen y siguiente acciÃ³n", 4),
+    ("Experiencia y Ã©tica", "5.1 Respeto y ausencia de juicio", 2),
+    ("Experiencia y Ã©tica", "5.2 EmpatÃ­a y escucha activa", 1),
+    ("Experiencia y Ã©tica", "5.3 Lenguaje claro y presiÃ³n profesional", 1),
+    ("Experiencia y Ã©tica", "5.4 Despedida y cierre profesional", 1),
 ]
+
+
+SGC_MAPEO_CRITERIOS = {
+    "1.1": (SGC_GRUPO_NO_CRITICO, "IdentificaciÃ³n del gestor"),
+    "1.2": (SGC_GRUPO_NO_CRITICO, "IdentificaciÃ³n de la entidad"),
+    "1.3": (SGC_GRUPO_CUMPLIMIENTO, "ValidaciÃ³n de titularidad"),
+    "1.4": (SGC_GRUPO_USUARIO, "InformaciÃ³n de la deuda"),
+
+    "2.1": (SGC_GRUPO_NEGOCIO, "RazÃ³n de no pago y explicar motivo"),
+    "2.2": (SGC_GRUPO_NEGOCIO, "Capacidad actual de pago"),
+    "2.3": (SGC_GRUPO_NEGOCIO, "Fecha probable de ingreso"),
+    "2.4": (SGC_GRUPO_NEGOCIO, "Monto disponible"),
+    "2.5": (SGC_GRUPO_NEGOCIO, "SituaciÃ³n econÃ³mica"),
+
+    "3.1": (SGC_GRUPO_NO_CRITICO, "PresentaciÃ³n y adaptaciÃ³n de la propuesta"),
+    "3.2": (SGC_GRUPO_NO_CRITICO, "Claridad de montos y condiciones"),
+    "3.3": (SGC_GRUPO_NEGOCIO, "ExploraciÃ³n de capacidad"),
+    "3.4": (SGC_GRUPO_NEGOCIO, "NegociaciÃ³n escalonada"),
+    "3.5": (SGC_GRUPO_NEGOCIO, "Manejo de objeciones"),
+    "3.6": (SGC_GRUPO_NEGOCIO, "InducciÃ³n a pago o abono"),
+
+    "4.1": (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C"),
+    "4.2": (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C"),
+    "4.3": (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C"),
+    "4.4": (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C"),
+    "4.5": (SGC_GRUPO_NEGOCIO, "Cierre verificable 3C/4C"),
+
+    "5.1": (SGC_GRUPO_NO_CRITICO, "Respeto y ausencia de juicio"),
+    "5.2": (SGC_GRUPO_NO_CRITICO, "EmpatÃ­a aplicada a la negociaciÃ³n"),
+    "5.3": (SGC_GRUPO_CUMPLIMIENTO, "Lenguaje claro y presiÃ³n profesional"),
+    "5.4": (SGC_GRUPO_CUMPLIMIENTO, "Conducta Ã©tica y no abuso"),
+}
 
 ESTADOS_COPC_V2 = {
     "CUMPLE",
@@ -224,84 +256,136 @@ def prompt_base_sistema() -> str:
 
 def prompt_copc_cobranza_v2() -> str:
     return """
-Analiza esta transcripción de llamada de cobranza y devuelve exclusivamente JSON válido.
+Analiza esta transcripciÃ³n de llamada de cobranza y devuelve exclusivamente JSON vÃ¡lido.
 
-Marco: COPC adaptado a cobranza telefónica v2. No es una matriz COPC oficial universal.
-Evalúa solo conductas observables o razonablemente inferibles. No inventes hechos, citas ni timestamps.
+Marco: COPC adaptado a cobranza telefÃ³nica v2. No es una matriz COPC oficial universal.
+EvalÃºa solo conductas observables o razonablemente inferibles. No inventes hechos, citas ni timestamps.
+AISLAMIENTO OBLIGATORIO ENTRE EVALUACIONES:
+- Analiza exclusivamente la transcripciÃ³n incluida en este prompt.
+- Ignora cualquier llamada, ejemplo, evidencia, fecha, monto, frase, hallazgo o conclusiÃ³n de evaluaciones anteriores.
+- Toda evidencia textual debe existir literalmente o de forma claramente equivalente en esta transcripciÃ³n.
+- Si un dato no aparece en esta llamada, devuelve null, lista vacÃ­a, NO_EVALUABLE o REQUIERE_REVISION segÃºn corresponda.
+- EstÃ¡ prohibido completar informaciÃ³n faltante usando patrones de llamadas anteriores.
+- Antes de devolver un hallazgo, valida que la evidencia pertenece a esta transcripciÃ³n y no a otro caso.
+
+REGLA FUNDAMENTAL DE EVALUACION:
+- No marques automÃ¡ticamente NO_CUMPLE porque una frase exacta no aparezca.
+- CUMPLE: la conducta requerida se observa suficientemente.
+- PARCIAL: la conducta se realiza, pero queda incompleta.
+- NO_CUMPLE: existÃ­a una oportunidad clara de ejecutar la conducta y el agente no lo hizo o lo hizo incorrectamente.
+- NO_EVALUABLE: el desarrollo de la llamada no generÃ³ una oportunidad razonable para ejecutar el criterio.
+- REQUIERE_REVISION: existe evidencia ambigua o insuficiente para decidir responsablemente.
+- No uses NO_CUMPLE como sustituto de "no encontrÃ© evidencia".
+- No confundas contexto del cliente con error del agente: evalÃºa lo que hace el agente despuÃ©s de la objeciÃ³n.
+- EvalÃºa independientemente los cinco componentes del cierre verificable; no agrupes automÃ¡ticamente cantidad, fecha, canal, confirmaciÃ³n y resumen como cero.
+- No generes hallazgos artificiales para llenar grupos SGC vacÃ­os.
 
 Estados permitidos por criterio:
 CUMPLE, PARCIAL_ALTO, PARCIAL_MEDIO, PARCIAL_BAJO, NO_CUMPLE, NO_EVALUABLE, REQUIERE_REVISION.
 
 Reglas centrales:
-- La ausencia de evidencia no significa automáticamente NO_CUMPLE. Usa NO_EVALUABLE o REQUIERE_REVISION y explica motivo.
-- Si no hay diarización, infiere AGENTE, CLIENTE o NO_DETERMINADO por fragmento con confianza. No fuerces una asignación ambigua.
-- La nota mínima aprobatoria es 85.
-- Conserva score_tecnico sobre 100 aunque exista descalificación.
-- Nunca conviertas automáticamente el score_tecnico a cero por error crítico.
-- La descalificación es independiente del score técnico.
-- No evalúes "Tipificación correcta"; devuelve dos tipificaciones sugeridas sin impacto en score.
+- La ausencia de evidencia no significa automÃ¡ticamente NO_CUMPLE. Usa NO_EVALUABLE o REQUIERE_REVISION y explica motivo.
+- Si no hay diarizaciÃ³n, infiere AGENTE, CLIENTE o NO_DETERMINADO por fragmento con confianza. No fuerces una asignaciÃ³n ambigua.
+- Devuelve interlocutores.segmentos siempre que la transcripciÃ³n permita separar turnos de habla. Cada segmento debe traer:
+  hablante AGENTE, CLIENTE o NO_DETERMINADO; texto literal; timestamp null si no existe; confianza ALTA, MEDIA o BAJA;
+  fundamento breve de por quÃ© asignaste ese hablante. Si la separaciÃ³n es demasiado ambigua, usa NO_DETERMINADO.
+- No dejes interlocutores.segmentos vacÃ­o cuando hay turnos evidentes por preguntas/respuestas, saludos del gestor,
+  frases de cobranza del agente o respuestas del cliente. Divide en fragmentos cortos y conserva toda la llamada.
+- La nota mÃ­nima aprobatoria es 85.
+- Conserva score_tecnico sobre 100 aunque exista descalificaciÃ³n.
+- Nunca conviertas automÃ¡ticamente el score_tecnico a cero por error crÃ­tico.
+- La descalificaciÃ³n es independiente del score tÃ©cnico.
+- No evalÃºes "TipificaciÃ³n correcta"; devuelve dos tipificaciones sugeridas sin impacto en score.
 - Si no hay timestamps, usa null. No inventes timestamps.
+- La evidencia de una falta anulante debe ser una cita textual exacta de la transcripciÃ³n, no una categorÃ­a.
+- Si detectas humillaciÃ³n o maltrato psicolÃ³gico explÃ­cito, crea un error crÃ­tico automÃ¡tico en el grupo
+  "Errores crÃ­ticos del usuario final" con factor "Falta grave al usuario final / Maltrato psicolÃ³gico".
+
+- La validaciÃ³n de titularidad CUMPLE si el agente pregunta por la persona y el interlocutor confirma directa
+  o indirectamente ser ella. No exijas DNI ni validaciÃ³n adicional.
+- GestiÃ³n de soluciÃ³n y Cierre verificable aplican cuando hubo contacto y oportunidad real de negociar, aunque no
+  haya acuerdo. No los marques NO_EVALUABLE por falta de compromiso; puntÃºa bajo, cero o REQUIERE_REVISION.
+- Si no tienes cita textual exacta para sustentar un incumplimiento, usa REQUIERE_REVISION, no inventes evidencia.
+- Separa presiÃ³n legal ambigua como error crÃ­tico de cumplimiento sujeto a calibraciÃ³n: REQUIERE_REVISION,
+  no falta anulante automÃ¡tica.
+
+Reglas de calidad analitica para hallazgos:
+- Cada hallazgo debe ser especifico, equilibrado y accionable. No devuelvas etiquetas sueltas como
+  "No cumple cierre", "Falta de empatia" o "No presento propuesta".
+- Para cada criterio con PARCIAL, NO_CUMPLE o REQUIERE_REVISION explica:
+  1) que si hizo el agente, 2) donde perdio la oportunidad, 3) cita textual exacta,
+  4) lectura de negocio, 5) impacto en recupero/cierre, 6) impacto en cliente,
+  7) conducta concreta esperada y 8) frase alternativa sugerida.
+- Diferencia ausencia total de conducta vs conducta parcial. Si el agente ofrecio fraccionamiento,
+  no digas "No presento propuesta"; di que presento una alternativa pero no la desarrollo ni la adapto.
+- Reconoce fortalezas relacionadas cuando existan. Las fortalezas no eliminan la brecha, pero deben aparecer
+  en resumen ejecutivo, feedback supervisor y feedback asesor.
+- Todo NO_CUMPLE debe tener evidencia_textual literal. Si no hay cita, usa REQUIERE_REVISION.
+- No uses textos genericos como "No evidenciado en la respuesta IA" o "Revisar transcripcion" como evidencia.
+- No conviertas ambiguedad en incumplimiento confirmado.
+- Si existe objecion economica, evalua si el agente reconoce, indaga, adapta, busca monto, busca fecha e intenta cerrar.
+- Si existe una advertencia o escalamiento ambiguo, clasificalo como REQUIERE_REVISION por dependencia de discurso autorizado, no como descalificacion automatica.
 
 Matriz COPC v2, total 100:
 
 D1. Cumplimiento y control de contacto, 15 puntos:
-1.1 Saludo e identificación del agente, 3. Saluda e indica su nombre. Cumple 3, parcial 1.5, no cumple 0.
-1.2 Identificación de la entidad, 3. Menciona banco o entidad. Cumple 3, parcial 1.5, no cumple 0.
-1.3 Validación de titularidad, 4. Basta que pregunte por la persona y el interlocutor confirme directa o indirectamente:
-"sí", "soy yo", "ella habla", "con ella", "dígame", "sí señor" o respuesta contextual inequívoca.
-No exige DNI, fecha de nacimiento ni validación adicional. Cumple 4, parcial/ambiguo 2, no cumple 0, requiere revisión si no se puede inferir.
-No validar no descalifica automáticamente; descalifica solo si se revela deuda a tercero confirmado.
-1.4 Motivo de llamada y control de información, 5. Explica motivo y evita información falsa, contradictoria o revelada antes de validar.
+1.1 Saludo e identificaciÃ³n del agente, 3. Saluda e indica su nombre. Cumple 3, parcial 1.5, no cumple 0.
+1.2 IdentificaciÃ³n de la entidad, 3. Menciona banco o entidad. Cumple 3, parcial 1.5, no cumple 0.
+1.3 ValidaciÃ³n de titularidad, 4. Basta que pregunte por la persona y el interlocutor confirme directa o indirectamente:
+"sÃ­", "soy yo", "ella habla", "con ella", "dÃ­game", "sÃ­ seÃ±or" o respuesta contextual inequÃ­voca.
+No exige DNI, fecha de nacimiento ni validaciÃ³n adicional. Cumple 4, parcial/ambiguo 2, no cumple 0, requiere revisiÃ³n si no se puede inferir.
+No validar no descalifica automÃ¡ticamente; descalifica solo si se revela deuda a tercero confirmado.
+1.4 Motivo de llamada y control de informaciÃ³n, 5. Explica motivo y evita informaciÃ³n falsa, contradictoria o revelada antes de validar.
 Cumple 5, parcial alto 3.75, parcial medio 2.5, parcial bajo 1.25, no cumple 0.
 
-D2. Diagnóstico, 15 puntos:
-2.1 Identificación de la causa, 5. Identifica por qué dejó de pagar. Si cliente lo explica espontáneamente, puntúa si agente escucha y usa la información.
+D2. DiagnÃ³stico, 15 puntos:
+2.1 IdentificaciÃ³n de la causa, 5. Identifica por quÃ© dejÃ³ de pagar. Si cliente lo explica espontÃ¡neamente, puntÃºa si agente escucha y usa la informaciÃ³n.
 2.2 Capacidad actual de pago, 4. Determina si puede pagar o abonar ahora o en fecha cercana.
-2.3 Fecha probable de ingreso, 2. Determina cuándo podría disponer de dinero. "El otro mes", "después" o "cuando pueda" no son suficientes.
-2.4 Monto disponible, 2. Busca cuánto podría pagar o abonar. No hay monto mínimo obligatorio.
-2.5 Fuente del dinero o situación económica, 2. Identifica fuente posible o ausencia de ingresos sin interrogatorio invasivo.
+2.3 Fecha probable de ingreso, 2. Determina cuÃ¡ndo podrÃ­a disponer de dinero. "El otro mes", "despuÃ©s" o "cuando pueda" no son suficientes.
+2.4 Monto disponible, 2. Busca cuÃ¡nto podrÃ­a pagar o abonar. No hay monto mÃ­nimo obligatorio.
+2.5 Fuente del dinero o situaciÃ³n econÃ³mica, 2. Identifica fuente posible o ausencia de ingresos sin interrogatorio invasivo.
 
-D3. Gestión de solución y negociación, 35 puntos:
-3.1 Presentación clara de la propuesta, 6. Diferencia deuda total, campaña, cuota, abono, fraccionamiento, fecha límite cuando corresponda.
-3.2 Claridad del beneficio, 4. Explica por qué conviene pagar/abonar: reducir deuda, evitar incremento, campaña, regularización o avance real a otra instancia.
-3.3 Exploración de capacidad durante la negociación, 5. Usa diagnóstico para adaptar propuesta. No dupliques automáticamente el diagnóstico.
-3.4 Negociación escalonada, 8. Escalera: cancelación total, campaña, abono/fraccionamiento, fecha próxima con monto concreto. No exige todas si cliente acepta una inicial.
-3.5 Manejo de objeciones, 7. Escucha, responde profesionalmente y reconduce a solución.
-3.6 Inducción a pago o abono, 5. Intenta obtener pago, abono, monto concreto o fecha concreta.
-Regla mes vigente: si cliente dice próximo mes, el agente debe intentar primero orientar pago/abono dentro del mes vigente y explicar que condiciones pueden cambiar.
+D3. GestiÃ³n de soluciÃ³n y negociaciÃ³n, 35 puntos:
+3.1 PresentaciÃ³n clara de la propuesta, 6. Diferencia deuda total, campaÃ±a, cuota, abono, fraccionamiento, fecha lÃ­mite cuando corresponda.
+3.2 Claridad del beneficio, 4. Explica por quÃ© conviene pagar/abonar: reducir deuda, evitar incremento, campaÃ±a, regularizaciÃ³n o avance real a otra instancia.
+3.3 ExploraciÃ³n de capacidad durante la negociaciÃ³n, 5. Usa diagnÃ³stico para adaptar propuesta. No dupliques automÃ¡ticamente el diagnÃ³stico.
+3.4 NegociaciÃ³n escalonada, 8. Escalera: cancelaciÃ³n total, campaÃ±a, abono/fraccionamiento, fecha prÃ³xima con monto concreto. No exige todas si cliente acepta una inicial.
+3.5 Manejo de objeciones, 7. Escucha, responde profesionalmente y reconduce a soluciÃ³n.
+3.6 InducciÃ³n a pago o abono, 5. Intenta obtener pago, abono, monto concreto o fecha concreta.
+Regla mes vigente: si cliente dice prÃ³ximo mes, el agente debe intentar primero orientar pago/abono dentro del mes vigente y explicar que condiciones pueden cambiar.
 
-D4. Cierre verificable, 30 puntos. Cierre 4C: Cantidad, Cuándo, Canal, Confirmación.
+D4. Cierre verificable, 30 puntos. Cierre 4C: Cantidad, CuÃ¡ndo, Canal, ConfirmaciÃ³n.
 4.1 Cantidad, 7. Monto exacto confirmado 7; mencionado sin reconfirmar 5.25; rango 3.5; "un abono" 1.75; sin monto 0.
 4.2 Fecha exacta, 7. Fecha exacta 7; referencia cercana clara 5.25; fecha amplia 3.5; "el otro mes" 1.75; sin fecha 0.
 4.3 Canal de pago, 5. Canal definido y confirmado 5; mencionado 3.75; canales generales 2.5; ambiguo 1.25; sin canal 0.
-4.4 Confirmación expresa, 7. Aceptación clara 7; reserva menor 5.25; ambigua 3.5; intención general 1.75; rechazo/silencio 0.
-4.5 Resumen y siguiente acción, 4. Resume monto, fecha, canal y siguiente acción 4; omite menor 3; solo monto/fecha 2; general 1; sin resumen 0.
+4.4 ConfirmaciÃ³n expresa, 7. AceptaciÃ³n clara 7; reserva menor 5.25; ambigua 3.5; intenciÃ³n general 1.75; rechazo/silencio 0.
+4.5 Resumen y siguiente acciÃ³n, 4. Resume monto, fecha, canal y siguiente acciÃ³n 4; omite menor 3; solo monto/fecha 2; general 1; sin resumen 0.
 Tipos de cierre permitidos: PAGO_INMEDIATO_CONFIRMADO, PROMESA_VERIFICABLE, PROMESA_PARCIAL, INTENCION_NO_VERIFICABLE, SEGUIMIENTO_ACORDADO, SIN_COMPROMISO, LLAMADA_INTERRUMPIDA.
 
-D5. Experiencia y ética, 5 puntos:
+D5. Experiencia y Ã©tica, 5 puntos:
 5.1 Respeto y ausencia de juicio, 2. Cumple 2, parcial 1, no cumple 0.
-5.2 Empatía y escucha activa, 1. Cumple 1, parcial 0.5, no cumple 0.
-5.3 Lenguaje claro y presión profesional, 1. Cumple 1, parcial 0.5, no cumple 0.
+5.2 EmpatÃ­a y escucha activa, 1. Cumple 1, parcial 0.5, no cumple 0.
+5.3 Lenguaje claro y presiÃ³n profesional, 1. Cumple 1, parcial 0.5, no cumple 0.
 5.4 Despedida y cierre profesional, 1. Cumple 1, parcial 0.5, no cumple 0.
 
-Errores críticos automáticos, descalifican manteniendo score técnico:
-insulto directo, humillación, maltrato psicológico explícito, discriminación, amenaza falsa grave,
-revelación de deuda a tercero confirmado, suplantación o identificación falsa, burla sobre salud/desempleo/problema familiar,
-manipulación deliberada con información falsa.
-Ejemplo: "Todo lo que dice son pretextos" puede ser maltrato psicológico descalificante si el contexto confirma desacreditación.
+Errores crÃ­ticos automÃ¡ticos, descalifican manteniendo score tÃ©cnico:
+insulto directo, humillaciÃ³n, maltrato psicolÃ³gico explÃ­cito, discriminaciÃ³n, amenaza falsa grave,
+revelaciÃ³n de deuda a tercero confirmado, suplantaciÃ³n o identificaciÃ³n falsa, burla sobre salud/desempleo/problema familiar,
+manipulaciÃ³n deliberada con informaciÃ³n falsa.
+Ejemplo: "Todo lo que dice son pretextos" puede ser maltrato psicolÃ³gico descalificante si el contexto confirma desacreditaciÃ³n.
 
-Errores críticos sujetos a calibración:
-presión excesiva, interrupciones constantes, sarcasmo dudoso, advertencia legal ambigua, comentario poco empático,
-tono confrontacional, corte abrupto, frase culpabilizante moderada, información imprecisa posiblemente involuntaria.
-Clasifícalos como CRITICO_CONDICIONADO y REQUIERE_REVISION; no descalifiques automáticamente.
+Errores crÃ­ticos sujetos a calibraciÃ³n:
+presiÃ³n excesiva, interrupciones constantes, sarcasmo dudoso, advertencia legal ambigua, comentario poco empÃ¡tico,
+tono confrontacional, corte abrupto, frase culpabilizante moderada, informaciÃ³n imprecisa posiblemente involuntaria.
+ClasifÃ­calos como CRITICO_CONDICIONADO y REQUIERE_REVISION; no descalifiques automÃ¡ticamente.
 
-Tipificación sugerida:
-Devuelve dos tipificaciones sugeridas, principal y alternativa, sin código y sin impacto en score.
+TipificaciÃ³n sugerida:
+Devuelve dos tipificaciones sugeridas, principal y alternativa, sin cÃ³digo y sin impacto en score.
 Ejemplos: dificultad de pago - problema financiero, problema personal, salud, desempleo, dificultad de negocio,
-renuente, reclamo, niega deuda, rechazo de pago, posposición sin fecha, promesa total, promesa parcial,
-pago realizado, seguimiento de solución de pago.
+renuente, reclamo, niega deuda, rechazo de pago, posposiciÃ³n sin fecha, promesa total, promesa parcial,
+pago realizado, seguimiento de soluciÃ³n de pago.
 
-JSON mínimo obligatorio:
+JSON mÃ­nimo obligatorio:
 {
   "version_evaluacion": "2.0",
   "resultado_evaluacion": {
@@ -339,7 +423,22 @@ JSON mínimo obligatorio:
     "oportunidad_principal": "",
     "conclusion": ""
   },
-  "interlocutores": {"confianza_global": "", "segmentos": []},
+  "interlocutores": {
+    "confianza_global": "",
+    "metodo": "INFERIDO_DESDE_TRANSCRIPCION | DIARIZACION_ORIGINAL | NO_DISPONIBLE",
+    "segmentos": [
+      {
+        "orden": 1,
+        "timestamp": null,
+        "inicio_segundos": null,
+        "fin_segundos": null,
+        "hablante": "AGENTE | CLIENTE | NO_DETERMINADO",
+        "texto": "",
+        "confianza": "ALTA | MEDIA | BAJA",
+        "fundamento": ""
+      }
+    ]
+  },
   "dimensiones": [],
   "errores_criticos": [],
   "hallazgos_no_criticos": [],
@@ -369,11 +468,24 @@ JSON mínimo obligatorio:
 Cada criterio dentro de dimensiones debe incluir:
 codigo, nombre, puntaje_maximo, puntaje_obtenido, estado, conducta_esperada, evidencias,
 hallazgo, impacto, recomendacion, gravedad, puede_descalificar, confianza, requiere_revision, motivo_no_evaluable.
-Incluye siempre los 24 criterios de la matriz. Si un criterio no puede evaluarse, inclúyelo con estado
-NO_EVALUABLE o REQUIERE_REVISION, puntaje_obtenido null, motivo_no_evaluable claro y evidencia vacía.
+Ademas, cada criterio debe incluir estos campos enriquecidos:
+codigo_criterio, factor, grupo_sgc, calificacion, evidencia_textual, conducta_observada, lectura_ia,
+impacto_negocio, impacto_cliente, recomendacion_entrenable, frase_sugerida, fortaleza_relacionada.
+Reglas:
+- evidencia_textual es una lista de citas literales de la transcripcion.
+- conducta_observada describe que ocurrio, incluyendo fortalezas parciales.
+- lectura_ia explica que significa la conducta para cobranza.
+- hallazgo resume la brecha sin negar lo que el agente si hizo.
+- impacto_negocio conecta con pago, abono, compromiso, recupero o cierre.
+- impacto_cliente conecta con claridad, confianza o experiencia.
+- recomendacion_entrenable debe ser una accion concreta para la siguiente llamada.
+- frase_sugerida debe ser una frase lista para usar o entrenar.
+- fortaleza_relacionada reconoce algo bien ejecutado cuando exista.
+Incluye siempre los 24 criterios de la matriz. Si un criterio no puede evaluarse, inclÃºyelo con estado
+NO_EVALUABLE o REQUIERE_REVISION, puntaje_obtenido null, motivo_no_evaluable claro y evidencia vacÃ­a.
 
 Para compatibilidad gerencial, cada criterio puede incluir grupo_error_sgc y factor_sgc. Si no lo incluyes,
-el sistema lo inferirá por criterio.
+el sistema lo inferirÃ¡ por criterio.
 """.strip()
 
 
@@ -455,28 +567,28 @@ Errores criticos COPC Cobranza:
 - Presion indebida, humillacion, burla o sarcasmo.
 - Compromiso inventado o cierre no aceptado por el cliente.
 
-Capa SGC/PEC para reportería gerencial:
-- Mantén la matriz operativa COPC Cobranza como base de evaluación de la llamada.
-- SGC/PEC no reemplaza a COPC: traduce los hallazgos a una clasificación interna para Pareto, feedback y coaching.
-- Clasifica cada item también en grupo_error_sgc y factor_sgc.
+Capa SGC/PEC para reporterÃ­a gerencial:
+- MantÃ©n la matriz operativa COPC Cobranza como base de evaluaciÃ³n de la llamada.
+- SGC/PEC no reemplaza a COPC: traduce los hallazgos a una clasificaciÃ³n interna para Pareto, feedback y coaching.
+- Clasifica cada item tambiÃ©n en grupo_error_sgc y factor_sgc.
 - Grupos permitidos:
-  * Errores críticos del negocio
-  * Errores críticos del usuario final
-  * Errores críticos de cumplimiento
-  * Errores no críticos
+  * Errores crÃ­ticos del negocio
+  * Errores crÃ­ticos del usuario final
+  * Errores crÃ­ticos de cumplimiento
+  * Errores no crÃ­ticos
   * No aplica
-- Factores SGC/PEC de negocio: Razón de no pago y explicar motivo, Urgencia y persistencia en el pago,
-  Gestión de objeciones del cliente, Uso de aplicativo si aplica, Asesorar, Dominio de la llamada,
-  Parafraseo / reafirmar acuerdo de pagos, Tipificación correcta, Falta grave para el negocio,
-  Cierre verificable 3C/4C, Negociación escalonada, Propuesta de alternativas, Orientación a resultado.
-- Factores SGC/PEC de usuario final: Información de la deuda, Agilidad / escucha activa,
-  Falta grave para el usuario final, Claridad de la explicación, Confusión generada al cliente.
-- Factores SGC/PEC de cumplimiento: Ley de protección y defensa del consumidor,
-  Validación de titularidad, Exposición de deuda a tercero, Información falsa o riesgosa,
-  Amenazas, presión indebida o trato abusivo, Conducta ética y no abuso.
-- Factores SGC/PEC no críticos: Identificación del cliente, Identificación del gestor,
-  Entonación, dicción y empatía, TMO / ACW, Lenguaje formal, Despedida profesional,
-  Actualización de números telefónicos si aplica.
+- Factores SGC/PEC de negocio: RazÃ³n de no pago y explicar motivo, Urgencia y persistencia en el pago,
+  GestiÃ³n de objeciones del cliente, Uso de aplicativo si aplica, Asesorar, Dominio de la llamada,
+  Parafraseo / reafirmar acuerdo de pagos, TipificaciÃ³n correcta, Falta grave para el negocio,
+  Cierre verificable 3C/4C, NegociaciÃ³n escalonada, Propuesta de alternativas, OrientaciÃ³n a resultado.
+- Factores SGC/PEC de usuario final: InformaciÃ³n de la deuda, Agilidad / escucha activa,
+  Falta grave para el usuario final, Claridad de la explicaciÃ³n, ConfusiÃ³n generada al cliente.
+- Factores SGC/PEC de cumplimiento: Ley de protecciÃ³n y defensa del consumidor,
+  ValidaciÃ³n de titularidad, ExposiciÃ³n de deuda a tercero, InformaciÃ³n falsa o riesgosa,
+  Amenazas, presiÃ³n indebida o trato abusivo, Conducta Ã©tica y no abuso.
+- Factores SGC/PEC no crÃ­ticos: IdentificaciÃ³n del cliente, IdentificaciÃ³n del gestor,
+  EntonaciÃ³n, dicciÃ³n y empatÃ­a, TMO / ACW, Lenguaje formal, Despedida profesional,
+  ActualizaciÃ³n de nÃºmeros telefÃ³nicos si aplica.
 
 Faltas anulantes automaticas:
 - Si el asesor insulta, amenaza, humilla, discrimina, expone deuda a un tercero sin validar,
@@ -511,13 +623,13 @@ Reglas de scoring:
 - La recomendacion debe servir para coaching del agente.
 - Incluye maximo 4 fortalezas, maximo 5 puntos criticos y maximo 4 alertas.
 - Reglas feedback/coaching:
-  * Si hay error crítico de cumplimiento, requiere_feedback=true y requiere_coaching=true.
+  * Si hay error crÃ­tico de cumplimiento, requiere_feedback=true y requiere_coaching=true.
   * Si hay falta anulante, requiere_coaching=true.
   * Si score_final < 80, requiere_feedback=true.
   * Si score_final < 70 o nivel_riesgo=ALTO, requiere_coaching=true.
-  * Si el error es no crítico aislado, requiere_feedback=true y requiere_coaching puede ser false.
+  * Si el error es no crÃ­tico aislado, requiere_feedback=true y requiere_coaching puede ser false.
   * No marques todos los factores como coaching. El coaching es un plan estructurado para falta anulante,
-    error crítico de cumplimiento, score_final < 70, nivel_riesgo=ALTO, reincidencia o definicion manual del supervisor.
+    error crÃ­tico de cumplimiento, score_final < 70, nivel_riesgo=ALTO, reincidencia o definicion manual del supervisor.
 
 Segmentos permitidos para puntos criticos:
 - Cumplimiento
@@ -570,7 +682,7 @@ Estructura exacta requerida:
       "motivo_no_aplica": "texto o No aplica",
       "resultado": "Cumple | Parcial | No cumple | No evidenciado",
       "segmento_copc": "Cumplimiento | Diagnostico | Negociacion | Cierre | Experiencia y riesgo",
-      "grupo_error_sgc": "Errores críticos del negocio | Errores críticos del usuario final | Errores críticos de cumplimiento | Errores no críticos | No aplica",
+      "grupo_error_sgc": "Errores crÃ­ticos del negocio | Errores crÃ­ticos del usuario final | Errores crÃ­ticos de cumplimiento | Errores no crÃ­ticos | No aplica",
       "factor_sgc": "factor SGC/PEC aplicable",
       "calificacion": "Cumple | No cumple | No aplica | Parcial",
       "motivo": "motivo para feedback o coaching",
@@ -711,30 +823,43 @@ def analizar_transcripcion_real(
         raise RuntimeError("La libreria openai no esta instalada en el entorno.")
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    prompt = construir_prompt_analisis_calidad(transcripcion, comentario_supervisor, cartera=cartera)
-
-    response = client.chat.completions.create(
-        model=ANALYSIS_MODEL,
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Eres un analista senior de calidad operativa en cobranzas telefonicas. "
-                    "Tu trabajo es evaluar la llamada con criterio de supervision, detectar "
-                    "conductas observables y generar feedback accionable para mejorar al agente. "
-                    "No inventes hechos no presentes en la transcripcion. Responde solo JSON valido."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
+    return analizar_transcripcion_pipeline_v3(
+        client=client,
+        transcripcion=transcripcion,
+        comentario_supervisor=comentario_supervisor,
+        cartera=cartera,
     )
 
-    content = response.choices[0].message.content or "{}"
-    data = cargar_json_analisis(content, client=client)
-    data = asegurar_respuesta_copc_v2(client, prompt, data)
-    return normalizar_analisis(data)
+
+def analizar_transcripcion_pipeline_v3(
+    *,
+    client,
+    transcripcion: str,
+    comentario_supervisor: Optional[str] = None,
+    cartera: Optional[str] = None,
+) -> Dict:
+    segmentos = identificar_interlocutores(transcripcion)
+    hechos = extraer_hechos_llamada(client, segmentos, comentario_supervisor=comentario_supervisor)
+    criterios = evaluar_criterios_desde_hechos(client, segmentos, hechos)
+    criterios = normalizar_criterios_pipeline_v3(criterios, segmentos)
+    score_antes = score_desde_criterios_pipeline_v3(criterios)
+    auditoria = auditar_evaluacion(client, segmentos, hechos, criterios)
+    criterios, criterios_corregidos = corregir_criterios_inconsistentes(client, segmentos, hechos, criterios, auditoria)
+    criterios = normalizar_criterios_pipeline_v3(criterios, segmentos)
+    score_despues = score_desde_criterios_pipeline_v3(criterios)
+    feedback = generar_feedback_desde_evaluacion(client, segmentos, hechos, criterios, score_despues)
+    data = construir_respuesta_pipeline_v3(
+        segmentos=segmentos,
+        hechos=hechos,
+        criterios=criterios,
+        auditoria=auditoria,
+        feedback=feedback,
+        score_antes=score_antes,
+        score_despues=score_despues,
+        criterios_corregidos=criterios_corregidos,
+        cartera=cartera,
+    )
+    return normalizar_analisis_copc_v2(data, transcripcion=transcripcion)
 
 
 def construir_prompt_analisis_calidad(
@@ -770,6 +895,555 @@ Transcripcion:
 """.strip()
 
 
+def identificar_interlocutores(transcripcion: str) -> List[Dict]:
+    segmentos = segmentar_transcripcion_etiquetada_v2(transcripcion)
+    if not segmentos:
+        segmentos = segmentar_transcripcion_inferida_v2(transcripcion)
+    normalizados = []
+    ultimo = "NO_DETERMINADO"
+    for idx, segmento in enumerate(segmentos, start=1):
+        texto = str(segmento.get("texto") or "").strip()
+        if not texto:
+            continue
+        hablante = normalizar_hablante_v2(segmento.get("hablante"))
+        confianza = normalizar_confianza(segmento.get("confianza"))
+        fundamento = str(segmento.get("fundamento") or "").strip()
+        if hablante == "NO_DETERMINADO":
+            hablante, confianza, fundamento = inferir_hablante_fragmento_v2(texto, ultimo)
+        if hablante in {"AGENTE", "CLIENTE"}:
+            ultimo = hablante
+        normalizados.append({
+            "segmento_id": idx,
+            "orden": idx,
+            "timestamp": normalizar_timestamp_v2(segmento.get("timestamp")),
+            "inicio_segundos": normalizar_segundos_v2(segmento.get("inicio_segundos")),
+            "fin_segundos": normalizar_segundos_v2(segmento.get("fin_segundos")),
+            "hablante": hablante,
+            "texto": texto,
+            "confianza": confianza,
+            "fundamento": fundamento,
+        })
+    return normalizados
+
+
+def extraer_hechos_llamada(client, segmentos: List[Dict], comentario_supervisor: Optional[str] = None) -> Dict:
+    categorias = categorias_hechos_pipeline_v3()
+    hechos = {categoria: [] for categoria in categorias}
+    inventario = inventario_vacio_pipeline_v3()
+    bloques = bloques_segmentos_pipeline_v3(segmentos, 120)
+    for indice, bloque in enumerate(bloques, start=1):
+        prompt = f"""
+Analiza exclusivamente estos segmentos de la llamada actual. No asignes score ni errores.
+Extrae hechos observables de forma exhaustiva y referencia siempre segmento_id.
+No inventes datos. Si no aparece, deja la lista vacia.
+
+Bloque {indice} de {len(bloques)}.
+Comentario supervisor auxiliar: {comentario_supervisor or "-"}
+
+Categorias obligatorias:
+{json.dumps(categorias, ensure_ascii=False)}
+
+Segmentos:
+{json.dumps(bloque, ensure_ascii=False)}
+
+Devuelve JSON:
+{{
+  "hechos": {{"categoria": [{{"segmento_id": 1, "hablante": "AGENTE|CLIENTE|NO_DETERMINADO", "texto": "", "tipo": "", "interpretacion": "", "confianza": "ALTA|MEDIA|BAJA"}}]}},
+  "inventario": {{"apertura.saludo": {{"encontrado": true, "segmentos": [1]}}}}
+}}
+""".strip()
+        data = llamar_json_modelo_pipeline_v3(client, prompt, "Extrae hechos de cobranza; no evalues ni puntues.")
+        for categoria, items in (data.get("hechos") or {}).items():
+            if categoria not in hechos or not isinstance(items, list):
+                continue
+            hechos[categoria].extend(normalizar_hechos_pipeline_v3(items, segmentos))
+        fusionar_inventario_pipeline_v3(inventario, data.get("inventario") or {})
+    deduplicar_hechos_pipeline_v3(hechos)
+    completar_inventario_desde_hechos_pipeline_v3(inventario, hechos)
+    return {
+        "hechos": hechos,
+        "inventario": inventario,
+        "cobertura": {
+            "cantidad_segmentos_entrada": len(segmentos),
+            "cantidad_segmentos_considerados": sum(len(bloque) for bloque in bloques),
+            "cantidad_bloques": len(bloques),
+        },
+    }
+
+
+def evaluar_criterios_desde_hechos(client, segmentos: List[Dict], hechos: Dict) -> List[Dict]:
+    prompt = f"""
+Evalua exclusivamente la llamada actual usando segmentos y hechos extraidos.
+Devuelve exactamente los 24 criterios tecnicos. No decidas grupo SGC.
+Usa segmentos_evidencia como fuente principal. No inventes citas.
+NO_CUMPLE solo si hubo oportunidad clara y la conducta fallo. Si falta evidencia usa NO_EVALUABLE o REQUIERE_REVISION.
+Evalua cierre 4C criterio por criterio: cantidad, fecha, canal, confirmacion y resumen.
+
+Matriz:
+{json.dumps(matriz_tecnica_pipeline_v3(), ensure_ascii=False)}
+
+Segmentos completos:
+{json.dumps(segmentos, ensure_ascii=False)}
+
+Hechos:
+{json.dumps(hechos, ensure_ascii=False)}
+
+Devuelve JSON:
+{{"criterios": [
+  {{"codigo": "1.1", "nombre": "", "peso": 3, "estado": "CUMPLE|PARCIAL_ALTO|PARCIAL_MEDIO|PARCIAL_BAJO|NO_CUMPLE|NO_EVALUABLE|REQUIERE_REVISION", "puntaje_obtenido": 0, "segmentos_evidencia": [], "segmentos_contexto": [], "tipo_evidencia": "DIRECTA|CONTEXTUAL|AUSENCIA_EN_SECUENCIA|REVISION_HUMANA", "conducta_observada": "", "hallazgo": "", "impacto_negocio": "", "impacto_cliente": "", "recomendacion_entrenable": "", "frase_sugerida": "", "fortaleza_relacionada": null}}
+]}}
+""".strip()
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Evalua criterios tecnicos desde hechos; no generes score global ni SGC.")
+    return data.get("criterios") if isinstance(data.get("criterios"), list) else []
+
+
+def auditar_evaluacion(client, segmentos: List[Dict], hechos: Dict, criterios: List[Dict]) -> Dict:
+    prompt = f"""
+Audita consistencia de una evaluacion ya generada. No evalues desde cero.
+Busca contradicciones entre hechos, segmentos y criterios.
+Ejemplos generales: si hechos contienen monto/fecha/confirmacion y el criterio correspondiente esta NO_CUMPLE sin justificacion, marcar contradiccion.
+Si un criterio de respeto esta NO_CUMPLE sin evidencia negativa, marcar contradiccion.
+
+Segmentos:
+{json.dumps(segmentos, ensure_ascii=False)}
+
+Hechos:
+{json.dumps(hechos, ensure_ascii=False)}
+
+Criterios:
+{json.dumps(criterios, ensure_ascii=False)}
+
+Devuelve JSON:
+{{"inconsistencias": [{{"criterio": "4.1", "tipo": "CONTRADICCION|EVIDENCIA_INSUFICIENTE|COBERTURA", "descripcion": "", "segmentos": [], "accion": "REVISAR_CRITERIO|SIN_CAMBIO"}}]}}
+""".strip()
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Audita contradicciones sin reevaluar toda la llamada.")
+    inconsistencias = data.get("inconsistencias") if isinstance(data.get("inconsistencias"), list) else []
+    return {"inconsistencias": inconsistencias}
+
+
+def corregir_criterios_inconsistentes(client, segmentos: List[Dict], hechos: Dict, criterios: List[Dict], auditoria: Dict) -> tuple[List[Dict], List[str]]:
+    inconsistencias = [
+        item for item in auditoria.get("inconsistencias", [])
+        if isinstance(item, dict) and item.get("criterio") and item.get("accion") == "REVISAR_CRITERIO"
+    ]
+    if not inconsistencias:
+        return criterios, []
+    criterios_por_codigo = {str(item.get("codigo") or ""): item for item in criterios if isinstance(item, dict)}
+    cuestionados = [criterios_por_codigo.get(str(item.get("criterio"))) for item in inconsistencias]
+    cuestionados = [item for item in cuestionados if item]
+    prompt = f"""
+Corrige solo los criterios cuestionados. No analices criterios no listados.
+Usa segmentos_evidencia por ID y no inventes citas.
+
+Segmentos relacionados y completos:
+{json.dumps(segmentos, ensure_ascii=False)}
+
+Hechos:
+{json.dumps(hechos, ensure_ascii=False)}
+
+Criterios cuestionados:
+{json.dumps(cuestionados, ensure_ascii=False)}
+
+Observaciones auditor:
+{json.dumps(inconsistencias, ensure_ascii=False)}
+
+Devuelve JSON:
+{{"criterios": [{{"codigo": "", "nombre": "", "peso": 0, "estado": "CUMPLE|PARCIAL_ALTO|PARCIAL_MEDIO|PARCIAL_BAJO|NO_CUMPLE|NO_EVALUABLE|REQUIERE_REVISION", "puntaje_obtenido": 0, "segmentos_evidencia": [], "segmentos_contexto": [], "tipo_evidencia": "DIRECTA|CONTEXTUAL|AUSENCIA_EN_SECUENCIA|REVISION_HUMANA", "conducta_observada": "", "hallazgo": "", "impacto_negocio": "", "impacto_cliente": "", "recomendacion_entrenable": "", "frase_sugerida": "", "fortaleza_relacionada": null}}]}}
+""".strip()
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Corrige criterios puntuales observados por auditoria.")
+    corregidos = normalizar_criterios_pipeline_v3(data.get("criterios") if isinstance(data.get("criterios"), list) else [], segmentos)
+    salida = list(criterios)
+    indices = {str(item.get("codigo") or ""): idx for idx, item in enumerate(salida)}
+    codigos = []
+    for item in corregidos:
+        codigo = str(item.get("codigo") or "")
+        if codigo in indices:
+            salida[indices[codigo]] = item
+            codigos.append(codigo)
+    return salida, codigos
+
+
+def generar_feedback_desde_evaluacion(client, segmentos: List[Dict], hechos: Dict, criterios: List[Dict], score: Dict) -> Dict:
+    prompt = f"""
+Genera feedback y coaching solo desde la evaluacion final validada.
+No cambies score ni criterios. No reinterpretes la llamada desde cero.
+El feedback debe reconocer fortalezas observables y priorizar la brecha de mayor impacto.
+
+Segmentos:
+{json.dumps(segmentos, ensure_ascii=False)}
+
+Hechos:
+{json.dumps(hechos, ensure_ascii=False)}
+
+Criterios finales:
+{json.dumps(criterios, ensure_ascii=False)}
+
+Score Python:
+{json.dumps(score, ensure_ascii=False)}
+
+Devuelve JSON:
+{{"resumen_ejecutivo": {{"texto": "", "fortaleza_principal": "", "debilidad_principal": "", "riesgo_principal": "", "oportunidad_principal": "", "conclusion": ""}}, "resultado_gestion": {{"tipo_contacto": "", "resultado_principal": "", "tipo_cierre": "", "monto_acordado": null, "fecha_acordada": null, "canal_acordado": null, "confirmacion_cliente": false, "resumen": ""}}, "tipificaciones_sugeridas": [], "coaching": {{"feedback_supervisor": {{"resumen_tecnico": "", "fortalezas": [], "brechas_principales": [], "conducta_prioritaria": "", "accion_entrenable": "", "objetivo_siguiente_llamada": ""}}, "feedback_asesor": {{"mensaje": "", "lo_que_hiciste_bien": "", "mejora_prioritaria": "", "frase_a_evitar": "", "frase_recomendada": "", "ejemplo_mejorado": "", "compromiso_sugerido": ""}}}}}}
+""".strip()
+    return llamar_json_modelo_pipeline_v3(client, prompt, "Genera feedback final desde matriz validada.")
+
+
+def llamar_json_modelo_pipeline_v3(client, prompt: str, system: str) -> Dict:
+    response = client.chat.completions.create(
+        model=ANALYSIS_MODEL,
+        temperature=0,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": f"{system} Responde exclusivamente JSON valido y trabaja solo con la llamada actual."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return cargar_json_analisis(response.choices[0].message.content or "{}", client=client)
+
+
+def bloques_segmentos_pipeline_v3(segmentos: List[Dict], size: int = 120) -> List[List[Dict]]:
+    if not segmentos:
+        return []
+    return [segmentos[i:i + size] for i in range(0, len(segmentos), size)]
+
+
+def categorias_hechos_pipeline_v3() -> List[str]:
+    return [
+        "identificacion_agente", "identificacion_entidad", "validacion_titularidad",
+        "causas_no_pago", "capacidad_pago", "situacion_economica", "fuente_dinero",
+        "montos_mencionados", "fechas_mencionadas", "objeciones_cliente", "respuestas_objeciones",
+        "propuestas_agente", "alternativas_pago", "inducciones_pago", "aceptaciones_cliente",
+        "rechazos_cliente", "canales_pago", "compromisos", "recapitulaciones",
+        "siguientes_acciones", "frases_riesgo", "empatia", "faltas_empatia", "despedida",
+    ]
+
+
+def inventario_vacio_pipeline_v3() -> Dict:
+    claves = [
+        "apertura.saludo", "apertura.identificacion_agente", "apertura.identificacion_entidad", "apertura.titularidad", "apertura.motivo",
+        "diagnostico.causa", "diagnostico.capacidad", "diagnostico.fecha_probable", "diagnostico.monto_disponible", "diagnostico.situacion_economica",
+        "negociacion.propuesta", "negociacion.objecion", "negociacion.respuesta_objecion", "negociacion.adaptacion", "negociacion.alternativas", "negociacion.induccion",
+        "cierre.cantidad", "cierre.fecha", "cierre.canal", "cierre.confirmacion", "cierre.recapitulacion", "cierre.siguiente_accion",
+        "experiencia.respeto", "experiencia.empatia", "experiencia.presion", "experiencia.lenguaje_riesgoso", "experiencia.despedida",
+    ]
+    return {clave: {"encontrado": False, "segmentos": []} for clave in claves}
+
+
+def normalizar_hechos_pipeline_v3(items: List[Dict], segmentos: List[Dict]) -> List[Dict]:
+    segmentos_por_id = {int(item.get("segmento_id") or 0): item for item in segmentos}
+    salida = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        segmento_id = normalizar_segmento_id_pipeline_v3(raw.get("segmento_id"), segmentos_por_id)
+        segmento = segmentos_por_id.get(segmento_id, {})
+        texto = str(segmento.get("texto") or raw.get("texto") or "").strip()
+        if not texto:
+            continue
+        salida.append({
+            "segmento_id": segmento_id,
+            "hablante": normalizar_hablante_v2(raw.get("hablante") or segmento.get("hablante")),
+            "texto": texto,
+            "tipo": str(raw.get("tipo") or "").strip(),
+            "interpretacion": str(raw.get("interpretacion") or "").strip(),
+            "confianza": normalizar_confianza(raw.get("confianza") or segmento.get("confianza")),
+        })
+    return salida
+
+
+def normalizar_segmento_id_pipeline_v3(value, segmentos_por_id: Dict[int, Dict]) -> int:
+    try:
+        segmento_id = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return segmento_id if segmento_id in segmentos_por_id else 0
+
+
+def fusionar_inventario_pipeline_v3(inventario: Dict, parcial: Dict) -> None:
+    if not isinstance(parcial, dict):
+        return
+    for clave, value in parcial.items():
+        if not isinstance(value, dict):
+            continue
+        actual = inventario.setdefault(clave, {"encontrado": False, "segmentos": []})
+        segmentos = [int(x) for x in value.get("segmentos", []) if str(x).isdigit()]
+        actual["encontrado"] = bool(actual.get("encontrado") or value.get("encontrado") or segmentos)
+        actual["segmentos"] = sorted(set([*actual.get("segmentos", []), *segmentos]))
+
+
+def deduplicar_hechos_pipeline_v3(hechos: Dict) -> None:
+    for categoria, items in list(hechos.items()):
+        vistos = set()
+        salida = []
+        for item in items:
+            clave = (item.get("segmento_id"), limpiar_key_texto(item.get("tipo")), limpiar_key_texto(item.get("texto")))
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            salida.append(item)
+        hechos[categoria] = salida
+
+
+def completar_inventario_desde_hechos_pipeline_v3(inventario: Dict, hechos: Dict) -> None:
+    mapa = {
+        "apertura.saludo": ["identificacion_agente"],
+        "apertura.identificacion_agente": ["identificacion_agente"],
+        "apertura.identificacion_entidad": ["identificacion_entidad"],
+        "apertura.titularidad": ["validacion_titularidad"],
+        "diagnostico.causa": ["causas_no_pago"],
+        "diagnostico.capacidad": ["capacidad_pago"],
+        "diagnostico.fecha_probable": ["fechas_mencionadas"],
+        "diagnostico.monto_disponible": ["montos_mencionados"],
+        "diagnostico.situacion_economica": ["situacion_economica", "fuente_dinero"],
+        "negociacion.propuesta": ["propuestas_agente", "alternativas_pago"],
+        "negociacion.objecion": ["objeciones_cliente"],
+        "negociacion.respuesta_objecion": ["respuestas_objeciones"],
+        "negociacion.induccion": ["inducciones_pago"],
+        "cierre.cantidad": ["compromisos", "montos_mencionados"],
+        "cierre.fecha": ["compromisos", "fechas_mencionadas"],
+        "cierre.canal": ["canales_pago"],
+        "cierre.confirmacion": ["aceptaciones_cliente"],
+        "cierre.recapitulacion": ["recapitulaciones"],
+        "cierre.siguiente_accion": ["siguientes_acciones"],
+        "experiencia.empatia": ["empatia"],
+        "experiencia.presion": ["frases_riesgo"],
+        "experiencia.lenguaje_riesgoso": ["frases_riesgo"],
+        "experiencia.despedida": ["despedida"],
+    }
+    for clave, categorias in mapa.items():
+        segmentos = []
+        for categoria in categorias:
+            segmentos.extend([item.get("segmento_id") for item in hechos.get(categoria, []) if item.get("segmento_id")])
+        if segmentos:
+            actual = inventario.setdefault(clave, {"encontrado": False, "segmentos": []})
+            actual["encontrado"] = True
+            actual["segmentos"] = sorted(set([*actual.get("segmentos", []), *segmentos]))
+
+
+def matriz_tecnica_pipeline_v3() -> List[Dict]:
+    return [
+        {
+            "codigo": codigo_item_canonico(item),
+            "nombre": nombre_item_sin_codigo(item),
+            "dimension": segmento,
+            "peso": peso,
+        }
+        for segmento, item, peso in COPC_ITEMS_CANONICOS
+    ]
+
+
+def codigo_item_canonico(item: str) -> str:
+    match = re.match(r"^\s*(\d+\.\d+)", str(item or ""))
+    return match.group(1) if match else ""
+
+
+def nombre_item_sin_codigo(item: str) -> str:
+    return re.sub(r"^\s*\d+\.\d+\s*", "", str(item or "")).strip()
+
+
+def normalizar_criterios_pipeline_v3(criterios: List[Dict], segmentos: List[Dict]) -> List[Dict]:
+    por_codigo = {codigo_item_canonico(item): (segmento, item, peso) for segmento, item, peso in COPC_ITEMS_CANONICOS}
+    segmentos_por_id = {int(item.get("segmento_id") or 0): item for item in segmentos}
+    salida = []
+    entrada = {str(item.get("codigo") or item.get("codigo_criterio") or "").strip(): item for item in criterios if isinstance(item, dict)}
+    for codigo, (segmento, item_canonico, peso) in por_codigo.items():
+        raw = entrada.get(codigo) or {}
+        estado = normalizar_estado_criterio_v2(raw.get("estado") or raw.get("resultado"))
+        nota = puntaje_pipeline_v3(raw.get("puntaje_obtenido"), estado, peso)
+        evidencia_ids = normalizar_ids_segmentos_pipeline_v3(raw.get("segmentos_evidencia"), segmentos_por_id)
+        contexto_ids = normalizar_ids_segmentos_pipeline_v3(raw.get("segmentos_contexto"), segmentos_por_id)
+        evidencia_textual = [segmentos_por_id[item]["texto"] for item in evidencia_ids if item in segmentos_por_id]
+        salida.append({
+            "codigo": codigo,
+            "codigo_criterio": codigo,
+            "nombre": nombre_item_sin_codigo(item_canonico),
+            "dimension": segmento,
+            "peso": peso,
+            "estado": estado,
+            "puntaje_obtenido": nota,
+            "segmentos_evidencia": evidencia_ids,
+            "segmentos_contexto": contexto_ids,
+            "tipo_evidencia": normalizar_tipo_evidencia_pipeline_v3(raw.get("tipo_evidencia")),
+            "conducta_observada": str(raw.get("conducta_observada") or "").strip(),
+            "hallazgo": str(raw.get("hallazgo") or "").strip(),
+            "impacto_negocio": str(raw.get("impacto_negocio") or "").strip(),
+            "impacto_cliente": str(raw.get("impacto_cliente") or "").strip(),
+            "recomendacion_entrenable": str(raw.get("recomendacion_entrenable") or "").strip(),
+            "frase_sugerida": str(raw.get("frase_sugerida") or "").strip(),
+            "fortaleza_relacionada": raw.get("fortaleza_relacionada"),
+            "evidencia_textual": evidencia_textual,
+        })
+    return salida
+
+
+def normalizar_ids_segmentos_pipeline_v3(value, segmentos_por_id: Dict[int, Dict]) -> List[int]:
+    if not isinstance(value, list):
+        value = []
+    salida = []
+    for item in value:
+        try:
+            segmento_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if segmento_id in segmentos_por_id and segmento_id not in salida:
+            salida.append(segmento_id)
+    return salida
+
+
+def normalizar_tipo_evidencia_pipeline_v3(value) -> str:
+    texto = limpiar_key_texto(value)
+    if "ausencia" in texto:
+        return "AUSENCIA_EN_SECUENCIA"
+    if "revision" in texto or "humana" in texto:
+        return "REVISION_HUMANA"
+    if "context" in texto:
+        return "CONTEXTUAL"
+    return "DIRECTA"
+
+
+def puntaje_pipeline_v3(value, estado: str, peso: float) -> float:
+    if value not in (None, ""):
+        return numero_en_rango(value, 0, peso)
+    if estado == "CUMPLE":
+        return float(peso)
+    if estado == "PARCIAL_ALTO":
+        return round(float(peso) * 0.75, 2)
+    if estado == "PARCIAL_MEDIO":
+        return round(float(peso) * 0.5, 2)
+    if estado == "PARCIAL_BAJO":
+        return round(float(peso) * 0.25, 2)
+    return 0.0
+
+
+def score_desde_criterios_pipeline_v3(criterios: List[Dict]) -> Dict:
+    bruto = 0.0
+    peso = 0.0
+    for item in criterios:
+        if item.get("estado") == "NO_EVALUABLE":
+            continue
+        bruto += float(item.get("puntaje_obtenido") or 0)
+        peso += float(item.get("peso") or 0)
+    score = round((bruto / peso) * 100, 2) if peso else 0.0
+    return {"score_bruto": round(bruto, 2), "peso_aplicable": round(peso, 2), "score_tecnico": score}
+
+
+def construir_respuesta_pipeline_v3(
+    *,
+    segmentos: List[Dict],
+    hechos: Dict,
+    criterios: List[Dict],
+    auditoria: Dict,
+    feedback: Dict,
+    score_antes: Dict,
+    score_despues: Dict,
+    criterios_corregidos: List[str],
+    cartera: Optional[str] = None,
+) -> Dict:
+    dimensiones = []
+    for segmento in dict.fromkeys(seg for seg, _, _ in COPC_ITEMS_CANONICOS):
+        criterios_segmento = [criterio_pipeline_a_v2(item) for item in criterios if item.get("dimension") == segmento]
+        peso = sum(float(item.get("puntaje_maximo") or 0) for item in criterios_segmento)
+        nota = sum(float(item.get("puntaje_obtenido") or 0) for item in criterios_segmento)
+        dimensiones.append({"codigo": segmento, "nombre": segmento, "puntaje_maximo": peso, "puntaje_obtenido": round(nota, 2), "criterios": criterios_segmento})
+    resumen = feedback.get("resumen_ejecutivo") if isinstance(feedback.get("resumen_ejecutivo"), dict) else {}
+    gestion = feedback.get("resultado_gestion") if isinstance(feedback.get("resultado_gestion"), dict) else {}
+    coaching = feedback.get("coaching") if isinstance(feedback.get("coaching"), dict) else {}
+    requiere_revision = any(item.get("estado") == "REQUIERE_REVISION" for item in criterios)
+    score = score_despues.get("score_tecnico", 0)
+    cobertura = hechos.get("cobertura") if isinstance(hechos.get("cobertura"), dict) else {}
+    return {
+        "version_evaluacion": "2.0",
+        "motor_evaluacion": "PIPELINE_MULTIPASO_V3",
+        "resultado_evaluacion": {
+            "score_tecnico": score,
+            "score_maximo": 100,
+            "nota_minima_aprobatoria": 85,
+            "estado_tecnico": "APROBADA" if score >= 85 else "NO_APROBADA",
+            "estado_calidad": "PENDIENTE_REVISION" if requiere_revision else ("APROBADA" if score >= 85 else "NO_APROBADA"),
+            "descalificada": False,
+            "motivo_descalificacion": None,
+            "confianza_global": confianza_global_segmentos_v2(segmentos),
+            "evaluacion_provisional": requiere_revision,
+            "requiere_revision_humana": requiere_revision,
+            "motivos_revision": [item.get("codigo") for item in criterios if item.get("estado") == "REQUIERE_REVISION"],
+        },
+        "resultado_gestion": gestion,
+        "tipificaciones_sugeridas": feedback.get("tipificaciones_sugeridas") if isinstance(feedback.get("tipificaciones_sugeridas"), list) else [],
+        "resumen_ejecutivo": resumen,
+        "interlocutores": {"confianza_global": confianza_global_segmentos_v2(segmentos), "metodo": "PIPELINE_SECUENCIAL", "segmentos": segmentos},
+        "dimensiones": dimensiones,
+        "errores_criticos": [],
+        "hallazgos_no_criticos": [],
+        "frases_detectadas": {"adecuadas": [], "mejorables": [], "riesgo": []},
+        "coaching": coaching,
+        "hechos_llamada": hechos,
+        "auditoria_consistencia": auditoria,
+        "log_calidad_motor": {
+            "cantidad_segmentos_entrada": len(segmentos),
+            "cantidad_segmentos_analizados": len(segmentos),
+            "hechos_encontrados": sum(len(v) for v in hechos.get("hechos", {}).values() if isinstance(v, list)),
+            "criterios_evaluados": len(criterios),
+            "inconsistencias_encontradas": len(auditoria.get("inconsistencias", [])),
+            "criterios_corregidos": criterios_corregidos,
+            "score_antes_auditoria": score_antes,
+            "score_despues_auditoria": score_despues,
+            "cartera": cartera,
+        },
+        "validaciones": {
+            "suma_dimensiones_correcta": True,
+            "score_dentro_de_rango": 0 <= score <= 100,
+            "cobertura_completa": cobertura.get("cantidad_segmentos_considerados") == len(segmentos),
+            "observaciones": [],
+        },
+    }
+
+
+def criterio_pipeline_a_v2(item: Dict) -> Dict:
+    codigo = str(item.get("codigo") or "")
+    grupo_sgc, factor_sgc = SGC_MAPEO_CRITERIOS.get(codigo, (SGC_GRUPO_NO_CRITICO, item.get("nombre") or "Criterio tecnico"))
+    evidencia_textual = item.get("evidencia_textual") if isinstance(item.get("evidencia_textual"), list) else []
+    evidencias = []
+    for segmento_id, texto in zip(item.get("segmentos_evidencia") or [], evidencia_textual):
+        evidencias.append({
+            "segmento_id": segmento_id,
+            "texto": texto,
+            "tipo": item.get("tipo_evidencia") or "DIRECTA",
+        })
+    return {
+        "codigo": codigo,
+        "codigo_criterio": codigo,
+        "nombre": item.get("nombre") or "",
+        "puntaje_maximo": item.get("peso") or 0,
+        "puntaje_obtenido": item.get("puntaje_obtenido") or 0,
+        "estado": item.get("estado") or "REQUIERE_REVISION",
+        "conducta_esperada": "",
+        "evidencias": evidencias,
+        "evidencia_textual": evidencia_textual,
+        "segmentos_evidencia": item.get("segmentos_evidencia") or [],
+        "segmentos_contexto": item.get("segmentos_contexto") or [],
+        "tipo_evidencia": item.get("tipo_evidencia") or "DIRECTA",
+        "hallazgo": item.get("hallazgo") or item.get("conducta_observada") or "",
+        "impacto": combinar_textos_v2(item.get("impacto_negocio"), item.get("impacto_cliente"), separador=" | "),
+        "recomendacion": item.get("recomendacion_entrenable") or "",
+        "gravedad": "",
+        "puede_descalificar": False,
+        "confianza": "",
+        "requiere_revision": item.get("estado") == "REQUIERE_REVISION",
+        "motivo_no_evaluable": item.get("hallazgo") if item.get("estado") in {"NO_EVALUABLE", "REQUIERE_REVISION"} else "",
+        "factor": factor_sgc,
+        "grupo_sgc": grupo_sgc,
+        "grupo_error_sgc": grupo_sgc,
+        "factor_sgc": factor_sgc,
+        "calificacion": resultado_legacy_desde_estado_v2(item.get("estado")),
+        "conducta_observada": item.get("conducta_observada") or "",
+        "lectura_ia": item.get("hallazgo") or "",
+        "impacto_negocio": item.get("impacto_negocio") or "",
+        "impacto_cliente": item.get("impacto_cliente") or "",
+        "recomendacion_entrenable": item.get("recomendacion_entrenable") or "",
+        "frase_sugerida": item.get("frase_sugerida") or "",
+        "fortaleza_relacionada": item.get("fortaleza_relacionada"),
+    }
+
+
 def cargar_json_analisis(content: str, *, client=None) -> Dict:
     try:
         data = json.loads(content or "{}")
@@ -779,7 +1453,7 @@ def cargar_json_analisis(content: str, *, client=None) -> Dict:
         pass
 
     if client is None:
-        raise ValueError("La IA devolvió un JSON inválido y no se pudo reparar.")
+        raise ValueError("La IA devolviÃ³ un JSON invÃ¡lido y no se pudo reparar.")
 
     reparacion = client.chat.completions.create(
         model=ANALYSIS_MODEL,
@@ -788,7 +1462,7 @@ def cargar_json_analisis(content: str, *, client=None) -> Dict:
         messages=[
             {
                 "role": "system",
-                "content": "Repara el contenido para que sea exclusivamente JSON válido. No agregues datos nuevos.",
+                "content": "Repara el contenido para que sea exclusivamente JSON vÃ¡lido. No agregues datos nuevos.",
             },
             {"role": "user", "content": content or "{}"},
         ],
@@ -796,7 +1470,7 @@ def cargar_json_analisis(content: str, *, client=None) -> Dict:
     reparado = reparacion.choices[0].message.content or "{}"
     data = json.loads(reparado)
     if not isinstance(data, dict):
-        raise ValueError("La reparación de JSON no devolvió un objeto válido.")
+        raise ValueError("La reparaciÃ³n de JSON no devolviÃ³ un objeto vÃ¡lido.")
     return data
 
 
@@ -811,9 +1485,11 @@ def asegurar_respuesta_copc_v2(client, prompt: str, data: Dict) -> Dict:
             {
                 "role": "system",
                 "content": (
-                    "La respuesta previa no cumplió el contrato COPC v2. "
-                    "Devuelve exclusivamente JSON válido con version_evaluacion '2.0' "
-                    "y las 5 dimensiones con sus 24 criterios completos. "
+                    "La respuesta previa no cumpliÃ³ el contrato COPC v2. "
+                    "Devuelve exclusivamente JSON vÃ¡lido con version_evaluacion '2.0' "
+                    "y las 5 dimensiones con los criterios de la matriz COPC v2 definida. "
+                    "Incluye interlocutores.segmentos con hablante, texto, timestamp, confianza y fundamento "
+                    "cuando la transcripciÃ³n permita separar turnos de habla. "
                     "No uses el formato antiguo."
                 ),
             },
@@ -823,7 +1499,11 @@ def asegurar_respuesta_copc_v2(client, prompt: str, data: Dict) -> Dict:
     content = response.choices[0].message.content or "{}"
     reparada = cargar_json_analisis(content, client=client)
     if not (es_copc_v2(reparada) and respuesta_copc_v2_tiene_criterios(reparada)):
-        raise ValueError("La IA no devolvió una evaluación COPC v2 válida con criterios completos.")
+        if es_copc_v2(reparada):
+            return reparada
+        if es_copc_v2(data):
+            return data
+        raise ValueError("La IA no devolviÃ³ una evaluaciÃ³n COPC v2 vÃ¡lida con criterios completos.")
     return reparada
 
 
@@ -845,21 +1525,34 @@ def es_copc_v2(data: Dict) -> bool:
     return str(data.get("version_evaluacion") or "").startswith("2") or isinstance(data.get("resultado_evaluacion"), dict)
 
 
-def normalizar_analisis_copc_v2(data: Dict) -> Dict:
+def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
+    es_pipeline_v3 = data.get("motor_evaluacion") == "PIPELINE_MULTIPASO_V3"
     resultado = data.get("resultado_evaluacion") if isinstance(data.get("resultado_evaluacion"), dict) else {}
     gestion = data.get("resultado_gestion") if isinstance(data.get("resultado_gestion"), dict) else {}
     resumen = data.get("resumen_ejecutivo") if isinstance(data.get("resumen_ejecutivo"), dict) else {}
     coaching = data.get("coaching") if isinstance(data.get("coaching"), dict) else {}
     feedback_supervisor = coaching.get("feedback_supervisor") if isinstance(coaching.get("feedback_supervisor"), dict) else {}
     feedback_asesor = coaching.get("feedback_asesor") if isinstance(coaching.get("feedback_asesor"), dict) else {}
+    interlocutores = normalizar_interlocutores_v2(data, transcripcion)
+    data["interlocutores"] = interlocutores
 
     evaluacion = normalizar_dimensiones_copc_v2(data.get("dimensiones"))
+    if not es_pipeline_v3:
+        evaluacion = reparar_evaluacion_contextual_v2(evaluacion, data, transcripcion)
     score_bruto, peso_aplicable, score_tecnico = calcular_score_normalizado(evaluacion)
     score_tecnico = round(min(score_tecnico, 100), 2)
 
-    descalificada = bool(resultado.get("descalificada"))
+    descalificada_ia = bool(resultado.get("descalificada"))
+    descalificada = False
     errores_criticos = normalizar_errores_criticos_v2(data.get("errores_criticos"), evaluacion)
-    descalificada = descalificada or any(item.get("automatico") for item in errores_criticos)
+    if not es_pipeline_v3:
+        errores_criticos = reparar_errores_criticos_contextuales_v2(errores_criticos, evaluacion, data, transcripcion)
+    frase_anulante = (
+        str(resultado.get("motivo_descalificacion") or "No aplica")
+        if es_pipeline_v3
+        else frase_anulante_contextual_v2(resultado, errores_criticos, transcripcion, descalificada_ia)
+    )
+    descalificada = (descalificada_ia or any(item.get("automatico") for item in errores_criticos)) and cita_anulante_valida_v2(frase_anulante)
     estado_tecnico = "APROBADA" if score_tecnico >= 85 else "NO_APROBADA"
     if any(item.get("requiere_revision") for item in evaluacion):
         estado_tecnico = "PROVISIONAL" if estado_tecnico == "APROBADA" else estado_tecnico
@@ -882,7 +1575,7 @@ def normalizar_analisis_copc_v2(data: Dict) -> Dict:
     requiere_revision = bool(resultado.get("requiere_revision_humana") or motivos_revision or any(item.get("requiere_revision") for item in evaluacion))
 
     puntos_criticos = errores_criticos + normalizar_hallazgos_no_criticos_v2(data.get("hallazgos_no_criticos"), evaluacion)
-    puntos_criticos = deduplicar_puntos_criticos(puntos_criticos)
+    puntos_criticos = consolidar_puntos_sgc(deduplicar_puntos_criticos(puntos_criticos))
     error_critico = bool(errores_criticos) or any(
         str(item.get("severidad") or "").upper() in {"ANULANTE", "GRAVE"}
         for item in puntos_criticos
@@ -895,9 +1588,9 @@ def normalizar_analisis_copc_v2(data: Dict) -> Dict:
     tipificaciones = data.get("tipificaciones_sugeridas") if isinstance(data.get("tipificaciones_sugeridas"), list) else []
     alertas = []
     if estado_calidad == "DESCALIFICADA":
-        alertas.append(f"Descalificación: {resultado.get('motivo_descalificacion') or 'error crítico automático'}")
+        alertas.append(f"DescalificaciÃ³n: {resultado.get('motivo_descalificacion') or 'error crÃ­tico automÃ¡tico'}")
     if requiere_revision:
-        alertas.append("Requiere revisión humana por criterios no concluyentes o confianza baja.")
+        alertas.append("Requiere revisiÃ³n humana por criterios no concluyentes o confianza baja.")
     for item in puntos_criticos[:4]:
         if item.get("hallazgo"):
             alertas.append(str(item.get("hallazgo")))
@@ -905,6 +1598,11 @@ def normalizar_analisis_copc_v2(data: Dict) -> Dict:
     return {
         "version_evaluacion": "2.0",
         "json_copc_v2": data,
+        "hechos_llamada": data.get("hechos_llamada") if isinstance(data.get("hechos_llamada"), dict) else {},
+        "auditoria_consistencia": data.get("auditoria_consistencia") if isinstance(data.get("auditoria_consistencia"), dict) else {},
+        "log_calidad_motor": data.get("log_calidad_motor") if isinstance(data.get("log_calidad_motor"), dict) else {},
+        "interlocutores": interlocutores,
+        "segmentos_interlocutores": interlocutores.get("segmentos", []),
         "resumen": str(resumen.get("texto") or gestion.get("resumen") or "-"),
         "tipo_contacto": str(gestion.get("tipo_contacto") or "-"),
         "tipo_llamada": str(gestion.get("tipo_cierre") or "Por clasificar"),
@@ -938,10 +1636,232 @@ def normalizar_analisis_copc_v2(data: Dict) -> Dict:
         "tipificaciones_sugeridas": tipificaciones[:2],
         "alertas": deduplicar_textos(alertas)[:4],
         "falta_anulante": descalificada,
-        "frase_anulante": str(resultado.get("motivo_descalificacion") or ("No aplica" if not descalificada else "No disponible")),
+        "frase_anulante": frase_anulante if descalificada else "No aplica",
         "momento_falta_anulante": None,
         "nivel_oportunidad_mejora": "ALTA" if nivel_riesgo == "ALTO" else "MEDIA" if nivel_riesgo == "MEDIO" else "BAJA",
     }
+
+
+def normalizar_interlocutores_v2(data: Dict, transcripcion: str = "") -> Dict:
+    interlocutores = data.get("interlocutores") if isinstance(data.get("interlocutores"), dict) else {}
+    segmentos_raw = primer_lista_segmentos_v2(data, interlocutores)
+    segmentos = []
+    for idx, raw in enumerate(segmentos_raw, start=1):
+        if not isinstance(raw, dict):
+            continue
+        texto = str(
+            raw.get("texto")
+            or raw.get("text")
+            or raw.get("transcripcion")
+            or raw.get("frase")
+            or raw.get("contenido")
+            or ""
+        ).strip()
+        if not texto:
+            continue
+        hablante = normalizar_hablante_v2(
+            raw.get("hablante")
+            or raw.get("speaker")
+            or raw.get("rol")
+            or raw.get("role")
+            or raw.get("interlocutor")
+        )
+        segmentos.append({
+            "segmento_id": normalizar_orden_segmento_v2(raw.get("segmento_id") or raw.get("id"), idx),
+            "orden": normalizar_orden_segmento_v2(raw.get("orden") or raw.get("index"), idx),
+            "timestamp": normalizar_timestamp_v2(raw.get("timestamp") or raw.get("momento") or raw.get("time")),
+            "inicio_segundos": normalizar_segundos_v2(raw.get("inicio_segundos") or raw.get("inicio") or raw.get("start")),
+            "fin_segundos": normalizar_segundos_v2(raw.get("fin_segundos") or raw.get("fin") or raw.get("end")),
+            "hablante": hablante,
+            "texto": texto,
+            "confianza": normalizar_confianza(raw.get("confianza") or raw.get("confidence")),
+            "fundamento": str(raw.get("fundamento") or raw.get("justificacion") or raw.get("motivo") or "").strip(),
+        })
+
+    if not segmentos:
+        segmentos = segmentar_transcripcion_etiquetada_v2(transcripcion)
+    if not segmentos:
+        segmentos = segmentar_transcripcion_inferida_v2(transcripcion)
+
+    metodo = str(interlocutores.get("metodo") or "").strip().upper()
+    if not metodo:
+        metodo = "INFERIDO_DESDE_TRANSCRIPCION" if segmentos else "NO_DISPONIBLE"
+    confianza_global = normalizar_confianza(interlocutores.get("confianza_global") or confianza_global_segmentos_v2(segmentos))
+    return {
+        "confianza_global": confianza_global if segmentos else "BAJA",
+        "metodo": metodo,
+        "segmentos": segmentos,
+    }
+
+
+def primer_lista_segmentos_v2(data: Dict, interlocutores: Dict) -> List[Dict]:
+    candidatos = [
+        interlocutores.get("segmentos"),
+        data.get("segmentos_interlocutores"),
+        data.get("transcripcion_segmentos"),
+        data.get("transcripcion_diarizada"),
+        data.get("diarizacion"),
+    ]
+    for candidato in candidatos:
+        if isinstance(candidato, list):
+            return candidato
+    return []
+
+
+def normalizar_orden_segmento_v2(value, default: int) -> int:
+    try:
+        numero = int(value)
+        return numero if numero > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def normalizar_hablante_v2(value) -> str:
+    texto = limpiar_key_texto(value)
+    if any(token in texto for token in ("agente", "asesor", "gestor", "operador", "cobrador")):
+        return "AGENTE"
+    if any(token in texto for token in ("cliente", "titular", "deudor", "interlocutor", "usuario")):
+        return "CLIENTE"
+    return "NO_DETERMINADO"
+
+
+def normalizar_timestamp_v2(value) -> Optional[str]:
+    if value is None:
+        return None
+    texto = str(value).strip()
+    if not texto or texto.lower() in {"null", "none", "no disponible", "-"}:
+        return None
+    match = re.search(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b", texto)
+    return match.group(1) if match else None
+
+
+def normalizar_segundos_v2(value) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        numero = float(value)
+        return numero if numero >= 0 else None
+    except (TypeError, ValueError):
+        timestamp = normalizar_timestamp_v2(value)
+        if not timestamp:
+            return None
+        partes = [int(x) for x in timestamp.split(":")]
+        if len(partes) == 2:
+            return float(partes[0] * 60 + partes[1])
+        return float(partes[0] * 3600 + partes[1] * 60 + partes[2])
+
+
+def segmentar_transcripcion_etiquetada_v2(transcripcion: str = "") -> List[Dict]:
+    segmentos = []
+    lineas = [linea.strip() for linea in str(transcripcion or "").splitlines() if linea.strip()]
+    patron = re.compile(r"^(?:(\d{1,2}:\d{2}(?::\d{2})?)\s+)?(agente|asesor|gestor|cliente|titular|deudor|interlocutor)\s*[:\-]\s*(.+)$", re.I)
+    for idx, linea in enumerate(lineas, start=1):
+        match = patron.match(linea)
+        if not match:
+            continue
+        timestamp, hablante_raw, texto = match.groups()
+        segmentos.append({
+            "segmento_id": idx,
+            "orden": idx,
+            "timestamp": timestamp,
+            "inicio_segundos": normalizar_segundos_v2(timestamp),
+            "fin_segundos": None,
+            "hablante": normalizar_hablante_v2(hablante_raw),
+            "texto": texto.strip(),
+            "confianza": "ALTA",
+            "fundamento": "Etiqueta de hablante presente en la transcripcion.",
+        })
+    return segmentos
+
+
+def segmentar_transcripcion_inferida_v2(transcripcion: str = "") -> List[Dict]:
+    texto = re.sub(r"\s+", " ", str(transcripcion or "")).strip()
+    if not texto:
+        return []
+    partes = re.split(r"(?<=[?!.])\s+", texto)
+    segmentos = []
+    ultimo_hablante = "NO_DETERMINADO"
+    for parte in partes:
+        fragmento = parte.strip()
+        if len(fragmento) < 3:
+            continue
+        hablante, confianza, fundamento = inferir_hablante_fragmento_v2(fragmento, ultimo_hablante)
+        if hablante in {"AGENTE", "CLIENTE"}:
+            ultimo_hablante = hablante
+        segmentos.append({
+            "segmento_id": len(segmentos) + 1,
+            "orden": len(segmentos) + 1,
+            "timestamp": None,
+            "inicio_segundos": None,
+            "fin_segundos": None,
+            "hablante": hablante,
+            "texto": fragmento,
+            "confianza": confianza,
+            "fundamento": fundamento,
+        })
+    return segmentos
+
+
+def inferir_hablante_fragmento_v2(fragmento: str, ultimo_hablante: str = "NO_DETERMINADO") -> tuple[str, str, str]:
+    key = limpiar_key_texto(fragmento)
+    senales_agente = [
+        "buenos dias",
+        "le habla",
+        "le saluda",
+        "mi banco",
+        "mibanco",
+        "deuda",
+        "descuento",
+        "facilidades",
+        "pago",
+        "abono",
+        "fraccionar",
+        "campana",
+        "regularizar",
+        "se le puede",
+        "para que pueda",
+        "le indicaron",
+        "se acuerda",
+        "pase a nuestra instancia",
+    ]
+    senales_cliente = [
+        "si digame",
+        "si senor",
+        "si senorita",
+        "no puedo",
+        "no tengo",
+        "yo no",
+        "yo gano",
+        "me podria",
+        "estoy en juicio",
+        "estoy pagando",
+        "me dijo",
+        "seria injusto",
+        "no le puedo",
+        "lo podria hacer",
+    ]
+    score_agente = sum(1 for item in senales_agente if item in key)
+    score_cliente = sum(1 for item in senales_cliente if item in key)
+    if score_agente > score_cliente:
+        return "AGENTE", "MEDIA" if score_agente == 1 else "ALTA", "Inferido por frases de gestion, entidad o propuesta de cobranza."
+    if score_cliente > score_agente:
+        return "CLIENTE", "MEDIA" if score_cliente == 1 else "ALTA", "Inferido por respuesta, objecion o explicacion del cliente."
+    if fragmento.endswith("?") and ultimo_hablante != "AGENTE":
+        return "AGENTE", "BAJA", "Inferido por pregunta dentro de la gestion."
+    return "NO_DETERMINADO", "BAJA", "No hay suficientes marcas para asignar hablante con seguridad."
+
+
+def confianza_global_segmentos_v2(segmentos: List[Dict]) -> str:
+    if not segmentos:
+        return "BAJA"
+    total = len(segmentos)
+    altos = sum(1 for item in segmentos if item.get("confianza") == "ALTA")
+    determinados = sum(1 for item in segmentos if item.get("hablante") in {"AGENTE", "CLIENTE"})
+    if determinados / total >= 0.75 and altos / total >= 0.5:
+        return "ALTA"
+    if determinados / total >= 0.5:
+        return "MEDIA"
+    return "BAJA"
 
 
 def normalizar_dimensiones_copc_v2(dimensiones) -> List[Dict]:
@@ -968,22 +1888,44 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
     peso = numero_en_rango(criterio.get("puntaje_maximo"), 0, peso_canon or 100) if criterio.get("puntaje_maximo") is not None else peso_canon
     peso = peso or peso_canon
     estado = normalizar_estado_criterio_v2(criterio.get("estado"))
-    aplica = estado not in {"NO_EVALUABLE", "REQUIERE_REVISION"}
-    if estado in {"NO_EVALUABLE", "REQUIERE_REVISION"}:
+    aplica = estado != "NO_EVALUABLE"
+    if estado == "NO_EVALUABLE":
         aplica = False
     nota = numero_en_rango(criterio.get("puntaje_obtenido"), 0, peso)
     if estado in {"NO_EVALUABLE", "REQUIERE_REVISION"} and criterio.get("puntaje_obtenido") in (None, ""):
         nota = 0
     resultado = resultado_legacy_desde_estado_v2(estado)
-    sgc = clasificar_item_sgc({
-        "item": item_canon,
-        "segmento": segmento_canon,
-        "hallazgo": criterio.get("hallazgo"),
-        "evidencia": " | ".join(evidencia_texto_v2(criterio.get("evidencias"))),
-        "recomendacion": criterio.get("recomendacion"),
-    })
-    grupo_sgc = normalizar_grupo_sgc(criterio.get("grupo_error_sgc") or sgc.get("grupo_error_sgc"), criterio)
-    factor_sgc = str(criterio.get("factor_sgc") or sgc.get("factor_sgc") or nombre or item_canon)
+    codigo_final = str(criterio.get("codigo_criterio") or codigo or "").strip()
+    if codigo_final in SGC_MAPEO_CRITERIOS:
+        grupo_sgc, factor_sgc = SGC_MAPEO_CRITERIOS[codigo_final]
+    else:
+        sgc = clasificar_item_sgc({
+            "codigo_criterio": codigo_final,
+            "item": item_canon,
+            "segmento": segmento_canon,
+            "hallazgo": criterio.get("hallazgo"),
+            "evidencia": " | ".join(evidencia_texto_v2(criterio.get("evidencias"))),
+            "recomendacion": criterio.get("recomendacion"),
+        })
+        grupo_sgc = normalizar_grupo_sgc(sgc.get("grupo_error_sgc"), criterio)
+        factor_sgc = str(sgc.get("factor_sgc") or nombre or item_canon)
+    evidencia_textual = evidencia_texto_v2(criterio.get("evidencia_textual")) or evidencia_texto_v2(criterio.get("evidencias"))
+    evidencia = " | ".join(evidencia_textual) or "-"
+    conducta_observada = texto_limpio_criterio_v2(criterio.get("conducta_observada"))
+    lectura_ia = texto_limpio_criterio_v2(criterio.get("lectura_ia"))
+    hallazgo = texto_limpio_criterio_v2(criterio.get("hallazgo")) or lectura_ia or conducta_observada or "-"
+    impacto_negocio = texto_limpio_criterio_v2(criterio.get("impacto_negocio"))
+    impacto_cliente = texto_limpio_criterio_v2(criterio.get("impacto_cliente"))
+    impacto = texto_limpio_criterio_v2(criterio.get("impacto")) or combinar_textos_v2(
+        impacto_negocio,
+        impacto_cliente,
+        separador=" | ",
+    )
+    recomendacion_entrenable = texto_limpio_criterio_v2(criterio.get("recomendacion_entrenable"))
+    recomendacion = recomendacion_entrenable or texto_limpio_criterio_v2(criterio.get("recomendacion")) or "-"
+    frase_sugerida = texto_limpio_criterio_v2(criterio.get("frase_sugerida"))
+    fortaleza_relacionada = texto_limpio_criterio_v2(criterio.get("fortaleza_relacionada"))
+    motivo = texto_limpio_criterio_v2(criterio.get("motivo_no_evaluable")) or lectura_ia or conducta_observada or hallazgo
     return {
         "segmento": segmento_canon or formatear_segmento_v2(segmento),
         "item": item_canon or nombre_item or "Criterio sin nombre",
@@ -999,19 +1941,33 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
         "grupo_error_sgc": grupo_sgc,
         "factor_sgc": factor_sgc,
         "calificacion": resultado,
-        "motivo": str(criterio.get("motivo_no_evaluable") or criterio.get("hallazgo") or "-"),
-        "hallazgo": str(criterio.get("hallazgo") or "-"),
-        "evidencia": " | ".join(evidencia_texto_v2(criterio.get("evidencias"))) or "-",
+        "motivo": motivo,
+        "hallazgo": hallazgo,
+        "evidencia": evidencia,
         "momento": primer_timestamp_v2(criterio.get("evidencias")),
-        "recomendacion": str(criterio.get("recomendacion") or "-"),
-        "impacto": str(criterio.get("impacto") or "-"),
+        "recomendacion": recomendacion,
+        "impacto": impacto or "-",
+        "codigo_criterio": str(criterio.get("codigo_criterio") or codigo or ""),
+        "segmentos_evidencia": criterio.get("segmentos_evidencia") if isinstance(criterio.get("segmentos_evidencia"), list) else [],
+        "segmentos_contexto": criterio.get("segmentos_contexto") if isinstance(criterio.get("segmentos_contexto"), list) else [],
+        "tipo_evidencia": str(criterio.get("tipo_evidencia") or ""),
+        "factor": str(criterio.get("factor") or factor_sgc),
+        "grupo_sgc": str(criterio.get("grupo_sgc") or grupo_sgc),
+        "evidencia_textual": evidencia_textual,
+        "conducta_observada": conducta_observada,
+        "lectura_ia": lectura_ia,
+        "impacto_negocio": impacto_negocio,
+        "impacto_cliente": impacto_cliente,
+        "recomendacion_entrenable": recomendacion_entrenable,
+        "frase_sugerida": frase_sugerida,
+        "fortaleza_relacionada": fortaleza_relacionada or None,
         "gravedad": str(criterio.get("gravedad") or ""),
         "puede_descalificar": bool(criterio.get("puede_descalificar")),
         "confianza": normalizar_confianza(criterio.get("confianza")),
         "requiere_revision": bool(criterio.get("requiere_revision") or estado == "REQUIERE_REVISION"),
         "requiere_feedback": resultado not in {"Cumple", "No aplica"},
         "requiere_coaching": bool(criterio.get("puede_descalificar") or grupo_sgc == SGC_GRUPO_CUMPLIMIENTO or estado == "NO_CUMPLE"),
-        "motivo_feedback_coaching": str(criterio.get("hallazgo") or criterio.get("motivo_no_evaluable") or ""),
+        "motivo_feedback_coaching": hallazgo if resultado not in {"Cumple", "No aplica"} else "",
     }
 
 
@@ -1031,19 +1987,26 @@ def formatear_segmento_v2(value: str) -> str:
     if "cumpl" in texto:
         return "Cumplimiento"
     if "diagn" in texto:
-        return "Diagnóstico"
-    if "gestion" in texto or "gestión" in texto or "negoci" in texto:
-        return "Gestión de solución"
+        return "DiagnÃ³stico"
+    if "gestion" in texto or "gestiÃ³n" in texto or "negoci" in texto:
+        return "GestiÃ³n de soluciÃ³n"
     if "cierre" in texto:
         return "Cierre verificable"
-    if "experiencia" in texto or "etica" in texto or "ética" in texto:
-        return "Experiencia y ética"
+    if "experiencia" in texto or "etica" in texto or "Ã©tica" in texto:
+        return "Experiencia y Ã©tica"
     return "Sin segmento"
 
 
 def normalizar_estado_criterio_v2(value) -> str:
     estado = str(value or "REQUIERE_REVISION").strip().upper()
     estado = estado.replace(" ", "_").replace("-", "_")
+    aliases = {
+        "PARCIAL": "PARCIAL_MEDIO",
+        "REVISION_HUMANA": "REQUIERE_REVISION",
+        "REQUIERE_REVISION_HUMANA": "REQUIERE_REVISION",
+        "NO_APLICA": "NO_EVALUABLE",
+    }
+    estado = aliases.get(estado, estado)
     return estado if estado in ESTADOS_COPC_V2 else "REQUIERE_REVISION"
 
 
@@ -1056,7 +2019,176 @@ def resultado_legacy_desde_estado_v2(estado: str) -> str:
         return "No cumple"
     if estado == "NO_EVALUABLE":
         return "No aplica"
-    return "Requiere revisión"
+    return "Requiere revisiÃ³n"
+
+
+def codigo_item_v2(item: Dict) -> str:
+    return obtener_codigo_item_copc(item)
+
+
+def buscar_item_por_codigo_v2(evaluacion: List[Dict], codigo: str) -> Optional[Dict]:
+    for item in evaluacion:
+        if codigo_item_v2(item) == codigo:
+            return item
+    return None
+
+
+def cita_textual_contextual_v2(transcripcion: str, patrones: List[str]) -> str:
+    texto = str(transcripcion or "")
+    for patron in patrones:
+        match = re.search(patron, texto, flags=re.IGNORECASE)
+        if match:
+            return re.sub(r"\s+", " ", match.group(0).strip())
+    return ""
+
+
+def titularidad_confirmada_contextual_v2(transcripcion: str) -> bool:
+    texto = re.sub(r"\s+", " ", str(transcripcion or "")).strip()
+    texto_key = limpiar_key_texto(texto)
+    patrones_key = [
+        r"con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame|si senor|si senorita)",
+        r"me comunico con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)",
+        r"hablo con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)",
+        r"comunicar con\s+.{2,120}\?\s*(si|digame|si digame|si senor|si senorita)",
+        r"se[nÃ±]or[a]?\s+.{2,120}\?\s*(si|digame|si digame|si senor|si senorita)",
+    ]
+    if any(re.search(patron, texto_key, flags=re.IGNORECASE) for patron in patrones_key):
+        return True
+    patrones = [
+        r"Â¿?\s*con\s+[^?]{2,80}\?\s*Â¿?\s*(s[iÃ­]|ella habla|soy yo|con ella|d[iÃ­]game|s[iÃ­]\s+seÃ±or(?:a|ita)?)\b",
+        r"me comunico con\s+[^?]{2,80}\?\s*(s[iÃ­]|ella habla|soy yo|con ella|d[iÃ­]game)\b",
+        r"hablo con\s+[^?]{2,80}\?\s*(s[iÃ­]|ella habla|soy yo|con ella|d[iÃ­]game)\b",
+    ]
+    return any(re.search(patron, texto, flags=re.IGNORECASE) for patron in patrones)
+
+
+def oportunidad_gestion_contextual_v2(transcripcion: str) -> bool:
+    texto = limpiar_key_texto(transcripcion)
+    senales = ["no tengo", "no puedo", "pagar", "deuda", "descuento", "solucion", "abono", "credito", "agosto", "mes"]
+    return sum(1 for senal in senales if senal in texto) >= 3
+
+
+def cita_generica_gestion_v2(transcripcion: str) -> str:
+    return cita_textual_contextual_v2(transcripcion, [
+        r"Yo no tengo que proponer nada[^.?!]{0,180}",
+        r"Las leyes le van a obligar[^.?!]{0,180}",
+        r"No me voy a negar[^.?!]{0,220}",
+        r"Si tuviera[^.?!]{0,180}",
+        r"ese monto no lo tengo[^.?!]{0,180}",
+        r"pagar[eÃ©]?\s*(?:200|300)[^.?!]{0,180}",
+        r"estoy en la sierra[^.?!]{0,180}",
+    ])
+
+
+def reparar_evaluacion_contextual_v2(evaluacion: List[Dict], data: Dict, transcripcion: str = "") -> List[Dict]:
+    """
+    ValidaciÃ³n conservadora posterior al anÃ¡lisis IA.
+
+    Esta funciÃ³n NO debe reconstruir la evaluaciÃ³n con reglas especÃ­ficas de una
+    llamada anterior ni sobreescribir criterios completos por coincidencias de
+    palabras. La IA ya evaluÃ³ los 24 criterios con el prompt vigente.
+
+    Responsabilidades:
+    1. validar que las evidencias textuales pertenezcan a la transcripciÃ³n actual;
+    2. evitar contaminaciÃ³n entre evaluaciones;
+    3. conservar score, resultado y hallazgo devueltos por IA salvo que la
+       evidencia sea claramente invÃ¡lida;
+    4. ante evidencia invÃ¡lida, pasar a revisiÃ³n en vez de fabricar un hallazgo.
+    """
+    transcripcion_key = limpiar_key_texto(transcripcion)
+
+    for item in evaluacion:
+        if not isinstance(item, dict):
+            continue
+
+        evidencias = item.get("evidencia_textual")
+        if not isinstance(evidencias, list):
+            evidencias = evidencia_texto_v2(evidencias)
+
+        evidencias_validas = []
+        for evidencia in evidencias:
+            frase = str(evidencia or "").strip()
+            if not frase:
+                continue
+
+            frase_key = limpiar_key_texto(frase)
+            if not frase_key:
+                continue
+
+            # Coincidencia directa normalizada.
+            if frase_key in transcripcion_key:
+                evidencias_validas.append(frase)
+                continue
+
+            # Tolerancia a pequeÃ±as diferencias de puntuaciÃ³n/transcripciÃ³n.
+            tokens = [t for t in frase_key.split() if len(t) >= 4]
+            if len(tokens) >= 4:
+                ventana = " ".join(tokens[: min(8, len(tokens))])
+                if ventana and ventana in transcripcion_key:
+                    evidencias_validas.append(frase)
+
+        if evidencias:
+            item["evidencia_textual"] = evidencias_validas
+
+            # Si la IA devolviÃ³ evidencia, pero ninguna pertenece a esta llamada,
+            # no se mantiene el hallazgo como confirmado.
+            if not evidencias_validas:
+                # No destruimos el resultado ni el score del criterio.
+                # Solo marcamos la literalidad de la evidencia como pendiente.
+                item["evidencia"] = "Evidencia textual no validada automÃ¡ticamente."
+                item["evidencia_textual"] = []
+                item["requiere_revision_evidencia"] = True
+
+        evidencias_finales = item.get("evidencia_textual") or []
+        if evidencias_finales:
+            item["evidencia"] = " | ".join(str(x) for x in evidencias_finales if str(x).strip())
+
+    return evaluacion
+
+def reparar_errores_criticos_contextuales_v2(errores: List[Dict], evaluacion: List[Dict], data: Dict, transcripcion: str = "") -> List[Dict]:
+    return list(errores or [])
+
+
+def frase_anulante_contextual_v2(resultado: Dict, errores: List[Dict], transcripcion: str, descalificada: bool) -> str:
+    for item in errores:
+        texto = str(item.get("frase_textual") or item.get("evidencia") or "").strip()
+        if texto and texto.lower() not in {"no disponible", "-", "maltrato psicolÃ³gico explÃ­cito y presiÃ³n excesiva"}:
+            return texto
+    return str(resultado.get("motivo_descalificacion") or ("No aplica" if not descalificada else "No disponible"))
+
+
+def cita_anulante_valida_v2(texto: str) -> bool:
+    valor = str(texto or "").strip()
+    if not valor:
+        return False
+    key = limpiar_key_texto(valor)
+    invalidos = [
+        "no disponible",
+        "no aplica",
+        "maltrato psicologico explicito",
+        "presion excesiva",
+        "error critico",
+        "falta grave",
+    ]
+    if any(item in key for item in invalidos):
+        return False
+    return len(valor) >= 12
+
+
+def texto_limpio_criterio_v2(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return " | ".join(str(item).strip() for item in value if str(item).strip())
+    texto = str(value).strip()
+    if texto.lower() in {"null", "none", "no disponible", "-", "revisar transcripcion", "revisar transcripciÃ³n"}:
+        return ""
+    return texto
+
+
+def combinar_textos_v2(*items: str, separador: str = " ") -> str:
+    textos = [str(item).strip() for item in items if str(item or "").strip()]
+    return separador.join(textos)
 
 
 def evidencia_texto_v2(evidencias) -> List[str]:
@@ -1064,11 +2196,20 @@ def evidencia_texto_v2(evidencias) -> List[str]:
     if isinstance(evidencias, list):
         for evidencia in evidencias[:3]:
             if isinstance(evidencia, dict):
-                texto = evidencia.get("texto") or evidencia.get("frase") or evidencia.get("evidencia") or evidencia.get("fragmento")
+                texto = (
+                    evidencia.get("texto")
+                    or evidencia.get("frase")
+                    or evidencia.get("frase_textual")
+                    or evidencia.get("cita")
+                    or evidencia.get("evidencia")
+                    or evidencia.get("fragmento")
+                )
                 if texto:
                     salida.append(str(texto))
             elif evidencia:
                 salida.append(str(evidencia))
+    elif evidencias:
+        salida.append(str(evidencias))
     return salida
 
 
@@ -1088,13 +2229,13 @@ def normalizar_errores_criticos_v2(value, evaluacion: List[Dict]) -> List[Dict]:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            automatico = str(item.get("tipo") or item.get("clasificacion") or "").upper() in {"AUTOMATICO", "AUTOMÁTICO", "DESCALIFICANTE"}
+            automatico = str(item.get("tipo") or item.get("clasificacion") or "").upper() in {"AUTOMATICO", "AUTOMÃTICO", "DESCALIFICANTE"}
             rows.append({
-                "segmento": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or "Experiencia y ética"),
-                "segmento_copc": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or "Experiencia y ética"),
+                "segmento": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or "Experiencia y Ã©tica"),
+                "segmento_copc": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or "Experiencia y Ã©tica"),
                 "grupo_error_sgc": normalizar_grupo_sgc(item.get("grupo_error_sgc") or SGC_GRUPO_CUMPLIMIENTO, item),
-                "factor_sgc": str(item.get("factor_sgc") or item.get("criterio") or item.get("tipo") or "Conducta ética y no abuso"),
-                "categoria": str(item.get("criterio") or item.get("tipo") or "Error crítico"),
+                "factor_sgc": str(item.get("factor_sgc") or item.get("criterio") or item.get("tipo") or "Conducta Ã©tica y no abuso"),
+                "categoria": str(item.get("criterio") or item.get("tipo") or "Error crÃ­tico"),
                 "severidad": "ANULANTE" if automatico else "GRAVE",
                 "automatico": automatico,
                 "requiere_revision": bool(item.get("requiere_revision") or not automatico),
@@ -1102,8 +2243,8 @@ def normalizar_errores_criticos_v2(value, evaluacion: List[Dict]) -> List[Dict]:
                 "frase_textual": str(item.get("frase_textual") or item.get("frase") or "No disponible"),
                 "momento": item.get("timestamp") or item.get("momento"),
                 "evidencia": str(item.get("evidencia") or item.get("frase_textual") or "-"),
-                "impacto": str(item.get("impacto") or "Riesgo crítico para calidad y cumplimiento."),
-                "recomendacion": str(item.get("recomendacion") or "Revisión inmediata por supervisor."),
+                "impacto": str(item.get("impacto") or "Riesgo crÃ­tico para calidad y cumplimiento."),
+                "recomendacion": str(item.get("recomendacion") or "RevisiÃ³n inmediata por supervisor."),
             })
     if rows:
         return rows
@@ -1138,8 +2279,8 @@ def normalizar_hallazgos_no_criticos_v2(value, evaluacion: List[Dict]) -> List[D
                 "segmento": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or ""),
                 "segmento_copc": formatear_segmento_v2(item.get("segmento_copc") or item.get("segmento") or ""),
                 "grupo_error_sgc": normalizar_grupo_sgc(item.get("grupo_error_sgc") or SGC_GRUPO_NO_CRITICO, item),
-                "factor_sgc": str(item.get("factor_sgc") or item.get("criterio") or "Hallazgo no crítico"),
-                "categoria": str(item.get("criterio") or "Hallazgo no crítico"),
+                "factor_sgc": str(item.get("factor_sgc") or item.get("criterio") or "Hallazgo no crÃ­tico"),
+                "categoria": str(item.get("criterio") or "Hallazgo no crÃ­tico"),
                 "severidad": normalizar_severidad(item.get("severidad") or "MEDIA"),
                 "hallazgo": str(item.get("hallazgo") or item.get("descripcion") or "-"),
                 "frase_textual": str(item.get("frase_textual") or "No disponible"),
@@ -1167,9 +2308,44 @@ def normalizar_hallazgos_no_criticos_v2(value, evaluacion: List[Dict]) -> List[D
         }
         for item in evaluacion
         if item.get("aplica", True) is not False
-        and item.get("resultado") not in {"Cumple", "No aplica", "Requiere revisión", "Requiere revision"}
+        and item.get("resultado") not in {"Cumple", "No aplica", "Requiere revisiÃ³n", "Requiere revision"}
         and not item.get("puede_descalificar")
     ][:8]
+
+
+def consolidar_puntos_sgc(items: List[Dict]) -> List[Dict]:
+    """
+    Consolida hallazgos del mismo grupo/factor SGC.
+    Conserva una sola fila visible y agrega cantidad de criterios relacionados.
+    """
+    grupos = {}
+    orden = []
+
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+
+        grupo = str(item.get("grupo_error_sgc") or "")
+        factor = str(item.get("factor_sgc") or item.get("categoria") or "")
+        key = (limpiar_key_texto(grupo), limpiar_key_texto(factor))
+
+        if key not in grupos:
+            copia = dict(item)
+            copia["criterios_relacionados"] = []
+            grupos[key] = copia
+            orden.append(key)
+
+        codigo = str(item.get("codigo_criterio") or "").strip()
+        if codigo and codigo not in grupos[key]["criterios_relacionados"]:
+            grupos[key]["criterios_relacionados"].append(codigo)
+
+        # Si el primer registro no tiene evidencia Ãºtil, usa otra del grupo.
+        evidencia_actual = str(grupos[key].get("evidencia") or "").strip()
+        evidencia_nueva = str(item.get("evidencia") or "").strip()
+        if evidencia_actual in {"", "-", "No disponible.", "Evidencia textual no validada automÃ¡ticamente."} and evidencia_nueva:
+            grupos[key]["evidencia"] = evidencia_nueva
+
+    return [grupos[key] for key in orden]
 
 
 def deduplicar_puntos_criticos(items: List[Dict]) -> List[Dict]:
@@ -1240,7 +2416,7 @@ No es un informe oficial de calidad, auditoria ni scoring.
 Evalua con esta rubrica operativa:
 - Apertura: saludo, identificacion, motivo de llamada y tono inicial.
 - Validacion: confirma cliente, deuda/contexto y comprension del cliente.
-- Comunicacion: claridad, orden, lenguaje simple y escucha activa, que el agente no utilice sarcasmos y su tono debe ser atento, empático.
+- Comunicacion: claridad, orden, lenguaje simple y escucha activa, que el agente no utilice sarcasmos y su tono debe ser atento, empÃ¡tico.
 - Manejo de objecion: identifica causa real, explora alternativas y no fuerza respuestas.
 - Negociacion: ofrece opciones concretas, valida capacidad de pago, monto, fecha y canal.
 - Cierre: confirma acuerdo o siguiente accion, resume compromisos y deja trazabilidad.
@@ -1297,6 +2473,28 @@ def texto_normalizado_sgc(value) -> str:
 
 
 def clasificar_item_sgc(item: Dict) -> Dict:
+    """
+    ClasificaciÃ³n SGC determinÃ­stica.
+
+    La IA evalÃºa conducta, evidencia, resultado y recomendaciÃ³n.
+    El sistema decide grupo/factor SGC segÃºn el cÃ³digo tÃ©cnico para evitar
+    duplicidades y clasificaciones inconsistentes entre evaluaciones.
+    """
+    codigo = str(
+        item.get("codigo_criterio")
+        or item.get("codigo")
+        or obtener_codigo_item_copc(item)
+        or ""
+    ).strip()
+
+    if codigo in SGC_MAPEO_CRITERIOS:
+        grupo, factor = SGC_MAPEO_CRITERIOS[codigo]
+        return {
+            "grupo_error_sgc": grupo,
+            "factor_sgc": factor,
+        }
+
+    # Fallback histÃ³rico para registros antiguos que no tengan cÃ³digo.
     texto = " ".join([
         str(item.get("item") or ""),
         str(item.get("segmento") or ""),
@@ -1304,21 +2502,17 @@ def clasificar_item_sgc(item: Dict) -> Dict:
         str(item.get("evidencia") or ""),
         str(item.get("recomendacion") or ""),
     ]).lower()
+
     for grupo, factor, claves in SGC_FACTORES:
         if any(str(clave).lower() in texto for clave in claves):
             if "tipific" in str(factor).lower():
-                factor = "Registro y trazabilidad de gestión"
+                factor = "Registro y trazabilidad de gestiÃ³n"
             return {"grupo_error_sgc": grupo, "factor_sgc": factor}
-    segmento = texto_normalizado_sgc(item.get("segmento"))
-    if "cumpl" in segmento:
-        return {"grupo_error_sgc": SGC_GRUPO_CUMPLIMIENTO, "factor_sgc": "Validación de titularidad"}
-    if "negoci" in segmento or "cierre" in segmento:
-        return {"grupo_error_sgc": SGC_GRUPO_NEGOCIO, "factor_sgc": "Orientación a resultado"}
-    if "diagn" in segmento:
-        return {"grupo_error_sgc": SGC_GRUPO_NEGOCIO, "factor_sgc": "Razón de no pago y explicar motivo"}
-    if "experiencia" in segmento or "riesgo" in segmento:
-        return {"grupo_error_sgc": SGC_GRUPO_CUMPLIMIENTO, "factor_sgc": "Conducta ética y no abuso"}
-    return {"grupo_error_sgc": SGC_GRUPO_NO_CRITICO, "factor_sgc": str(item.get("item") or "Error no crítico")}
+
+    return {
+        "grupo_error_sgc": SGC_GRUPO_NO_CRITICO,
+        "factor_sgc": str(item.get("item") or "Criterio sin clasificaciÃ³n"),
+    }
 
 
 def normalizar_grupo_sgc(value, item: Optional[Dict] = None) -> str:
@@ -1334,10 +2528,11 @@ def normalizar_grupo_sgc(value, item: Optional[Dict] = None) -> str:
 
 def normalizar_calificacion_sgc(item: Dict) -> str:
     texto = str(item.get("calificacion") or item.get("resultado") or "").strip()
-    lower = texto.lower()
-    if "requiere revis" in lower or "revision" in lower or "revisión" in lower or "no evaluable" in lower:
-        return "Requiere revisión"
-    if "no aplica" in lower or lower in {"n/a", "na"}:
+    lower = limpiar_key_texto(texto)
+
+    if lower in {"requiere revision", "revision humana"} or "requiere revis" in lower:
+        return "Requiere revisiÃ³n"
+    if lower in {"no evaluable", "no aplica", "n a", "na"}:
         return "No aplica"
     if "parcial" in lower:
         return "Parcial"
@@ -1345,15 +2540,40 @@ def normalizar_calificacion_sgc(item: Dict) -> str:
         return "No cumple"
     if "cumple" in lower:
         return "Cumple"
-    return "No cumple" if float(item.get("nota") or 0) == 0 else "Parcial"
+
+    # Si no hay estado confiable, no fabricar un incumplimiento.
+    return "Requiere revisiÃ³n"
 
 
 def debe_contar_error_sgc(item: Dict) -> bool:
-    grupo = item.get("grupo_error_sgc")
-    calificacion = str(item.get("calificacion") or "").lower()
+    """
+    Solo cuenta brechas confirmadas.
+    RevisiÃ³n humana / evidencia pendiente NO equivale a NO CUMPLE.
+    """
     if item.get("aplica") is False:
         return False
-    return grupo != SGC_GRUPO_NO_APLICA and calificacion not in {"cumple", "no aplica", "requiere revisión", "requiere revision"}
+
+    grupo = item.get("grupo_error_sgc")
+    if grupo == SGC_GRUPO_NO_APLICA:
+        return False
+
+    calificacion = limpiar_key_texto(
+        item.get("calificacion") or item.get("resultado") or ""
+    )
+
+    if calificacion in {
+        "cumple",
+        "no aplica",
+        "requiere revision",
+        "revision humana",
+        "no evaluable",
+    }:
+        return False
+
+    return calificacion in {
+        "no cumple",
+        "parcial",
+    }
 
 
 def enriquecer_evaluacion_sgc(
@@ -1431,7 +2651,7 @@ def construir_resumen_sgc(
         or (score_final is not None and score_final < 70)
         or str(nivel_riesgo or "").upper() == "ALTO"
     )
-    motivo = resumen.get("motivo") or "Clasificación SGC/PEC generada desde la matriz COPC."
+    motivo = resumen.get("motivo") or "ClasificaciÃ³n SGC/PEC generada desde la matriz COPC."
     return {
         **conteos,
         "requiere_feedback": bool(resumen.get("requiere_feedback", requiere_feedback)),
@@ -1440,10 +2660,10 @@ def construir_resumen_sgc(
     }
 
 
-def normalizar_analisis(data: Dict) -> Dict:
+def normalizar_analisis(data: Dict, transcripcion: str = "") -> Dict:
     es_version_v2 = es_copc_v2(data)
     if es_version_v2:
-        data = normalizar_analisis_copc_v2(data)
+        data = normalizar_analisis_copc_v2(data, transcripcion=transcripcion)
 
     puntos = data.get("puntos_criticos")
     if not isinstance(puntos, list):
@@ -1534,10 +2754,14 @@ def normalizar_analisis(data: Dict) -> Dict:
         falta_anulante=falta_anulante,
     )
     evidencias = normalizar_evidencias_clave(data.get("evidencias_clave"), puntos_normalizados)
+    interlocutores = data.get("interlocutores") if isinstance(data.get("interlocutores"), dict) else {}
+    segmentos_interlocutores = interlocutores.get("segmentos") if isinstance(interlocutores.get("segmentos"), list) else []
 
     return {
         "version_evaluacion": data.get("version_evaluacion"),
         "json_copc_v2": data.get("json_copc_v2"),
+        "interlocutores": interlocutores,
+        "segmentos_interlocutores": segmentos_interlocutores,
         "resumen": str(data.get("resumen") or "-"),
         "tipo_contacto": str(data.get("tipo_contacto") or "-"),
         "tipo_llamada": str(clasificacion.get("tipo_llamada") or data.get("tipo_llamada") or "-"),
@@ -1611,17 +2835,28 @@ def completar_matriz_copc(evaluacion: List[Dict]) -> List[Dict]:
             "nota_supervisor": None,
             "nota_final": 0,
             "aplica": False,
-            "motivo_no_aplica": "Criterio no devuelto por IA; requiere revisión si era aplicable.",
-            "resultado": "Requiere revisión",
+            "motivo_no_aplica": "Criterio no devuelto por IA; requiere revisiÃ³n si era aplicable.",
+            "resultado": "Requiere revisiÃ³n",
             "segmento_copc": segmento,
             "grupo_error_sgc": "",
             "factor_sgc": "",
-            "calificacion": "Requiere revisión",
-            "motivo": "La IA no devolvio evidencia para este item en la matriz original.",
-            "hallazgo": "No evidenciado en la respuesta IA.",
+            "calificacion": "Requiere revisiÃ³n",
+            "motivo": "Criterio pendiente de validacion por respuesta incompleta de IA.",
+            "hallazgo": "Criterio pendiente de validacion; no se debe concluir incumplimiento sin evidencia.",
             "evidencia": "No disponible.",
             "momento": "No disponible",
-            "recomendacion": "Revisar la transcripcion o solicitar recalibracion si el item si fue cubierto.",
+            "recomendacion": "Validar este criterio con la transcripcion antes de usarlo para feedback.",
+            "codigo_criterio": codigo,
+            "factor": "",
+            "grupo_sgc": "",
+            "evidencia_textual": [],
+            "conducta_observada": "",
+            "lectura_ia": "",
+            "impacto_negocio": "",
+            "impacto_cliente": "",
+            "recomendacion_entrenable": "",
+            "frase_sugerida": "",
+            "fortaleza_relacionada": None,
             "requiere_feedback": False,
             "requiere_coaching": False,
             "motivo_feedback_coaching": "",
@@ -1644,12 +2879,19 @@ def normalizar_evaluacion_calidad(value) -> List[Dict]:
         resultado = str(item.get("resultado") or "-")
         if aplica is None:
             aplica = resultado.strip().lower() not in {"no aplica", "n/a", "na"}
+        if "requiere revis" in resultado.strip().lower():
+            aplica = True
         nota_ia = numero_en_rango(item.get("nota_ia", item.get("nota")), 0, peso)
         nota_supervisor = item.get("nota_supervisor")
         nota_supervisor = numero_en_rango(nota_supervisor, 0, peso) if nota_supervisor not in (None, "") else None
         nota_final = item.get("nota_final")
         nota_final = numero_en_rango(nota_final, 0, peso) if nota_final not in (None, "") else nota_ia
         nota = 0 if not aplica else nota_final
+        evidencia_textual = evidencia_texto_v2(item.get("evidencia_textual")) or evidencia_texto_v2(item.get("evidencia"))
+        conducta_observada = texto_limpio_criterio_v2(item.get("conducta_observada"))
+        lectura_ia = texto_limpio_criterio_v2(item.get("lectura_ia"))
+        hallazgo = texto_limpio_criterio_v2(item.get("hallazgo")) or lectura_ia or conducta_observada or "-"
+        recomendacion_entrenable = texto_limpio_criterio_v2(item.get("recomendacion_entrenable"))
         normalizada.append({
             "segmento": str(item.get("segmento") or "-"),
             "item": str(item.get("item") or "-"),
@@ -1665,11 +2907,22 @@ def normalizar_evaluacion_calidad(value) -> List[Dict]:
             "grupo_error_sgc": str(item.get("grupo_error_sgc") or ""),
             "factor_sgc": str(item.get("factor_sgc") or ""),
             "calificacion": str(item.get("calificacion") or resultado),
-            "motivo": str(item.get("motivo") or item.get("hallazgo") or "-"),
-            "hallazgo": str(item.get("hallazgo") or "-"),
-            "evidencia": str(item.get("evidencia") or "-"),
+            "motivo": str(item.get("motivo") or lectura_ia or conducta_observada or hallazgo or "-"),
+            "hallazgo": hallazgo,
+            "evidencia": " | ".join(evidencia_textual) or str(item.get("evidencia") or "-"),
             "momento": str(item.get("momento") or "No disponible"),
-            "recomendacion": str(item.get("recomendacion") or "-"),
+            "recomendacion": recomendacion_entrenable or str(item.get("recomendacion") or "-"),
+            "codigo_criterio": str(item.get("codigo_criterio") or obtener_codigo_item_copc(item) or ""),
+            "factor": str(item.get("factor") or item.get("factor_sgc") or ""),
+            "grupo_sgc": str(item.get("grupo_sgc") or item.get("grupo_error_sgc") or ""),
+            "evidencia_textual": evidencia_textual,
+            "conducta_observada": conducta_observada,
+            "lectura_ia": lectura_ia,
+            "impacto_negocio": texto_limpio_criterio_v2(item.get("impacto_negocio")),
+            "impacto_cliente": texto_limpio_criterio_v2(item.get("impacto_cliente")),
+            "recomendacion_entrenable": recomendacion_entrenable,
+            "frase_sugerida": texto_limpio_criterio_v2(item.get("frase_sugerida")),
+            "fortaleza_relacionada": texto_limpio_criterio_v2(item.get("fortaleza_relacionada")) or None,
             "requiere_feedback": item.get("requiere_feedback"),
             "requiere_coaching": item.get("requiere_coaching"),
             "motivo_feedback_coaching": str(item.get("motivo_feedback_coaching") or ""),
@@ -1683,7 +2936,14 @@ def calcular_score_normalizado(evaluacion: List[Dict]) -> tuple[float, float, fl
     score_bruto = 0.0
     peso_aplicable = 0.0
     for item in evaluacion:
-        if item.get("aplica") is False:
+        resultado = str(item.get("resultado") or item.get("calificacion") or "").strip().lower()
+        motivo_no_aplica = str(item.get("motivo_no_aplica") or "").strip().lower()
+        no_aplica_real = item.get("aplica") is False and (
+            "no aplica" in resultado
+            or "no evaluable" in resultado
+            or "no_evaluable" in motivo_no_aplica
+        )
+        if no_aplica_real:
             continue
         score_bruto += float(item.get("nota") or 0)
         peso_aplicable += float(item.get("peso") or 0)

@@ -25,7 +25,7 @@ let ordenAgentes = { campo: "cef", direccion: "desc" };
 let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
 let vistaCarteraControl = "AGRUPADO";
 
-const CACHE_CONTROL_HORARIO = "controlHorarioCacheV6";
+const CACHE_CONTROL_HORARIO = "controlHorarioCacheV7";
 
 const CARTERAS_CONTROL = {
     112: "MIBANCO 1",
@@ -52,10 +52,13 @@ const CAMPOS = {
     idcartera: ["IDCARTERA", "IdCartera", "idcartera", "ID_CARTERA"],
     cartera: ["CARTERA", "cartera", "NOM_CARTERA", "nombre_cartera"],
     idusuario: ["IDUSUARIO", "IdUsuario", "idusuario", "ID_USUARIO"],
+    idcliente: ["IDCLIENTE", "IdCliente", "idcliente", "ID_CLIENTE"],
     agente: ["AGENTE", "agente", "nombre_agente"],
     hora: ["HORA", "hora", "HORA_CORTE", "hora_corte", "TRAMO_HORA", "tramo_hora", "TRAMO", "tramo", "CORTE", "corte", "HORARIO", "horario", "RANGO_HORA", "rango_hora", "HORA_GESTION", "hora_gestion"],
     gestiones: ["GESTIONES", "gestiones", "TOTAL_GESTIONES", "total_gestiones"],
     clientesMes: ["CLIENTES_GESTIONADOS_MES", "clientes_gestionados_mes", "CLIENTES_MES", "clientes_mes"],
+    clientesUnicosGestion: ["CLIENTES_UNICOS_GESTION", "clientes_unicos_gestion", "CLIENTES_GESTION_UNICOS", "clientes_gestion_unicos"],
+    clientesUnicosCef: ["CLIENTES_UNICOS_CEF", "clientes_unicos_cef", "CLIENTES_CEF_UNICOS", "clientes_cef_unicos"],
     cef: ["CEF", "cef"],
     cne: ["CNE", "cne"],
     noc: ["NOC", "noc"],
@@ -901,6 +904,8 @@ function agruparDetalleAgentes(detalle) {
             ...row,
             GESTIONES: 0,
             CLIENTES_GESTIONADOS_MES: 0,
+            CLIENTES_UNICOS_GESTION: 0,
+            CLIENTES_UNICOS_CEF: 0,
             CEF: 0,
             CNE: 0,
             NOC: 0,
@@ -911,11 +916,13 @@ function agruparDetalleAgentes(detalle) {
             PENDIENTE: 0,
             Q_PROYECTADO: 0,
             Q_PAGADOS: 0,
-            Q_PENDIENTES: 0
+            Q_PENDIENTES: 0,
+            _fuentes_clientes_unicos: new Set()
         };
 
         actual.GESTIONES += numeroCampo(row, CAMPOS.gestiones);
         actual.CLIENTES_GESTIONADOS_MES += numeroCampo(row, CAMPOS.clientesMes);
+        sumarClientesUnicosAgente(actual, row);
         actual.CEF += numeroCampo(row, CAMPOS.cef);
         actual.CNE += numeroCampo(row, CAMPOS.cne);
         actual.NOC += numeroCampo(row, CAMPOS.noc);
@@ -934,10 +941,24 @@ function agruparDetalleAgentes(detalle) {
         map.set(idusuario, actual);
     });
 
-    return ordenarFilas([...map.values()].map(row => ({
-        ...row,
-        ...evaluarAccionAgente(row)
-    })), ordenAgentes, valorOrdenAgente);
+    return ordenarFilas([...map.values()].map(row => {
+        const { _fuentes_clientes_unicos, ...limpio } = row;
+        return {
+            ...limpio,
+            ...evaluarAccionAgente(row)
+        };
+    }), ordenAgentes, valorOrdenAgente);
+}
+
+function sumarClientesUnicosAgente(actual, row) {
+    const idusuario = String(valor(row, CAMPOS.idusuario, ""));
+    const idcartera = String(getIdCarteraBase(row) || getIdCartera(row) || "");
+    const fuente = `${idusuario}|${idcartera}`;
+    if (actual._fuentes_clientes_unicos.has(fuente)) return;
+
+    actual.CLIENTES_UNICOS_GESTION += numeroCampo(row, CAMPOS.clientesUnicosGestion);
+    actual.CLIENTES_UNICOS_CEF += numeroCampo(row, CAMPOS.clientesUnicosCef);
+    actual._fuentes_clientes_unicos.add(fuente);
 }
 
 function tieneActividadVisibleAgente(row) {
@@ -1131,12 +1152,12 @@ function renderDetalleAgentes(data) {
     const escalaVisible = calcularEscalaVisible(visibleData);
 
     if (!carteraSeleccionada) {
-        tbody.innerHTML = emptyRow(11, "Selecciona una cartera para ver agentes.");
+        tbody.innerHTML = emptyRow(13, "Selecciona una cartera para ver agentes.");
         return;
     }
 
     if (!visibleData.length) {
-        tbody.innerHTML = emptyRow(11, "No hay agentes para la cartera seleccionada.");
+        tbody.innerHTML = emptyRow(13, "No hay agentes para la cartera seleccionada.");
         return;
     }
 
@@ -1149,7 +1170,9 @@ function renderDetalleAgentes(data) {
             <tr>
                 <td class="left">${h(valor(row, CAMPOS.agente, "-"))}</td>
                 <td>${num(numeroCampo(row, CAMPOS.gestiones))}</td>
+                <td>${num(numeroCampo(row, CAMPOS.clientesUnicosGestion))}</td>
                 <td><span class="cef-heat ${claseCefVisible(numeroCampo(row, CAMPOS.cef), escalaVisible.cef)}">${num(numeroCampo(row, CAMPOS.cef))}</span></td>
+                <td>${num(numeroCampo(row, CAMPOS.clientesUnicosCef))}</td>
                 <td>${percent(valor(row, CAMPOS.pctCef, calcularPctCef(row)))}</td>
                 <td><span class="${claseMonto(getPdpGenerado(row), escalaVisible.pdp, 'pdp')}">${money(getPdpGenerado(row))}</span></td>
                 <td><span class="${claseMonto(numeroCampo(row, CAMPOS.proyectado), escalaVisible.proyectado, 'proyectado')}">${money(numeroCampo(row, CAMPOS.proyectado))}</span></td>
@@ -1721,7 +1744,9 @@ function valorOrdenAgente(row, campo) {
     const map = {
         agente: valor(row, CAMPOS.agente, ""),
         gestiones: numeroCampo(row, CAMPOS.gestiones),
+        clientes_gestion: numeroCampo(row, CAMPOS.clientesUnicosGestion),
         cef: numeroCampo(row, CAMPOS.cef),
+        clientes_cef: numeroCampo(row, CAMPOS.clientesUnicosCef),
         pct_cef: Number(valor(row, CAMPOS.pctCef, calcularPctCef(row)) || 0),
         pdp: getPdpGenerado(row),
         proyectado: numeroCampo(row, CAMPOS.proyectado),
