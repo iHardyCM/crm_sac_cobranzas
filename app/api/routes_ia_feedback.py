@@ -32,7 +32,10 @@ router = APIRouter()
 @router.get("")
 def vista_ia_feedback():
     root = Path(__file__).resolve().parents[2]
-    return FileResponse(root / "frontend" / "views" / "ia_feedback.html")
+    return FileResponse(
+        root / "frontend" / "views" / "ia_feedback.html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/config")
@@ -131,9 +134,12 @@ async def upload_ia_feedback(
 
 
 @router.post("/{id_feedback}/analizar")
-async def analizar_ia_feedback(id_feedback: int):
+async def analizar_ia_feedback(
+    id_feedback: int,
+    forzar_transcripcion: bool = Query(default=False),
+):
     try:
-        return await run_in_threadpool(analizar_feedback, id_feedback)
+        return await run_in_threadpool(analizar_feedback, id_feedback, forzar_transcripcion)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:

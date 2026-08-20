@@ -780,6 +780,18 @@ tbody tr:hover {
     stroke-width: 4;
 }
 
+.chart-value-label {
+    fill: #0b3768;
+    font-size: 9px;
+    font-weight: 800;
+    paint-order: stroke;
+    pointer-events: none;
+    stroke: #ffffff;
+    stroke-linejoin: round;
+    stroke-width: 3px;
+    text-anchor: middle;
+}
+
 .chart-point {
     cursor: pointer;
 }

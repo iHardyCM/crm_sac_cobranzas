@@ -1372,6 +1372,7 @@ function renderGraficoHoras(data) {
         valor: valorMetricaHora(row, metricaHoraActual),
         gestiones: numeroCampo(row, CAMPOS.gestiones),
         cef: numeroCampo(row, CAMPOS.cef),
+        qPdp: numeroCampo(row, CAMPOS.qPdp),
         pdp: getPdpGenerado(row)
     }));
     const max = Math.max(...puntos.map(p => p.valor), 1);
@@ -1385,30 +1386,49 @@ function renderGraficoHoras(data) {
         const y = height - padY - (p.valor / max) * (height - padY * 2);
         return { ...p, x, y };
     });
-    const polyline = coords.map(p => `${p.x},${p.y}`).join(" ");
+    const path = construirCurvaSuave(coords);
 
     contenedor.innerHTML = `
         <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img">
             <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="axis" />
             <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" class="axis" />
-            <polyline points="${polyline}" class="chart-line" />
+            <path d="${path}" class="chart-line" />
             ${coords.map(p => `
                 <g class="chart-point" onclick="filtrarHora('${h(p.hora)}')">
                     <circle cx="${p.x}" cy="${p.y}" r="5"></circle>
-                    <title>${h(p.hora)} | ${h(etiquetaMetricaHora())}: ${formatoMetricaHora(p.valor)}</title>
+                    <title>${h(p.hora)} | ${h(etiquetaMetricaHora())}: ${h(formatoEtiquetaHora(p))}</title>
                 </g>
             `).join("")}
+            ${coords.map(p => p.valor > 0 ? `
+                <text x="${p.x}" y="${Math.max(18, p.y - (metricaHoraActual === "pdp" ? 26 : 14))}" class="chart-value-label">
+                    ${etiquetaSvgHora(p)}
+                </text>
+            ` : "").join("")}
             ${coords.map((p, i) => i % 2 === 0 ? `<text x="${p.x}" y="${height - 5}" class="chart-label">${h(String(p.hora).split(" ")[0])}</text>` : "").join("")}
         </svg>
         <div class="chart-summary">
             ${coords.map(p => `
                 <button type="button" onclick="filtrarHora('${h(p.hora)}')">
                     <span>${h(p.hora)}</span>
-                    <b>${formatoMetricaHora(p.valor)}</b>
+                    <b>${h(formatoEtiquetaHora(p))}</b>
                 </button>
             `).join("")}
         </div>
     `;
+}
+
+function construirCurvaSuave(points) {
+    if (!points.length) return "";
+    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i += 1) {
+        const anterior = points[i - 1];
+        const actual = points[i];
+        const controlX = (anterior.x + actual.x) / 2;
+        d += ` C ${controlX} ${anterior.y}, ${controlX} ${actual.y}, ${actual.x} ${actual.y}`;
+    }
+    return d;
 }
 
 function filtrarHora(hora) {
@@ -1863,6 +1883,43 @@ function etiquetaMetricaHora() {
 
 function formatoMetricaHora(value) {
     return metricaHoraActual === "pdp" ? money(value) : num(value);
+}
+
+function formatoEtiquetaHora(point) {
+    if (metricaHoraActual === "pdp") {
+        return `${money(point.pdp)} | Q ${num(point.qPdp)}`;
+    }
+
+    if (metricaHoraActual === "cef") {
+        return num(point.cef);
+    }
+
+    return num(point.gestiones);
+}
+
+function etiquetaSvgHora(point) {
+    if (metricaHoraActual !== "pdp") return h(formatoEtiquetaHora(point));
+
+    const monto = formatoMonedaCompacta(point.pdp);
+    const cantidad = `Q ${num(point.qPdp)} PDP`;
+    return `
+        <tspan x="${point.x}" dy="0">${h(monto)}</tspan>
+        <tspan x="${point.x}" dy="11">${h(cantidad)}</tspan>
+    `;
+}
+
+function formatoMonedaCompacta(value) {
+    const n = Number(value || 0);
+    if (Math.abs(n) >= 1000) {
+        return `S/ ${(n / 1000).toLocaleString("es-PE", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1
+        })}k`;
+    }
+
+    return `S/ ${n.toLocaleString("es-PE", {
+        maximumFractionDigits: 0
+    })}`;
 }
 
 function claseCef(value) {

@@ -15,11 +15,17 @@ from app.core.db_siscob import engine_siscob
 from app.services.ia_analysis_service import (
     analizar_transcripcion_mock,
     analizar_transcripcion_real,
+    aplicar_guardas_deterministicas_criterios,
+    calcular_pesos_detalle_evaluacion,
     calcular_score_normalizado,
+    completar_evidencias_desde_segmentos_v3,
+    consolidar_puntos_sgc,
     construir_resumen_sgc,
+    deduplicar_puntos_criticos,
     enriquecer_evaluacion_sgc,
     generar_transcripcion_mock,
     ia_real_configurada,
+    normalizar_hallazgos_no_criticos_v2,
     normalizar_interlocutores_v2,
     reparar_evaluacion_contextual_v2,
     transcribir_audio_real,
@@ -162,9 +168,21 @@ def ensure_tabla_feedback():
             ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
             ADD score_bruto DECIMAL(5,2) NULL;
 
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'peso_total') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD peso_total DECIMAL(5,2) NULL;
+
         IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'peso_aplicable') IS NULL
             ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
             ADD peso_aplicable DECIMAL(5,2) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'peso_no_aplica') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD peso_no_aplica DECIMAL(5,2) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'peso_no_evaluable') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD peso_no_evaluable DECIMAL(5,2) NULL;
 
         IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'score_normalizado') IS NULL
             ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
@@ -361,24 +379,83 @@ def obtener_configuracion_audio() -> Dict:
         "formatos_texto": FORMATOS_PERMITIDOS_TEXTO,
         "max_audio_mb": MAX_AUDIO_MB,
         "ia_real_configurada": ia_real_configurada(),
-        "modelo_transcripcion": os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+        "modelo_transcripcion": os.getenv("IA_FEEDBACK_DIARIZATION_MODEL")
+        or (
+            os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL")
+            if "diarize" in str(os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL") or "").lower()
+            else "gpt-4o-transcribe-diarize"
+        ),
+        "modelo_transcripcion_fallback": os.getenv("IA_FEEDBACK_TRANSCRIPTION_FALLBACK_MODEL")
+        or (
+            os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL")
+            if "diarize" not in str(os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL") or "").lower()
+            else "gpt-4o-mini-transcribe"
+        ),
         "modelo_analisis": os.getenv("IA_FEEDBACK_ANALYSIS_MODEL", "gpt-4o-mini"),
     }
 
 
-def analizar_feedback(id_feedback: int) -> Dict:
+def transcripcion_diarizada_valida(transcripcion: Optional[str]) -> bool:
+    texto = str(transcripcion or "").strip()
+    if not texto.startswith("#TRANSCRIPCION_DIARIZADA_V1"):
+        return False
+    try:
+        interlocutores = normalizar_interlocutores_v2({}, texto)
+    except Exception:
+        return False
+    segmentos = interlocutores.get("segmentos") if isinstance(interlocutores, dict) else []
+    if not isinstance(segmentos, list) or not segmentos:
+        return False
+    roles = {
+        str(item.get("hablante") or item.get("rol") or "").upper()
+        for item in segmentos
+        if isinstance(item, dict)
+    }
+    return bool(roles & {"AGENTE", "CLIENTE"})
+
+
+def obtener_transcripcion_para_analisis(registro: Dict, *, forzar_transcripcion: bool = False) -> tuple[str, bool]:
+    """
+    Devuelve la transcripción que debe usar el análisis.
+
+    La transcripción diarizada guardada es la fuente canónica. Solo se llama al
+    transcriptor cuando no existe, cuando se fuerza explícitamente o cuando la
+    guardada es antigua/no canónica y la IA real está disponible.
+    """
+    transcripcion_guardada = str(registro.get("transcripcion") or "").strip()
+    if not forzar_transcripcion and transcripcion_diarizada_valida(transcripcion_guardada):
+        return transcripcion_guardada, False
+
+    if ia_real_configurada():
+        return transcribir_audio_real(registro.get("ruta_archivo") or ""), True
+
+    if transcripcion_guardada:
+        return transcripcion_guardada, False
+
+    return generar_transcripcion_mock(registro), True
+
+
+def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> Dict:
     ensure_tabla_feedback()
     registro = obtener_feedback(id_feedback)
 
     try:
-        actualizar_estado(id_feedback, "TRANSCRIBIENDO")
         aviso_ia = None
-        if ia_real_configurada():
-            transcripcion = transcribir_audio_real(registro.get("ruta_archivo") or "")
-        else:
+        transcripcion_guardada = str(registro.get("transcripcion") or "").strip()
+        reutiliza_transcripcion = (
+            not forzar_transcripcion
+            and transcripcion_diarizada_valida(transcripcion_guardada)
+        )
+        if not reutiliza_transcripcion:
+            actualizar_estado(id_feedback, "TRANSCRIBIENDO")
+        transcripcion, transcripcion_generada = obtener_transcripcion_para_analisis(
+            registro,
+            forzar_transcripcion=forzar_transcripcion,
+        )
+        if transcripcion_generada:
+            actualizar_transcripcion(id_feedback, transcripcion)
+        if not ia_real_configurada():
             aviso_ia = "IA real no configurada, usando analisis simulado"
-            transcripcion = generar_transcripcion_mock(registro)
-        actualizar_transcripcion(id_feedback, transcripcion)
 
         actualizar_estado(id_feedback, "ANALIZANDO")
         if ia_real_configurada():
@@ -679,7 +756,8 @@ def obtener_feedback(id_feedback: int) -> Dict:
             tipo_contacto, tipo_llamada, evaluabilidad, motivo_no_evaluable,
             objetivo_principal, resultado_gestion, objecion_principal, score_calidad,
             score_calidad_ia, score_supervisor, score_final, score_bruto,
-            peso_aplicable, score_normalizado, estado_calidad, nivel_riesgo,
+            peso_total, peso_aplicable, peso_no_aplica, peso_no_evaluable,
+            score_normalizado, estado_calidad, nivel_riesgo,
             error_critico, calidad_transcripcion, confianza_evaluacion,
             requiere_revision_humana, motivo_revision,
             evaluacion_calidad, habilidades_blandas, fortalezas, puntos_criticos, recomendaciones, guion_sugerido, alertas,
@@ -782,7 +860,10 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
                 score_calidad_ia = :score_calidad_ia,
                 score_final = :score_final,
                 score_bruto = :score_bruto,
+                peso_total = :peso_total,
                 peso_aplicable = :peso_aplicable,
+                peso_no_aplica = :peso_no_aplica,
+                peso_no_evaluable = :peso_no_evaluable,
                 score_normalizado = :score_normalizado,
                 estado_calidad = :estado_calidad,
                 nivel_riesgo = :nivel_riesgo,
@@ -826,7 +907,10 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
             "score_calidad_ia": analisis.get("score_calidad"),
             "score_final": score_final,
             "score_bruto": analisis.get("score_bruto"),
+            "peso_total": analisis.get("peso_total"),
             "peso_aplicable": analisis.get("peso_aplicable"),
+            "peso_no_aplica": analisis.get("peso_no_aplica"),
+            "peso_no_evaluable": analisis.get("peso_no_evaluable"),
             "score_normalizado": analisis.get("score_normalizado"),
             "estado_calidad": analisis.get("estado_calidad"),
             "nivel_riesgo": analisis.get("nivel_riesgo"),
@@ -1233,8 +1317,12 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
     if isinstance(json_copc_v2, dict) and str(resumen_sgc.get("version_evaluacion") or data.get("version_evaluacion") or "").startswith("2"):
         evaluacion = reparar_evaluacion_contextual_v2(evaluacion, json_copc_v2, data.get("transcripcion") or "")
         score_bruto_ctx, peso_ctx, score_ctx = calcular_score_normalizado(evaluacion)
+        pesos_ctx = calcular_pesos_detalle_evaluacion(evaluacion)
         data["score_bruto"] = score_bruto_ctx
+        data["peso_total"] = pesos_ctx.get("peso_total")
         data["peso_aplicable"] = peso_ctx
+        data["peso_no_aplica"] = pesos_ctx.get("peso_no_aplica")
+        data["peso_no_evaluable"] = pesos_ctx.get("peso_no_evaluable")
         data["score_normalizado"] = score_ctx
         if not data.get("score_final") or str(data.get("estado_revision") or "").upper() == "PENDIENTE":
             data["score_final"] = score_ctx
@@ -1248,6 +1336,16 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
     )
     data["evaluacion_calidad_lista"] = evaluacion
     data["resumen_sgc"] = resumen_sgc
+    puntos_visibles = data.get("puntos_criticos_lista")
+    if puntos_visibles is None:
+        puntos_visibles = cargar_json_lista(data.get("puntos_criticos"))
+    if not puntos_visibles:
+        puntos_visibles = consolidar_puntos_sgc(
+            deduplicar_puntos_criticos(normalizar_hallazgos_no_criticos_v2(None, evaluacion))
+        )
+        data["puntos_criticos_lista"] = puntos_visibles
+        data["puntos_criticos"] = json.dumps(puntos_visibles, ensure_ascii=False)
+        data["total_puntos_criticos"] = len(puntos_visibles)
     data["version_evaluacion"] = resumen_sgc.get("version_evaluacion")
     data["estado_tecnico"] = resumen_sgc.get("estado_tecnico")
     data["tipificaciones_sugeridas"] = resumen_sgc.get("tipificaciones_sugeridas") or []
@@ -1265,6 +1363,46 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
         interlocutores = normalizar_interlocutores_v2({}, data.get("transcripcion") or "")
         data["interlocutores"] = interlocutores
         data["segmentos_interlocutores"] = interlocutores.get("segmentos", [])
+    segmentos_actuales = data.get("segmentos_interlocutores") if isinstance(data.get("segmentos_interlocutores"), list) else []
+    if segmentos_actuales:
+        data["evaluacion_calidad_lista"] = completar_evidencias_desde_segmentos_v3(
+            data.get("evaluacion_calidad_lista") or [],
+            segmentos_actuales,
+        )
+        evaluacion = aplicar_guardas_deterministicas_criterios(segmentos_actuales, data.get("evaluacion_calidad_lista") or [])
+        evaluacion = enriquecer_evaluacion_sgc(
+            evaluacion,
+            score_final=score_final_num,
+            nivel_riesgo=data.get("nivel_riesgo") or data.get("nivel_oportunidad_mejora"),
+            falta_anulante=bool(data.get("falta_anulante")),
+        )
+        score_bruto_guardas, peso_guardas, score_guardas = calcular_score_normalizado(evaluacion)
+        pesos_guardas = calcular_pesos_detalle_evaluacion(evaluacion)
+        data["score_bruto"] = score_bruto_guardas
+        data["peso_total"] = pesos_guardas.get("peso_total")
+        data["peso_aplicable"] = peso_guardas
+        data["peso_no_aplica"] = pesos_guardas.get("peso_no_aplica")
+        data["peso_no_evaluable"] = pesos_guardas.get("peso_no_evaluable")
+        data["score_normalizado"] = score_guardas
+        if not data.get("score_final") or str(data.get("estado_revision") or "").upper() == "PENDIENTE":
+            data["score_final"] = score_guardas
+            data["score_calidad"] = score_guardas
+        score_final_num = score_guardas
+        resumen_sgc = construir_resumen_sgc(
+            evaluacion,
+            resumen_sgc,
+            score_final=score_final_num,
+            nivel_riesgo=data.get("nivel_riesgo") or data.get("nivel_oportunidad_mejora"),
+            falta_anulante=bool(data.get("falta_anulante")),
+        )
+        puntos_visibles = consolidar_puntos_sgc(
+            deduplicar_puntos_criticos(normalizar_hallazgos_no_criticos_v2(None, evaluacion))
+        )
+        data["evaluacion_calidad_lista"] = evaluacion
+        data["resumen_sgc"] = resumen_sgc
+        data["puntos_criticos_lista"] = puntos_visibles
+        data["puntos_criticos"] = json.dumps(puntos_visibles, ensure_ascii=False)
+        data["total_puntos_criticos"] = len(puntos_visibles)
     data["requiere_feedback"] = bool(data.get("requiere_feedback") or resumen_sgc.get("requiere_feedback"))
     data["requiere_coaching"] = bool(data.get("requiere_coaching") or resumen_sgc.get("requiere_coaching"))
     data["estado_feedback"] = data.get("estado_feedback") or ("PENDIENTE" if data["requiere_feedback"] else "NO_REQUIERE")

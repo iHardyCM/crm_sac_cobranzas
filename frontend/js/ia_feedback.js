@@ -1,6 +1,6 @@
 ﻿const IA_FEEDBACK_BASE = obtenerBaseUrlIaFeedback();
 
-const IA_FEEDBACK_JS_VERSION = "FINDINGS_EVIDENCE_GUARD_20260807A";
+const IA_FEEDBACK_JS_VERSION = "IA_ENGINE_TIMEOUT_CACHE_20260810A";
 console.info("[IA Feedback]", IA_FEEDBACK_JS_VERSION);
 
 let historialIa = [];
@@ -188,7 +188,7 @@ async function subirYAnalizarIa() {
 
         const analizar = await fetchIa(`${IA_FEEDBACK_BASE}/${uploadData.id_feedback}/analizar`, {
             method: "POST",
-        }, 180000);
+        }, 900000);
         const data = await leerJsonSeguro(analizar);
         if (!analizar.ok) throw new Error(data.detail || data.error || "No se pudo analizar la llamada.");
 
@@ -461,7 +461,7 @@ function renderResultadoIa(data) {
     setText("resultadoGestionIa", data.resultado_gestion || "-");
     setText("objecionIa", data.objecion_principal || "-");
     const scoreMostrado = data.score_final ?? data.score_normalizado ?? data.score_calidad;
-    setText("scoreCalidadIa", scoreMostrado != null ? `${Number(scoreMostrado).toFixed(1)} / 100` : "-");
+    setText("scoreCalidadIa", scoreMostrado != null ? `${Number(scoreMostrado).toFixed(1)} / 100${detallePesoScoreIa(data)}` : "-");
     setText("scorePreliminarIa", data.score_calidad_ia != null ? `${Number(data.score_calidad_ia).toFixed(1)} / 100` : "-");
     setText("nivelRiesgoDetalleIa", formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora));
     setText("faltaAnulanteIa", data.falta_anulante ? "Si" : "No");
@@ -472,18 +472,17 @@ function renderResultadoIa(data) {
     setText("recomendacionIa", data.recomendaciones || "-");
     setText("guionIa", data.guion_sugerido || "-");
 
-    pintarEvaluacionCalidad(data.evaluacion_calidad_lista || []);
-    pintarResumenSegmentos(data.evaluacion_calidad_lista || []);
-    const evaluacionSgc = Array.isArray(data.evaluacion_calidad_lista) && data.evaluacion_calidad_lista.length
-        ? data.evaluacion_calidad_lista
-        : (Array.isArray(data.evaluacion_calidad) ? data.evaluacion_calidad : []);
+    const evaluacionItems = evaluacionCalidadItemsIa(data);
+    const hallazgosSgc = hallazgosSgcItemsIa(data);
+    pintarEvaluacionCalidad(evaluacionItems);
+    pintarResumenSegmentos(evaluacionItems);
     pintarCabeceraFichaSgcIa(data);
-    pintarFichaAuditoriaSgcIa(evaluacionSgc);
+    pintarFichaAuditoriaSgcIa(hallazgosSgc.length ? hallazgosSgc : evaluacionItems);
     pintarCierreFichaSgcIa(data);
-    pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(data.evaluacion_calidad_lista || []));
+    pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(evaluacionItems));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
     pintarLista("alertasIa", data.alertas_lista || []);
-    pintarTopCriticosIa(data.puntos_criticos_lista || []);
+    pintarTopCriticosIa(hallazgosSgc);
     pintarEvidenciasDetalleIa(data);
     pintarEvidenciaDestacadaIa(data.evidencias_clave_lista || [], data);
     pintarCalibracionDetalleIa(data);
@@ -542,8 +541,8 @@ function pintarFichaRevisionIa(data = {}) {
     setText("resumenEjecutivoFichaIa", data.resumen || "Sin resumen ejecutivo disponible.");
     pintarAudioYTranscripcionFichaIa(data);
     pintarClasificacionFichaIa(data);
-    pintarDimensionesFichaIa(data.evaluacion_calidad_lista || [], data);
-    pintarHallazgosAcordeonIa(data.evaluacion_calidad_lista || [], data);
+    pintarDimensionesFichaIa(evaluacionCalidadItemsIa(data), data);
+    pintarHallazgosAcordeonIa(evaluacionCalidadItemsIa(data), data);
     pintarFeedbackObservacionesFichaIa(data);
     limpiarDecisionSupervisorIa(data);
     actualizarDecisionSupervisorIa();
@@ -746,8 +745,9 @@ function pintarDimensionesFichaIa(items = [], data = {}) {
 function pintarHallazgosAcordeonIa(items = [], data = {}) {
     const el = document.getElementById("hallazgosAcordeonIa");
     if (!el) return;
+    const fuente = hallazgosSgcItemsIa(data).length ? hallazgosSgcItemsIa(data) : items;
     const normalizados = repararHallazgosContextualesFichaIa(
-        items.map(itemSgcIa).map(normalizarHallazgoFichaIa),
+        fuente.map(itemSgcIa).map(normalizarHallazgoFichaIa),
         data,
     );
     const rowsBase = normalizados
@@ -760,13 +760,6 @@ function pintarHallazgosAcordeonIa(items = [], data = {}) {
     const totalNoCriticos = rows.filter(esHallazgoNoCriticoFichaIa).length;
     const totalCriticosResumen = rowsResumen.filter(esGrupoCriticoSgcFichaIa).length;
     const totalNoCriticosResumen = rowsResumen.filter(esHallazgoNoCriticoFichaIa).length;
-    console.table(rowsResumen.map(item => ({
-        grupo: item.grupo_error_sgc,
-        factor: criterioHallazgoIa(item),
-        calificacion: calificacionSgcVisibleFichaIa(resultadoHallazgoFichaIa(item)),
-        motivo: detalleHallazgoEnriquecidoIa(item),
-        evidencia: evidenciaHallazgoFichaIa(item, data),
-    })));
     const maxIndex = Math.max(0, grupos.reduce((best, grupo, index) => criticidadGrupoIa(grupo.rows) > criticidadGrupoIa(grupos[best]?.rows || []) ? index : best, 0));
     auditoriaFichaIa = {
         criterio: "factor_sgc válido; fallback item COPC",
@@ -837,7 +830,7 @@ function prioridadHallazgoResumenIa(item = {}) {
     if (factor.includes("manejo de objeciones")) score += 18;
     if (factor.includes("induccion a pago") || factor.includes("induccion al pago")) score += 18;
     if (factor.includes("cierre verificable")) score += 18;
-    if (factor.includes("pasar a otra instancia") || factor.includes("presion legal ambigua") || factor.includes("lenguaje claro y presion profesional")) score += 18;
+    if (factor.includes("lenguaje claro y presion profesional")) score += 18;
     if (factor.includes("presentacion adaptacion") || factor.includes("presentacion y adaptacion")) score += 12;
     if (factor.includes("claridad de montos")) score += 12;
     if (factor.includes("empatia aplicada")) score += 12;
@@ -896,188 +889,24 @@ function normalizarHallazgoFichaIa(item = {}) {
     const base = { ...item };
     base.grupo_error_sgc = normalizarGrupoSgcFichaIa(base.grupo_error_sgc, base);
     base.factor_sgc = criterioHallazgoIa(base);
-    const factor = normalizarTextoComparacionIa(base.factor_sgc);
-    const evidencia = normalizarTextoComparacionIa(evidenciaHallazgoFichaIa(base, resultadoActualIa || {}));
-    if (factor.includes("lenguaje claro") && evidencia.includes("pasar a otra instancia")) {
-        base.grupo_error_sgc = "Errores críticos de cumplimiento";
-        base.factor_sgc = "Lenguaje claro y presión profesional";
-        base.resultado = "Requiere revisión";
-        base.calificacion = "Requiere revisión";
-        base.motivo = "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.";
-        base.requiere_revision = true;
-        base.puede_descalificar = false;
-        base.falta_anulante = false;
-    }
     base.calificacion = resultadoHallazgoFichaIa(base);
     return base;
 }
 
+function detallePesoScoreIa(data = {}) {
+    const bruto = Number(data.score_bruto);
+    const aplicable = Number(data.peso_aplicable);
+    if (!Number.isFinite(bruto) || !Number.isFinite(aplicable) || aplicable <= 0) return "";
+    const noAplica = Number(data.peso_no_aplica || 0);
+    const noEvaluable = Number(data.peso_no_evaluable || 0);
+    const extras = [];
+    if (noAplica > 0) extras.push(`${formatoPeso(noAplica)} no aplica`);
+    if (noEvaluable > 0) extras.push(`${formatoPeso(noEvaluable)} no evaluable`);
+    return ` · ${formatoPeso(bruto)}/${formatoPeso(aplicable)} pts aplicables${extras.length ? ` (${extras.join(", ")})` : ""}`;
+}
+
 function repararHallazgosContextualesFichaIa(items = [], data = {}) {
-    const salida = items.map(item => ({ ...item }));
-    const transcripcion = String(data.transcripcion || "");
-    const transKey = normalizarTextoComparacionIa(transcripcion);
-    const faltaQuote = extraerCitaFichaIa(transcripcion, [
-        /Parece que no es empresario[^.?!]{0,180}/i,
-        /no tiene plata ni para pagar[^.?!]{0,120}/i,
-    ]);
-    const propuestaQuote = extraerCitaFichaIa(transcripcion, [
-        /Yo no tengo que proponer nada[^.?!]{0,180}/i,
-    ]);
-    const fraccionamientoQuote = extraerCitaFichaIa(transcripcion, [
-        /Lo que podr.{1,4}a hacer tambi.{1,4}n es generar un fraccionamiento[^.?!]{0,180}/i,
-        /Lo que podr[ií]a hacer tambi[eé]n es generar un fraccionamiento[^.?!]{0,180}/i,
-    ]);
-    const legalQuote = extraerCitaFichaIa(transcripcion, [
-        /Las leyes le van a obligar[^.?!]{0,180}/i,
-        /instancia judicial[^.?!]{0,180}/i,
-        /distancia judicial[^.?!]{0,180}/i,
-        /pasar a otra instancia[^.?!]{0,180}/i,
-    ]);
-    const titularidadOk = /con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame|si senor|si senorita)/i.test(transKey)
-        || /me comunico con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)/i.test(transKey)
-        || /hablo con\s+.{2,80}\?\s*(si|ella habla|soy yo|con ella|digame)/i.test(transKey);
-
-    if (titularidadOk) {
-        const titularidad = buscarHallazgoPorCodigoIa(salida, "1.3");
-        if (titularidad) {
-            Object.assign(titularidad, {
-                resultado: "Cumple",
-                calificacion: "Cumple",
-                grupo_error_sgc: "Errores críticos de cumplimiento",
-                factor_sgc: "Validación de titularidad",
-                hallazgo: "El interlocutor confirma directa o indirectamente ser la persona consultada.",
-                evidencia: extraerCitaFichaIa(transcripcion, [/con\s+.{2,80}\?\s*.{0,40}/i]) || titularidad.evidencia,
-                puede_descalificar: false,
-                falta_anulante: false,
-                requiere_revision: false,
-            });
-        }
-    }
-
-    salida.forEach(item => {
-        const factor = normalizarTextoComparacionIa(`${item.factor_sgc || ""} ${item.item || ""}`);
-        const evidencia = evidenciaHallazgoFichaIa(item, data);
-        if (factor.includes("lenguaje claro") && normalizarTextoComparacionIa(evidencia).includes("pasar a otra instancia")) {
-            item.resultado = "Requiere revisión";
-            item.calificacion = "Requiere revisión";
-            item.grupo_error_sgc = "Errores críticos de cumplimiento";
-            item.factor_sgc = "Lenguaje claro y presión profesional";
-            item.motivo = "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.";
-            item.hallazgo = "Debe validarse si la referencia a otra instancia corresponde al discurso autorizado.";
-            item.requiere_revision = true;
-            item.puede_descalificar = false;
-            item.falta_anulante = false;
-        }
-    });
-
-    if (faltaQuote) {
-        let maltrato = buscarHallazgoPorCodigoIa(salida, "5.1")
-            || salida.find(item => normalizarTextoComparacionIa(`${item.factor_sgc} ${item.item} ${item.hallazgo}`).includes("maltrato"));
-        if (!maltrato) {
-            maltrato = {
-                codigo: "5.1",
-                item: "5.1 Respeto y ausencia de juicio",
-                segmento: "Experiencia y ética",
-                peso: 2,
-                nota: 0,
-            };
-            salida.push(maltrato);
-        }
-        Object.assign(maltrato, {
-            resultado: "No cumple",
-            calificacion: "No cumple",
-            grupo_error_sgc: "Errores críticos del usuario final",
-            factor_sgc: "Falta grave al usuario final / Maltrato psicológico",
-            hallazgo: "Maltrato psicológico: desacredita la capacidad económica del cliente.",
-            motivo: "Falta anulante por expresión humillante hacia el cliente.",
-            evidencia: faltaQuote,
-            frase_textual: faltaQuote,
-            gravedad: "ANULANTE",
-            severidad: "ANULANTE",
-            puede_descalificar: true,
-            falta_anulante: true,
-            requiere_revision: false,
-            requiere_feedback: true,
-            requiere_coaching: true,
-        });
-    }
-
-    if (propuestaQuote) {
-        const propuesta = buscarHallazgoPorCodigoIa(salida, "3.1");
-        if (propuesta) {
-            Object.assign(propuesta, {
-                resultado: "No cumple",
-                calificacion: "No cumple",
-                grupo_error_sgc: "Errores críticos del negocio",
-                factor_sgc: "Presentación de propuesta",
-                hallazgo: "No presenta alternativas de pago.",
-                evidencia: propuestaQuote,
-                requiere_revision: false,
-            });
-        }
-    }
-
-    if (legalQuote) {
-        const presion = buscarHallazgoPorCodigoIa(salida, "5.3") || buscarHallazgoPorCodigoIa(salida, "1.4");
-        if (presion) {
-            Object.assign(presion, {
-                resultado: "Requiere revisión",
-                calificacion: "Requiere revisión",
-                grupo_error_sgc: "Errores críticos de cumplimiento",
-                factor_sgc: "Lenguaje claro y presión profesional",
-                motivo: "La expresión 'pasar a otra instancia' es ambigua y requiere validar el discurso autorizado.",
-                hallazgo: "Debe validarse si la referencia a otra instancia corresponde al discurso autorizado.",
-                evidencia: legalQuote,
-                puede_descalificar: false,
-                falta_anulante: false,
-                requiere_revision: true,
-            });
-        }
-    }
-
-    if (fraccionamientoQuote && !salida.some(item => normalizarTextoComparacionIa(item.factor_sgc || "").includes("presentacion y adaptacion"))) {
-        const propuesta = buscarHallazgoPorCodigoIa(salida, "3.1") || buscarHallazgoPorCodigoIa(salida, "3.4");
-        const destino = propuesta || {
-            codigo_criterio: "3.1",
-            codigo: "3.1",
-            item: "3.1 Presentación clara de la propuesta",
-            segmento: "Gestión de solución",
-            peso: 6,
-        };
-        Object.assign(destino, {
-            resultado: "Parcial",
-            calificacion: "Parcial",
-            grupo_error_sgc: "Errores no críticos",
-            factor_sgc: "Presentación y adaptación de la propuesta",
-            motivo: "El agente ofreció fraccionamiento, pero no explicó cómo funcionaría ni adaptó la alternativa a la capacidad del cliente.",
-            hallazgo: "El agente ofreció fraccionamiento, pero no explicó cómo funcionaría ni adaptó la alternativa a la capacidad del cliente.",
-            evidencia: fraccionamientoQuote,
-            frase_textual: fraccionamientoQuote,
-            requiere_revision: true,
-            puede_descalificar: false,
-            falta_anulante: false,
-        });
-        if (!propuesta) salida.push(destino);
-    }
-
-    const gestionAplica = transKey.includes("deuda") || transKey.includes("pagar") || transKey.includes("abono") || transKey.includes("proponer");
-    if (gestionAplica) {
-        ["3.1", "3.4", "3.5", "3.6", "4.1", "4.2", "4.3", "4.4", "4.5"].forEach(codigo => {
-            const item = buscarHallazgoPorCodigoIa(salida, codigo);
-            if (!item) return;
-            const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
-            if (!resultado.includes("no aplica")) return;
-            item.resultado = propuestaQuote ? "No cumple" : "Requiere revisión";
-            item.calificacion = item.resultado;
-            item.aplica = true;
-            item.evidencia = propuestaQuote || item.evidencia || "";
-            item.grupo_error_sgc = item.grupo_error_sgc || "Errores críticos del negocio";
-            item.factor_sgc = item.factor_sgc || criterioHallazgoIa(item);
-            item.requiere_revision = !propuestaQuote;
-        });
-    }
-
-    return salida.map(item => {
+    return items.map(item => {
         const copia = { ...item };
         if (esHallazgoAccionableFichaIa(copia) && !evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(copia, data))) {
             copia.resultado = "Requiere revisión";
@@ -1091,7 +920,8 @@ function repararHallazgosContextualesFichaIa(items = [], data = {}) {
 }
 
 function buscarHallazgoPorCodigoIa(items = [], codigo = "") {
-    return items.find(item => codigoCriterioHallazgoIa(item) === normalizarTextoComparacionIa(codigo));
+    const clave = normalizarTextoComparacionIa(codigo);
+    return items.find(item => normalizarTextoComparacionIa(codigoCriterioHallazgoIa(item)) === clave);
 }
 
 function extraerCitaFichaIa(texto = "", patrones = []) {
@@ -1113,7 +943,9 @@ function normalizarGrupoSgcFichaIa(grupo, item = {}) {
 function criterioHallazgoIa(item = {}) {
     const candidatos = [
         item.factor_sgc,
+        item.factor,
         item.nombre_criterio,
+        item.nombre,
         item.item_copc,
         itemCopcVisibleIa(item),
         item.item,
@@ -1128,6 +960,8 @@ function criterioHallazgoIa(item = {}) {
 
 function resultadoHallazgoFichaIa(item = {}) {
     const resultado = String(item.calificacion || item.resultado || "").trim();
+    if (/requiere[_\s-]*revision|requiere[_\s-]*revisión|revision humana|revisión humana/i.test(resultado)) return "Requiere revisión";
+    if (/no evaluable/i.test(resultado)) return "No evaluable";
     if (/no aplica/i.test(resultado)) return "No aplica";
     if (/no evidenciado/i.test(resultado)) return "No evidenciado";
     if (/no cumple/i.test(resultado)) return "No cumple";
@@ -1138,6 +972,7 @@ function resultadoHallazgoFichaIa(item = {}) {
 
 function calificacionSgcVisibleFichaIa(resultado = "") {
     const texto = String(resultado || "").toLowerCase();
+    if (texto.includes("no evaluable")) return "NO EVALUABLE";
     if (texto.includes("no aplica")) return "NA - NO APLICA";
     if (texto.includes("no cumple") || texto.includes("no evidenciado")) return "NC - NO CUMPLE";
     if (texto.includes("revision") || texto.includes("revisión") || texto.includes("parcial")) return "REVISIÓN HUMANA";
@@ -1283,12 +1118,20 @@ function codigoCriterioHallazgoIa(item = {}) {
         item.codigo_criterio,
         item.codigo,
         item.codigo_copc,
+        String(item.item || "").match(/^\s*((?:PENC|PECUF|PECN|PECC)[\s._-]*\d+)/i)?.[1],
+        String(item.item_copc || "").match(/^\s*((?:PENC|PECUF|PECN|PECC)[\s._-]*\d+)/i)?.[1],
+        String(item.criterio || "").match(/^\s*((?:PENC|PECUF|PECN|PECC)[\s._-]*\d+)/i)?.[1],
         String(item.item || "").match(/^\s*(\d+\.\d+)/)?.[1],
         String(item.item_copc || "").match(/^\s*(\d+\.\d+)/)?.[1],
         String(item.criterio || "").match(/^\s*(\d+\.\d+)/)?.[1],
     ];
     const codigo = candidatos.find(valor => String(valor || "").trim());
-    return codigo ? normalizarTextoComparacionIa(codigo) : "";
+    if (!codigo) return "";
+    const texto = String(codigo).trim().toUpperCase();
+    const mibanco = texto.match(/^(PENC|PECUF|PECN|PECC)[\s._-]*(\d+)$/);
+    if (mibanco) return `${mibanco[1]}.${mibanco[2]}`;
+    const legacy = texto.match(/^(\d+)[\s._-]+(\d+)$/);
+    return legacy ? `${legacy[1]}.${legacy[2]}` : texto;
 }
 
 function normalizarTextoComparacionIa(value = "") {
@@ -1355,10 +1198,13 @@ function mostrarTranscripcionIa(tipo = "limpia") {
         const tieneTimestamp = timestampValidoIa(item.momento);
         const tieneHablante = item.hablante && item.hablante !== "SIN DIARIZACIÓN";
         const labelMomento = item.aproximado ? `≈ ${item.momento}` : item.momento;
+        const debugSpeaker = debugDiarizacionIa() && item.speakerOriginal
+            ? `<small class="transcript-speaker-debug">${escapeHtml(item.speakerOriginal)}</small>`
+            : "";
         return `
         <article class="transcript-line ${!tieneTimestamp ? "no-timestamp" : ""} ${!tieneHablante ? "no-speaker" : ""}">
             ${tieneTimestamp ? `<button type="button" ${item.aproximado ? "title=\"Momento aproximado calculado desde la duración del audio\"" : ""} onclick="irAEvidenciaAudioIa('${encodeURIComponent(item.momento)}', true)">${escapeHtml(labelMomento)}</button>` : ""}
-            ${tieneHablante ? `<span class="${item.hablante === "CLIENTE" ? "client" : item.hablante === "AGENTE" ? "agent" : "neutral"}">${escapeHtml(item.hablante)}</span>` : ""}
+            ${tieneHablante ? `<span class="${item.hablante === "CLIENTE" ? "client" : item.hablante === "AGENTE" ? "agent" : "neutral"}">${escapeHtml(item.hablante)}${debugSpeaker}</span>` : ""}
             <p>${escapeHtml(item.texto)}</p>
         </article>
     `;
@@ -1367,21 +1213,37 @@ function mostrarTranscripcionIa(tipo = "limpia") {
 
 function parseTranscripcionFichaIa(texto = "", tipo = "limpia", data = {}) {
     if (tipo === "literal") {
+        const segmentos = segmentosTranscripcionV2Ia(data);
+        if (segmentos.length && esDiarizacionOriginalIa(data, texto)) {
+            const continuoSegmentos = segmentos
+                .slice()
+                .sort(ordenSegmentosCanonicosIa)
+                .map(segmento => segmento.texto_original || segmento.texto || segmento.transcripcion || segmento.frase || "")
+                .filter(Boolean)
+                .join(" ")
+                .replace(/\s+/g, " ")
+                .trim();
+            return continuoSegmentos ? [{ momento: null, hablante: "", texto: continuoSegmentos, index: 0 }] : [];
+        }
         const continuo = String(texto || "").replace(/\s+/g, " ").trim();
         return continuo ? [{ momento: null, hablante: "", texto: continuo, index: 0 }] : [];
     }
     const segmentos = segmentosTranscripcionV2Ia(data);
     if (segmentos.length) {
-        const visibles = segmentos.slice(0, tipo === "limpia" ? 30 : 120);
+        const diarizada = esDiarizacionOriginalIa(data, texto);
+        const visibles = diarizada
+            ? segmentos.slice().sort(ordenSegmentosCanonicosIa)
+            : segmentos.slice(0, tipo === "limpia" ? 30 : 120);
         const duracionAudio = duracionAudioRevisionIa();
         return visibles.map((segmento, index) => {
             const momentoReal = segmento.momento || segmento.timestamp || segmento.inicio || formatoTimestampDesdeSegundosIa(segmento.inicio_segundos);
-            const momentoEstimado = momentoReal ? null : timestampEstimadoSegmentoIa(visibles, index, duracionAudio);
+            const momentoEstimado = momentoReal || diarizada ? null : timestampEstimadoSegmentoIa(visibles, index, duracionAudio);
             return {
                 momento: momentoReal || momentoEstimado,
                 aproximado: !momentoReal && Boolean(momentoEstimado),
-                hablante: hablanteTranscripcionIa(segmento.hablante || segmento.speaker || segmento.rol),
-                texto: segmento.texto || segmento.transcripcion || segmento.frase || "",
+                hablante: hablanteTranscripcionIa(segmento.hablante || segmento.rol || segmento.speaker_original || "NO_DETERMINADO"),
+                texto: segmento.texto_limpio || segmento.texto_original || segmento.texto || segmento.transcripcion || segmento.frase || "",
+                speakerOriginal: segmento.speaker_original || segmento.speakerOriginal || segmento.speaker || "",
                 index,
             };
         }).filter(item => item.texto);
@@ -1402,6 +1264,27 @@ function segmentosTranscripcionV2Ia(data = {}) {
     return Array.isArray(segmentos) ? segmentos : [];
 }
 
+function esDiarizacionOriginalIa(data = {}, texto = "") {
+    const metodo = String(data.interlocutores?.metodo || data.metodo_interlocutores || "").toUpperCase();
+    return metodo === "DIARIZACION_ORIGINAL" || String(texto || "").includes("#TRANSCRIPCION_DIARIZADA_V1");
+}
+
+function ordenSegmentosCanonicosIa(a = {}, b = {}) {
+    const inicioA = Number.isFinite(Number(a.inicio_segundos)) ? Number(a.inicio_segundos) : Number.POSITIVE_INFINITY;
+    const inicioB = Number.isFinite(Number(b.inicio_segundos)) ? Number(b.inicio_segundos) : Number.POSITIVE_INFINITY;
+    if (inicioA !== inicioB) return inicioA - inicioB;
+    return Number(a.segmento_id || a.orden || 0) - Number(b.segmento_id || b.orden || 0);
+}
+
+function debugDiarizacionIa() {
+    try {
+        const params = new URLSearchParams(window.location.search || "");
+        return params.get("debug_diarizacion") === "1" || localStorage.getItem("iaFeedbackDebugDiarizacion") === "1";
+    } catch (_) {
+        return false;
+    }
+}
+
 function hablanteTranscripcionIa(value = "") {
     const texto = normalizarTextoComparacionIa(value);
     if (texto.includes("agente") || texto.includes("asesor") || texto.includes("gestor")) return "AGENTE";
@@ -1413,8 +1296,28 @@ function tieneDiarizacionRealIa(data = {}) {
     return segmentosTranscripcionV2Ia(data).length > 0;
 }
 
+function evaluacionCalidadItemsIa(data = {}) {
+    if (Array.isArray(data.evaluacion_calidad_lista) && data.evaluacion_calidad_lista.length) {
+        return data.evaluacion_calidad_lista;
+    }
+    if (Array.isArray(data.evaluacion_calidad) && data.evaluacion_calidad.length) {
+        return data.evaluacion_calidad;
+    }
+    return [];
+}
+
+function hallazgosSgcItemsIa(data = {}) {
+    if (Array.isArray(data.puntos_criticos_lista) && data.puntos_criticos_lista.length) {
+        return data.puntos_criticos_lista;
+    }
+    if (Array.isArray(data.puntos_criticos) && data.puntos_criticos.length) {
+        return data.puntos_criticos;
+    }
+    return [];
+}
+
 function scoreTecnicoFichaIa(data = {}) {
-    const scoreCalculado = calcularScoreTecnicoDesdeCriteriosIa(data.evaluacion_calidad_lista || []);
+    const scoreCalculado = calcularScoreTecnicoDesdeCriteriosIa(evaluacionCalidadItemsIa(data));
     if (scoreCalculado != null) return scoreCalculado;
     const campos = [
         data.score_tecnico,
@@ -1437,11 +1340,13 @@ function calcularScoreTecnicoDesdeCriteriosIa(items = []) {
         const item = itemSgcIa(raw);
         const pesoItem = Number(item.peso ?? item.puntaje_maximo ?? 0);
         const notaItem = Number(item.nota ?? item.puntaje_obtenido ?? 0);
+        const resultado = resultadoHallazgoFichaIa(item).toLowerCase();
         if (!Number.isFinite(pesoItem) || pesoItem <= 0) return;
+        if (resultado.includes("no aplica") || resultado.includes("no evaluable")) return;
         peso += pesoItem;
         if (Number.isFinite(notaItem)) nota += Math.max(0, Math.min(pesoItem, notaItem));
     });
-    if (peso < 50) return null;
+    if (peso <= 0) return null;
     return peso === 100 ? nota : (nota / peso) * 100;
 }
 
@@ -1461,7 +1366,7 @@ function hallazgoAnulanteFichaIa(data = {}) {
     const candidatos = [
         ...(Array.isArray(data.puntos_criticos_lista) ? data.puntos_criticos_lista : []),
         ...(Array.isArray(data.errores_criticos) ? data.errores_criticos : []),
-        ...(Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : []),
+        ...evaluacionCalidadItemsIa(data),
     ];
     return candidatos.find(item => {
         const texto = normalizarTextoComparacionIa(`${item.severidad || ""} ${item.gravedad || ""} ${item.categoria || ""} ${item.motivo || ""} ${item.hallazgo || ""}`);
@@ -2437,7 +2342,12 @@ function clasificarSgcItemIa(item = {}) {
 }
 
 function itemCopcVisibleIa(item) {
-    const texto = String(item?.item || "-");
+    const codigo = codigoCriterioHallazgoIa(item || {});
+    const nombre = String(item?.nombre || item?.criterio || item?.item || item?.item_copc || "").trim();
+    if (/^(PENC|PECUF|PECN|PECC)\.\d+$/i.test(codigo)) {
+        return `${codigoCriterioDisplayIa(codigo)} ${nombre || "Criterio Mibanco"}`.trim();
+    }
+    const texto = String(item?.item || item?.criterio || "-");
     const prefijo = texto.match(/^\s*(\d+\.\d+)/)?.[1];
     const match = ITEM_COPC_DISPLAY_IA.find(([codigo]) => codigo === prefijo);
     return match ? match[1] : texto;
@@ -2446,7 +2356,8 @@ function itemCopcVisibleIa(item) {
 function itemSgcIa(item = {}) {
     const clasif = clasificarSgcItemIa(item);
     const grupo = esValorNoAplicableIa(item.grupo_error_sgc) ? clasif.grupo : (item.grupo_error_sgc || clasif.grupo);
-    const factor = esValorNoAplicableIa(item.factor_sgc) ? clasif.factor : (item.factor_sgc || clasif.factor);
+    const factorBase = item.factor_sgc || item.factor;
+    const factor = esValorNoAplicableIa(factorBase) ? clasif.factor : (factorBase || clasif.factor);
     const calificacion = item.calificacion || normalizarCalificacionItemIa(item);
     return {
         ...item,
@@ -2475,16 +2386,22 @@ function clasificarGrupoBaseSgcIa(item = {}) {
 
 function normalizarCalificacionItemIa(item = {}) {
     const resultado = String(item.resultado || "").toLowerCase();
+    const estado = String(item.estado || item.estado_tecnico || "").toUpperCase();
+    if (resultado.includes("requiere_revision") || resultado.includes("requiere revision") || resultado.includes("requiere revisión") || resultado.includes("revision humana") || resultado.includes("revisión humana")) return "Requiere revisión";
+    if (resultado.includes("no evaluable")) return "No evaluable";
     if (resultado.includes("no aplica")) return "No aplica";
     if (resultado.includes("parcial")) return "Parcial";
     if (resultado.includes("no cumple") || resultado.includes("no evidenciado")) return "No cumple";
     if (resultado.includes("cumple")) return "Cumple";
+    if (estado === "NO_EVALUABLE") return "No evaluable";
+    if (estado === "NO_APLICA") return "No aplica";
+    if (estado === "REQUIERE_REVISION") return "Requiere revisión";
     return Number(item.nota || 0) === 0 ? "No cumple" : "Parcial";
 }
 
 function requiereFeedbackItemIa(item = {}) {
     const cal = String(item.calificacion || "").toLowerCase();
-    return cal && !["cumple", "no aplica"].includes(cal);
+    return cal && !["cumple", "no aplica", "no evaluable"].includes(cal);
 }
 
 function requiereCoachingItemIa(item = {}) {
@@ -2494,7 +2411,7 @@ function requiereCoachingItemIa(item = {}) {
 }
 
 function itemsSgcDetalleIa(row = {}) {
-    const items = row.evaluacion_calidad_lista || [];
+    const items = evaluacionCalidadItemsIa(row);
     if (items.length) return items.map(itemSgcIa);
     return (row.brechas_items || []).map(itemSgcIa);
 }
@@ -2504,7 +2421,7 @@ function resumenSgcDesdeItemsIa(items = []) {
     items.forEach(raw => {
         const item = itemSgcIa(raw);
         const cal = String(item.calificacion || "").toLowerCase();
-        if (!esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica"].includes(cal)) {
+        if (!esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica", "no evaluable"].includes(cal) && !cal.includes("revision") && !cal.includes("revisión")) {
             resumen[item.grupo_error_sgc] = (resumen[item.grupo_error_sgc] || 0) + 1;
         }
     });
@@ -4587,7 +4504,7 @@ function criteriosTecnicosRecalibracionIa(data = {}) {
     const recalibracionesActivas = new Set((data.recalibraciones_lista || [])
         .filter(item => /pendiente|enviada|analisis|análisis/i.test(String(item.estado || "")))
         .map(item => normalizarTextoComparacionIa(item.item_cuestionado || "")));
-    return (data.evaluacion_calidad_lista || [])
+    return evaluacionCalidadItemsIa(data)
         .map(itemSgcIa)
         .map(item => {
             const codigo = codigoCriterioHallazgoIa(item);
@@ -4616,8 +4533,11 @@ function criteriosTecnicosRecalibracionIa(data = {}) {
 
 function nombreEspecificoCriterioRecalibracionIa(item = {}, codigo = "") {
     const codigoLimpio = String(codigo || codigoCriterioHallazgoIa(item) || "").trim();
-    const textoItem = String(item.item || item.item_copc || item.nombre_criterio || item.criterio || "").trim();
-    const sinCodigo = textoItem.replace(/^\s*\d+\.\d+\s*/, "").trim();
+    const textoItem = String(item.nombre || item.item || item.item_copc || item.nombre_criterio || item.criterio || "").trim();
+    const sinCodigo = textoItem
+        .replace(/^\s*(?:PENC|PECUF|PECN|PECC)[\s._-]*\d+\s*/i, "")
+        .replace(/^\s*\d+\.\d+\s*/, "")
+        .trim();
     const factor = String(item.factor_sgc || "").trim();
     const genericosPorCodigo = [
         factor,
@@ -4984,9 +4904,10 @@ function badgeResultadoCalidadIa(resultado) {
     let clase = "neutro";
     if (key.includes("cumple") && !key.includes("no cumple")) clase = "cumple";
     if (key.includes("parcial")) clase = "parcial";
+    if (key.includes("revision") || key.includes("revisión")) clase = "parcial";
     if (key.includes("no cumple")) clase = "nocumple";
     if (key.includes("no evidenciado")) clase = "noevidenciado";
-    if (key.includes("no aplica")) clase = "noaplica";
+    if (key.includes("no aplica") || key.includes("no evaluable")) clase = "noaplica";
     return `<span class="quality-result-badge ${clase}">${escapeHtml(texto)}</span>`;
 }
 
@@ -5046,6 +4967,8 @@ function claseFilaEvaluacion(item) {
     const nota = Number(item.nota || 0);
     const resultado = String(item.resultado || "").toUpperCase();
     const texto = `${item.hallazgo || ""} ${item.evidencia || ""} ${item.recomendacion || ""}`;
+    if (resultado.includes("NO APLICA") || resultado.includes("NO EVALUABLE")) return "";
+    if (resultado.includes("REVISION") || resultado.includes("REVISIÓN")) return "warning-row";
     if (nota === 0 || resultado.includes("NO CUMPLE") || resultado.includes("NO EVIDENCIADO") || esAlertaCritica(texto)) {
         return "critical-row";
     }
@@ -5094,7 +5017,7 @@ function pintarResumenSegmentos(items) {
 function pintarResumenSgcDetalleIa(data = {}) {
     const el = document.getElementById("resumenSgcIa");
     if (!el) return;
-    const items = (data.evaluacion_calidad_lista || []).map(itemSgcIa);
+    const items = evaluacionCalidadItemsIa(data).map(itemSgcIa);
     const resumen = data.resumen_sgc && typeof data.resumen_sgc === "object"
         ? {
             "Errores críticos del negocio": data.resumen_sgc.errores_criticos_negocio || 0,
@@ -5158,7 +5081,7 @@ function pintarCabeceraFichaSgcIa(data = {}) {
 }
 
 function pintarCierreFichaSgcIa(data = {}) {
-    const items = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const items = hallazgosSgcItemsIa(data).length ? hallazgosSgcItemsIa(data) : evaluacionCalidadItemsIa(data);
     const prioridad = seleccionarFeedbackAlarmanteSgcIa(items, data);
     setText("fichaFeedbackSgcIa", prioridad || data.recomendaciones || data.recomendacion_feedback_supervisor || "Sin feedback crítico sugerido registrado.");
     setText("fichaObservacionSgcIa", data.comentario_feedback || data.comentario_supervisor || "Sin observación del supervisor registrada.");
@@ -5244,10 +5167,11 @@ function calificacionMasSeveraSgcIa(items = []) {
 
 function consolidarMotivoFactorSgcIa(factor = "", motivos = [], cantidad = 0) {
     const factorKey = normalizarTextoComparacionIa(factor);
+    const motivosUnicos = textoUnicoFichaSgcIa(motivos).slice(0, 3);
     if (factorKey.includes("cierre verificable") && cantidad >= 4) {
-        return "No se obtuvo monto, fecha confirmada, canal, aceptación expresa ni recapitulación del acuerdo.";
+        return motivosUnicos.join(" · ") || "Cierre verificable con componentes pendientes de validación.";
     }
-    return textoUnicoFichaSgcIa(motivos).slice(0, 2).join(" · ") || "Hallazgo consolidado para supervisión.";
+    return motivosUnicos.slice(0, 2).join(" · ") || "Hallazgo consolidado para supervisión.";
 }
 
 function consolidarItemsFichaAuditoriaSgcIa(items = []) {
@@ -5436,7 +5360,7 @@ function pintarEvidenciasDetalleIa(data = {}) {
 }
 
 function normalizarEvidenciasDetalleIa(data = {}) {
-    const criterios = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const criterios = evaluacionCalidadItemsIa(data);
     const evidenciasClave = Array.isArray(data.evidencias_clave_lista) ? data.evidencias_clave_lista : [];
     const segmentos = segmentosTranscripcionV2Ia(data);
     const rows = [];
@@ -5573,23 +5497,16 @@ function deduplicarCriteriosEvidenciaIa(items = []) {
 function tipoAgrupadoEvidenciaIa(grupo = {}, item = {}) {
     const actual = grupo.tipo || item.tipo || "oportunidad";
     const candidato = tipoVisualEvidenciaIa(item);
-    const frase = normalizarTextoComparacionIa(item.frase || grupo.frase || "");
     if (candidato === "revision") return "revision";
-    if (candidato === "contexto" && (frase.includes("no pude pagar") || (frase.includes("trato") && frase.includes("700") && frase.includes("600")))) return "contexto";
     return prioridadTipoEvidenciaIa(candidato, item, grupo) < prioridadTipoEvidenciaIa(actual, item, grupo) ? candidato : actual;
 }
 
 function tipoVisualEvidenciaIa(item = {}) {
     if (item.falta_anulante) return "anulante";
     const hablante = hablanteTranscripcionIa(item.hablante || "");
-    const frase = normalizarTextoComparacionIa(item.frase || "");
     const resultado = normalizarTextoComparacionIa(item.resultado || "");
     const grupo = normalizarTextoComparacionIa(item.grupo_sgc || "");
-    if (frase.includes("pasar a otra instancia")) return "revision";
-    if (frase.includes("menos voy a poder") || frase.includes("15 de agosto")) return "critica";
     if (resultado.includes("revision") || resultado.includes("revisión") || item.tipo === "revision") return "revision";
-    if (hablante === "CLIENTE" && frase.includes("no pude pagar")) return "contexto";
-    if (hablante === "CLIENTE" && frase.includes("trato") && frase.includes("700") && frase.includes("600")) return "contexto";
     if (hablante === "CLIENTE" && item.tipo === "fortaleza") return "contexto";
     if (hablante === "CLIENTE" && item.tipo !== "critica" && item.tipo !== "revision") return "contexto";
     if (item.tipo === "fortaleza" && hablante !== "AGENTE") return "contexto";
@@ -5629,7 +5546,6 @@ function criterioPrincipalEvidenciaIa(items = [], fallback = "") {
 
 function confianzaVisualEvidenciaIa(grupo = {}, item = {}) {
     const explicita = String(item.confianza || grupo.confianza || "").trim().toUpperCase();
-    if (normalizarTextoComparacionIa(item.frase || grupo.frase || "").includes("pasar a otra instancia")) return "MEDIA";
     if (["ALTA", "MEDIA", "BAJA"].includes(explicita) && grupo.relaciones_tecnicas <= 1) return explicita;
     if (tipoVisualEvidenciaIa(item) === "revision") return "MEDIA";
     if (!timestampValidoIa(grupo.tiempo) || grupo.relaciones_tecnicas > 1) return "MEDIA";
@@ -5639,13 +5555,7 @@ function confianzaVisualEvidenciaIa(grupo = {}, item = {}) {
 }
 
 function lecturaGeneralEvidenciaIa(item = {}) {
-    const fraseKey = normalizarTextoComparacionIa(item.frase);
     const criterios = item.criterios_relacionados || [];
-    if (fraseKey.includes("menos voy a poder")) return "El cliente rechaza el monto; el agente no explora cuánto sí podría pagar.";
-    if (fraseKey.includes("15 de agosto")) return "Existe una fecha tentativa, pero no se concreta monto, canal ni confirmación.";
-    if (fraseKey.includes("fraccionamiento")) return "El agente presenta una alternativa, pero no la desarrolla ni adapta a la capacidad del cliente.";
-    if (fraseKey.includes("pasar a otra instancia")) return "Debe validarse si la expresión corresponde al discurso autorizado y si fue explicada correctamente.";
-    if (fraseKey.includes("700") && fraseKey.includes("600")) return "Confirma falta de liquidez e incumplimiento del acuerdo anterior.";
     return criterios.find(item => item.lectura)?.lectura || item.lectura || "";
 }
 
@@ -5659,18 +5569,16 @@ function ordenEvidenciasAgrupadasIa(a, b) {
 }
 
 function prioridadOperativaEvidenciaIa(item = {}) {
-    const frase = normalizarTextoComparacionIa(item.frase || "");
     const grupo = normalizarTextoComparacionIa(item.grupo_sgc || "");
     const criterio = normalizarTextoComparacionIa(item.criterio || "");
     if (item.falta_anulante || item.tipo === "anulante") return 0;
     if (item.tipo === "critica" && grupo.includes("usuario")) return 10;
     if (item.tipo === "critica" && grupo.includes("cumplimiento")) return 20;
-    if (item.tipo === "critica" && (frase.includes("menos voy a poder") || criterio.includes("manejo de objeciones"))) return 30;
-    if (item.tipo === "critica" && (frase.includes("15 de agosto") || criterio.includes("cierre verificable"))) return 31;
+    if (item.tipo === "critica" && criterio.includes("manejo de objeciones")) return 30;
+    if (item.tipo === "critica" && criterio.includes("cierre verificable")) return 31;
     if (item.tipo === "critica" && grupo.includes("negocio")) return 35;
     if (item.tipo === "revision") return 40;
-    if (item.tipo === "oportunidad" && (frase.includes("fraccionamiento") || criterio.includes("presentacion"))) return 50;
-    if (item.tipo === "contexto" && ((frase.includes("700") && frase.includes("600")) || frase.includes("no pude pagar"))) return 55;
+    if (item.tipo === "oportunidad" && criterio.includes("presentacion")) return 50;
     if (item.tipo === "oportunidad") return 60;
     if (item.tipo === "fortaleza") return 70;
     if (item.tipo === "contexto") return 80;
@@ -5718,7 +5626,15 @@ function tiempoEvidenciaIa(item = {}, segmento = null) {
 }
 
 function hablanteEvidenciaIa(item = {}, segmento = null) {
-    const candidato = item.hablante || item.speaker || item.rol || segmento?.hablante || segmento?.speaker || segmento?.rol;
+    const candidato = segmento?.hablante
+        || segmento?.rol
+        || segmento?.speaker_original
+        || segmento?.speakerOriginal
+        || item.hablante
+        || item.rol
+        || item.speaker_original
+        || item.speakerOriginal
+        || "NO_DETERMINADO";
     return hablanteTranscripcionIa(candidato || "");
 }
 
@@ -5744,63 +5660,20 @@ function tipoEvidenciaIa(item = {}, frase = "") {
 
 function lecturaEvidenciaIa(item = {}, frase = "") {
     const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
-    const fraseKey = normalizarTextoComparacionIa(frase);
-    if (factor.includes("manejo de objeciones") || fraseKey.includes("menos voy a poder")) {
-        return "El cliente rechaza el monto; la gestión debía explorar cuánto sí podía pagar.";
-    }
-    if (factor.includes("induccion") || fraseKey.includes("15 de agosto")) {
-        return "Se menciona una fecha tentativa, pero no se concreta monto, canal ni aceptación expresa.";
-    }
-    if (factor.includes("cierre verificable")) {
-        return "La evidencia sustenta que el cierre no quedó completo bajo cantidad, fecha, canal y confirmación.";
-    }
-    if (factor.includes("presentacion") || fraseKey.includes("fraccionamiento")) {
-        return "Se plantea una alternativa, pero sin explicar monto, plazo ni ajuste a la capacidad del cliente.";
-    }
-    if (factor.includes("lenguaje claro") || fraseKey.includes("pasar a otra instancia")) {
-        return "La frase requiere validar si corresponde al discurso autorizado.";
-    }
-    if (fraseKey.includes("trato") && fraseKey.includes("700") && fraseKey.includes("600")) {
-        return "El cliente confirma incumplimiento del acuerdo anterior y limitación de liquidez.";
-    }
     const lectura = item.lectura_ia || item.interpretacion || item.impacto_negocio || item.hallazgo || item.motivo;
-    if (!lectura || textoEsGenericoHallazgoIa(lectura)) return "";
-    return String(lectura).replace(/\s+/g, " ").trim();
+    if (lectura && !textoEsGenericoHallazgoIa(lectura)) return String(lectura).replace(/\s+/g, " ").trim();
+    if (factor.includes("manejo de objeciones")) return "La evidencia muestra una objeción o restricción que debe evaluarse según la respuesta del agente.";
+    if (factor.includes("induccion")) return "La evidencia sustenta una oportunidad de inducir pago o abono.";
+    if (factor.includes("cierre verificable")) {
+        return "La evidencia se relaciona con uno o más componentes del cierre verificable.";
+    }
+    if (factor.includes("presentacion")) return "La evidencia se relaciona con la forma en que el agente presentó o adaptó la propuesta.";
+    if (factor.includes("lenguaje claro")) return "La evidencia requiere validar claridad, presión profesional o discurso autorizado.";
+    return "";
 }
 
 function agregarEvidenciasContextualesIa(rows = [], data = {}, segmentos = []) {
-    const patrones = [
-        {
-            criterio: "Capacidad actual de pago",
-            grupo_sgc: "Error crítico del negocio",
-            tipo: "contexto",
-            lectura: "El cliente confirma incumplimiento del acuerdo anterior y limitación de liquidez.",
-            claves: ["trato", "700", "100", "600"],
-        },
-    ];
-    const transcripcion = String(data.transcripcion || "");
-    patrones.forEach(config => {
-        const frase = fraseContextualTranscripcionIa(transcripcion, config.claves);
-        if (!frase) return;
-        const segmento = buscarSegmentoPorFraseIa(segmentos, frase);
-        rows.push({
-            codigo_criterio: "2.2",
-            segmento_id: segmento?.id || segmento?.indice || segmento?.index || "",
-            tiempo: tiempoEvidenciaIa({}, segmento),
-            hablante: hablanteEvidenciaIa({ hablante: "CLIENTE" }, segmento),
-            frase,
-            criterio: config.criterio,
-            grupo_sgc: config.grupo_sgc,
-            tipo: config.tipo,
-            confianza: confianzaEvidenciaIa({}, segmento, data),
-            lectura: config.lectura,
-            resultado: "Contexto",
-            hallazgo: config.lectura,
-            recomendacion: "",
-            peso: 0,
-            falta_anulante: false,
-        });
-    });
+    return rows;
 }
 
 function fraseContextualTranscripcionIa(transcripcion = "", claves = []) {
@@ -5962,11 +5835,6 @@ function filaAnalisisEvidenciaIa(item = {}) {
 }
 
 function recomendacionPrincipalEvidenciaIa(item = {}) {
-    const frase = normalizarTextoComparacionIa(item.frase || "");
-    if (frase.includes("fraccionamiento")) return "Explicar cómo funcionaría el fraccionamiento y adaptarlo al monto que el cliente sí puede asumir.";
-    if (frase.includes("15 de agosto")) return "Concretar monto, fecha, canal y confirmación antes de cerrar la llamada.";
-    if (frase.includes("menos voy a poder")) return "Preguntar cuánto sí puede pagar y en qué fecha antes de abandonar la negociación.";
-    if (frase.includes("pasar a otra instancia")) return "Validar el discurso autorizado y explicar cualquier escalamiento sin amenaza ni ambigüedad.";
     const criterios = criteriosTecnicosValidosEvidenciaIa(item);
     const principal = criterios.find(criterio => normalizarTextoComparacionIa(criterio.criterio) === normalizarTextoComparacionIa(item.criterio))
         || criterios[0];
@@ -6045,28 +5913,21 @@ function criteriosTecnicosValidosEvidenciaIa(item = {}) {
 }
 
 function ordenarCriteriosRelacionadosEvidenciaIa(criterios = [], item = {}) {
-    const frase = normalizarTextoComparacionIa(item.frase || "");
-    if (frase.includes("15 de agosto")) {
-        const prioridad = ["2.3", "3.6", "4.1", "4.2", "4.3", "4.4", "4.5"];
-        return [...criterios].sort((a, b) => {
-            const ia = prioridad.indexOf(codigoCriterioDisplayIa(a.codigo_criterio));
-            const ib = prioridad.indexOf(codigoCriterioDisplayIa(b.codigo_criterio));
-            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-        });
-    }
     return [...criterios].sort((a, b) => codigoCriterioDisplayIa(a.codigo_criterio).localeCompare(codigoCriterioDisplayIa(b.codigo_criterio), "es", { numeric: true }));
 }
 
 function criterioTecnicoValidoEvidenciaIa(criterio = {}) {
     const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
     const nombre = normalizarTextoComparacionIa(criterio.criterio);
-    if (!/^\d+\.\d+$/.test(codigo)) return false;
+    if (!/^\d+\.\d+$/.test(codigo) && !/^(PENC|PECUF|PECN|PECC)\.\d+$/i.test(codigo)) return false;
     if (!nombre || ["error no critico", "error critico", "criterio no identificado", "s c"].includes(nombre)) return false;
     return true;
 }
 
 function codigoCriterioDisplayIa(codigo = "") {
     const texto = String(codigo || "").trim();
+    const mibanco = texto.match(/^(PENC|PECUF|PECN|PECC)[\s._-]*(\d+)$/i);
+    if (mibanco) return `${mibanco[1].toUpperCase()}.${mibanco[2]}`;
     const match = texto.match(/^(\d+)[\s._-]+(\d+)$/) || texto.match(/^(\d+)\.(\d+)$/);
     return match ? `${match[1]}.${match[2]}` : texto;
 }
@@ -6114,37 +5975,16 @@ function resultadoCriterioRelacionadoIa(criterio = {}) {
 
 function tipoSustentoCriterioEvidenciaIa(criterio = {}, item = {}) {
     const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
-    const frase = normalizarTextoComparacionIa(item.frase || "");
     const tipo = item.tipo;
-    if (tipo === "revision" || frase.includes("pasar a otra instancia")) return "Revisión humana";
-    if (frase.includes("15 de agosto")) {
-        if (codigo === "2.3") return "Evidencia directa";
-        if (codigo === "3.6") return "Evidencia contextual";
-        if (codigo.startsWith("4.")) return "Ausencia en la secuencia";
-    }
-    if (frase.includes("menos voy a poder") && ["3.5", "3.3"].includes(codigo)) return "Evidencia contextual";
-    if (frase.includes("fraccionamiento") && ["3.1", "3.3"].includes(codigo)) return "Evidencia directa";
+    if (tipo === "revision") return "Revisión humana";
     if (tipo === "contexto") return "Evidencia contextual";
+    if (codigo.startsWith("4.") && resultadoCriterioRelacionadoIa(criterio) === "No cumple") return "Ausencia en la secuencia";
+    if (["3.3", "3.5", "3.6"].includes(codigo)) return "Evidencia contextual";
     if (resultadoCriterioRelacionadoIa(criterio) === "Revisión humana") return "Revisión humana";
     return "Evidencia directa";
 }
 
 function lecturaCriterioRelacionadoIa(criterio = {}, item = {}) {
-    const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
-    const frase = normalizarTextoComparacionIa(item.frase || "");
-    if (frase.includes("15 de agosto")) {
-        if (codigo === "2.3") return "El cliente menciona una fecha tentativa.";
-        if (codigo === "3.6") return "La fecha abre una oportunidad de cierre, pero el agente no concreta monto.";
-        if (codigo === "4.1") return "No se confirmó un monto específico antes del cierre.";
-        if (codigo === "4.2") return "La fecha quedó como tentativa y no como compromiso confirmado.";
-        if (codigo === "4.3") return "No se acordó un canal de pago.";
-        if (codigo === "4.4") return "No se obtuvo una aceptación clara del compromiso.";
-        if (codigo === "4.5") return "No se recapituló monto, fecha, canal ni siguiente paso.";
-    }
-    if (frase.includes("menos voy a poder")) return "El cliente rechaza el monto; la gestión debía explorar cuánto sí podía pagar.";
-    if (frase.includes("fraccionamiento")) return "El agente plantea una alternativa, pero no explica cómo funcionaría ni la adapta a la capacidad del cliente.";
-    if (frase.includes("pasar a otra instancia")) return "La expresión requiere validar si corresponde al discurso autorizado.";
-    if (frase.includes("700") && frase.includes("600")) return "El cliente explica falta de liquidez e incumplimiento del acuerdo anterior.";
     return criterio.lectura || item.lectura || "La evidencia sustenta la evaluación del criterio.";
 }
 
@@ -6152,16 +5992,13 @@ function recomendacionCriterioRelacionadoIa(criterio = {}, item = {}) {
     const codigo = codigoCriterioDisplayIa(criterio.codigo_criterio);
     const texto = normalizarTextoComparacionIa(`${criterio.recomendacion || ""} ${item.recomendacion || ""}`);
     const generica = texto.includes("revisar transcripcion") || texto.includes("solicitar recalibracion") || texto.includes("recalibracion si el item");
-    const frase = normalizarTextoComparacionIa(item.frase || "");
-    if (frase.includes("menos voy a poder") && codigo === "3.5") return "Preguntar cuánto sí puede pagar y en qué fecha antes de abandonar la negociación.";
-    if (frase.includes("fraccionamiento") && ["3.1", "3.3", "3.4"].includes(codigo)) return "Explicar cómo funcionaría el fraccionamiento y adaptarlo al monto que el cliente sí puede asumir.";
     if (codigo === "3.6") return "Inducir un abono o compromiso concreto antes de cerrar la llamada.";
     if (codigo === "4.1") return "Confirmar un monto exacto.";
     if (codigo === "4.2") return "Convertir la fecha tentativa en una fecha confirmada.";
     if (codigo === "4.3") return "Acordar el canal por el cual realizará el pago.";
     if (codigo === "4.4") return "Solicitar una confirmación clara del compromiso.";
     if (codigo === "4.5") return "Recapitular monto, fecha, canal y acuerdo antes de despedirse.";
-    if (codigo === "5.3" || frase.includes("pasar a otra instancia")) return "Validar el discurso autorizado y explicar cualquier escalamiento sin amenaza ni ambigüedad.";
+    if (codigo === "5.3") return "Validar el discurso autorizado y explicar cualquier escalamiento sin amenaza ni ambigüedad.";
     if (codigo === "2.3") return "Convertir la fecha mencionada por el cliente en una alternativa verificable.";
     if (codigo === "2.2") return "Usar la información de liquidez para adaptar la propuesta a un monto y fecha viables.";
     if (!generica && criterio.recomendacion && evidenciaEsTextualFichaIa(criterio.recomendacion)) return criterio.recomendacion;
@@ -6278,7 +6115,7 @@ function scoreTecnicoActualCalibracionIa(data = {}) {
         data.score_final,
         data.score_final_validado,
         data.score_supervisor,
-        calcularScoreTecnicoDesdeCriteriosIa(data.evaluacion_calidad_lista || []),
+        calcularScoreTecnicoDesdeCriteriosIa(evaluacionCalidadItemsIa(data)),
         data.score_normalizado,
         data.score_calidad,
     ]);
@@ -6406,7 +6243,7 @@ function renderDatosSolicitudCalibracionIa(data = {}, recalibraciones = [], esta
 }
 
 function criteriosCuestionadosCalibracionIa(data = {}, recalibraciones = []) {
-    const criterios = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista.map(itemSgcIa) : [];
+    const criterios = evaluacionCalidadItemsIa(data).map(itemSgcIa);
     return recalibraciones.map(item => {
         const criterio = buscarCriterioCalibracionIa(item.item_cuestionado, criterios);
         return {
@@ -7076,37 +6913,23 @@ function construirFeedbackCoachingIa(data = {}) {
     const evidencias = evidenciasAgrupadasIa.length ? evidenciasAgrupadasIa : agruparEvidenciasVisualesIa(normalizarEvidenciasDetalleIa(data).evidencias);
     const evidenciaPrioritaria = evidenciaPrioritariaCoachingIa(evidencias);
     const brecha = brechaPrioritariaCoachingIa(hallazgos, evidenciaPrioritaria);
-    const transcripcionKey = normalizarTextoComparacionIa(data.transcripcion || "");
-    const tieneCasoJulio = transcripcionKey.includes("julio cesar") || transcripcionKey.includes("menos voy a poder con los 2000") || transcripcionKey.includes("fraccionamiento");
     const fortalezas = data.coaching?.feedback_supervisor?.fortalezas?.join?.(", ")
         || data.feedback_supervisor?.fortalezas?.join?.(", ")
-        || fortalezaObservableCoachingIa(data, tieneCasoJulio);
-    const evidenciaTexto = evidenciaPrioritaria?.frase || citaCoachingPorPatronIa(data, /menos voy a poder[^.?!]{0,120}/i) || "Requiere revisión del supervisor.";
-    const conducta = tieneCasoJulio ? "Manejo de objeciones." : (brecha.conducta || "Manejo de objeciones.");
-    const accion = tieneCasoJulio
-        ? "Preguntar monto disponible y fecha antes de abandonar la negociación."
-        : (brecha.accion || "Convertir la objeción principal en una alternativa concreta y verificable.");
-    const objetivoSiguiente = tieneCasoJulio
-        ? "Obtener monto, fecha, canal y confirmación expresa."
-        : (data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || "Lograr un compromiso verificable o dejar una siguiente acción clara.");
-    const recomendacion = tieneCasoJulio
-        ? "Explorar cuánto sí puede pagar el cliente y convertir la objeción en una propuesta viable."
-        : (brecha.recomendacion || recomendacionPrincipalEvidenciaIa(evidenciaPrioritaria || {}) || "Requiere revisión del supervisor.");
-    const guion = tieneCasoJulio
-        ? "Entiendo que S/2,695 no es viable. ¿Con cuánto podría iniciar y en qué fecha concreta podría realizar ese pago?"
-        : guionCoachingIa(brecha, evidenciaPrioritaria, data);
+        || fortalezaObservableCoachingIa(data);
+    const evidenciaTexto = evidenciaPrioritaria?.frase || "Requiere revisión del supervisor.";
+    const conducta = brecha.conducta || "Manejo de objeciones.";
+    const accion = brecha.accion || "Convertir la objeción principal en una alternativa concreta y verificable.";
+    const objetivoSiguiente = data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || "Lograr un compromiso verificable o dejar una siguiente acción clara.";
+    const recomendacion = brecha.recomendacion || recomendacionPrincipalEvidenciaIa(evidenciaPrioritaria || {}) || "Requiere revisión del supervisor.";
+    const guion = guionCoachingIa(brecha, evidenciaPrioritaria, data);
     return {
         fortalezas,
-        brecha: tieneCasoJulio ? "Manejo de objeciones y adaptación de la propuesta." : (brecha.titulo || brechaPrincipalDetalleIa(data) || "Requiere revisión del supervisor."),
-        impacto: tieneCasoJulio
-            ? "La gestión terminó sin monto, canal ni confirmación expresa."
-            : (brecha.impacto || "La gestión queda sin una acción de recupero verificable."),
+        brecha: brecha.titulo || brechaPrincipalDetalleIa(data) || "Requiere revisión del supervisor.",
+        impacto: brecha.impacto || "La gestión queda sin una acción de recupero verificable.",
         recomendacion,
         ocurrio: fraseCortaCoachingIa(evidenciaTexto),
         guion,
-        objetivoGuion: tieneCasoJulio
-            ? "Adaptar la alternativa a la capacidad del cliente y conducir la conversación hacia un compromiso verificable."
-            : "Practicar una respuesta concreta que conecte la objeción con monto, fecha, canal y confirmación.",
+        objetivoGuion: "Practicar una respuesta concreta que conecte la objeción con monto, fecha, canal y confirmación.",
         conducta,
         accion,
         objetivoSiguiente,
@@ -7159,7 +6982,7 @@ function formatearTipoResponsableIa(tipo = "") {
 }
 
 function hallazgosAccionablesCoachingIa(data = {}) {
-    const items = Array.isArray(data.evaluacion_calidad_lista) ? data.evaluacion_calidad_lista : [];
+    const items = hallazgosSgcItemsIa(data).length ? hallazgosSgcItemsIa(data) : evaluacionCalidadItemsIa(data);
     const normalizados = repararHallazgosContextualesFichaIa(
         items.map(itemSgcIa).map(normalizarHallazgoFichaIa),
         data,
@@ -7172,8 +6995,7 @@ function hallazgosAccionablesCoachingIa(data = {}) {
 }
 
 function evidenciaPrioritariaCoachingIa(evidencias = []) {
-    const preferida = evidencias.find(item => normalizarTextoComparacionIa(item.frase || "").includes("menos voy a poder"))
-        || evidencias.find(item => normalizarTextoComparacionIa(item.criterio || "").includes("manejo de objeciones"))
+    const preferida = evidencias.find(item => normalizarTextoComparacionIa(item.criterio || "").includes("manejo de objeciones"))
         || evidencias.find(item => item.tipo === "anulante")
         || evidencias.find(item => item.tipo === "critica")
         || evidencias.find(item => item.tipo === "revision")
@@ -7210,15 +7032,14 @@ function brechaPrioritariaCoachingIa(hallazgos = [], evidencia = null) {
     };
 }
 
-function fortalezaObservableCoachingIa(data = {}, casoJulio = false) {
+function fortalezaObservableCoachingIa(data = {}) {
     const explicitas = Array.isArray(data.fortalezas_lista) ? data.fortalezas_lista.filter(evidenciaEsTextualFichaIa) : [];
-    if (casoJulio) return "Identificó la falta de liquidez, recuperó el acuerdo anterior y presentó una alternativa de fraccionamiento.";
     if (explicitas.length) return explicitas.slice(0, 3).join(" ");
     const texto = normalizarTextoComparacionIa(data.transcripcion || "");
     const fortalezas = [];
     if (texto.includes("le habla") || texto.includes("buenos dias")) fortalezas.push("saludó e inició la conversación");
     if (texto.includes("si digame") || texto.includes("ella habla") || texto.includes("soy yo")) fortalezas.push("obtuvo una confirmación de contacto");
-    if (texto.includes("fraccionamiento")) fortalezas.push("presentó una alternativa de fraccionamiento");
+    if (texto.includes("propuesta") || texto.includes("alternativa") || texto.includes("abono")) fortalezas.push("presentó una alternativa o posibilidad de pago");
     return fortalezas.length ? `${capitalizarIa(fortalezas.join(", "))}.` : "Requiere revisión del supervisor.";
 }
 
@@ -7659,7 +7480,7 @@ async function fetchIa(url, options = {}, timeoutMs = 30000) {
         });
     } catch (error) {
         if (error.name === "AbortError") {
-            throw new Error("La solicitud demoro demasiado. Revisa la conexion con la base o intenta nuevamente.");
+            throw new Error("El analisis IA esta tardando mas de lo esperado. Intenta nuevamente en unos minutos o revisa si la evaluacion termino en el historial.");
         }
         throw error;
     } finally {
@@ -7783,9 +7604,9 @@ function exportarReporteIa() {
 }
 
 function exportarFichaSgcIa() {
-    const evaluacion = Array.isArray(resultadoActualIa?.evaluacion_calidad_lista) && resultadoActualIa.evaluacion_calidad_lista.length
-        ? resultadoActualIa.evaluacion_calidad_lista
-        : (Array.isArray(resultadoActualIa?.evaluacion_calidad) ? resultadoActualIa.evaluacion_calidad : []);
+    const evaluacion = hallazgosSgcItemsIa(resultadoActualIa || {}).length
+        ? hallazgosSgcItemsIa(resultadoActualIa || {})
+        : evaluacionCalidadItemsIa(resultadoActualIa || {});
     if (!evaluacion.length) {
         mostrarMensajeIa("No hay datos suficientes para exportar la ficha SGC/PEC.", "error");
         return;
