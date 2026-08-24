@@ -1,0 +1,72 @@
+#TRANSCRIPCION_DIARIZADA_V1
+#TEXTO_COMPLETO ¿Aló? ¿Aló, Wendy? ¿La señora Sí, Daisy, buenos por días. favor, se encuentra? Sí, con ella. ¿Se encuentra? Sí.
+Estimada, ¿qué tal? Le saluda Sheila Lasso. Le estamos llamando por encargo del banco, señora Daisy. Yo me comunicaba para poder informarle sobre el beneficio que ahorita cuenta para poder cancelar la deuda pendiente. Queríamos saber si usted contaría con el importe para poder ayudarla a dirigir esa deuda que, bueno, ya lleva bastante tiempo, ¿no? Ahorita la deuda total con todo intereses es del importe de 70.512 soles.
+Pero se le está dando lo que es una posibilidad de pago de cancelar con un único monto de 6.000 soles. Queremos saber si usted contaría con ese monte para poder cancelar y darle su cartera de euros. Ahorita no. No cuenta con el monte. Déjame ver.
+Esta me ve porque como no acabo de recibir esta llamada, así algo improvisada, pues no ¿No se han estado comunicando durante todo este tiempo con usted? Como veo, veo que la deuda fue desde Es el 2024. la primera llamada que recibo. Entiendo. Veo que usted dejó de realizar los pagos en el 2024, estimada. ¿A qué se debió o por qué se generó esa deuda?
+Ah, en esos tiempos, ¿por qué? Ah, estuve de viaje, salí del país. Ah, ok, no, ahora le estoy tomando notas. Sí, fue algo así inesperado. Entiendo. Ah, para que, Disculpe ¿cuánto tiempo usted en el trabajo? trabajo fue? Llamar más tarde, ¿A por favor. qué hora terminó la llamada?
+Ah, cómo a las dos, tres. No, mira, le envío la información a su WhatsApp, señora Daisy, mi nombre es Sheila Lasso, evalúelo y me confirma porque este descuento que le está abriendo el banco está habilitado hasta el día sábado más tardar. Ah, que sea por un texto, porque este número no tiene WhatsApp. O tiene otro número que tenga WhatsApp. No, no uso WhatsApp. Ya, yo lo indico y me vuelvo a comunicar con usted entonces. Igual, gracias. Ok, está bien, gracias.
+#SPEAKERS {"A": "AGENTE", "B": "AGENTE", "C": "CLIENTE"}
+#SPEAKER_ROLE_MAPPING {"A": {"confianza": "MEDIA", "fundamento": "Mapping corregido por señales globales de gestión del speaker.", "rol": "AGENTE"}, "B": {"confianza": "MEDIA", "fundamento": "Fallback por señales globales de gestión del speaker: buenos dias.", "rol": "AGENTE"}, "C": {"confianza": "MEDIA", "fundamento": "Mapping corregido por señales globales de respuesta/objeción del speaker.", "rol": "CLIENTE"}}
+#INTEGRIDAD {"orden_temporal_valido": true, "requiere_revision_humana": false, "segmento_id_unicos": true, "segmentos_invalidos": 0, "segmentos_nuevos": 0, "segmentos_originales": 62, "segmentos_perdidos": 0, "segmentos_renderizados": 62, "segmentos_reordenados": 0, "speaker_mapping_valido": true, "speaker_modificados": 0}
+[00:00] {A} <AGENTE> (0.0-0.4) ¿Aló?
+[00:00] {A} <AGENTE> (0.5-1.35) ¿Aló, Wendy?
+[00:01] {A} <AGENTE> (1.5-2.9) ¿La señora
+[00:02] {B} <AGENTE> (2.9-3.1) Sí,
+[00:03] {A} <AGENTE> (3.1-3.35) Daisy,
+[00:03] {B} <AGENTE> (3.35-3.4) buenos
+[00:03] {A} <AGENTE> (3.4-3.6) por
+[00:03] {B} <AGENTE> (3.6-3.75) días.
+[00:03] {A} <AGENTE> (3.75-4.0) favor,
+[00:04] {A} <AGENTE> (4.3-4.8) se encuentra?
+[00:06] {B} <AGENTE> (6.2-6.45) Sí,
+[00:06] {B} <AGENTE> (6.5-7.0) con ella.
+[00:07] {A} <AGENTE> (7.65-8.2) ¿Se encuentra?
+[00:09] {B} <AGENTE> (9.45-9.8) Sí.
+[00:10] {A} <AGENTE> (10.516-11.516) Estimada, ¿qué tal?
+[00:11] {A} <AGENTE> (11.666-14.466) Le saluda Sheila Lasso. Le estamos llamando por encargo del banco,
+[00:14] {A} <AGENTE> (14.666-15.266) señora Daisy.
+[00:16] {A} <AGENTE> (16.116-28.666) Yo me comunicaba para poder informarle sobre el beneficio que ahorita cuenta para poder cancelar la deuda pendiente. Queríamos saber si usted contaría con el importe para poder ayudarla a dirigir esa deuda que, bueno, ya lleva bastante tiempo, ¿no?
+[00:30] {A} <AGENTE> (30.666-36.066) Ahorita la deuda total con todo intereses es del importe de 70.512 soles.
+[00:36] {A} <AGENTE> (36.532-42.732) Pero se le está dando lo que es una posibilidad de pago de cancelar con un único monto de 6.000 soles.
+[00:45] {A} <AGENTE> (45.432-50.682) Queremos saber si usted contaría con ese monte para poder cancelar y darle su cartera de euros.
+[00:51] {C} <CLIENTE> (51.882-52.882) Ahorita no.
+[00:54] {A} <AGENTE> (54.632-55.882) No cuenta con el monte.
+[00:55] {C} <CLIENTE> (55.882-57.482) Déjame ver.
+[00:59] {C} <CLIENTE> (59.028-65.128) Esta me ve porque como no acabo de recibir esta llamada, así algo improvisada, pues no
+[01:05] {A} <AGENTE> (65.128-68.078) ¿No se han estado comunicando durante todo este tiempo con usted?
+[01:10] {A} <AGENTE> (70.328-72.128) Como veo, veo que la deuda fue desde
+[01:12] {C} <CLIENTE> (72.128-72.178) Es
+[01:12] {A} <AGENTE> (72.178-72.578) el 2024.
+[01:12] {C} <CLIENTE> (72.578-76.278) la primera llamada que recibo.
+[01:17] {A} <AGENTE> (77.678-80.978) Entiendo. Veo que usted dejó de realizar los pagos en el 2024,
+[01:21] {A} <AGENTE> (81.228-81.778) estimada.
+[01:21] {A} <AGENTE> (81.828-84.178) ¿A qué se debió o por qué se generó esa deuda?
+[01:25] {C} <CLIENTE> (85.972-89.822) Ah, en esos tiempos, ¿por qué?
+[01:30] {C} <CLIENTE> (90.072-91.472) Ah, estuve de viaje,
+[01:31] {C} <CLIENTE> (91.622-93.072) salí del país.
+[01:34] {A} <AGENTE> (94.222-95.072) Ah, ok,
+[01:35] {A} <AGENTE> (95.172-95.372) no,
+[01:35] {A} <AGENTE> (95.422-96.572) ahora le estoy tomando notas.
+[01:37] {C} <CLIENTE> (97.722-99.922) Sí, fue algo así inesperado.
+[01:41] {A} <AGENTE> (101.222-101.572) Entiendo.
+[01:41] {A} <AGENTE> (101.872-102.422) Ah, para que,
+[01:42] {C} <CLIENTE> (102.422-102.522) Disculpe
+[01:42] {A} <AGENTE> (102.522-103.622) ¿cuánto tiempo usted en el
+[01:43] {C} <CLIENTE> (103.622-103.672) trabajo?
+[01:43] {A} <AGENTE> (103.672-104.572) trabajo fue?
+[01:44] {C} <CLIENTE> (104.572-105.522) Llamar más tarde,
+[01:45] {A} <AGENTE> (105.522-105.622) ¿A
+[01:45] {C} <CLIENTE> (105.622-105.822) por favor.
+[01:45] {A} <AGENTE> (105.822-106.872) qué hora terminó la llamada?
+[01:48] {C} <CLIENTE> (108.18-110.13) Ah, cómo a las dos, tres.
+[01:50] {A} <AGENTE> (110.28-110.98) No, mira,
+[01:51] {A} <AGENTE> (111.03-113.08) le envío la información a su WhatsApp, señora Daisy,
+[01:53] {A} <AGENTE> (113.13-119.13) mi nombre es Sheila Lasso, evalúelo y me confirma porque este descuento que le está abriendo el banco está habilitado hasta el día sábado más tardar.
+[01:59] {C} <CLIENTE> (119.13-122.18) Ah, que sea por un texto, porque este número no tiene WhatsApp.
+[02:02] {A} <AGENTE> (122.73-124.43) O tiene otro número que tenga WhatsApp.
+[02:06] {C} <CLIENTE> (126.38-127.83) No, no uso WhatsApp.
+[02:08] {A} <AGENTE> (128.78-130.88) Ya, yo lo indico y me vuelvo a comunicar con usted entonces.
+[02:11] {A} <AGENTE> (131.18-131.88) Igual, gracias.
+[02:11] {C} <CLIENTE> (131.88-132.38) Ok,
+[02:12] {C} <CLIENTE> (132.58-133.08) está bien,
+[02:13] {C} <CLIENTE> (133.13-133.43) gracias.

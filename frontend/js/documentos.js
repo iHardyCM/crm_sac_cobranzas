@@ -8,6 +8,8 @@ let documentosCarteras = [];
 let correosPreviewActuales = {};
 let agenciasDestinoCastigo = [];
 
+const CARTERA_GRUPOS = ["Mibanco", "Compartamos Banco", "Financiera OH", "Interbank", "Propia Biznescob"];
+
 document.addEventListener("DOMContentLoaded", () => {
     inicializarCatalogosDocumento();
     pintarFechaDocumentoHoy();
@@ -145,9 +147,21 @@ function poblarCarterasDocumento() {
     const select = document.getElementById("documentoCartera");
     if (!select) return;
 
-    select.innerHTML = documentosCarteras.map(item => (
-        `<option value="${escapeAttr(item.id)}" ${item.activo ? "" : "disabled"}>${escapeHtml(item.id)} - ${escapeHtml(item.nombre)}${item.activo ? "" : " (pendiente)"}</option>`
-    )).join("");
+    const grupos = [...CARTERA_GRUPOS];
+    documentosCarteras.forEach(item => {
+        const grupo = item.entidad || "Compartamos Banco";
+        if (!grupos.includes(grupo)) grupos.push(grupo);
+    });
+
+    select.innerHTML = grupos.map(grupo => {
+        const items = documentosCarteras.filter(item => (item.entidad || "Compartamos Banco") === grupo);
+        const opciones = items.length
+            ? items.map(item => (
+                `<option value="${escapeAttr(item.id)}" ${item.activo ? "" : "disabled"}>${escapeHtml(item.id)} - ${escapeHtml(item.nombre)}${item.activo ? "" : " (pendiente)"}</option>`
+            )).join("")
+            : `<option value="" disabled>${escapeHtml(grupo)} - sin carteras configuradas</option>`;
+        return `<optgroup label="${escapeAttr(grupo)}">${opciones}</optgroup>`;
+    }).join("");
 
     if (!select.value && documentosCarteras.some(item => item.id === 133)) {
         select.value = "133";
@@ -190,6 +204,11 @@ function esDocumentoCuotaGrupal() {
 
 function esDocumentoCuotaIndividual() {
     return ["compromiso_cuota_individual", "vigente_individual_cuota", "ccm_cuota"].includes(document.getElementById("documentoTipo")?.value);
+}
+
+
+function esDocumentoCuotaIndividualGrupal() {
+    return document.getElementById("documentoTipo")?.value === "compromiso_cuota_individual";
 }
 
 
@@ -242,6 +261,7 @@ function actualizarModoDocumento() {
     const esCuotas = modalidad === "cuotas";
     document.getElementById("modalidadCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo);
     document.getElementById("cuotasCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || esUnPago);
+    poblarOpcionesCuotasIndividual();
     document.getElementById("cuotasIndividualBox")?.classList.toggle("hidden", !esDocumentoCuotaIndividual());
     document.getElementById("inicialCastigoBox")?.classList.add("hidden");
     document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || esUnPago);
@@ -271,6 +291,19 @@ function actualizarModoDocumento() {
             : "La columna Cuenta usa CtaCliente de la consulta SQL. Ingresa el monto a pagar por cada operacion.";
     }
     setSummaryLabels();
+}
+
+
+function poblarOpcionesCuotasIndividual() {
+    const select = document.getElementById("cuotasIndividual");
+    if (!select) return;
+    const maximo = esDocumentoCuotaIndividualGrupal() ? 5 : 4;
+    const actual = Math.max(1, Math.min(maximo, Number.parseInt(select.value || "1", 10) || 1));
+    select.innerHTML = Array.from({ length: maximo }, (_, index) => {
+        const value = index + 1;
+        return `<option value="${value}">${value} cuota${value === 1 ? "" : "s"}</option>`;
+    }).join("");
+    select.value = String(actual);
 }
 
 
@@ -535,15 +568,35 @@ function totalDeudaGrupo() {
 function cuotaDocumento(item) {
     if (esDocumentoCuotaIndividual()) {
         const cantidad = cantidadCuotasIndividual();
+        if (esDocumentoCuotaIndividualGrupal()) return cuotaGrupalAcumulada(item, cantidad);
         return Number(item?.[`CT${cantidad}`] || 0);
     }
     return ["CT1", "CT11", "CT12", "CT13", "CT14", "CT15"].reduce((total, field) => total + Number(item?.[field] || 0), 0);
 }
 
 
+function cuotaGrupalNumero(item, numero) {
+    const suffixes = [String(numero), ...Array.from({ length: 5 }, (_, index) => `${numero}${index + 1}`)];
+    return suffixes.reduce((total, suffix) => total + Number(item?.[`CT${suffix}`] || 0), 0);
+}
+
+
+function cuotaGrupalAcumulada(item, cantidad) {
+    const totalCuotas = Math.max(1, Math.min(5, Number.parseInt(cantidad || "1", 10) || 1));
+    let total = 0;
+    for (let numero = 1; numero <= totalCuotas; numero += 1) {
+        total += cuotaGrupalNumero(item, numero);
+    }
+    return total;
+}
+
+
 function minimoCuotaDocumento(item) {
     if (esDocumentoCuotaIndividual()) {
         const cantidad = cantidadCuotasIndividual();
+        if (esDocumentoCuotaIndividualGrupal()) {
+            return Number(item?.MtoCuotaCampania || 0);
+        }
         return Number(item?.[`MtoCuotaCampania${cantidad}`] || item?.MtoCuotaCampania || cuotaDocumento(item) || 0);
     }
     return Number(item?.MtoCuotaCampania || cuotaDocumento(item) || 0);
@@ -557,7 +610,8 @@ function nroCuotaDocumento(item) {
 
 
 function cantidadCuotasIndividual() {
-    return Math.max(1, Math.min(4, Number.parseInt(document.getElementById("cuotasIndividual")?.value || "1", 10) || 1));
+    const maximo = esDocumentoCuotaIndividualGrupal() ? 5 : 4;
+    return Math.max(1, Math.min(maximo, Number.parseInt(document.getElementById("cuotasIndividual")?.value || "1", 10) || 1));
 }
 
 

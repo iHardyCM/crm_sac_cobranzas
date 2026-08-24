@@ -1125,7 +1125,11 @@ def validar_mapping_speakers_estandar_v3(speakers: Dict[str, List[Dict]], mappin
         for speaker in speaker_ids
     }
     roles_utiles = {rol for rol in roles.values() if rol in {"AGENTE", "CLIENTE"}}
-    if roles_utiles == {"AGENTE", "CLIENTE"}:
+    conteo_roles_utiles = {
+        rol: list(roles.values()).count(rol)
+        for rol in {"AGENTE", "CLIENTE"}
+    }
+    if roles_utiles == {"AGENTE", "CLIENTE"} and conteo_roles_utiles.get("AGENTE") == 1 and conteo_roles_utiles.get("CLIENTE") == 1:
         return {
             speaker: {
                 "rol": roles[speaker],
@@ -1179,7 +1183,14 @@ def validar_mapping_speakers_estandar_v3(speakers: Dict[str, List[Dict]], mappin
                 "fundamento": "Mapping corregido por señales globales de respuesta/objeción del speaker.",
             }
         else:
-            rol, confianza, fundamento = inferir_rol_speaker_operativo_v3(speakers[speaker])
+            if es_speaker_confirmacion_cliente_v3(speakers[speaker], puntajes.get(speaker, {})):
+                rol, confianza, fundamento = (
+                    "CLIENTE",
+                    "MEDIA",
+                    "Speaker breve de confirmación o respuesta del cliente dentro de la apertura.",
+                )
+            else:
+                rol, confianza, fundamento = inferir_rol_speaker_operativo_v3(speakers[speaker])
             if rol in {"AGENTE", "CLIENTE"}:
                 salida[speaker] = {"rol": rol, "confianza": confianza, "fundamento": fundamento}
             else:
@@ -1321,8 +1332,8 @@ def puntuar_speaker_roles_operativo_v3(segmentos: List[Dict]) -> Dict[str, objec
         for item in muestra_distribuida_speaker_v3(segmentos)
     ))
     senales_agente = [
-        "buenos dias", "buenas tardes", "le habla", "te saluda", "le saluda",
-        "habla", "mi nombre", "soy", "se comunica", "mi banco", "mibanco",
+        "le habla", "te saluda", "le saluda", "mi nombre", "soy",
+        "se comunica", "mi banco", "mibanco",
         "banco", "entidad", "por encargo", "cuenta", "deuda", "credito",
         "prestamo", "cuotas", "cuota", "campana", "descuento", "beneficio",
         "puedes", "puede", "podria", "podria", "abonar", "cancelar", "pagar",
@@ -1338,7 +1349,8 @@ def puntuar_speaker_roles_operativo_v3(segmentos: List[Dict]) -> Dict[str, objec
         "puedo pagar", "podria pagar", "voy a cancelar", "me interesa",
         "no se ha podido", "no se puede", "para el", "la semana",
         "el miercoles", "manana", "plazo", "reprogramar", "parte",
-        "abono", "duda", "cuanto es",
+        "abono", "duda", "cuanto es", "si con ella", "sí con ella",
+        "con ella", "digame", "dígame", "no uso whatsapp",
     ]
     hallazgos_agente = senales_presentes_operativas_v3(texto, senales_agente)
     hallazgos_cliente = senales_presentes_operativas_v3(texto, senales_cliente)
@@ -1348,6 +1360,24 @@ def puntuar_speaker_roles_operativo_v3(segmentos: List[Dict]) -> Dict[str, objec
         "senales_agente": hallazgos_agente[:12],
         "senales_cliente": hallazgos_cliente[:12],
     }
+
+
+def es_speaker_confirmacion_cliente_v3(segmentos: List[Dict], puntaje: Optional[Dict] = None) -> bool:
+    if not segmentos or len(segmentos) > 8:
+        return False
+    puntaje = puntaje or puntuar_speaker_roles_operativo_v3(segmentos)
+    if int(puntaje.get("score_agente") or 0) >= 2:
+        return False
+    texto = limpiar_key_texto(" ".join(
+        str(item.get("texto") or item.get("texto_original") or "")
+        for item in segmentos
+    ))
+    tokens_cliente = {
+        "si", "sí", "si con ella", "sí con ella", "con ella",
+        "digame", "dígame", "buenos dias", "buenas tardes",
+        "no uso whatsapp", "ok", "esta bien", "está bien",
+    }
+    return any(limpiar_key_texto(token) in texto for token in tokens_cliente)
 
 
 def inferir_rol_speaker_operativo_v3(segmentos: List[Dict]) -> tuple[str, str, str]:
@@ -2518,12 +2548,10 @@ def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: 
 
 def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict]) -> None:
     """
-    Resuelve revisiones falsas de la pauta Mibanco con reglas auditables.
+    Reglas determinísticas para la pauta Mibanco vigente.
 
-    La IA sigue evaluando conducta y evidencias. Esta guarda solo corrige casos
-    donde un criterio de ausencia de riesgo queda en REQUIERE_REVISION sin una
-    evidencia negativa verificable, o donde la aplicabilidad depende de que haya
-    una objeción real.
+    La IA aporta evaluación contextual. Python estabiliza aplicabilidad y evita
+    que criterios observables desde otras fuentes se castiguen desde audio.
     """
     texto_agente = limpiar_key_texto(" ".join(
         str(item.get("texto") or item.get("texto_original") or "")
@@ -2543,99 +2571,73 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
     dificultades_cliente = buscar_segmentos_dificultad_cliente_v3(segmentos)
     objeciones_cliente = buscar_segmentos_objecion_cliente_v3(segmentos)
     respuestas_gestion = buscar_segmentos_respuesta_gestion_agente_v3(segmentos)
-    titularidad = detectar_titularidad_contextual_v3(segmentos)
 
-    # PENC.2: personalización. Si el agente usa nombre, apellido o trato
-    # personalizado ("señora/señor" + referencia al cliente), se cumple.
-    if por_codigo.get("PENC.2"):
-        personalizacion = buscar_segmentos_personalizacion_v3(segmentos)
-        if personalizacion:
+    # PECUF.1: Falta de respeto.
+    if por_codigo.get("PECUF.1") and estado_sgc_normalizado(por_codigo["PECUF.1"]) == "REQUIERE_REVISION":
+        if not contiene_riesgo_trato_agente_v3(texto_agente):
             aplicar_resultado_guardado_v3(
-                por_codigo["PENC.2"],
+                por_codigo["PECUF.1"],
                 "CUMPLE",
-                personalizacion[:1],
-                "El agente personaliza la atención mediante nombre o trato dirigido al cliente.",
-                "Mantener personalización natural sin exceso de repetición.",
+                evidencia_neutra,
+                "No se evidencia agresión, ridiculización, descalificación ni expresión ofensiva del agente.",
+                "Mantener trato respetuoso durante toda la llamada.",
             )
 
-    # PENC.4: claridad del lenguaje oral. No dejar que el modelo convierta una
-    # comunicación sin contradicción observable en revisión variable.
-    if por_codigo.get("PENC.4"):
-        if not contiene_confusion_material_agente_v3(texto_agente):
+    # PECUF.2: Escucha activa.
+    if por_codigo.get("PECUF.2"):
+        if dificultades_cliente or objeciones_cliente:
+            base = (dificultades_cliente or objeciones_cliente)[0]
+            respuesta = buscar_respuesta_posterior_v3(segmentos, base, "AGENTE", set(), ventana=5)
             aplicar_resultado_guardado_v3(
-                por_codigo["PENC.4"],
+                por_codigo["PECUF.2"],
+                "CUMPLE" if respuesta else "REQUIERE_REVISION",
+                [base, *(respuesta[:1] if respuesta else [])],
+                "El agente permite la exposición del cliente y continúa la gestión con respuesta posterior." if respuesta else "No queda claro si el agente confirmó o comprendió la información del cliente.",
+                "Confirmar comprensión antes de pasar a propuesta o cierre.",
+            )
+        else:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECUF.2"],
+                "NO_APLICA",
+                [],
+                "No se identifica información, objeción o consulta del cliente que exija escucha activa diferenciada.",
+                "Aplicar escucha activa cuando el cliente entregue información relevante.",
+            )
+
+    # PECUF.3: Precisión de la información de la deuda.
+    if por_codigo.get("PECUF.3"):
+        comunica_deuda = buscar_segmentos_por_tokens_v3(
+            segmentos,
+            "AGENTE",
+            {"deuda", "cuota", "mora", "saldo", "capital", "interes", "interés", "monto", "pagar"},
+        )
+        if not comunica_deuda:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECUF.3"],
+                "NO_APLICA",
+                [],
+                "No se identifica comunicación de deuda, mora, cuota o monto financiero evaluable.",
+                "Comunicar información financiera solo cuando corresponda y con datos verificables.",
+            )
+
+    # PECUF.4 / PENC.3: Claridad de la información/lenguaje.
+    for codigo_claridad in ("PECUF.4", "PENC.3"):
+        if por_codigo.get(codigo_claridad) and not contiene_confusion_material_agente_v3(texto_agente):
+            aplicar_resultado_guardado_v3(
+                por_codigo[codigo_claridad],
                 "CUMPLE",
                 evidencia_neutra,
                 "No se evidencia contradicción, confusión material ni lenguaje incomprensible del agente.",
                 "Mantener explicaciones claras, ordenadas y sin contradicciones.",
             )
 
-    # PENC.7: empatía. Si el cliente expone dificultad y el agente reconoce o
-    # conduce con una respuesta de comprensión, se cumple; si hay dificultad sin
-    # ninguna respuesta empática/gestionadora posterior, es brecha no crítica.
-    if por_codigo.get("PENC.7"):
-        if dificultades_cliente:
-            empatia = buscar_respuesta_posterior_v3(
-                segmentos,
-                dificultades_cliente[0],
-                "AGENTE",
-                {"entiendo", "comprendo", "claro", "correcto", "ya entiendo", "lamento", "veamos", "podemos", "para ayudar"},
-                ventana=5,
-            )
-            if empatia or respuestas_gestion:
-                aplicar_resultado_guardado_v3(
-                    por_codigo["PENC.7"],
-                    "CUMPLE",
-                    [dificultades_cliente[0], *((empatia or respuestas_gestion)[:1])],
-                    "El agente reconoce o gestiona la dificultad expuesta por el cliente.",
-                    "Mantener reconocimiento breve de la situación antes de negociar.",
-                )
-            else:
-                aplicar_resultado_guardado_v3(
-                    por_codigo["PENC.7"],
-                    "NO_CUMPLE",
-                    [dificultades_cliente[0]],
-                    "El cliente expone una dificultad y no se observa reconocimiento o respuesta empática posterior.",
-                    "Reconocer la situación del cliente antes de continuar la gestión.",
-                )
-        else:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PENC.7"],
-                "NO_APLICA",
-                [],
-                "No se identifica una dificultad u objeción del cliente que requiera demostración de empatía.",
-                "Aplicar empatía cuando el cliente exponga dificultad, objeción o situación sensible.",
-            )
-
-    # PECUF.3: validación del cliente e información. Si hay validación contextual
-    # se cumple; si se expone información sensible sin validación clara queda en
-    # revisión, no como error confirmado automático.
-    if por_codigo.get("PECUF.3"):
-        if titularidad:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.3"],
-                "CUMPLE",
-                titularidad,
-                "Se valida de forma suficiente al interlocutor antes de continuar la gestión.",
-                "Mantener validación antes de entregar información sensible.",
-            )
-        elif segmentos_agente:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.3"],
-                "REQUIERE_REVISION",
-                segmentos_agente[:1],
-                "No queda suficientemente demostrada la validación del interlocutor antes de la gestión.",
-                "Validar identidad o autorización antes de exponer información sensible.",
-            )
-
-    # PECUF.4: sondeo y diagnóstico. Se resuelve por hechos observables de
-    # pregunta del agente + información del cliente sobre causa/capacidad.
-    if por_codigo.get("PECUF.4"):
+    # PECN.1: Sondeo y diagnóstico.
+    if por_codigo.get("PECN.1"):
         preguntas_diagnostico = buscar_segmentos_diagnostico_agente_v3(segmentos)
         respuestas_diagnostico = dificultades_cliente or buscar_segmentos_capacidad_cliente_v3(segmentos)
         if preguntas_diagnostico and respuestas_diagnostico:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.4"],
+                por_codigo["PECN.1"],
                 "CUMPLE",
                 [preguntas_diagnostico[0], respuestas_diagnostico[0]],
                 "El agente realiza sondeo y obtiene información sobre causa o capacidad del cliente.",
@@ -2643,28 +2645,19 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             )
         elif preguntas_diagnostico or respuestas_diagnostico:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.4"],
+                por_codigo["PECN.1"],
                 "REQUIERE_REVISION",
                 [(preguntas_diagnostico or respuestas_diagnostico)[0]],
                 "Existe información de diagnóstico, pero no queda completa la relación entre pregunta, causa y capacidad.",
                 "Completar el diagnóstico con causa, capacidad, monto disponible y fecha.",
             )
-        else:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.4"],
-                "NO_APLICA",
-                [],
-                "No se identifica oportunidad suficiente para realizar sondeo y diagnóstico.",
-                "Aplicar sondeo cuando exista contacto útil con objetivo de cobranza.",
-            )
 
-    # PECUF.5: negociación escalonada. Si hay objeción/dificultad y el agente
-    # ofrece alternativas, abono, monto, fecha o conducción de pago, se cumple.
-    if por_codigo.get("PECUF.5"):
+    # PECN.2: Negociación escalonada.
+    if por_codigo.get("PECN.2"):
         oportunidad = objeciones_cliente or dificultades_cliente
         if oportunidad and respuestas_gestion:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.5"],
+                por_codigo["PECN.2"],
                 "CUMPLE",
                 [oportunidad[0], respuestas_gestion[0]],
                 "Ante la situación del cliente, el agente conduce la gestión con alternativa, abono, monto o fecha.",
@@ -2672,51 +2665,18 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             )
         elif oportunidad:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.5"],
+                por_codigo["PECN.2"],
                 "NO_CUMPLE",
                 [oportunidad[0]],
                 "Existe oportunidad de negociación, pero no se observa una alternativa concreta posterior.",
                 "Ofrecer alternativa viable o abono acorde a la capacidad del cliente.",
             )
-        else:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.5"],
-                "NO_APLICA",
-                [],
-                "No se identifica oportunidad real de negociación escalonada.",
-                "Aplicar negociación escalonada cuando exista objeción, rechazo o posibilidad de pago.",
-            )
 
-    # PECUF.1: trato respetuoso. Si no hay insulto, humillación, burla o juicio
-    # observable del agente, no corresponde dejar revisión ni descontar.
-    if por_codigo.get("PECUF.1") and estado_sgc_normalizado(por_codigo["PECUF.1"]) == "REQUIERE_REVISION":
-        if not contiene_riesgo_trato_agente_v3(texto_agente):
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.1"],
-                "CUMPLE",
-                evidencia_neutra,
-                "No se evidencia agresión, burla, juicio ni trato desconsiderado del agente.",
-                "Mantener trato respetuoso durante toda la gestión.",
-            )
-
-    # PECUF.2: continuidad. Si la conversación tiene desarrollo y no hay corte
-    # deliberado observable, se cumple. No requiere una frase textual negativa.
-    if por_codigo.get("PECUF.2") and estado_sgc_normalizado(por_codigo["PECUF.2"]) == "REQUIERE_REVISION":
-        if len(segmentos) >= 4 and not contiene_corte_deliberado_v3(texto_agente):
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.2"],
-                "CUMPLE",
-                evidencia_neutra,
-                "No se evidencia corte deliberado ni abandono de atención por parte del agente.",
-                "Mantener continuidad hasta cerrar o transferir correctamente la gestión.",
-            )
-
-    # PECUF.6: manejo de objeciones solo aplica cuando el cliente objeta o
-    # expresa imposibilidad/rechazo. Si no existe objeción real, no debe restar.
-    if por_codigo.get("PECUF.6"):
+    # PECN.3: Manejo de objeciones.
+    if por_codigo.get("PECN.3"):
         if not objeciones_cliente:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.6"],
+                por_codigo["PECN.3"],
                 "NO_APLICA",
                 [],
                 "No se identifica una objeción real del cliente durante la llamada.",
@@ -2731,152 +2691,107 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 ventana=6,
             )
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.6"],
+                por_codigo["PECN.3"],
                 "CUMPLE" if respuesta_objecion else "NO_CUMPLE",
                 [objeciones_cliente[0], *(respuesta_objecion[:1] if respuesta_objecion else [])],
                 "El agente aborda la objeción del cliente con una respuesta orientada a solución." if respuesta_objecion else "El cliente presenta una objeción y no se observa abordaje posterior suficiente.",
                 "Explorar alternativa, monto o fecha frente a cada objeción relevante.",
             )
 
-    # PECUF.7: resolución de consultas. Solo aplica si el cliente consulta; si
-    # hay consulta y el agente responde inmediatamente, se cumple.
-    if por_codigo.get("PECUF.7"):
-        consultas = buscar_segmentos_consulta_cliente_v3(segmentos)
-        if not consultas:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.7"],
-                "NO_APLICA",
-                [],
-                "No se identifica una consulta explícita del cliente que requiera resolución.",
-                "Responder consultas cuando el cliente solicite aclaración o información.",
-            )
-        else:
-            respuesta = buscar_respuesta_posterior_v3(segmentos, consultas[0], "AGENTE", set(), ventana=4)
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.7"],
-                "CUMPLE" if respuesta else "NO_CUMPLE",
-                [consultas[0], *(respuesta[:1] if respuesta else [])],
-                "El agente responde la consulta del cliente." if respuesta else "El cliente formula una consulta y no se observa respuesta posterior.",
-                "Resolver consultas con respuesta directa y verificable.",
-            )
-
-    # PECUF.8: tiempo de espera. Sin gaps relevantes en timestamps, se cumple.
-    if por_codigo.get("PECUF.8"):
-        espera = detectar_espera_relevante_v3(segmentos)
-        if not espera:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.8"],
-                "CUMPLE",
-                evidencia_neutra,
-                "No se observan tiempos de espera prolongados o injustificados en la secuencia.",
-                "Informar al cliente cuando se requiera una espera prolongada.",
-            )
-        else:
-            aviso = buscar_respuesta_previa_v3(segmentos, espera, "AGENTE", {"permiteme", "permíteme", "un momento", "espere", "aguardeme", "aguárdeme"}, ventana=3)
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.8"],
-                "CUMPLE" if aviso else "REQUIERE_REVISION",
-                [*(aviso[:1] if aviso else []), espera],
-                "La espera fue informada al cliente." if aviso else "Se detecta una pausa relevante sin evidencia suficiente de aviso al cliente.",
-                "Avisar al cliente antes de pausas prolongadas.",
-            )
-
-    # PECUF.10: escucha activa. Si el cliente entrega información y el agente
-    # responde o continúa la gestión sin señales de interrupción, se cumple.
-    if por_codigo.get("PECUF.10"):
-        if dificultades_cliente or objeciones_cliente:
-            base = (dificultades_cliente or objeciones_cliente)[0]
-            respuesta = buscar_respuesta_posterior_v3(segmentos, base, "AGENTE", set(), ventana=5)
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.10"],
-                "CUMPLE" if respuesta else "REQUIERE_REVISION",
-                [base, *(respuesta[:1] if respuesta else [])],
-                "El agente permite la exposición del cliente y continúa la gestión con respuesta posterior." if respuesta else "No queda claro si el agente confirmó o comprendió la información del cliente.",
-                "Confirmar comprensión antes de pasar a propuesta o cierre.",
-            )
-        else:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.10"],
-                "NO_APLICA",
-                [],
-                "No se identifica información, objeción o consulta del cliente que exija escucha activa diferenciada.",
-                "Aplicar escucha activa cuando el cliente entregue información relevante.",
-            )
-
-    # PECC.2: información veraz/no intimidatoria. La ausencia de frases de
-    # amenaza o presión indebida permite cumplir; frases ambiguas quedan para
-    # revisión, y solo evidencia directa clara debería ser NO_CUMPLE.
-    if por_codigo.get("PECC.2"):
-        riesgo = buscar_segmentos_riesgo_intimidacion_v3(segmentos)
-        if not riesgo:
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECC.2"],
-                "CUMPLE",
-                evidencia_neutra,
-                "No se evidencia amenaza, coacción ni comunicación intimidatoria del agente.",
-                "Mantener información clara, veraz y sin presión indebida.",
-            )
-
-    # PECC.3: protección de datos. Si no hay indicios de tercero ni exposición
-    # de deuda a interlocutor no autorizado, no convertir la ausencia de riesgo
-    # en revisión.
-    if por_codigo.get("PECC.3"):
-        if not contiene_indicio_tercero_v3(texto_cliente):
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECC.3"],
-                "CUMPLE",
-                evidencia_neutra,
-                "No se evidencia divulgación de información sensible a un tercero no autorizado.",
-                "Validar identidad antes de exponer información sensible.",
-            )
-
-    # PECC.4: validación verbal del acuerdo. Solo aplica si hay compromiso o
-    # acuerdo verbal. Si no se detecta, queda NO_APLICA/NO_EVALUABLE estable.
-    if por_codigo.get("PECC.4"):
+    # PECN.4: Cierre de negociación.
+    if por_codigo.get("PECN.4"):
         compromiso = buscar_segmentos_compromiso_pago_v3(segmentos)
         if not compromiso:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECC.4"],
+                por_codigo["PECN.4"],
                 "NO_APLICA",
                 [],
-                "No se identifica un acuerdo verbal cerrado que requiera validación final.",
-                "Validar verbalmente monto, fecha y medio cuando exista compromiso.",
+                "No se identifica una promesa o compromiso cerrado durante la llamada.",
+                "Inducir a promesa de pago cuando la conversación permita concretar un compromiso.",
+            )
+        else:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.4"],
+                "CUMPLE",
+                compromiso[:1],
+                "Se identifica conducción hacia una promesa, abono o compromiso de pago.",
+                "Cerrar con compromiso verificable cuando exista disposición de pago.",
+            )
+
+    # PECC.1: Filosofía Biznescob / imagen de Mibanco.
+    if por_codigo.get("PECC.1"):
+        if not contiene_descredito_mibanco_v3(texto_agente):
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.1"],
+                "CUMPLE",
+                evidencia_neutra,
+                "No se evidencia descrédito a Mibanco, sus colaboradores, áreas, procesos o canales.",
+                "Proteger la imagen de Mibanco y explicar procesos sin responsabilizar a terceros.",
+            )
+
+    # PECC.2: Confirmación del acuerdo.
+    if por_codigo.get("PECC.2"):
+        compromiso = buscar_segmentos_compromiso_pago_v3(segmentos)
+        if not compromiso:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.2"],
+                "NO_APLICA",
+                [],
+                "No se identifica un acuerdo verbal cerrado que requiera speech de confirmación.",
+                "Aplicar speech de confirmación cuando exista promesa de pago.",
             )
         else:
             validacion = buscar_segmentos_validacion_acuerdo_agente_v3(segmentos)
             aplicar_resultado_guardado_v3(
-                por_codigo["PECC.4"],
+                por_codigo["PECC.2"],
                 "CUMPLE" if validacion else "REQUIERE_REVISION",
                 [compromiso[0], *(validacion[:1] if validacion else [])],
-                "El agente valida verbalmente condiciones del acuerdo." if validacion else "Existe posible compromiso, pero no queda plenamente validado monto, fecha y medio.",
-                "Confirmar monto, fecha y medio de pago antes de cerrar.",
+                "El agente confirma verbalmente condiciones del acuerdo." if validacion else "Existe posible compromiso, pero no queda plenamente confirmado mediante speech.",
+                "Confirmar verbalmente monto, fecha y condiciones principales del compromiso.",
             )
 
-    # PECC.1: identificación del asesor y entidad. Se resuelve de forma
-    # determinística para evitar que el modelo alterne entre no evaluable y
-    # revisión cuando la apertura existe pero está incompleta o transcrita con
-    # baja claridad.
-    if por_codigo.get("PECC.1"):
-        identificacion = buscar_segmentos_identificacion_asesor_entidad_v3(segmentos)
-        if identificacion:
+    # PECC.3: Tipificación de gestión requiere fuente de sistema/tipificación.
+    if por_codigo.get("PECC.3"):
+        aplicar_resultado_guardado_v3(
+            por_codigo["PECC.3"],
+            "NO_EVALUABLE",
+            [],
+            "La tipificación de la gestión requiere fuente de sistema no disponible en el audio.",
+            "Contrastar tipificación y observación registrada contra la llamada.",
+        )
+
+    # PENC.1: Saludo de bienvenida.
+    if por_codigo.get("PENC.1"):
+        saludo = buscar_segmentos_por_tokens_v3(segmentos[:8], "AGENTE", {"hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "le saluda", "te saluda", "habla"})
+        entidad = buscar_segmentos_por_tokens_v3(segmentos[:12], "AGENTE", {"mibanco", "mi banco"})
+        aplicar_resultado_guardado_v3(
+            por_codigo["PENC.1"],
+            "CUMPLE" if saludo and entidad else "REQUIERE_REVISION",
+            (saludo[:1] + entidad[:1]) or evidencia_neutra,
+            "El agente saluda e identifica representación de Mibanco." if saludo and entidad else "La apertura no permite confirmar saludo completo con representación de Mibanco.",
+            "Saludar indicando nombre/apellidos y representación de Mibanco.",
+        )
+
+    # PENC.2: Tono de voz. Sin análisis acústico avanzado, no castigar desde texto.
+    if por_codigo.get("PENC.2") and estado_sgc_normalizado(por_codigo["PENC.2"]) == "REQUIERE_REVISION":
+        aplicar_resultado_guardado_v3(
+            por_codigo["PENC.2"],
+            "CUMPLE",
+            evidencia_neutra,
+            "No se identifica evidencia textual suficiente de tono inadecuado en la transcripción disponible.",
+            "Mantener tono, velocidad y dicción adecuados.",
+        )
+
+    # PENC.4: Despedida adecuada.
+    if por_codigo.get("PENC.4"):
+        despedida = buscar_segmentos_por_tokens_v3(segmentos[-8:], "AGENTE", {"gracias", "hasta luego", "buen dia", "buen día", "buenas tardes", "que tenga"})
+        if despedida:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECC.1"],
+                por_codigo["PENC.4"],
                 "CUMPLE",
-                identificacion[:2],
-                "El agente identifica al asesor y comunica la entidad/cartera durante la apertura.",
-                "Mantener identificación clara de asesor y entidad al iniciar la llamada.",
-            )
-        else:
-            apertura_agente = [
-                segmento for segmento in segmentos[:12]
-                if normalizar_hablante_v2(segmento.get("hablante") or segmento.get("rol")) == "AGENTE"
-            ]
-            aplicar_resultado_guardado_v3(
-                por_codigo["PECC.1"],
-                "REQUIERE_REVISION" if apertura_agente else "NO_EVALUABLE",
-                apertura_agente[:2],
-                "La apertura del agente existe, pero la identificación del asesor y la entidad no queda suficientemente concluyente." if apertura_agente else "No hay apertura audible suficiente para evaluar la identificación del asesor y la entidad.",
-                "Identificar nombre del asesor y entidad/cartera representada al inicio de la llamada.",
+                despedida[:1],
+                "El agente cierra la llamada con despedida cordial.",
+                "Mantener despedida profesional al finalizar la gestión.",
             )
 
 
@@ -2905,6 +2820,19 @@ def contiene_confusion_material_agente_v3(texto_agente: str) -> bool:
         "disculpe no es", "no se entiende", "no le puedo explicar",
         "no se como", "no sé como", "no sé cómo", "no tengo claro",
         "confundi", "confundí", "confusion", "confusión",
+    }
+    texto = limpiar_key_texto(texto_agente)
+    return any(limpiar_key_texto(token) in texto for token in tokens)
+
+
+def contiene_descredito_mibanco_v3(texto_agente: str) -> bool:
+    tokens = {
+        "culpa de mibanco", "culpa del banco", "mibanco se equivoco",
+        "mibanco se equivocó", "el banco se equivoco", "el banco se equivocó",
+        "mibanco no sabe", "mi banco no sabe", "mibanco no funciona",
+        "mi banco no funciona", "problema de mibanco", "problema del banco",
+        "ellos se equivocaron", "el area se equivoco", "el área se equivocó",
+        "no hacen bien su trabajo", "no registraron bien", "le informaron mal",
     }
     texto = limpiar_key_texto(texto_agente)
     return any(limpiar_key_texto(token) in texto for token in tokens)
@@ -4449,8 +4377,6 @@ def normalizar_errores_criticos_v2(value, evaluacion: List[Dict]) -> List[Dict]:
                 "impacto": str(item.get("impacto") or "Riesgo crítico para calidad y cumplimiento."),
                 "recomendacion": str(item.get("recomendacion") or "Revisión inmediata por supervisor."),
             })
-    if rows:
-        return rows
     for item in evaluacion:
         estado = estado_sgc_normalizado(item)
         debe_mostrar = (
@@ -4514,8 +4440,6 @@ def normalizar_hallazgos_no_criticos_v2(value, evaluacion: List[Dict]) -> List[D
                 "impacto": str(item.get("impacto") or "-"),
                 "recomendacion": str(item.get("recomendacion") or "-"),
             })
-    if rows:
-        return rows
     salida = []
     for item in evaluacion:
         if not isinstance(item, dict):
@@ -4550,7 +4474,7 @@ def normalizar_hallazgos_no_criticos_v2(value, evaluacion: List[Dict]) -> List[D
             "criterios_relacionados": [item.get("codigo_criterio")] if item.get("codigo_criterio") else [],
             "error_sgc_confirmado": bool(item.get("error_sgc_confirmado")),
         })
-    return salida
+    return rows + salida
 
 
 def revision_sgc_visible(item: Dict) -> bool:

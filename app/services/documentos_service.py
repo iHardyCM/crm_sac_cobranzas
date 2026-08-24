@@ -149,26 +149,31 @@ DOCUMENT_TYPES = {
 DOCUMENT_QUERY_SCOPES = {
     133: {
         "nombre": "Compartamos vigente grupal",
+        "entidad": "Compartamos Banco",
         "consulta": "compartamos_grupal_vigente",
         "activo": True,
     },
     124: {
         "nombre": "Compartamos castigo individual",
+        "entidad": "Compartamos Banco",
         "consulta": "compartamos_castigo_individual",
         "activo": True,
     },
     144: {
         "nombre": "Compartamos castigo grupal",
+        "entidad": "Compartamos Banco",
         "consulta": "compartamos_castigo_grupal",
         "activo": True,
     },
     126: {
         "nombre": "Compartamos vigente individual",
+        "entidad": "Compartamos Banco",
         "consulta": "compartamos_vigente_individual",
         "activo": True,
     },
     128: {
         "nombre": "Compartamos CCM",
+        "entidad": "Compartamos Banco",
         "consulta": "compartamos_ccm",
         "activo": True,
     }
@@ -244,6 +249,7 @@ def listar_carteras_documento():
         {
             "id": cartera_id,
             "nombre": config["nombre"],
+            "entidad": config.get("entidad", "Compartamos Banco"),
             "activo": bool(config.get("activo")),
             "consulta": config.get("consulta"),
         }
@@ -493,6 +499,19 @@ def calcular_cuota_grupal(row):
     )
 
 
+def calcular_cuota_grupal_numero(row, numero):
+    suffixes = [str(numero), *[f"{numero}{index}" for index in range(1, 6)]]
+    return sum(
+        decimal_value(row.get(f"CT{suffix}"), Decimal("0"))
+        for suffix in suffixes
+    )
+
+
+def calcular_cuotas_grupal_acumuladas(row, cantidad):
+    cantidad = max(1, min(5, int(cantidad or 1)))
+    return sum(calcular_cuota_grupal_numero(row, numero) for numero in range(1, cantidad + 1))
+
+
 def obtener_nro_cuota_atrasada(row):
     return limpiar_texto(row.get("UltCuotaAtrasada")) or "1"
 
@@ -581,17 +600,24 @@ def columna_tabla_flexible(columns, candidates):
 
 
 def column_expr(alias, columns, candidates, sql_type="NVARCHAR(255)"):
-    actual = columna_tabla(columns, candidates)
+    actual = columna_tabla_flexible(columns, candidates)
     if actual:
         return f"CG.[{actual}] AS {alias}"
     return f"CAST(NULL AS {sql_type}) AS {alias}"
 
 
 def cast_column_expr(alias, columns, candidates, sql_type="NVARCHAR(50)"):
-    actual = columna_tabla(columns, candidates)
+    actual = columna_tabla_flexible(columns, candidates)
     if actual:
         return f"CAST(CG.[{actual}] AS {sql_type}) AS {alias}"
     return f"CAST(NULL AS {sql_type}) AS {alias}"
+
+
+def numeric_source_expr(table_alias, alias, columns, candidates, fallback="0"):
+    actual = columna_tabla_flexible(columns, candidates)
+    if actual:
+        return f"COALESCE(TRY_CAST({table_alias}.[{actual}] AS DECIMAL(18,2)), {fallback}) AS {alias}"
+    return f"CAST({fallback} AS DECIMAL(18,2)) AS {alias}"
 
 
 def obtener_columnas_tabla(cursor, table_name):
@@ -607,7 +633,7 @@ def obtener_columnas_tabla(cursor, table_name):
 
 
 def sac_column_expr(columns, column_name):
-    actual = columna_tabla(columns, [column_name, f"{column_name} "])
+    actual = columna_tabla_flexible(columns, [column_name, f"{column_name} "])
     if not actual:
         return None
     return f"COALESCE(S.[{actual}], 0)"
@@ -684,6 +710,34 @@ def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_c
     try:
         conn = get_connection()
         cursor = conn.cursor()
+        cg_columns = obtener_columnas_tabla(cursor, "compartamos_grupal")
+        sac_columns = obtener_columnas_tabla(cursor, "SAC_CAR_BIZNESCOB")
+        campania_cuota_expr = numeric_source_expr(
+            "CG",
+            "MtoCuotaCampania",
+            cg_columns,
+            [
+                "Mto_SDO_paraContener_Desc%",
+                "Mto_SDO_paraContener_Desc",
+                "Mto SDO paraContener Desc%",
+                "Mto SDO paraContener Desc",
+            ],
+        )
+        ct_selects = []
+        for cuota_numero in range(1, 6):
+            suffixes = [str(cuota_numero), *[f"{cuota_numero}{index}" for index in range(1, 6)]]
+            for suffix in suffixes:
+                ct_selects.append(
+                    "                "
+                    + numeric_source_expr(
+                        "SB",
+                        f"CT{suffix}",
+                        sac_columns,
+                        [f"CT {suffix}", f"CT{suffix}", f"CT {suffix} "],
+                    )
+                    + ","
+                )
+        ct_select_sql = "\n".join(ct_selects)
         cursor.execute(
             f"""
             SELECT TOP {int(limit)}
@@ -703,20 +757,10 @@ def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_c
                 CG.CodCreGrupal,
                 CG.NomGrupo,
                 CG.NomOficina,
+                {campania_cuota_expr},
                 SB.[SdoCapital ] AS SdoCapital,
                 SB.[Deuda_Total ] AS DeudaTotal,
-                SB.[CT 1] AS CT1,
-                SB.[CT 11] AS CT11,
-                SB.[CT 12] AS CT12,
-                SB.[CT 13] AS CT13,
-                SB.[CT 14] AS CT14,
-                SB.[CT 15] AS CT15,
-                SB.[CT 2] AS CT2,
-                SB.[CT 21] AS CT21,
-                SB.[CT 22] AS CT22,
-                SB.[CT 23] AS CT23,
-                SB.[CT 24] AS CT24,
-                SB.[CT 25] AS CT25,
+{ct_select_sql}
                 SB.[Ult_CuotaAtrasada ] AS UltCuotaAtrasada
             FROM Desarrollo.DBO.compartamos_grupal CG WITH(NOLOCK)
             LEFT JOIN Desarrollo.DBO.SAC_CAR_BIZNESCOB SB WITH(NOLOCK)
@@ -2435,9 +2479,15 @@ def preparar_contexto_cuota_grupal(rows, fiador=None, pagos_grupales=None, excep
 
 
 def preparar_contexto_cuota_individual(registro, cancelacion=None, fecha_pago=None, excepcion=False, cuotas_individual=1):
-    cantidad_cuotas = max(1, min(4, int(cuotas_individual or 1)))
-    cuota = decimal_value(registro.get(f"CT{cantidad_cuotas}"), calcular_cuota_grupal(registro)) or Decimal("0")
-    minimo = decimal_value(registro.get(f"MtoCuotaCampania{cantidad_cuotas}"), registro.get("MtoCuotaCampania")) or cuota
+    cantidad_cuotas = max(1, min(5, int(cuotas_individual or 1)))
+    es_grupal_vigente = int(registro.get("CarteraId") or 0) == 133
+    if es_grupal_vigente:
+        cuota = calcular_cuotas_grupal_acumuladas(registro, cantidad_cuotas)
+        minimo = decimal_value(registro.get("MtoCuotaCampania"), Decimal("0"))
+    else:
+        cantidad_cuotas = min(cantidad_cuotas, 4)
+        cuota = decimal_value(registro.get(f"CT{cantidad_cuotas}"), calcular_cuota_grupal(registro)) or Decimal("0")
+        minimo = decimal_value(registro.get(f"MtoCuotaCampania{cantidad_cuotas}"), registro.get("MtoCuotaCampania")) or cuota
     monto_pago, _ = validar_cancelacion(cancelacion, minimo, excepcion=excepcion)
     deuda_total = cuota
     monto_condonacion = max(cuota - monto_pago, Decimal("0"))

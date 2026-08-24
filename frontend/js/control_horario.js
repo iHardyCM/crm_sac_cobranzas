@@ -33,8 +33,8 @@ const CARTERAS_CONTROL = {
     135: "MIBANCO VIGENTE",
     124: "COMPARTAMOS CASTIGO INDIVIDUAL",
     144: "COMPARTAMOS CASTIGO GRUPAL",
-    126: "COMPARTAMOS VIGENTE INDIVIDUAL",
-    128: "COMPARTAMOS VIGENTE CCM",
+    126: "COMPARTAMOS VIGENTE INDIVIDUAL / CCM",
+    128: "COMPARTAMOS VIGENTE INDIVIDUAL / CCM",
     133: "COMPARTAMOS VIGENTE GRUPAL / CSM",
     117: "INTERBANK",
     132: "FINANCIERA OH",
@@ -44,8 +44,14 @@ const CARTERAS_CONTROL = {
 
 const GRUPOS_CARTERA_CONTROL = [
     { key: "MIBANCO", cartera: "MIBANCO", ids: ["112", "143", "135"] },
-    { key: "COMPARTAMOS_VIGENTE", cartera: "COMPARTAMOS VIGENTE", ids: ["126", "128", "133"] },
+    { key: "PROPIA", cartera: "PROPIA", ids: ["137", "148"] },
+    { key: "COMPARTAMOS_VIGENTE_IND_CCM", cartera: "COMPARTAMOS VIGENTE INDIVIDUAL / CCM", ids: ["126", "128"] },
+    { key: "COMPARTAMOS_VIGENTE_GRUPAL", cartera: "COMPARTAMOS VIGENTE GRUPAL / CSM", ids: ["133"] },
     { key: "COMPARTAMOS_CASTIGO", cartera: "COMPARTAMOS CASTIGO", ids: ["124", "144"] }
+];
+
+const CARTERAS_UNIFICADAS_CONTROL = [
+    { key: "COMPARTAMOS_VIGENTE_IND_CCM", cartera: "COMPARTAMOS VIGENTE INDIVIDUAL / CCM", ids: ["126", "128"] }
 ];
 
 const CAMPOS = {
@@ -341,13 +347,24 @@ function definirGrupoCartera(row) {
     const id = String(getIdCarteraBase(row) || "").trim();
     if (!id) return null;
 
+    const unificada = CARTERAS_UNIFICADAS_CONTROL.find(item => item.ids.includes(id));
+    if (unificada) {
+        return {
+            idcartera: unificada.key,
+            cartera: unificada.cartera,
+            ids: unificada.ids,
+            es_grupo: true
+        };
+    }
+
     if (modoVistaCarteraActual() === "AGRUPADO") {
         const grupo = GRUPOS_CARTERA_CONTROL.find(item => item.ids.includes(id));
         if (grupo) {
             return {
                 idcartera: grupo.key,
                 cartera: grupo.cartera,
-                ids: grupo.ids
+                ids: grupo.ids,
+                es_grupo: true
             };
         }
     }
@@ -355,7 +372,8 @@ function definirGrupoCartera(row) {
     return {
         idcartera: id,
         cartera: CARTERAS_CONTROL[id] || getCartera(row, id),
-        ids: [id]
+        ids: [id],
+        es_grupo: false
     };
 }
 
@@ -482,7 +500,7 @@ function poblarFiltroCarteras() {
 
     const opciones = resumenOpcionesCarteras
         .filter(item => !idsSupervisor.length || grupoPermitidoParaSupervisor(item, idsSupervisor))
-        .map(item => ({ id: item.idcartera, texto: item.ids?.length > 1 ? item.cartera : `${item.idcartera} - ${item.cartera}` }))
+        .map(item => ({ id: item.idcartera, texto: item.es_grupo || item.ids?.length > 1 ? item.cartera : `${item.idcartera} - ${item.cartera}` }))
         .sort((a, b) => String(a.texto).localeCompare(String(b.texto), "es"));
     const existeActual = opciones.some(item => String(item.id) === String(actual));
     const opcionFiltroActual = idsFiltroCarteraControl.length && !existeActual && !select.value
@@ -996,6 +1014,7 @@ function construirResumenCarteras(detalle) {
             cartera: grupo.cartera,
             ids: grupo.ids,
             ids_cartera: grupo.ids.join(","),
+            es_grupo: Boolean(grupo.es_grupo),
             gestiones: 0,
             clientes_mes: 0,
             cef: 0,
