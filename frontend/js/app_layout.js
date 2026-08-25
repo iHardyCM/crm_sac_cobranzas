@@ -176,7 +176,7 @@
             document.body.classList.add("crm-sidebar-collapsed");
         }
 
-        const activeKey = meta.key === "compromisos" && tipoUsuario() === "SUPERVISOR"
+        const activeKey = meta.key === "compromisos" && esUsuarioSupervisor()
             ? "gestiones"
             : meta.key;
 
@@ -360,11 +360,11 @@
     }
 
     function getCompromisosKey() {
-        return tipoUsuario() === "SUPERVISOR" ? "gestiones" : "compromisos";
+        return esUsuarioSupervisor() ? "gestiones" : "compromisos";
     }
 
     function getCompromisosHref() {
-        return tipoUsuario() === "SUPERVISOR" ? "supervisor.html" : "compromisos.html";
+        return esUsuarioSupervisor() ? "supervisor.html" : "compromisos.html";
     }
 
     function filtrarGruposPorRol() {
@@ -386,7 +386,7 @@
         const tipo = tipoUsuario();
         const compartamos = carteraCompartamos();
 
-        if (tipo === "SUPERVISOR") {
+        if (esUsuarioSupervisor()) {
             return [
                 "gestiones",
                 "compromisos",
@@ -406,6 +406,7 @@
             "compromisos",
             "ritmo_meta",
             "telefonos",
+            "documentos",
             ...(compartamos ? ["clientes"] : [])
         ].includes(key);
     }
@@ -415,6 +416,14 @@
             return normalizarTipoUsuario(localStorage.getItem("tipo"));
         }
         return String(localStorage.getItem("tipo") || "").trim().toUpperCase();
+    }
+
+    function esUsuarioSupervisor() {
+        const tipo = tipoUsuario();
+        if (typeof esSupervisor === "function") return esSupervisor(tipo);
+        return tipo === "SUPERVISOR"
+            || tipo === "SUPERVISORA"
+            || tipo.includes("SUPERVISOR");
     }
 
     function esPerfilGerencial() {

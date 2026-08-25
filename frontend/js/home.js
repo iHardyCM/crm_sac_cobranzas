@@ -47,7 +47,7 @@ function obtenerDescripcionPerfil(tipo) {
         return "Tienes acceso a la vista general de carteras, promesas del dia y reportes corporativos.";
     }
 
-    if (tipoNormalizado === "SUPERVISOR") {
+    if (esSupervisor(tipoNormalizado)) {
         return "Puedes revisar tu equipo, entrar a la vista de agentes y dar seguimiento a las promesas del dia.";
     }
 
@@ -80,7 +80,7 @@ function obtenerModulosPorPerfil(tipo) {
     const modulos = [];
     const compartamos = esCarteraCompartamos();
 
-    if (tipo !== "SUPERVISOR" && !puedeVerCorporativo(tipo)) {
+    if (!esSupervisor(tipo) && !puedeVerCorporativo(tipo)) {
         if (compartamos) {
             modulos.push({
                 sigla: "CL",
@@ -106,9 +106,17 @@ function obtenerModulosPorPerfil(tipo) {
             ruta: "telefonos.html",
             destacado: false
         });
+
+        modulos.push({
+            sigla: "DO",
+            titulo: "Documentos automatizados",
+            descripcion: "Genera documentos según la entidad, cartera y condiciones de pago seleccionadas.",
+            ruta: "documentos.html",
+            destacado: false
+        });
     }
 
-    if (tipo === "SUPERVISOR") {
+    if (esSupervisor(tipo)) {
         const queryCarteras = typeof obtenerQueryCarterasSesion === "function"
             ? obtenerQueryCarterasSesion()
             : "";
@@ -135,13 +143,13 @@ function obtenerModulosPorPerfil(tipo) {
                 ruta: "telefonos.html",
                 destacado: false
             },
-            ...(compartamos ? [{
+            {
                 sigla: "DO",
                 titulo: "Documentos automatizados",
-                descripcion: "Genera cartas de cancelacion usando datos de Compartamos y validacion de monto.",
+                descripcion: "Genera documentos según la entidad, cartera y condiciones de pago seleccionadas.",
                 ruta: "documentos.html",
                 destacado: false
-            }] : []),
+            },
             {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",

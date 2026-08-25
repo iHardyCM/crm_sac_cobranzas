@@ -18,7 +18,10 @@ function puedeVerCorporativo(tipo) {
 }
 
 function esSupervisor(tipo) {
-    return normalizarTipoUsuario(tipo || localStorage.getItem("tipo")) === "SUPERVISOR";
+    const tipoNormalizado = normalizarTipoUsuario(tipo || localStorage.getItem("tipo"));
+    return tipoNormalizado === "SUPERVISOR"
+        || tipoNormalizado === "SUPERVISORA"
+        || tipoNormalizado.includes("SUPERVISOR");
 }
 
 function obtenerIdCarterasSesion() {
@@ -65,7 +68,7 @@ function obtenerRutaPorTipo(tipo) {
         return "corporativo.html";
     }
 
-    if (tipoNormalizado === "SUPERVISOR") {
+    if (esSupervisor(tipoNormalizado)) {
         return "supervisor.html";
     }
 
