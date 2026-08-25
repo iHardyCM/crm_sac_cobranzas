@@ -599,7 +599,7 @@ def limpiar_texto(value):
 
 
 def clave_operacion(value):
-    """Normaliza operaciones SQL numericas sin perder compatibilidad con codigos alfanumericos."""
+    """Normaliza operaciones SQL sin eliminar ceros significativos del identificador."""
     text = limpiar_texto(value)
     if not text:
         return ""
@@ -607,6 +607,10 @@ def clave_operacion(value):
         number = Decimal(text)
     except (InvalidOperation, ValueError):
         return text.upper()
+    # SQL/pandas puede entregar el código como 121035810.0. Se elimina solo
+    # la fracción técnica; nunca los ceros finales de la parte entera.
+    if number == number.to_integral_value():
+        return format(number.quantize(Decimal("1")), "f")
     return format(number.normalize(), "f").rstrip("0").rstrip(".") or "0"
 
 
