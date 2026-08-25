@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <title>Documentos Automatizados</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="../css/app_layout.css">
-    <link rel="stylesheet" href="../css/documentos.css?v=20260824a">
+    <link rel="stylesheet" href="/frontend/css/app_layout.css">
+    <link rel="stylesheet" href="/frontend/css/documentos.css?v=20260824h">
 </head>
 <body>
 
@@ -25,6 +25,10 @@
     <section class="documentos-card documentos-form-card">
         <div class="documentos-form-grid">
             <label>
+                Entidad
+                <select id="documentoEntidad"></select>
+            </label>
+            <label>
                 Cartera
                 <select id="documentoCartera"></select>
             </label>
@@ -32,21 +36,29 @@
                 Tipo de documento
                 <select id="documentoTipo"></select>
             </label>
-            <label>
+            <label id="dniBusquedaBox">
                 DNI
                 <input id="dni" type="text" placeholder="Ej. 12345678" autocomplete="off">
             </label>
-            <label>
+            <label id="operacionBusquedaBox">
                 Operacion
                 <input id="operacion" type="text" placeholder="Codigo de operacion" autocomplete="off">
             </label>
-            <label>
+            <label id="codigoGrupoBusquedaBox">
                 Cta grupal
                 <input id="codigoGrupo" type="text" placeholder="CodigoGrupo" autocomplete="off">
             </label>
-            <label>
+            <label id="codCreGrupalBusquedaBox">
                 Cod grupal
                 <input id="codCreGrupal" type="text" placeholder="CodCreGrupal" autocomplete="off">
+            </label>
+            <label id="codigoClienteMibancoBox" class="hidden">
+                Codigo de cliente
+                <input id="codigoClienteMibanco" type="text" placeholder="Codigo de cliente" autocomplete="off">
+            </label>
+            <label id="nombreClienteMibancoBox" class="hidden">
+                Nombre del cliente
+                <input id="nombreClienteMibanco" type="text" placeholder="Nombre o parte del nombre" autocomplete="off">
             </label>
         </div>
 
@@ -183,6 +195,22 @@
             </div>
         </div>
 
+        <div id="panelOperacionesMibanco" class="documentos-group-panel hidden">
+            <div class="documentos-subsection-head compact">
+                <div>
+                    <h4>Operaciones a cancelar</h4>
+                    <p>Marca las operaciones que el cliente incluirá en este acuerdo. Por defecto se incluyen todas.</p>
+                </div>
+                <strong id="totalPagoMibanco">S/ 0.00</strong>
+            </div>
+            <div class="documentos-table-wrapper">
+                <table class="documentos-table">
+                    <thead><tr><th>Incluir</th><th>Cuenta</th><th>Operación</th><th>Capital</th><th>Deuda total</th><th>Campaña</th><th>Monto a pagar</th></tr></thead>
+                    <tbody id="tbodyOperacionesMibanco"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="documentos-generate-grid">
             <label id="cancelacionBox">
                 Cancelacion a ingresar
@@ -223,10 +251,14 @@
                     <option value="">Misma agencia</option>
                 </select>
             </label>
-            <div class="documentos-date-box">
+            <div id="fechaDocumentoBox" class="documentos-date-box">
                 <span>Fecha del documento y pago</span>
                 <strong id="fechaDocumentoHoy">--/--/----</strong>
             </div>
+            <label id="fechaPagoMibancoBox" class="hidden">
+                Fecha del documento y pago
+                <input id="fechaPagoMibanco" type="date">
+            </label>
             <div class="documentos-format-box">
                 <span>Formato</span>
                 <div class="documentos-format-toggle" role="group" aria-label="Formato de descarga">
@@ -263,10 +295,10 @@
     <section id="panelPreview" class="documentos-card documentos-preview-card hidden">
         <div class="documentos-section-head">
             <div>
-                <h3>Preview del documento y correo</h3>
-                <p>Revisa contenido, montos, firmas y mensaje antes de descargar.</p>
+                <h3>Vista previa del documento y correo</h3>
+                <p>El documento se actualiza automáticamente con la salida real antes de descargar.</p>
             </div>
-            <span>Vista previa</span>
+            <span>Vista previa real</span>
         </div>
         <div class="documentos-preview-layout">
             <div class="documentos-preview-wrapper">
@@ -345,7 +377,7 @@
     </section>
 </main>
 
-<script src="../js/app_layout.js?v=20260623a"></script>
-<script src="../js/documentos.js?v=20260824a"></script>
+<script src="/frontend/js/app_layout.js?v=20260824a"></script>
+    <script src="/frontend/js/documentos.js?v=20260824m"></script>
 </body>
 </html>

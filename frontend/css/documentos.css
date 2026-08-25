@@ -63,9 +63,13 @@ body {
 .documentos-form-grid,
 .documentos-generate-grid {
     display: grid;
-    grid-template-columns: 1.05fr 1.15fr repeat(4, minmax(130px, 1fr));
+    grid-template-columns: minmax(170px, 0.85fr) minmax(230px, 1fr) minmax(270px, 1.15fr) repeat(4, minmax(130px, 0.9fr));
     gap: 14px;
     align-items: end;
+}
+
+.documentos-form-grid.mibanco-form-grid {
+    grid-template-columns: repeat(5, minmax(170px, 1fr));
 }
 
 .documentos-generate-grid {
@@ -79,6 +83,43 @@ body {
 .documentos-generate-grid.vigente-individual-grid {
     grid-template-columns: minmax(250px, 1.1fr) 170px minmax(270px, 0.9fr) 190px 190px;
 }
+
+.documentos-generate-grid.mibanco-cuotas-grid {
+    grid-template-columns: minmax(210px, 1.1fr) 130px 150px 150px 190px 190px;
+}
+
+.documentos-generate-grid.mibanco-cuotas-grid #cancelacionBox,
+.documentos-generate-grid.mibanco-cuotas-grid #modalidadCastigoBox,
+.documentos-generate-grid.mibanco-cuotas-grid #agenciaDestinoCastigoBox,
+.documentos-generate-grid.mibanco-cuotas-grid #excepcionDocumentoBox {
+    grid-column: auto;
+}
+
+.mibanco-preview .documentos-preview-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.mibanco-document-preview { font-family: Calibri, Arial, sans-serif; font-size: 9px; line-height: 1.42; color: #111; }
+.mibanco-preview-logo { display: block; width: 106px; height: auto; margin: 0 0 23px auto; }
+.mibanco-client-data { display: grid; grid-template-columns: 82px minmax(0, 1fr) 34px 130px; gap: 7px; margin: 0 0 12px; }
+.mibanco-client-data.address { grid-template-columns: 82px minmax(0, 1fr); }
+.mibanco-title-bar { width: 84%; margin: 28px auto 15px !important; padding: 3px 10px; border: 2px solid #111; background: #008d48; color: #fff; font-size: 17px !important; font-style: italic; }
+.mibanco-intro { font-style: italic; line-height: 1.58; }
+.documentos-preview-page table.mibanco-preview-table { width: 84%; margin: 22px auto; font-size: 9px; table-layout: fixed; }
+.documentos-preview-page .mibanco-preview-table th { background: #008d48; color: #fff; font-size: 8px; font-style: italic; }
+.documentos-preview-page .mibanco-preview-table th, .documentos-preview-page .mibanco-preview-table td { padding: 7px 4px; }
+.documentos-preview-page .mibanco-preview-table .mibanco-payment { background: #fff200; font-weight: 900; }
+.documentos-preview-page .mibanco-preview-table.cuotas { width: 84%; }
+.mibanco-payment-line { text-align: center !important; font-weight: 700; }
+.mibanco-preview .documentos-preview-page.mibanco-format-pdf { width: min(100%, 820px); padding: 38px 31px 42px; }
+.mibanco-preview .documentos-preview-page.mibanco-format-pdf .mibanco-title-bar,
+.mibanco-preview .documentos-preview-page.mibanco-format-pdf .mibanco-preview-table { width: 76%; }
+.mibanco-preview .documentos-preview-page.mibanco-format-word { width: min(100%, 820px); padding: 42px 40px; }
+.mibanco-warning { font-style: italic; font-weight: 900; text-decoration: underline; }
+.mibanco-area { margin-top: 28px !important; text-align: center !important; font-style: italic; font-weight: 900; text-decoration: underline; }
+.mibanco-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 94px; margin-top: 82px; text-align: center; }
+.mibanco-signatures i { display: block; border-top: 1px solid #111; margin-bottom: 4px; }
+.mibanco-signatures strong, .mibanco-signatures span { display: block; font-size: 9px; font-style: italic; line-height: 1.25; }
 
 .documentos-generate-grid.castigo-acuerdo-grid {
     grid-template-columns: repeat(14, minmax(0, 1fr));
@@ -206,6 +247,22 @@ body {
     color: #0f172a;
     background: #ffffff;
     font-size: 13px;
+}
+
+.mibanco-pago-input {
+    width: 130px;
+    height: 34px;
+    border: 1px solid #cfd8e3;
+    border-radius: 8px;
+    padding: 0 9px;
+    box-sizing: border-box;
+    font: inherit;
+}
+
+.mibanco-pago-input:disabled {
+    background: #edf2f7;
+    color: #718096;
+    cursor: not-allowed;
 }
 
 .documentos-installments-table .monto-cuota-castigo {
@@ -354,6 +411,21 @@ body {
     font-family: Calibri, "Segoe UI", Arial, sans-serif;
     font-size: 12px;
     line-height: 1.22;
+}
+
+.documentos-preview-page.documentos-preview-real {
+    width: min(100%, 920px);
+    min-height: 1100px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.documentos-preview-real iframe {
+    display: block;
+    width: 100%;
+    min-height: 1100px;
+    border: 0;
+    background: #ffffff;
 }
 
 .documentos-preview-card.mail-only .documentos-preview-page {

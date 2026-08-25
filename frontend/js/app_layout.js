@@ -397,7 +397,8 @@
                 "pagos",
                 "canales",
                 "telefonos",
-                ...(compartamos ? ["clientes", "documentos"] : [])
+                "documentos",
+                ...(compartamos ? ["clientes"] : [])
             ].includes(key);
         }
 

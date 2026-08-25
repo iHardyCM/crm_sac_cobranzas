@@ -7,6 +7,9 @@ let documentosTipos = [];
 let documentosCarteras = [];
 let correosPreviewActuales = {};
 let agenciasDestinoCastigo = [];
+let previewRealUrl = null;
+let previewRealTimer = null;
+let previewRealRequest = 0;
 
 const CARTERA_GRUPOS = ["Mibanco", "Compartamos Banco", "Financiera OH", "Interbank", "Propia Biznescob"];
 
@@ -38,12 +41,25 @@ document.addEventListener("DOMContentLoaded", () => {
         limpiarSeleccion();
         actualizarModoDocumento();
     });
+    document.getElementById("documentoEntidad")?.addEventListener("change", () => {
+        poblarCarterasDocumento();
+        poblarTiposDocumento();
+        limpiarCamposGeneracion();
+        limpiarSeleccion();
+        actualizarModoDocumento();
+    });
     document.getElementById("documentoTipo")?.addEventListener("change", () => {
         limpiarCamposGeneracion();
         limpiarSeleccion();
         actualizarModoDocumento();
     });
     document.getElementById("cancelacion")?.addEventListener("input", () => {
+        if (esDocumentoMibanco()) {
+            if (esDocumentoMibancoCuotas()) sincronizarPagosMibanco(true);
+            actualizarResumenMibanco();
+            pintarPreviewDocumento();
+            return;
+        }
         const tienePlanPagos = ["armadas", "cuotas"].includes(modalidadCastigo());
         autocompletarPagosCastigo(tienePlanPagos);
         sincronizarFechasCuotasCastigo(tienePlanPagos);
@@ -58,6 +74,11 @@ document.addEventListener("DOMContentLoaded", () => {
         pintarPreviewDocumento();
     });
     document.getElementById("cuotasCastigo")?.addEventListener("input", () => {
+        if (esDocumentoMibancoCuotas()) {
+            sincronizarPagosMibanco(true);
+            pintarPreviewDocumento();
+            return;
+        }
         autocompletarPagosCastigo(true);
         sincronizarFechasCuotasCastigo(true);
         actualizarModoDocumento();
@@ -70,6 +91,11 @@ document.addEventListener("DOMContentLoaded", () => {
         pintarPreviewDocumento();
     });
     document.getElementById("inicialCastigo")?.addEventListener("input", () => {
+        if (esDocumentoMibancoCuotas()) {
+            sincronizarPagosMibanco(true);
+            pintarPreviewDocumento();
+            return;
+        }
         autocompletarCuotaCastigoDesdeInicial();
         pintarPreviewDocumento();
     });
@@ -108,10 +134,13 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById(id)?.addEventListener("change", pintarPreviewDocumento);
     });
 
-    ["dni", "operacion", "codigoGrupo", "codCreGrupal"].forEach(id => {
+    ["dni", "operacion", "codigoGrupo", "codCreGrupal", "codigoClienteMibanco", "nombreClienteMibanco"].forEach(id => {
         document.getElementById(id)?.addEventListener("keydown", event => {
             if (event.key === "Enter") buscarDatosDocumento();
         });
+    });
+    document.getElementById("fechaPagoMibanco")?.addEventListener("change", () => {
+        if (esDocumentoMibanco()) pintarPreviewDocumento();
     });
 });
 
@@ -134,6 +163,7 @@ async function inicializarCatalogosDocumento() {
 
         documentosTipos = tiposResult.data || [];
         documentosCarteras = carterasResult.data || [];
+        poblarEntidadesDocumento();
         poblarCarterasDocumento();
         poblarTiposDocumento();
         actualizarModoDocumento();
@@ -143,28 +173,65 @@ async function inicializarCatalogosDocumento() {
 }
 
 
-function poblarCarterasDocumento() {
-    const select = document.getElementById("documentoCartera");
-    if (!select) return;
-
+function entidadesDocumentoDisponibles() {
     const grupos = [...CARTERA_GRUPOS];
     documentosCarteras.forEach(item => {
         const grupo = item.entidad || "Compartamos Banco";
         if (!grupos.includes(grupo)) grupos.push(grupo);
     });
+    return grupos;
+}
 
-    select.innerHTML = grupos.map(grupo => {
-        const items = documentosCarteras.filter(item => (item.entidad || "Compartamos Banco") === grupo);
-        const opciones = items.length
-            ? items.map(item => (
-                `<option value="${escapeAttr(item.id)}" ${item.activo ? "" : "disabled"}>${escapeHtml(item.id)} - ${escapeHtml(item.nombre)}${item.activo ? "" : " (pendiente)"}</option>`
-            )).join("")
-            : `<option value="" disabled>${escapeHtml(grupo)} - sin carteras configuradas</option>`;
-        return `<optgroup label="${escapeAttr(grupo)}">${opciones}</optgroup>`;
+
+function carteraPredeterminadaDocumento() {
+    const carteraSesion = String(localStorage.getItem("idcartera") || "").trim();
+    return documentosCarteras.find(item => String(item.id) === carteraSesion && item.activo) || null;
+}
+
+
+function poblarEntidadesDocumento() {
+    const select = document.getElementById("documentoEntidad");
+    if (!select) return;
+
+    const asignada = carteraPredeterminadaDocumento();
+    const anterior = select.value || asignada?.entidad || "Compartamos Banco";
+    select.innerHTML = entidadesDocumentoDisponibles().map(grupo => {
+        const total = documentosCarteras.filter(item => (item.entidad || "Compartamos Banco") === grupo).length;
+        const label = total ? `${grupo} (${total})` : `${grupo} - sin carteras`;
+        return `<option value="${escapeAttr(grupo)}">${escapeHtml(label)}</option>`;
     }).join("");
+    select.value = entidadesDocumentoDisponibles().includes(anterior) ? anterior : "Compartamos Banco";
+}
 
-    if (!select.value && documentosCarteras.some(item => item.id === 133)) {
+
+function poblarCarterasDocumento() {
+    const select = document.getElementById("documentoCartera");
+    if (!select) return;
+
+    const entidad = document.getElementById("documentoEntidad")?.value || "Compartamos Banco";
+    const carteras = documentosCarteras.filter(item => (item.entidad || "Compartamos Banco") === entidad);
+
+    if (!carteras.length) {
+        select.innerHTML = '<option value="">Sin carteras configuradas</option>';
+        select.value = "";
+        return;
+    }
+
+    const anterior = select.value;
+    const asignada = carteraPredeterminadaDocumento();
+    select.innerHTML = carteras.map(item => (
+        `<option value="${escapeAttr(item.id)}" ${item.activo ? "" : "disabled"}>${escapeHtml(item.id)} - ${escapeHtml(item.nombre)}${item.activo ? "" : " (pendiente)"}</option>`
+    )).join("");
+
+    if (carteras.some(item => String(item.id) === String(anterior))) {
+        select.value = anterior;
+    } else if (asignada && carteras.some(item => String(item.id) === String(asignada.id))) {
+        select.value = String(asignada.id);
+    } else if (entidad === "Compartamos Banco" && carteras.some(item => Number(item.id) === 133)) {
         select.value = "133";
+    } else {
+        const primeraActiva = carteras.find(item => item.activo) || carteras[0];
+        select.value = String(primeraActiva.id || "");
     }
 }
 
@@ -173,11 +240,18 @@ function poblarTiposDocumento() {
     const select = document.getElementById("documentoTipo");
     if (!select) return;
 
-    const cartera = Number(document.getElementById("documentoCartera")?.value || 133);
+    const carteraValue = document.getElementById("documentoCartera")?.value || "";
+    if (!carteraValue) {
+        select.innerHTML = '<option value="">Sin documentos configurados</option>';
+        return;
+    }
+    const cartera = Number(carteraValue);
     const tipos = documentosTipos.filter(item => Number(item.cartera_id || 0) === cartera);
-    select.innerHTML = tipos.map(item => (
-        `<option value="${escapeAttr(item.id)}">${escapeHtml(item.nombre)}</option>`
-    )).join("");
+    select.innerHTML = tipos.length
+        ? tipos.map(item => (
+            `<option value="${escapeAttr(item.id)}">${escapeHtml(item.nombre)}</option>`
+        )).join("")
+        : '<option value="">Sin documentos configurados</option>';
 }
 
 
@@ -232,6 +306,16 @@ function esDocumentoCastigoCorreo() {
 }
 
 
+function esDocumentoMibanco() {
+    return (document.getElementById("documentoTipo")?.value || "").startsWith("mibanco_castigo_");
+}
+
+
+function esDocumentoMibancoCuotas() {
+    return document.getElementById("documentoTipo")?.value === "mibanco_castigo_cuotas";
+}
+
+
 function esDocumentoCastigoFormatos() {
     return (document.getElementById("documentoTipo")?.value || "").endsWith("_formatos");
 }
@@ -244,11 +328,13 @@ function esDocumentoCastigoAcuerdo() {
 
 function actualizarModoDocumento() {
     const cancelacionLabel = document.getElementById("cancelacion")?.closest("label");
-    cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal());
+    const esMibanco = esDocumentoMibanco();
+    const esMibancoCuotas = esDocumentoMibancoCuotas();
+    cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal() || (esMibanco && !esMibancoCuotas));
     if (cancelacionLabel?.firstChild) {
         let textoMonto = "Cancelacion a ingresar\n";
         if (esDocumentoCorreoPagoDirectoCuota()) textoMonto = "Monto de cuota a ingresar\n";
-        if (esDocumentoCastigoCorreo()) textoMonto = "Monto campaña / pago\n";
+        if (esDocumentoCastigoCorreo() || esDocumentoMibanco()) textoMonto = "Monto total a cancelar\n";
         cancelacionLabel.firstChild.textContent = textoMonto;
     }
     document.getElementById("panelGrupal")?.classList.toggle("hidden", !esDocumentoGrupal() || !documentoSeleccionado);
@@ -260,12 +346,12 @@ function actualizarModoDocumento() {
     const esArmadas = modalidad === "armadas";
     const esCuotas = modalidad === "cuotas";
     document.getElementById("modalidadCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo);
-    document.getElementById("cuotasCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || esUnPago);
+    document.getElementById("cuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !esMibancoCuotas);
     poblarOpcionesCuotasIndividual();
     document.getElementById("cuotasIndividualBox")?.classList.toggle("hidden", !esDocumentoCuotaIndividual());
-    document.getElementById("inicialCastigoBox")?.classList.add("hidden");
-    document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || esUnPago);
-    document.getElementById("fechasCuotasCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo || (!esArmadas && !esCuotas));
+    document.getElementById("inicialCastigoBox")?.classList.toggle("hidden", !esMibancoCuotas);
+    document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !esMibancoCuotas);
+    document.getElementById("fechasCuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || (!esArmadas && !esCuotas)) && !esMibancoCuotas);
     const requiereAgenciaDestino = esDocumentoCastigoCorreo() || esDocumentoVigenteIndividual();
     document.getElementById("agenciaDestinoCastigoBox")?.classList.toggle("hidden", !requiereAgenciaDestino);
     const generacionGrid = document.querySelector(".documentos-generate-grid");
@@ -273,15 +359,29 @@ function actualizarModoDocumento() {
     generacionGrid?.classList.toggle("castigo-acuerdo-grid", esCastigoAcuerdo);
     generacionGrid?.classList.toggle("castigo-un-pago-grid", esCastigoAcuerdo && esUnPago);
     generacionGrid?.classList.toggle("vigente-individual-grid", esDocumentoVigenteIndividual());
+    generacionGrid?.classList.toggle("mibanco-cuotas-grid", esMibancoCuotas);
     const cuotasLabel = document.getElementById("cuotasCastigoBox");
     if (cuotasLabel?.firstChild) cuotasLabel.firstChild.textContent = esArmadas ? "Cantidad de pagos\n" : "Cantidad de cuotas\n";
     const cuotaPagoLabel = document.getElementById("cuotaPagoCastigoBox");
     if (cuotaPagoLabel?.firstChild) cuotaPagoLabel.firstChild.textContent = esArmadas ? "Monto de armada\n" : "Cuota a pagar\n";
-    sincronizarFechasCuotasCastigo(false);
+    if (esMibancoCuotas) sincronizarPagosMibanco(false);
+    else sincronizarFechasCuotasCastigo(false);
     document.querySelector(".documentos-format-box")?.classList.toggle("hidden", esDocumentoSoloCorreo());
-    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo());
+    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
     document.getElementById("btnGenerar")?.classList.toggle("hidden", esDocumentoSoloCorreo());
-    document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo());
+    document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo() || esDocumentoMibancoCuotas());
+    document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco);
+    document.getElementById("fechaPagoMibancoBox")?.classList.toggle("hidden", !esMibanco);
+    document.getElementById("btnDirectorioAgencias")?.classList.toggle("hidden", esMibanco);
+    document.getElementById("codigoGrupoBusquedaBox")?.classList.toggle("hidden", esMibanco);
+    document.getElementById("codCreGrupalBusquedaBox")?.classList.toggle("hidden", esMibanco);
+    document.getElementById("codigoClienteMibancoBox")?.classList.toggle("hidden", !esMibanco);
+    document.getElementById("nombreClienteMibancoBox")?.classList.toggle("hidden", !esMibanco);
+    document.querySelector(".documentos-form-grid")?.classList.toggle("mibanco-form-grid", esMibanco);
+    const regla = document.querySelector(".documentos-rule");
+    if (regla && esMibanco) {
+        regla.innerHTML = "Cada operación debe registrar su <strong>monto a pagar</strong>. El pago debe ser igual o mayor a la campaña de esa operación; marca <strong>Excepción</strong> solo si se permitirá un monto menor.";
+    }
     const tituloPersona = document.getElementById("tituloPersonaGrupal");
     if (tituloPersona) tituloPersona.textContent = esDocumentoCuotaGrupal() ? "Datos del fiador" : "Datos del encargado";
     const ayudaMontos = document.getElementById("ayudaMontosGrupales");
@@ -311,7 +411,11 @@ function setSummaryLabels() {
     const summary = document.querySelectorAll(".documentos-summary span");
     if (summary.length < 3) return;
 
-    if (esDocumentoCastigoCorreo()) {
+    if (esDocumentoMibanco()) {
+        summary[0].textContent = "Campaña total SQL";
+        summary[1].textContent = "Deuda total seleccionada";
+        summary[2].textContent = "Capital seleccionado";
+    } else if (esDocumentoCastigoCorreo()) {
         summary[0].textContent = "Monto campaña SQL";
         summary[1].textContent = "Deuda total";
         summary[2].textContent = "Tipo de acuerdo";
@@ -344,6 +448,8 @@ function pintarFechaDocumentoHoy() {
         month: "2-digit",
         year: "numeric",
     });
+    const fechaMibanco = document.getElementById("fechaPagoMibanco");
+    if (fechaMibanco) fechaMibanco.value = fechaInputValue(new Date());
 }
 
 
@@ -353,15 +459,25 @@ function obtenerFiltros() {
         operacion: document.getElementById("operacion")?.value.trim() || "",
         codigo_grupo: document.getElementById("codigoGrupo")?.value.trim() || "",
         cod_cre_grupal: document.getElementById("codCreGrupal")?.value.trim() || "",
+        codigo_cliente: document.getElementById("codigoClienteMibanco")?.value.trim() || "",
+        nombre_cliente: document.getElementById("nombreClienteMibanco")?.value.trim() || "",
     };
 }
 
 
 async function buscarDatosDocumento() {
     const filtros = obtenerFiltros();
+    const carteraId = document.getElementById("documentoCartera")?.value || "";
+
+    if (!carteraId) {
+        mostrarEstado("Selecciona una cartera configurada para buscar.", "warning");
+        return;
+    }
 
     if (!Object.values(filtros).some(Boolean)) {
-        mostrarEstado("Ingresa DNI, operacion, cta grupal o cod grupal para buscar.", "warning");
+        mostrarEstado(esDocumentoMibanco()
+            ? "Ingresa DNI, operación, código de cliente o nombre para buscar en Mibanco."
+            : "Ingresa DNI, operación, cta grupal o cod grupal para buscar.", "warning");
         return;
     }
 
@@ -373,7 +489,7 @@ async function buscarDatosDocumento() {
         Object.entries(filtros).forEach(([key, value]) => {
             if (value) params.append(key, value);
         });
-        params.append("cartera_id", document.getElementById("documentoCartera")?.value || "133");
+        params.append("cartera_id", carteraId);
 
         const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/buscar?${params.toString()}`, { cache: "no-store" });
         const result = await response.json();
@@ -406,6 +522,12 @@ function pintarResultados(rows) {
 
     if (!panel || !tbody || !contador) return;
 
+    if (esDocumentoMibanco()) {
+        panel.classList.add("hidden");
+        tbody.innerHTML = "";
+        contador.textContent = `${rows.length} registro${rows.length === 1 ? "" : "s"}`;
+        return;
+    }
     panel.classList.remove("hidden");
     contador.textContent = `${rows.length} registro${rows.length === 1 ? "" : "s"}`;
     tbody.innerHTML = "";
@@ -443,6 +565,18 @@ function seleccionarDocumento(index) {
     document.getElementById("panelGeneracion")?.classList.remove("hidden");
     actualizarModoDocumento();
 
+    if (esDocumentoMibanco()) {
+        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - DNI ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
+        document.getElementById("operacionSeleccionada").textContent = `${documentosResultados.length} operación(es) encontrada(s)`;
+        pintarOperacionesMibanco();
+        const cancelacion = document.getElementById("cancelacion");
+        if (cancelacion) cancelacion.value = numeroInputValue(totalPagoMibanco());
+        if (esDocumentoMibancoCuotas()) sincronizarPagosMibanco(true);
+        actualizarResumenMibanco();
+        pintarPreviewDocumento();
+        return;
+    }
+
     if (esDocumentoGrupal()) {
         document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomGrupo)} - ${documentosResultados.length} integrante${documentosResultados.length === 1 ? "" : "s"}`;
         document.getElementById("operacionSeleccionada").textContent = `Grupo ${valueOrDash(documentoSeleccionado.CodigoGrupo)}`;
@@ -478,6 +612,100 @@ function seleccionarDocumento(index) {
 
     actualizarCondonacion();
     pintarPreviewDocumento();
+}
+
+
+function operacionesMibancoSeleccionadas() {
+    const seleccionadas = new Set(Array.from(document.querySelectorAll(".mibanco-operacion-check:checked")).map(input => input.value));
+    return documentosResultados.filter(item => seleccionadas.has(String(item.Operacion)));
+}
+
+
+function totalCampaniaMibanco() {
+    return operacionesMibancoSeleccionadas().reduce((total, item) => total + Number(item.MtoCancelacionCliente || 0), 0);
+}
+
+
+function pagoMibancoOperacion(operacion) {
+    return Number(document.querySelector(`.mibanco-pago-input[data-operacion="${cssEscape(String(operacion))}"]`)?.value || 0);
+}
+
+
+function totalPagoMibanco() {
+    return operacionesMibancoSeleccionadas().reduce((total, item) => total + pagoMibancoOperacion(item.Operacion), 0);
+}
+
+
+function totalDeudaMibanco() {
+    return operacionesMibancoSeleccionadas().reduce((total, item) => total + Number(item.DeudaTotal || 0), 0);
+}
+
+
+function totalCapitalMibanco() {
+    return operacionesMibancoSeleccionadas().reduce((total, item) => total + Number(item.SdoCapital || 0), 0);
+}
+
+
+function actualizarResumenMibanco() {
+    if (!esDocumentoMibanco()) return;
+    document.getElementById("montoMinimo").textContent = money(totalCampaniaMibanco());
+    document.getElementById("deudaTotal").textContent = money(totalDeudaMibanco());
+    document.getElementById("condonacionEstimada").textContent = money(totalCapitalMibanco());
+    document.getElementById("totalPagoMibanco").textContent = money(totalPagoMibanco());
+}
+
+
+function pintarOperacionesMibanco() {
+    const panel = document.getElementById("panelOperacionesMibanco");
+    const tbody = document.getElementById("tbodyOperacionesMibanco");
+    if (!panel || !tbody) return;
+    panel.classList.remove("hidden");
+    tbody.innerHTML = documentosResultados.map(item => `
+        <tr>
+            <td><input class="mibanco-operacion-check" type="checkbox" value="${escapeAttr(item.Operacion)}" checked></td>
+            <td>${escapeHtml(item.CtaCliente)}</td><td>${escapeHtml(item.Operacion)}</td>
+            <td>${money(item.SdoCapital)}</td><td>${money(item.DeudaTotal)}</td><td>${money(item.MtoCancelacionCliente)}</td>
+            <td><input class="mibanco-pago-input" type="number" step="0.01" min="0.01" data-operacion="${escapeAttr(item.Operacion)}" value="${escapeAttr(numeroInputValue(item.MtoCancelacionCliente))}"></td>
+        </tr>`).join("");
+    tbody.querySelectorAll(".mibanco-operacion-check").forEach(input => input.addEventListener("change", () => {
+        const pagoInput = tbody.querySelector(`.mibanco-pago-input[data-operacion="${cssEscape(String(input.value))}"]`);
+        if (pagoInput) pagoInput.disabled = !input.checked;
+        const cancelacion = document.getElementById("cancelacion");
+        if (cancelacion) cancelacion.value = numeroInputValue(totalPagoMibanco());
+        if (esDocumentoMibancoCuotas()) sincronizarPagosMibanco(true);
+        actualizarResumenMibanco();
+        pintarPreviewDocumento();
+    }));
+    tbody.querySelectorAll(".mibanco-pago-input").forEach(input => input.addEventListener("input", () => {
+        const cancelacion = document.getElementById("cancelacion");
+        if (cancelacion) cancelacion.value = numeroInputValue(totalPagoMibanco());
+        actualizarResumenMibanco();
+        pintarPreviewDocumento();
+    }));
+}
+
+
+function sincronizarPagosMibanco(forzar = false) {
+    if (!esDocumentoMibancoCuotas()) return;
+    const box = document.getElementById("fechasCuotasCastigo");
+    if (!box) return;
+    const cantidad = Math.max(1, Number.parseInt(document.getElementById("cuotasCastigo")?.value || "1", 10) || 1);
+    const total = Number(document.getElementById("cancelacion")?.value || 0);
+    const inicial = Number(document.getElementById("inicialCastigo")?.value || 0);
+    const cuota = Math.max((total - inicial) / cantidad, 0);
+    const actuales = Array.from(box.querySelectorAll(".monto-mibanco")).map(input => input.value);
+    const fechas = Array.from(box.querySelectorAll(".fecha-mibanco")).map(input => input.value);
+    const filas = Array.from({ length: cantidad + 1 }, (_, index) => {
+        const numero = index + 1;
+        const esInicial = index === 0;
+        const monto = esInicial ? inicial : cuota;
+        const fecha = !forzar && fechas[index] ? fechas[index] : fechaInputValue(ajustarFechaPagoCastigo(sumarMeses(new Date(), index)));
+        const valor = !forzar && actuales[index] ? actuales[index] : numeroInputValue(monto);
+        return `<tr><td><strong>${esInicial ? "Inicial" : `Cuota ${index}`}</strong></td><td><input class="monto-mibanco" type="number" step="0.01" min="0" data-numero="${numero}" value="${escapeAttr(valor)}"></td><td><input class="fecha-mibanco" type="date" value="${escapeAttr(fecha)}"></td></tr>`;
+    }).join("");
+    box.innerHTML = `<div class="documentos-installments-table-wrap"><table class="documentos-installments-table"><thead><tr><th>Pago</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    const cuotaInput = document.getElementById("cuotaPagoCastigo");
+    if (cuotaInput) cuotaInput.value = numeroInputValue(cuota);
 }
 
 
@@ -706,12 +934,15 @@ function seleccionarFormato(formato) {
     document.querySelectorAll("[data-formato]").forEach(button => {
         button.classList.toggle("active", button.dataset.formato === formato);
     });
+    if (documentoSeleccionado) pintarPreviewDocumento();
 }
 
 
 function pintarPreviewDocumento() {
     document.getElementById("panelPreview")?.classList.toggle("mail-only", esDocumentoSoloCorreo());
-    if (esDocumentoCastigoCorreo()) {
+    if (esDocumentoMibanco()) {
+        pintarPreviewMibanco();
+    } else if (esDocumentoCastigoCorreo()) {
         pintarPreviewCastigoCorreo();
     } else if (esDocumentoCorreoPagoDirecto()) {
         pintarPreviewPagoDirecto();
@@ -724,7 +955,51 @@ function pintarPreviewDocumento() {
     } else {
         pintarPreviewIndividual();
     }
-    if (!esDocumentoSoloCorreo()) pintarPreviewCorreo();
+    if (!esDocumentoSoloCorreo() && !esDocumentoMibanco()) pintarPreviewCorreo();
+    programarPreviewReal();
+}
+
+
+function pintarPreviewMibanco() {
+    const panel = document.getElementById("panelPreview");
+    const preview = document.getElementById("documentoPreview");
+    if (!panel || !preview || !documentoSeleccionado) return;
+    const operaciones = operacionesMibancoSeleccionadas();
+    const pagos = Array.from(document.querySelectorAll(".monto-mibanco")).map((input, index) => ({
+        nombre: index === 0 ? "Inicial" : `Cuota ${index}`,
+        monto: Number(input.value || 0), fecha: document.querySelectorAll(".fecha-mibanco")[index]?.value || "",
+    }));
+    const fechaInput = document.getElementById("fechaPagoMibanco")?.value || "";
+    const fechaPago = fechaInput ? fechaCortaDesdeFecha(parseDateInput(fechaInput)) : fechaCortaHoy();
+    const esCuotas = esDocumentoMibancoCuotas();
+    const inicial = pagos[0] || { monto: 0, fecha: fechaInput };
+    const cuotas = pagos.slice(1).length ? pagos.slice(1) : pagos;
+    const totalPlan = pagos.reduce((sum, item) => sum + Number(item.monto || 0), 0);
+    const saldoPlan = Math.max(totalPlan - Number(inicial.monto || 0), 0);
+    const cuotaRows = cuotas.map((item, index) => `<tr>
+        <td>${index === 0 ? escapeHtml(String(operaciones[0]?.Operacion || "").replace(/\.0$/, "")) : ""}</td>
+        <td>${index === 0 ? money(operaciones[0]?.DeudaTotal) : ""}</td>
+        <td class="mibanco-payment">${index === 0 ? money(operaciones[0]?.MtoCancelacionCliente) : ""}</td>
+        <td>${index === 0 ? money(inicial.monto) : ""}</td>
+        <td>${index === 0 ? money(saldoPlan) : ""}</td>
+        <td>${index + 1}</td><td>${money(item.monto)}</td><td>${escapeHtml(item.fecha || "")}</td>
+    </tr>`).join("");
+    panel.classList.remove("hidden");
+    panel.classList.add("mibanco-preview");
+    preview.classList.toggle("mibanco-format-pdf", (document.getElementById("formatoDocumento")?.value || "docx") === "pdf");
+    preview.classList.toggle("mibanco-format-word", (document.getElementById("formatoDocumento")?.value || "docx") !== "pdf");
+    document.querySelector(".documentos-mail-preview")?.classList.add("hidden");
+    preview.innerHTML = `<div class="mibanco-document-preview">
+        <img class="mibanco-preview-logo" src="/frontend/images/logo_mibanco.png" alt="Mibanco">
+        <div class="mibanco-client-data"><span>Señor(a)/(ita):</span><strong>${escapeHtml(documentoSeleccionado.NomCliente)}</strong><span>DNI:</span><strong>${escapeHtml(documentoSeleccionado.NumDocumento)}</strong></div>
+        <div class="mibanco-client-data address"><span>Dirección:</span><span>${escapeHtml(documentoSeleccionado.DireccionPrincipal || "")}</span></div>
+        <h1 class="mibanco-title-bar">ACUERDO DE CANCELACION DE DEUDA</h1>
+        <p class="mibanco-intro">En MIBANCO estamos comprometidos con nuestros clientes. Este documento busca generar un convenio entre MIBANCO, representado por nuestro proveedor BIZNESCOB y el cliente ${escapeHtml(documentoSeleccionado.NomCliente)}, con DNI: ${escapeHtml(documentoSeleccionado.NumDocumento)} con el fin de que pueda realizar la cancelación de su deuda bajo las siguientes condiciones:</p>
+        ${esCuotas ? `<p>EL CLIENTE contrató con MIBANCO el siguiente préstamo, siendo que a la fecha mantiene un saldo deudor a favor de MIBANCO, monto que RECONOCE EN SU TOTALIDAD.</p><p>El CLIENTE reconoce deber y adeudar, dando estricto cumplimiento al siguiente convenio de pago. Se establecen las siguientes condiciones:</p><table class="mibanco-preview-table cuotas"><thead><tr><th>N° de préstamo</th><th>Deuda total</th><th>Campaña</th><th>Cuota inicial</th><th>Saldo</th><th>N° cuotas</th><th>Monto cuota</th><th>Fecha de pago</th></tr></thead><tbody>${cuotaRows}<tr class="mibanco-total-row"><td>TOTAL</td><td>${money(operaciones.reduce((sum, item) => sum + Number(item.DeudaTotal || 0), 0))}</td><td class="mibanco-payment">${money(operaciones.reduce((sum, item) => sum + Number(item.MtoCancelacionCliente || 0), 0))}</td><td></td><td></td><td></td><td>${money(totalPlan)}</td><td></td></tr></tbody></table><p>El descuento es sobre el capital.</p><p>Los pagos se realizarán los siguientes días y por los siguientes montos respectivamente, a través de nuestra red de agencias a nivel nacional.</p><p>Las cuotas no incluyen I.T.F.</p>` : `<table class="mibanco-preview-table"><thead><tr><th>PRODUCTO</th><th>N°<br>PRÉSTAMO</th><th>MONEDA</th><th>DEUDA</th><th>DEUDA<br>CAPITAL</th><th>DÍAS<br>MORA</th><th>CANCELACIÓN</th><th>FECHA DE<br>PAGO</th></tr></thead><tbody>${operaciones.map(item => `<tr><td>${escapeHtml(item.Producto || "PRODUCTOS PROPIOS")}</td><td>${escapeHtml(String(item.Operacion).replace(/\.0$/, ""))}</td><td>${escapeHtml(String(item.Moneda || "S") === "1" ? "S" : item.Moneda || "S")}</td><td>${money(item.DeudaTotal)}</td><td>${money(item.SdoCapital)}</td><td>${escapeHtml(item.DiasAtraso)}</td><td class="mibanco-payment">${money(pagoMibancoOperacion(item.Operacion))}</td><td>${escapeHtml(fechaPago)}</td></tr>`).join("")}</tbody></table><p>El descuento es sobre el capital.</p><p class="mibanco-payment-line">La operación detallada corresponde a la CANCELACIÓN TOTAL CON DESCUENTO de los préstamos indicados. Pago único: S/ ${money(operaciones.reduce((sum, item) => sum + pagoMibancoOperacion(item.Operacion), 0))} el ${escapeHtml(fechaPago)}.</p><p>Las cuotas no incluyen I.T.F.</p>`}
+        <p class="mibanco-warning">Este documento carece de valor si no se realiza el pago respectivo en la fecha pactada.</p>
+        <p>Nuestro cliente, ${escapeHtml(documentoSeleccionado.NomCliente)} y MIBANCO, dejamos constancia de la conformidad y pleno conocimiento del contenido, reafirmando todas y cada una de las condiciones presentes en este Acuerdo de Cancelación de Deuda. En señal de lo mencionado, se suscriben al documento.</p>
+        <p class="mibanco-area">Área de Recuperaciones</p><div class="mibanco-signatures"><div><i></i><strong>ROSARIO RODRIGUEZ MOSCOSO</strong><span>REPRESENTANTE<br>MIBANCO</span></div><div><i></i><strong>${escapeHtml(documentoSeleccionado.NomCliente)}</strong><span>DNI: ${escapeHtml(documentoSeleccionado.NumDocumento)}<br>CLIENTE</span></div></div>
+    </div>`;
 }
 
 
@@ -2194,6 +2469,9 @@ async function generarDocumento() {
     const formato = document.getElementById("formatoDocumento")?.value || "docx";
     const payload = construirPayloadGeneracion(formato);
     if (!payload) return;
+    payload.usuario = localStorage.getItem("dni") || localStorage.getItem("usuario") || "SIN_USUARIO";
+    payload.nombre_usuario = localStorage.getItem("agente") || localStorage.getItem("nombre") || "";
+    payload.perfil_usuario = localStorage.getItem("tipo") || localStorage.getItem("perfil") || "";
 
     mostrarEstado(`Generando documento ${formato.toUpperCase()}...`, "info");
 
@@ -2220,9 +2498,53 @@ async function generarDocumento() {
 }
 
 
-function construirPayloadGeneracion(formato) {
+function programarPreviewReal() {
+    clearTimeout(previewRealTimer);
+    if (!documentoSeleccionado || esDocumentoSoloCorreo()) return;
+    previewRealTimer = setTimeout(() => previsualizarDocumentoReal(true), 650);
+}
+
+
+async function previsualizarDocumentoReal(silencioso = false) {
+    if (!documentoSeleccionado) return;
+
+    const payload = construirPayloadGeneracion("pdf", silencioso);
+    if (!payload) return;
+
+    const preview = document.getElementById("documentoPreview");
+    if (!preview) return;
+    const requestId = ++previewRealRequest;
+
+    try {
+        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/preview`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "No se pudo generar la vista previa real.");
+        }
+
+        const pdf = await response.blob();
+        if (requestId !== previewRealRequest) return;
+        if (previewRealUrl) URL.revokeObjectURL(previewRealUrl);
+        previewRealUrl = URL.createObjectURL(pdf);
+        preview.className = "documentos-preview-page documentos-preview-real";
+        preview.innerHTML = `<iframe title="Vista previa real del PDF" src="${previewRealUrl}"></iframe>`;
+        document.getElementById("panelPreview")?.classList.remove("hidden");
+    } catch (error) {
+        if (!silencioso) mostrarEstado(error.message || "No se pudo generar la vista previa real.", "error");
+    }
+}
+
+
+function construirPayloadGeneracion(formato, silencioso = false) {
+    const avisar = (mensaje, tipo) => {
+        if (!silencioso) mostrarEstado(mensaje, tipo);
+    };
     if (esDocumentoCorreoPagoDirecto()) {
-        mostrarEstado("Este tipo solo muestra los correos de pago directo para copiar.", "info");
+        avisar("Este tipo solo muestra los correos de pago directo para copiar.", "info");
         return null;
     }
 
@@ -2230,12 +2552,12 @@ function construirPayloadGeneracion(formato) {
         const pagos = obtenerPagosGrupales();
         const activos = pagos.filter(item => item.activo);
         if (!activos.length) {
-            mostrarEstado("Selecciona al menos un integrante activo para generar el documento grupal.", "warning");
+            avisar("Selecciona al menos un integrante activo para generar el documento grupal.", "warning");
             return null;
         }
         const incompletos = activos.filter(item => !item.monto || item.monto <= 0);
         if (incompletos.length) {
-            mostrarEstado("Ingresa un monto manual mayor a cero para cada operacion del grupo.", "warning");
+            avisar("Ingresa un monto manual mayor a cero para cada operacion del grupo.", "warning");
             return null;
         }
         if (!tieneExcepcion()) {
@@ -2248,12 +2570,12 @@ function construirPayloadGeneracion(formato) {
                 const row = documentosResultados.find(resultado => String(resultado.Operacion) === String(pagosBajos[0].operacion));
                 const minimo = esDocumentoCuotaGrupal() ? cuotaDocumento(row) : Number(row?.MtoCancelacionCliente || 0);
                 const base = esDocumentoCuotaGrupal() ? "la cuota calculada" : "Mto CancelacionCliente";
-                mostrarEstado(`El monto de la operacion ${pagosBajos[0].operacion} debe ser mayor a ${money(minimo)} (${base}). Marca Excepcion si se permitira un monto menor.`, "warning");
+                avisar(`El monto de la operacion ${pagosBajos[0].operacion} debe ser mayor a ${money(minimo)} (${base}). Marca Excepcion si se permitira un monto menor.`, "warning");
                 return null;
             }
         }
 
-        const encargado = obtenerEncargadoPayload();
+        const encargado = obtenerEncargadoPayload(silencioso);
         if (!encargado) return null;
 
         return {
@@ -2270,17 +2592,64 @@ function construirPayloadGeneracion(formato) {
         };
     }
 
+    if (esDocumentoMibanco()) {
+        const seleccionadas = operacionesMibancoSeleccionadas();
+        const operaciones = seleccionadas.map(item => String(item.Operacion));
+        if (!operaciones.length) {
+            avisar("Selecciona al menos una operación para el acuerdo.", "warning");
+            return null;
+        }
+        const pagosContado = seleccionadas.map((item, index) => ({
+            numero: index + 1,
+            operacion: String(item.Operacion),
+            monto: pagoMibancoOperacion(item.Operacion),
+            fecha: document.getElementById("fechaPagoMibanco")?.value || new Date().toISOString().slice(0, 10),
+        }));
+        if (!esDocumentoMibancoCuotas() && !tieneExcepcion()) {
+            const pagoBajo = seleccionadas.find(item => pagoMibancoOperacion(item.Operacion) < Number(item.MtoCancelacionCliente || 0));
+            if (pagoBajo) {
+                avisar(`El pago de la operación ${pagoBajo.Operacion} es menor que su campaña ${money(pagoBajo.MtoCancelacionCliente)}. Marca Excepción para permitirlo.`, "warning");
+                return null;
+            }
+        }
+        const cancelacion = esDocumentoMibancoCuotas()
+            ? Number(document.getElementById("cancelacion")?.value || 0)
+            : pagosContado.reduce((total, item) => total + Number(item.monto || 0), 0);
+        if (!cancelacion || cancelacion <= 0) {
+            avisar("Ingresa el monto total de cancelación acordado.", "warning");
+            return null;
+        }
+        const pagos = esDocumentoMibancoCuotas()
+            ? Array.from(document.querySelectorAll(".monto-mibanco")).map((input, index) => ({
+                numero: index + 1,
+                monto: Number(input.value || 0),
+                fecha: document.querySelectorAll(".fecha-mibanco")[index]?.value || "",
+            }))
+            : pagosContado;
+        return {
+            documento_tipo: document.getElementById("documentoTipo")?.value || "mibanco_castigo_contado",
+            dni: String(documentoSeleccionado.NumDocumento || ""),
+            operacion: "",
+            cancelacion,
+            fecha_pago: document.getElementById("fechaPagoMibanco")?.value || new Date().toISOString().slice(0, 10),
+            formato,
+            excepcion: tieneExcepcion(),
+            operaciones_mibanco: operaciones,
+            pagos_mibanco: pagos,
+        };
+    }
+
     const cancelacion = Number(document.getElementById("cancelacion")?.value || 0);
     const minimo = Number(esDocumentoCuotaIndividual() ? minimoCuotaDocumento(documentoSeleccionado) : documentoSeleccionado.MtoCancelacionCliente || 0);
 
     if (!cancelacion || cancelacion <= 0) {
-        mostrarEstado("Ingresa un monto de cancelacion valido.", "warning");
+        avisar("Ingresa un monto de cancelacion valido.", "warning");
         return null;
     }
 
     if (!tieneExcepcion() && cancelacion <= minimo) {
         const base = esDocumentoCuotaIndividual() ? "la campaña de cuota" : "Mto CancelacionCliente";
-        mostrarEstado(`El monto debe ser mayor a ${money(minimo)} (${base}). Marca Excepcion si se permitira un monto menor.`, "warning");
+        avisar(`El monto debe ser mayor a ${money(minimo)} (${base}). Marca Excepcion si se permitira un monto menor.`, "warning");
         return null;
     }
 
@@ -2297,7 +2666,7 @@ function construirPayloadGeneracion(formato) {
 }
 
 
-function obtenerEncargadoPayload() {
+function obtenerEncargadoPayload(silencioso = false) {
     const modo = document.querySelector("input[name='encargadoModo']:checked")?.value || "participante";
 
     if (modo === "libre") {
@@ -2310,7 +2679,7 @@ function obtenerEncargadoPayload() {
             provincia: document.getElementById("encargadoProvinciaLibre")?.value.trim() || "",
         };
         if (!encargado.nombre || !encargado.dni || !encargado.direccion || !encargado.distrito || !encargado.provincia) {
-            mostrarEstado("Completa nombre, DNI, direccion, distrito y provincia del encargado libre.", "warning");
+            if (!silencioso) mostrarEstado("Completa nombre, DNI, direccion, distrito y provincia del encargado libre.", "warning");
             return null;
         }
         return encargado;
@@ -2421,6 +2790,8 @@ function limpiarVista() {
         "operacion",
         "codigoGrupo",
         "codCreGrupal",
+        "codigoClienteMibanco",
+        "nombreClienteMibanco",
         "cancelacion",
         "excepcionDocumento",
         "encargadoProvinciaParticipante",
@@ -2456,6 +2827,8 @@ function limpiarSeleccion() {
     document.getElementById("panelGeneracion")?.classList.add("hidden");
     document.getElementById("panelPreview")?.classList.add("hidden");
     document.getElementById("panelGrupal")?.classList.add("hidden");
+    document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
+    document.querySelector(".documentos-mail-preview")?.classList.remove("hidden");
     ["correoAsunto", "correoCuerpo", "correoDestinatarios", "correoCc"].forEach(id => {
         const input = document.getElementById(id);
         if (input) input.value = "";
@@ -2533,6 +2906,14 @@ function mostrarEstado(message, type) {
     box.className = `documentos-estado ${type}`;
     box.textContent = message;
     box.classList.remove("hidden");
+
+    if (["warning", "error"].includes(type) && typeof window.crmAlert === "function") {
+        window.crmAlert({
+            title: type === "error" ? "No se pudo completar la acción" : "Revisa la información",
+            message,
+            tone: "danger",
+        });
+    }
 
     if (type === "success") {
         setTimeout(ocultarEstado, 3000);

@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import unicodedata
 import zipfile
+import json
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -20,6 +21,7 @@ GERENTE_NOMBRE = "LUIS PORTUGUEZ BERROCAL"
 GERENTE_DNI = "10416012"
 GERENTE_CARGO = "GERENTE GENERAL"
 FIRMA_LUIS_PATH = TEMPLATES_DIR / "firma_luis_portuguez.png"
+LOGO_MIBANCO_PATH = TEMPLATES_DIR / "logo_mibanco.png"
 
 DOCUMENT_TYPES = {
     "transaccion_cancelacion": {
@@ -143,7 +145,25 @@ DOCUMENT_TYPES = {
         "cartera_nombre": "Compartamos CCM",
         "plantilla_correo": "vigente_individual_cuota",
         "document_kind": "cuota_individual",
-    }
+    },
+    "mibanco_castigo_contado": {
+        "id": "mibanco_castigo_contado",
+        "nombre": "Acuerdo de cancelacion de deuda - contado",
+        "descripcion": "Acuerdo Mibanco de cancelacion total con descuento.",
+        "cartera_id": 112,
+        "cartera_nombre": "Mibanco castigo",
+        "document_kind": "mibanco_contado",
+        "sin_correo": True,
+    },
+    "mibanco_castigo_cuotas": {
+        "id": "mibanco_castigo_cuotas",
+        "nombre": "Acuerdo de cancelacion de deuda - cuotas",
+        "descripcion": "Acuerdo Mibanco de cancelacion con cuota inicial y cronograma.",
+        "cartera_id": 112,
+        "cartera_nombre": "Mibanco castigo",
+        "document_kind": "mibanco_cuotas",
+        "sin_correo": True,
+    },
 }
 
 DOCUMENT_QUERY_SCOPES = {
@@ -175,6 +195,12 @@ DOCUMENT_QUERY_SCOPES = {
         "nombre": "Compartamos CCM",
         "entidad": "Compartamos Banco",
         "consulta": "compartamos_ccm",
+        "activo": True,
+    },
+    112: {
+        "nombre": "Mibanco castigo",
+        "entidad": "Mibanco",
+        "consulta": "act_mibanco_castigo",
         "activo": True,
     }
 }
@@ -223,6 +249,7 @@ EMAIL_TEMPLATE_SCOPES = {
 }
 
 DIRECTORIO_AGENCIAS_TABLE = "CobAuto.dbo.CRM_DIRECTORIO_AGENCIAS"
+AUDITORIA_DOCUMENTOS_TABLE = "CobAuto.dbo.CRM_DOCUMENTOS_AUDITORIA"
 
 MESES = {
     1: "enero",
@@ -242,6 +269,90 @@ MESES = {
 
 def listar_tipos_documento():
     return list(DOCUMENT_TYPES.values())
+
+
+def asegurar_tabla_auditoria_documentos(conn):
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"""
+            IF OBJECT_ID('{AUDITORIA_DOCUMENTOS_TABLE}', 'U') IS NULL
+            BEGIN
+                CREATE TABLE {AUDITORIA_DOCUMENTOS_TABLE} (
+                    id_auditoria BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    fecha_generacion DATETIME2 NOT NULL CONSTRAINT DF_CRM_DOCUMENTOS_AUDITORIA_FECHA DEFAULT SYSDATETIME(),
+                    usuario VARCHAR(50) NOT NULL,
+                    nombre_usuario VARCHAR(180) NULL,
+                    perfil_usuario VARCHAR(80) NULL,
+                    entidad VARCHAR(100) NOT NULL,
+                    id_cartera INT NOT NULL,
+                    cartera VARCHAR(160) NOT NULL,
+                    tipo_documento VARCHAR(100) NOT NULL,
+                    formato VARCHAR(10) NOT NULL,
+                    archivo_nombre VARCHAR(260) NOT NULL,
+                    dni_cliente VARCHAR(50) NULL,
+                    cliente VARCHAR(260) NULL,
+                    operacion VARCHAR(80) NULL,
+                    monto_campania DECIMAL(18,2) NULL,
+                    monto_cancelacion DECIMAL(18,2) NULL,
+                    detalle_json NVARCHAR(MAX) NULL
+                );
+                CREATE INDEX IX_CRM_DOCUMENTOS_AUDITORIA_FECHA
+                    ON {AUDITORIA_DOCUMENTOS_TABLE}(fecha_generacion DESC);
+                CREATE INDEX IX_CRM_DOCUMENTOS_AUDITORIA_USUARIO
+                    ON {AUDITORIA_DOCUMENTOS_TABLE}(usuario, fecha_generacion DESC);
+            END
+            IF COL_LENGTH('{AUDITORIA_DOCUMENTOS_TABLE}', 'monto_campania') IS NULL
+                ALTER TABLE {AUDITORIA_DOCUMENTOS_TABLE} ADD monto_campania DECIMAL(18,2) NULL;
+            """
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+
+
+def registrar_auditoria_documento(result, documento_tipo, usuario=None, nombre_usuario=None, perfil_usuario=None, cancelacion=None, operaciones=None, excepcion=False, detalle_operaciones=None):
+    config = obtener_config_documento(documento_tipo)
+    cartera_id = int(config.get("cartera_id") or 0)
+    cartera = DOCUMENT_QUERY_SCOPES.get(cartera_id, {})
+    registro = result.get("registro") or {}
+    if isinstance(detalle_operaciones, dict):
+        detalle = dict(detalle_operaciones)
+        operaciones_detalle = detalle.get("operaciones") or []
+    else:
+        operaciones_detalle = detalle_operaciones or [{"operacion": clave_operacion(item)} for item in (operaciones or [])]
+        detalle = {"operaciones": operaciones_detalle}
+    campania_total = sum((decimal_value(item.get("campania"), Decimal("0")) or Decimal("0")) for item in operaciones_detalle)
+    if not campania_total:
+        campania_total = decimal_value(registro.get("MtoCancelacionCliente"), Decimal("0")) or Decimal("0")
+    detalle["excepcion"] = bool(excepcion)
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        asegurar_tabla_auditoria_documentos(conn)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            INSERT INTO {AUDITORIA_DOCUMENTOS_TABLE} (
+                usuario, nombre_usuario, perfil_usuario, entidad, id_cartera, cartera,
+                tipo_documento, formato, archivo_nombre, dni_cliente, cliente, operacion,
+                monto_campania, monto_cancelacion, detalle_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (str(usuario or "SIN_USUARIO").strip()[:50], str(nombre_usuario or "").strip()[:180] or None,
+             str(perfil_usuario or "").strip()[:80] or None, cartera.get("entidad", "Sin entidad"), cartera_id,
+             config.get("cartera_nombre", cartera.get("nombre", "Sin cartera")), documento_tipo,
+             result.get("formato", "docx"), result.get("filename", ""),
+             str(registro.get("NumDocumento") or "")[:50] or None, str(registro.get("NomCliente") or registro.get("NomGrupo") or "")[:260] or None,
+             clave_operacion(registro.get("Operacion"))[:80] or None, campania_total, decimal_value(cancelacion), json.dumps(detalle, ensure_ascii=False)),
+        )
+        conn.commit()
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
 
 def listar_carteras_documento():
@@ -487,6 +598,18 @@ def limpiar_texto(value):
     return str(value or "").strip()
 
 
+def clave_operacion(value):
+    """Normaliza operaciones SQL numericas sin perder compatibilidad con codigos alfanumericos."""
+    text = limpiar_texto(value)
+    if not text:
+        return ""
+    try:
+        number = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return text.upper()
+    return format(number.normalize(), "f").rstrip("0").rstrip(".") or "0"
+
+
 def format_money(value):
     amount = decimal_value(value, Decimal("0"))
     return f"{amount:,.2f}"
@@ -680,8 +803,10 @@ def filtros_documento_castigo(dni=None, operacion=None):
     raise ValueError("Ingresa DNI u operacion para buscar en cartera castigo.")
 
 
-def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, limit=20, cartera_id=133):
+def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, codigo_cliente=None, nombre_cliente=None, limit=20, cartera_id=133):
     cartera_id = int(cartera_id or 133)
+    if cartera_id == 112:
+        return consultar_datos_documento_mibanco(dni=dni, operacion=operacion, codigo_cliente=codigo_cliente, nombre_cliente=nombre_cliente, limit=limit)
     if cartera_id in (124, 144):
         return consultar_datos_documento_castigo(
             cartera_id=cartera_id,
@@ -1000,6 +1125,82 @@ def consultar_datos_documento_castigo(cartera_id=124, dni=None, operacion=None, 
             conn.close()
 
 
+def factor_campania_mibanco(prioridad, dias_mora):
+    """Descuento de la matriz Mibanco; fuera de matriz se usa 50% del capital."""
+    prioridad = limpiar_texto(prioridad).upper()
+    dias = int(decimal_value(dias_mora, Decimal("0")) or 0)
+    tramos = [
+        (151, 360, {"PRIORIDAD 3": Decimal("0.60"), "PRIORIDAD 2": Decimal("0.65"), "PRIORIDAD 1": Decimal("0.70")} ),
+        (361, 720, {"PRIORIDAD 3": Decimal("0.65"), "PRIORIDAD 2": Decimal("0.70"), "PRIORIDAD 1": Decimal("0.75")} ),
+        (721, 1440, {"PRIORIDAD 3": Decimal("0.70"), "PRIORIDAD 2": Decimal("0.75"), "PRIORIDAD 1": Decimal("0.80")} ),
+        (1441, 2160, {"PRIORIDAD 3": Decimal("0.75"), "PRIORIDAD 2": Decimal("0.80"), "PRIORIDAD 1": Decimal("0.85")} ),
+        (2161, 2700, {"PRIORIDAD 3": Decimal("0.80"), "PRIORIDAD 2": Decimal("0.85"), "PRIORIDAD 1": Decimal("0.90")} ),
+        (2701, 3240, {"PRIORIDAD 3": Decimal("0.85"), "PRIORIDAD 2": Decimal("0.90"), "PRIORIDAD 1": Decimal("0.95")} ),
+        (3241, None, {"PRIORIDAD 3": Decimal("0.85"), "PRIORIDAD 2": Decimal("0.90"), "PRIORIDAD 1": Decimal("0.95")} ),
+    ]
+    for inicio, fin, factores in tramos:
+        if dias >= inicio and (fin is None or dias <= fin):
+            return factores.get(prioridad)
+    return None
+
+
+def calcular_campania_mibanco(row):
+    capital = decimal_value(row.get("SdoCapital"), Decimal("0")) or Decimal("0")
+    factor = factor_campania_mibanco(row.get("PrioridadCastigo"), row.get("DiasAtraso"))
+    porcentaje_pago = Decimal("0.50") if factor is None else Decimal("1") - factor
+    # CEILING de SQL para preservar la regla entregada por Mibanco.
+    return (capital * porcentaje_pago).to_integral_value(rounding="ROUND_CEILING")
+
+
+def consultar_datos_documento_mibanco(dni=None, operacion=None, codigo_cliente=None, nombre_cliente=None, limit=100):
+    if limpiar_texto(operacion):
+        where, params = "CAST(C.COD_PRE AS VARCHAR(50)) = ?", [limpiar_texto(operacion)]
+    elif limpiar_texto(dni):
+        where, params = "RTRIM(LTRIM(CAST(C.NRO_DOC AS VARCHAR(50)))) = ?", [limpiar_texto(dni)]
+    elif limpiar_texto(codigo_cliente):
+        where, params = "RTRIM(LTRIM(CAST(C.COD_CLI AS VARCHAR(50)))) = ?", [limpiar_texto(codigo_cliente)]
+    elif limpiar_texto(nombre_cliente):
+        where, params = "UPPER(RTRIM(LTRIM(C.NOM_CLI))) LIKE ?", [f"%{limpiar_texto(nombre_cliente).upper()}%"]
+    else:
+        raise ValueError("Ingresa DNI, operacion, codigo de cliente o nombre para buscar en Mibanco castigo.")
+
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT TOP {int(limit)}
+                C.NRO_DOC AS NumDocumento, C.COD_PRE AS Operacion, C.COD_CLI AS CtaCliente,
+                C.NOM_CLI AS NomCliente, C.DIR_DOM AS DireccionPrincipal, C.PRODUCTO AS Producto,
+                C.SAL_PRE AS SdoCapital, C.IMP_TOT_DEU AS DeudaTotal,
+                C.DIA_MOR AS DiasAtraso, C.PRIORIDAD_CAST_COBEX AS PrioridadCastigo,
+                C.TIPO_PRODUCTO AS TipoProducto,
+                CASE WHEN TRY_CONVERT(INT, C.MONEDA) = 1 THEN 'S' ELSE RTRIM(LTRIM(CAST(C.MONEDA AS VARCHAR(20)))) END AS Moneda,
+                CAST(NULL AS NVARCHAR(100)) AS CodigoGrupo,
+                CAST(NULL AS NVARCHAR(100)) AS CodCreGrupal,
+                CAST(NULL AS NVARCHAR(255)) AS NomGrupo,
+                CAST(NULL AS NVARCHAR(100)) AS NomOficina,
+                112 AS CarteraId
+            FROM Desarrollo.dbo.ACT_MIBANCO_CASTIGO C WITH(NOLOCK)
+            WHERE {where}
+              AND UPPER(RTRIM(LTRIM(C.ESTADO))) = 'CASTIGADO'
+              AND UPPER(RTRIM(LTRIM(C.TIPO_PRODUCTO))) = 'PRODUCTOS PROPIOS'
+            ORDER BY C.COD_PRE
+            """,
+            *params,
+        )
+        rows = fetch_resultset(cursor)
+        for row in rows:
+            row["MtoCancelacionCliente"] = float(calcular_campania_mibanco(row))
+        return rows
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 def obtener_registro_unico(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cartera_id=133):
     rows = consultar_datos_documento(
         dni=dni,
@@ -1175,13 +1376,14 @@ def xml_text(value):
     return escape(str(value or ""))
 
 
-def run_xml(text, bold=False, size=19, underline=False):
+def run_xml(text, bold=False, size=19, underline=False, color=None):
     bold_xml = "<w:b/>" if bold else ""
     underline_xml = '<w:u w:val="single"/>' if underline else ""
+    color_xml = f'<w:color w:val="{color}"/>' if color else ""
     return (
         "<w:r><w:rPr>"
         f'<w:rFonts w:ascii="{FONT_FAMILY}" w:hAnsi="{FONT_FAMILY}" w:cs="{FONT_FAMILY}"/>'
-        f"{bold_xml}{underline_xml}<w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/>"
+        f"{bold_xml}{underline_xml}{color_xml}<w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/>"
         f"</w:rPr><w:t xml:space=\"preserve\">{xml_text(text)}</w:t></w:r>"
     )
 
@@ -1206,6 +1408,7 @@ def paragraph_runs_xml(runs, align="both", before=0, after=72, size=19, keep_nex
             bold=item.get("bold", False),
             underline=item.get("underline", False),
             size=item.get("size", size),
+            color=item.get("color"),
         )
         for item in runs
     )
@@ -1231,9 +1434,9 @@ def right_xml(text="", bold=False, before=0, after=70, size=18):
     return paragraph_xml(text, bold=bold, align="right", before=before, after=after, size=size)
 
 
-def image_xml(rel_id="rIdFirmaLuis", doc_id=1, cx=1500000, cy=760000):
+def image_xml(rel_id="rIdFirmaLuis", doc_id=1, cx=1500000, cy=760000, align="center"):
     return (
-        "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"center\"/></w:pPr><w:r>"
+        f"<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"{align}\"/></w:pPr><w:r>"
         "<w:drawing>"
         "<wp:inline xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">"
         f"<wp:extent cx=\"{cx}\" cy=\"{cy}\"/>"
@@ -1325,20 +1528,86 @@ def simple_table_xml(headers, rows, col_widths, font_size=17):
 
     header_row = "<w:tr>" + "".join(cell(h, col_widths[i], bold=True) for i, h in enumerate(headers)) + "</w:tr>"
     body_rows = "".join(
-        "<w:tr>" + "".join(
-            cell(value, col_widths[i], align="left" if i == 2 else "center")
-            for i, value in enumerate(row)
-        ) + "</w:tr>"
+        "<w:tr>" + "".join(cell(value, col_widths[i], align="left" if i == 2 else "center") for i, value in enumerate(row)) + "</w:tr>"
         for row in rows
     )
     return (
         "<w:tbl><w:tblPr>"
         f'<w:tblW w:w="{total_width}" w:type="dxa"/>'
+        '<w:tblLayout w:type="fixed"/>'
+        '<w:tblInd w:w="0" w:type="dxa"/>'
         '<w:jc w:val="center"/>'
-        f"{borders}"
-        "</w:tblPr>"
-        f"<w:tblGrid>{grid}</w:tblGrid>"
-        f"{header_row}{body_rows}</w:tbl>"
+        f"{borders}</w:tblPr><w:tblGrid>{grid}</w:tblGrid>{header_row}{body_rows}</w:tbl>"
+    )
+
+
+def mibanco_schedule_table_xml(headers, rows):
+    col_widths = [1200, 1200, 1050, 1050, 1050, 800, 1050, 1600]
+    borders = (
+        "<w:tblBorders>"
+        '<w:top w:val="single" w:sz="8" w:color="000000"/>'
+        '<w:left w:val="single" w:sz="8" w:color="000000"/>'
+        '<w:bottom w:val="single" w:sz="8" w:color="000000"/>'
+        '<w:right w:val="single" w:sz="8" w:color="000000"/>'
+        '<w:insideH w:val="single" w:sz="8" w:color="000000"/>'
+        '<w:insideV w:val="single" w:sz="8" w:color="000000"/>'
+        "</w:tblBorders>"
+    )
+    grid = "".join(f'<w:gridCol w:w="{width}"/>' for width in col_widths)
+
+    def cell(value, width, header=False, highlight=False, bold=False):
+        shading = '<w:shd w:val="clear" w:color="auto" w:fill="008D48"/>' if header else (
+            '<w:shd w:val="clear" w:color="auto" w:fill="FFF200"/>' if highlight else ""
+        )
+        color = "FFFFFF" if header else None
+        return (
+            '<w:tc><w:tcPr>'
+            f'<w:tcW w:w="{width}" w:type="dxa"/>{shading}'
+            '<w:vAlign w:val="center"/>'
+            '<w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
+            '<w:bottom w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tcMar>'
+            '</w:tcPr>'
+            f'{paragraph_runs_xml([{"text": str(value), "bold": header or bold, "color": color}], align="center", after=0, size=14)}'
+            '</w:tc>'
+        )
+
+    header_row = '<w:tr>' + ''.join(cell(value, col_widths[index], header=True) for index, value in enumerate(headers)) + '</w:tr>'
+    body_rows = ''.join(
+        '<w:tr>' + ''.join(
+            cell(value, col_widths[index], highlight=index == 2 and bool(value), bold=row[0] == 'TOTAL')
+            for index, value in enumerate(row)
+        ) + '</w:tr>'
+        for row in rows
+    )
+    return (
+        '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+        '<w:tblInd w:w="0" w:type="dxa"/><w:jc w:val="center"/>'
+        f'{borders}</w:tblPr><w:tblGrid>{grid}</w:tblGrid>{header_row}{body_rows}</w:tbl>'
+    )
+
+
+def mibanco_title_bar_xml():
+    return (
+        '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+        '<w:tblInd w:w="0" w:type="dxa"/><w:jc w:val="center"/>'
+        '<w:tblBorders><w:top w:val="single" w:sz="12" w:color="000000"/><w:left w:val="single" w:sz="12" w:color="000000"/>'
+        '<w:bottom w:val="single" w:sz="12" w:color="000000"/><w:right w:val="single" w:sz="12" w:color="000000"/></w:tblBorders></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/>'
+        '<w:shd w:val="clear" w:color="auto" w:fill="008D48"/></w:tcPr>'
+        '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="45" w:after="45"/></w:pPr>'
+        f'{run_xml("ACUERDO DE CANCELACION DE DEUDA", bold=True, size=22, color="FFFFFF")}</w:p></w:tc></w:tr></w:tbl>'
+    )
+
+
+def mibanco_signature_table_xml(context, before=260, after=20):
+    left = signature_cell_xml("ROSARIO RODRIGUEZ MOSCOSO", cargo="REPRESENTANTE\nMIBANCO", width=4500)
+    right = signature_cell_xml(context["cliente"], dni=context["dni"], cargo="CLIENTE", width=4500)
+    return (
+        paragraph_runs_xml([{"text": "Área de Recuperaciones", "bold": True, "underline": True}], align="center", before=before, after=210, size=18)
+        + '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+        '<w:tblInd w:w="0" w:type="dxa"/><w:jc w:val="center"/></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/></w:tblGrid>'
+        f"<w:tr>{left}{right}</w:tr></w:tbl>" + paragraph_xml("", after=after)
     )
 
 
@@ -1894,6 +2163,71 @@ def document_cuota_grupal_xml(context):
     )
 
 
+def document_mibanco_xml(context):
+    headers = ["Producto", "N° préstamo", "Moneda", "Deuda", "Deuda capital", "Días mora", "Cancelación", "Fecha de pago"]
+    rows = [
+        [row["producto"], row["operacion"], row["moneda"], row["deuda"], row["capital"], row["dias_mora"], row["pago"], context["fecha_corta"]]
+        for row in context["operaciones"]
+    ]
+    paragraphs = [
+        image_xml(rel_id="rIdLogoMibanco", doc_id=9, cx=1450000, cy=760000, align="right") if LOGO_MIBANCO_PATH.exists() else "",
+        paragraph_xml(f"Señor(a)/(ita): {context['cliente']}                                      DNI: {context['dni']}", align="left", after=35, size=18),
+        paragraph_xml(f"Dirección: {context['direccion']}", align="left", after=100, size=18),
+        mibanco_title_bar_xml(),
+        paragraph_xml(
+            f"En MIBANCO estamos comprometidos con nuestros clientes. Este documento busca generar un convenio entre MIBANCO, representado por nuestro proveedor BIZNESCOB y el cliente {context['cliente']}, con DNI: {context['dni']} con el fin de que pueda realizar la cancelación de su deuda bajo las siguientes condiciones.",
+            after=55, size=18,
+        ),
+    ]
+    if context["es_cuotas"]:
+        cuotas_headers, cuotas_rows = tabla_cuotas_mibanco(context)
+        paragraphs.extend([
+            paragraph_xml(f"EL CLIENTE contrató con MIBANCO el siguiente préstamo, siendo que a la fecha mantiene un saldo deudor a favor de MIBANCO, monto que RECONOCE EN SU TOTALIDAD. Lima, {context['fecha_larga']}.", after=40, size=18),
+            paragraph_xml("El CLIENTE reconoce deber y adeudar, dando estricto cumplimiento al siguiente convenio de pago. Se establecen las siguientes condiciones:", after=40, size=18),
+            mibanco_schedule_table_xml(cuotas_headers, cuotas_rows),
+            paragraph_xml("El descuento es sobre el capital.", after=38, size=18),
+            paragraph_xml("Los pagos se realizarán los siguientes días y por los siguientes montos respectivamente, a través de nuestra red de agencias a nivel nacional.", after=40, size=18),
+        ])
+    else:
+        paragraphs.extend([
+            simple_table_xml(headers, rows, [1250, 1100, 850, 1050, 1050, 900, 1100, 1150], font_size=14),
+            paragraph_xml("El descuento es sobre el capital.", after=38, size=18),
+            paragraph_xml(f"La operación detallada corresponde a la CANCELACIÓN TOTAL CON DESCUENTO de los préstamos indicados. Pago único: S/ {context['monto_total']} el {context['fecha_corta']}.", bold=True, align="center", after=45, size=19),
+        ])
+    paragraphs.extend([
+        paragraph_xml("Este documento carece de valor si no se realiza el pago respectivo en la fecha pactada.", after=38, size=18),
+        paragraph_xml("Las cuotas no incluyen I.T.F.", after=50, size=18),
+        paragraph_xml(f"Nuestro cliente, {context['cliente']} y MIBANCO, dejan constancia de la conformidad y pleno conocimiento del contenido, reafirmando todas y cada una de las condiciones presentes en este Acuerdo de Cancelación de Deuda.", after=80, size=18),
+        mibanco_signature_table_xml(context, before=240, after=20),
+    ])
+    body = "".join(paragraphs)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f"<w:body>{body}<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"620\" w:right=\"620\" w:bottom=\"620\" w:left=\"620\" w:header=\"360\" w:footer=\"360\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>"
+    )
+
+
+def tabla_cuotas_mibanco(context):
+    headers = ["N° de préstamo", "Deuda total", "Campaña", "Cuota inicial", "Saldo", "N° cuotas", "Monto cuota", "Fecha de pago"]
+    pagos = context.get("pagos") or []
+    inicial = pagos[0] if pagos else {"monto": "0.00", "fecha": context["fecha_corta"]}
+    cuotas = pagos[1:] or pagos
+    try:
+        saldo = max(Decimal(str(context["monto_total"]).replace(",", "")) - Decimal(str(inicial["monto"]).replace(",", "")), Decimal("0"))
+    except (InvalidOperation, ValueError):
+        saldo = Decimal("0")
+    rows = []
+    for index, pago in enumerate(cuotas, start=1):
+        if index == 1:
+            row = context["operaciones"][0]
+            rows.append([row["operacion"], row["deuda"], row["campania"], inicial["monto"], format_money(saldo), str(index), pago["monto"], pago["fecha"]])
+        else:
+            rows.append(["", "", "", "", "", str(index), pago["monto"], pago["fecha"]])
+    rows.append(["TOTAL", context["deuda_total"], context["campania_total"], "", "", "", context["monto_total"], ""])
+    return headers, rows
+
+
 def styles_xml():
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -1907,14 +2241,26 @@ def styles_xml():
 
 def generar_docx_limpio(output_path, context, document_kind="transaccion_cancelacion"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    es_mibanco = document_kind in ("mibanco_contado", "mibanco_cuotas")
     if document_kind == "cancelacion_grupal":
         document_body = document_grupal_xml(context)
     elif document_kind == "compromiso_cuota_grupal":
         document_body = document_cuota_grupal_xml(context)
     elif document_kind == "compromiso_cuota_individual":
         document_body = document_cuota_individual_xml(context)
+    elif document_kind in ("mibanco_contado", "mibanco_cuotas"):
+        document_body = document_mibanco_xml(context)
     else:
         document_body = document_xml(context)
+    document_relationships = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        + ('' if es_mibanco else '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>')
+        + ('<Relationship Id="rIdLogoMibanco" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_mibanco.png"/>' if es_mibanco else '')
+        + '</Relationships>'
+    )
     parts = {
         "[Content_Types].xml": (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -1933,14 +2279,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
             "</Relationships>"
         ),
-        "word/_rels/document.xml.rels": (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
-            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
-            '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>'
-            "</Relationships>"
-        ),
+        "word/_rels/document.xml.rels": document_relationships,
         "word/document.xml": document_body,
         "word/styles.xml": styles_xml(),
         "word/settings.xml": (
@@ -1954,8 +2293,10 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for name, content in parts.items():
             zout.writestr(name, content.encode("utf-8"))
-        if FIRMA_LUIS_PATH.exists():
+        if not es_mibanco and FIRMA_LUIS_PATH.exists():
             zout.write(FIRMA_LUIS_PATH, "word/media/firma_luis_portuguez.png")
+        if es_mibanco and LOGO_MIBANCO_PATH.exists():
+            zout.write(LOGO_MIBANCO_PATH, "word/media/logo_mibanco.png")
 
 
 def generar_pdf_limpio(output_path, context):
@@ -2101,6 +2442,75 @@ def generar_pdf_limpio(output_path, context):
         Spacer(1, 10),
         signature_table_pdf(),
     ]
+    doc.build(story)
+
+
+def generar_pdf_mibanco(output_path, context):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise ValueError("Para descargar en PDF instala la dependencia reportlab y reinicia el servidor.") from exc
+
+    font = "Calibri" if Path("C:/Windows/Fonts/calibri.ttf").exists() else "Helvetica"
+    bold = "Calibri-Bold" if Path("C:/Windows/Fonts/calibrib.ttf").exists() else "Helvetica-Bold"
+    if font == "Calibri": pdfmetrics.registerFont(TTFont(font, "C:/Windows/Fonts/calibri.ttf"))
+    if bold == "Calibri-Bold": pdfmetrics.registerFont(TTFont(bold, "C:/Windows/Fonts/calibrib.ttf"))
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("mibanco_body", parent=styles["Normal"], fontName=font, fontSize=8.2, leading=10.2, alignment=TA_JUSTIFY)
+    title = ParagraphStyle("mibanco_title", parent=body, fontName=bold, fontSize=13, leading=15, alignment=TA_CENTER, textColor=colors.white)
+    center = ParagraphStyle("mibanco_center", parent=body, alignment=TA_CENTER)
+    italic = ParagraphStyle("mibanco_italic", parent=body, fontName=font, fontSize=8.1, leading=15, alignment=TA_JUSTIFY, italic=True)
+    signature = ParagraphStyle("mibanco_signature", parent=center, fontName=bold, fontSize=7.5, leading=9)
+    def p(value, style=body): return Paragraph(xml_text(value), style)
+    doc = SimpleDocTemplate(str(output_path), pagesize=letter, leftMargin=.38*inch, rightMargin=.38*inch, topMargin=.4*inch, bottomMargin=.4*inch)
+    data = [[p(h, center) for h in ["PRODUCTO", "N°\nPRÉSTAMO", "MONEDA", "DEUDA", "DEUDA\nCAPITAL", "DÍAS\nMORA", "CANCELACIÓN", "FECHA DE\nPAGO"]]]
+    data += [[p(row["producto"], center), p(row["operacion"], center), p(row["moneda"], center), p(row["deuda"], center), p(row["capital"], center), p(row["dias_mora"], center), p(row["pago"], center), p(context["fecha_corta"], center)] for row in context["operaciones"]]
+    tabla = Table(data, colWidths=[.88*inch,.77*inch,.67*inch,.72*inch,.76*inch,.55*inch,.89*inch,.86*inch], repeatRows=1)
+    tabla.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.75,colors.black),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#008d48")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("BACKGROUND",(6,1),(6,-1),colors.HexColor("#fff200")),("FONTNAME",(0,0),(-1,0),bold),("FONTNAME",(6,1),(6,-1),bold),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
+    story = []
+    if LOGO_MIBANCO_PATH.exists():
+        logo = Image(str(LOGO_MIBANCO_PATH), width=1.15*inch, height=.6*inch)
+        logo.hAlign = "RIGHT"
+        story += [logo, Spacer(1, 8)]
+    datos = Table([[p("Señor(a)/(ita):", body), p(context["cliente"], signature), p("DNI:", body), p(context["dni"], signature)], [p("Dirección:", body), p(context["direccion"], body), p("", body), p("", body)]], colWidths=[.8*inch,3.55*inch,.38*inch,1.7*inch])
+    datos.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("BOTTOMPADDING",(0,0),(-1,-1),7),("TOPPADDING",(0,0),(-1,-1),0)]))
+    barra = Table([[p("ACUERDO DE CANCELACION DE DEUDA", title)]], colWidths=[6.43*inch])
+    barra.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#008d48")),("BOX",(0,0),(-1,-1),1.2,colors.black),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+    story += [datos, Spacer(1, 11), barra, Spacer(1, 8), p(f"En MIBANCO estamos comprometidos con nuestros clientes. Este documento busca generar un convenio entre MIBANCO, representado por nuestro proveedor BIZNESCOB y el cliente {context['cliente']}, con DNI: {context['dni']} con el fin de que pueda realizar la cancelación de su deuda bajo las siguientes condiciones:", italic)]
+    if context["es_cuotas"]:
+        cuotas_headers, cuotas_rows = tabla_cuotas_mibanco(context)
+        pagos = [[p(header, center) for header in cuotas_headers]] + [[p(cell, center) for cell in row] for row in cuotas_rows]
+        cronograma = Table(pagos, colWidths=[.86*inch,.84*inch,.7*inch,.78*inch,.7*inch,.58*inch,.72*inch,.93*inch], repeatRows=1)
+        cronograma.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), .6, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#008d48")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("BACKGROUND", (2, 1), (2, -2), colors.HexColor("#fff200")),
+            ("FONTNAME", (0, 0), (-1, 0), bold),
+            ("FONTNAME", (0, -1), (-1, -1), bold),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story += [Spacer(1,7), p(f"EL CLIENTE contrató con MIBANCO el siguiente préstamo, siendo que a la fecha mantiene un saldo deudor a favor de MIBANCO, monto que RECONOCE EN SU TOTALIDAD. Lima, {context['fecha_larga']}."), p("El CLIENTE reconoce deber y adeudar, dando estricto cumplimiento al siguiente convenio de pago. Se establecen las siguientes condiciones:"), Spacer(1,5), cronograma, Spacer(1,5), p("El descuento es sobre el capital."), p("Los pagos se realizarán los siguientes días y por los siguientes montos respectivamente, a través de nuestra red de agencias a nivel nacional:")]
+    else:
+        story += [Spacer(1, 7), tabla, Spacer(1, 7), p("El descuento es sobre el capital."), p(f"La operación detallada corresponde a la CANCELACIÓN TOTAL CON DESCUENTO de los préstamos indicados. Pago único: S/ {context['monto_total']} el {context['fecha_corta']}.", center)]
+    firmas = Table(
+        [[p("______________________________", center), p("______________________________", center)], [
+            Paragraph("ROSARIO RODRIGUEZ MOSCOSO<br/>REPRESENTANTE<br/>MIBANCO", signature),
+            Paragraph(f"{xml_text(context['cliente'])}<br/>DNI: {xml_text(context['dni'])}<br/>CLIENTE", signature),
+        ]],
+        colWidths=[3.2*inch,3.2*inch],
+    )
+    firmas.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("VALIGN",(0,0),(-1,-1),"BOTTOM"),("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)]))
+    story += [Spacer(1, 7), p("Este documento carece de valor si no se realiza el pago respectivo en la fecha pactada.", signature), p("Las cuotas no incluyen I.T.F.", italic), p(f"Nuestro cliente, {context['cliente']} y MIBANCO, dejamos constancia de la conformidad y pleno conocimiento del contenido, reafirmando todas y cada una de las condiciones presentes en este Acuerdo de Cancelación de Deuda. En señal de lo mencionado, se suscriben al documento.", body), Spacer(1, 10), p("Área de Recuperaciones", signature), Spacer(1, 48), firmas]
     doc.build(story)
 
 
@@ -2900,12 +3310,109 @@ def generar_documento_cuota_grupal(config, dni=None, operacion=None, codigo_grup
     }
 
 
-def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None):
+def preparar_contexto_mibanco(rows, cancelacion, fecha_pago, es_cuotas=False, pagos_mibanco=None, excepcion=False):
+    if not rows:
+        raise ValueError("Selecciona al menos una operacion de Mibanco.")
+    monto_total = decimal_value(cancelacion)
+    if monto_total is None or monto_total <= 0:
+        raise ValueError("Ingresa el monto total de cancelacion acordado.")
+    hoy = datetime.now(ZoneInfo("America/Lima")).date()
+    pagos = []
+    pagos_operacion = {
+        clave_operacion(item.get("operacion")): decimal_value(item.get("monto"), Decimal("0")) or Decimal("0")
+        for item in (pagos_mibanco or []) if limpiar_texto(item.get("operacion"))
+    }
+    if not es_cuotas:
+        if not pagos_operacion:
+            raise ValueError("Ingresa el monto a pagar para cada operación seleccionada.")
+        for row in rows:
+            operacion = clave_operacion(row.get("Operacion"))
+            pago = pagos_operacion.get(operacion, Decimal("0"))
+            campania = decimal_value(row.get("MtoCancelacionCliente"), Decimal("0")) or Decimal("0")
+            if pago <= 0:
+                raise ValueError(f"Ingresa un monto válido para la operación {operacion}.")
+            if not excepcion and pago < campania:
+                raise ValueError(f"El pago de la operación {operacion} es menor que su campaña de S/ {format_money(campania)}. Marca Excepción para permitirlo.")
+        monto_total = sum(pagos_operacion.get(clave_operacion(row.get("Operacion")), Decimal("0")) for row in rows)
+    for item in pagos_mibanco or []:
+        monto = decimal_value(item.get("monto"), Decimal("0")) or Decimal("0")
+        if monto <= 0:
+            raise ValueError("Cada cuota debe tener un monto mayor a cero.")
+        pagos.append({"numero": int(item.get("numero") or len(pagos) + 1), "monto": format_money(monto), "fecha": format_fecha_pago(item.get("fecha")) or hoy.strftime("%d/%m/%Y")})
+    if es_cuotas and not pagos:
+        raise ValueError("Ingresa el cronograma de cuotas para generar el acuerdo.")
+    if es_cuotas:
+        total_plan = sum((decimal_value(item["monto"], Decimal("0")) or Decimal("0")) for item in pagos)
+        if abs(total_plan - monto_total) > Decimal("0.01"):
+            raise ValueError("La suma de inicial y cuotas debe coincidir con el monto total de cancelacion.")
+    return {
+        "cliente": limpiar_texto(rows[0].get("NomCliente")), "dni": limpiar_texto(rows[0].get("NumDocumento")),
+        "codigo_cliente": limpiar_texto(rows[0].get("CtaCliente")),
+        "direccion": limpiar_texto(rows[0].get("DireccionPrincipal")),
+        "fecha_corta": format_fecha_pago(fecha_pago) or hoy.strftime("%d/%m/%Y"), "fecha_larga": fecha_larga_hoy(),
+        "monto_total": format_money(monto_total), "es_cuotas": es_cuotas, "pagos": pagos,
+        "deuda_total": format_money(sum((decimal_value(row.get("DeudaTotal"), Decimal("0")) or Decimal("0")) for row in rows)),
+        "capital_total": format_money(sum((decimal_value(row.get("SdoCapital"), Decimal("0")) or Decimal("0")) for row in rows)),
+        "campania_total": format_money(sum((decimal_value(row.get("MtoCancelacionCliente"), Decimal("0")) or Decimal("0")) for row in rows)),
+        "operaciones": [{
+            "operacion": clave_operacion(row.get("Operacion")), "producto": limpiar_texto(row.get("Producto") or "PRODUCTOS PROPIOS"), "moneda": limpiar_texto(row.get("Moneda") or "S"),
+            "deuda": format_money(decimal_value(row.get("DeudaTotal"), Decimal("0")) or Decimal("0")),
+            "capital": format_money(decimal_value(row.get("SdoCapital"), Decimal("0")) or Decimal("0")),
+            "dias_mora": limpiar_texto(row.get("DiasAtraso")),
+            "campania": format_money(decimal_value(row.get("MtoCancelacionCliente"), Decimal("0")) or Decimal("0")),
+            "pago": format_money(pagos_operacion.get(clave_operacion(row.get("Operacion")), monto_total if len(rows) == 1 and not es_cuotas else Decimal("0"))),
+        } for row in rows],
+    }
+
+
+def generar_documento_mibanco(config, dni=None, operacion=None, cancelacion=None, fecha_pago=None, formato="docx", operaciones_mibanco=None, pagos_mibanco=None, excepcion=False):
+    rows = consultar_datos_documento_mibanco(dni=dni, operacion=operacion, limit=100)
+    seleccionadas = {clave_operacion(value) for value in (operaciones_mibanco or []) if limpiar_texto(value)}
+    if seleccionadas:
+        rows = [row for row in rows if clave_operacion(row.get("Operacion")) in seleccionadas]
+    es_cuotas = config.get("document_kind") == "mibanco_cuotas"
+    context = preparar_contexto_mibanco(rows, cancelacion, fecha_pago, es_cuotas=es_cuotas, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
+    formato = str(formato or "docx").lower()
+    if formato not in ("docx", "pdf"):
+        raise ValueError("Formato no soportado. Selecciona Word o PDF.")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{safe_filename(config['nombre'])}_{safe_filename(context['cliente'])}.{formato}"
+    output_path = OUTPUT_DIR / filename
+    if formato == "pdf":
+        generar_pdf_mibanco(output_path, context)
+    else:
+        generar_docx_limpio(output_path, context, document_kind=config["document_kind"])
+    return {
+        "path": output_path,
+        "filename": filename,
+        "formato": formato,
+        "registro": rows[0],
+        "auditoria_detalle": {
+            "modalidad": "cuotas" if es_cuotas else "contado",
+            "monto_total_acordado": context["monto_total"],
+            "fecha_pago": context["fecha_corta"],
+            "cronograma": context["pagos"] if es_cuotas else [],
+            "operaciones": [
+                {
+                    "operacion": clave_operacion(row.get("operacion")),
+                    "campania": row["campania"],
+                    "pago": context["monto_total"] if es_cuotas and len(context["operaciones"]) == 1 else (None if es_cuotas else row["pago"]),
+                }
+                for row in context["operaciones"]
+            ],
+        },
+    }
+
+
+def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None):
     config = obtener_config_documento(documento_tipo)
     cartera_id = int(config.get("cartera_id") or 133)
 
     if config.get("solo_correo"):
         raise ValueError("Este tipo solo genera el preview de correo. No descarga carta.")
+
+    if config.get("document_kind") in ("mibanco_contado", "mibanco_cuotas"):
+        return generar_documento_mibanco(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, operaciones_mibanco=operaciones_mibanco, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
 
     if documento_tipo == "cancelacion_grupal":
         return generar_documento_grupal(
