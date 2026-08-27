@@ -1173,6 +1173,48 @@ body {
     display: none !important;
 }
 
+.sip-document-preview {
+    width: min(100%, 820px);
+    margin: 0 auto;
+    color: #111827;
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.sip-document-preview h1 {
+    margin: 0 0 18px;
+    text-align: center;
+    font-size: 19px;
+}
+
+.sip-document-preview h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.sip-document-preview p {
+    margin: 0 0 10px;
+}
+
+.sip-document-preview table {
+    width: 100%;
+    margin: 12px 0 18px;
+    border-collapse: collapse;
+}
+
+.sip-document-preview th,
+.sip-document-preview td {
+    padding: 7px 8px;
+    border: 1px solid #334155;
+    text-align: center;
+}
+
+.sip-document-preview th {
+    background: #d9e2f3;
+    font-weight: 800;
+}
+
 @media (max-width: 1100px) {
     .documentos-form-grid,
     .documentos-generate-grid,

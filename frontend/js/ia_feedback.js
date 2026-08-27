@@ -477,7 +477,9 @@ function renderResultadoIa(data) {
     pintarEvaluacionCalidad(evaluacionItems);
     pintarResumenSegmentos(evaluacionItems);
     pintarCabeceraFichaSgcIa(data);
-    pintarFichaAuditoriaSgcIa(hallazgosSgc.length ? hallazgosSgc : evaluacionItems);
+    // La ficha es auditable: muestra todos los criterios de la matriz. Los
+    // hallazgos consolidados siguen alimentando el resumen ejecutivo aparte.
+    pintarFichaAuditoriaSgcIa(evaluacionItems);
     pintarCierreFichaSgcIa(data);
     pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(evaluacionItems));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
@@ -5092,6 +5094,7 @@ function calificacionCortaSgcIa(value) {
     const normalizada = normalizarTextoComparacionIa(value);
     if (key.includes("revision") || key.includes("revisión") || normalizada.includes("requiere revisi")) return "RH";
     if (key.includes("no aplica")) return "NA";
+    if (key.includes("no evaluable")) return "NE";
     if (key.includes("parcial")) return "P";
     if (key.includes("no cumple") || key.includes("no evidenciado")) return "NC";
     if (key.includes("cumple")) return "C";
@@ -5124,7 +5127,7 @@ function itemsFichaAuditoriaSgcIa(items = []) {
 function badgeFichaCalificacionSgcIa(corta, completa) {
     const key = String(corta || "").toUpperCase();
     const clase = key === "NC" ? "nocumple" : (key === "P" || key === "RH") ? "parcial" : key === "C" ? "cumple" : "noaplica";
-    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", RH: "Revisión humana", NA: "NA - No aplica" };
+    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", RH: "Revisión humana", NA: "NA - No aplica", NE: "No evaluable" };
     return `<span class="audit-sgc-badge ${clase}" title="${escapeHtml(completa || "-")}">${escapeHtml(textos[key] || "-")}</span>`;
 }
 
@@ -5175,13 +5178,7 @@ function consolidarMotivoFactorSgcIa(factor = "", motivos = [], cantidad = 0) {
 }
 
 function consolidarItemsFichaAuditoriaSgcIa(items = []) {
-    const rows = itemsFichaAuditoriaSgcIa(items)
-        .filter(item => {
-            const cal = String(item.calificacion_corta || "").toUpperCase();
-            if (["C", "NA"].includes(cal)) return false;
-            const textos = [item.evidencia, item.motivo, item.hallazgo, item.recomendacion];
-            return textos.some(textoUtilFichaSgcIa);
-        });
+    const rows = itemsFichaAuditoriaSgcIa(items);
     const grupos = new Map();
     rows.forEach(item => {
         const key = claveFactorConsolidadoSgcIa(item);
@@ -5251,9 +5248,7 @@ function pintarFichaAuditoriaSgcIa(items) {
     el.innerHTML = SGC_GRUPOS_IA.map(grupo => {
         const grupoRows = rows.filter(item => item.grupo_auditoria_sgc === grupo);
         const brechas = grupoRows.filter(esBrecha);
-        const visibles = brechas.length
-            ? brechas.sort((a, b) => prioridadFichaSgcIa(a) - prioridadFichaSgcIa(b))
-            : grupoRows;
+        const visibles = grupoRows.sort((a, b) => prioridadFichaSgcIa(a) - prioridadFichaSgcIa(b));
         const estadoGrupo = brechas.length ? `${brechas.length} factor(es) observado(s)` : "Sin errores observados";
         return `
             <section class="audit-sgc-group">
@@ -7604,9 +7599,7 @@ function exportarReporteIa() {
 }
 
 function exportarFichaSgcIa() {
-    const evaluacion = hallazgosSgcItemsIa(resultadoActualIa || {}).length
-        ? hallazgosSgcItemsIa(resultadoActualIa || {})
-        : evaluacionCalidadItemsIa(resultadoActualIa || {});
+    const evaluacion = evaluacionCalidadItemsIa(resultadoActualIa || {});
     if (!evaluacion.length) {
         mostrarMensajeIa("No hay datos suficientes para exportar la ficha SGC/PEC.", "error");
         return;

@@ -54,6 +54,11 @@ document.addEventListener("DOMContentLoaded", () => {
         actualizarModoDocumento();
     });
     document.getElementById("cancelacion")?.addEventListener("input", () => {
+        if (esDocumentoSip()) {
+            actualizarResumenSip();
+            pintarPreviewDocumento();
+            return;
+        }
         if (esDocumentoMibanco()) {
             if (esDocumentoMibancoCuotas()) sincronizarPagosMibanco(true);
             actualizarResumenMibanco();
@@ -74,8 +79,8 @@ document.addEventListener("DOMContentLoaded", () => {
         pintarPreviewDocumento();
     });
     document.getElementById("cuotasCastigo")?.addEventListener("input", () => {
-        if (esDocumentoMibancoCuotas()) {
-            sincronizarPagosMibanco(true);
+        if (esDocumentoMibancoCuotas() || esDocumentoSip()) {
+            sincronizarPagosMibanco(true, esDocumentoSip() ? "sip_convenio" : "mibanco");
             pintarPreviewDocumento();
             return;
         }
@@ -91,8 +96,12 @@ document.addEventListener("DOMContentLoaded", () => {
         pintarPreviewDocumento();
     });
     document.getElementById("inicialCastigo")?.addEventListener("input", () => {
-        if (esDocumentoMibancoCuotas()) {
-            sincronizarPagosMibanco(true);
+        if (esDocumentoMibancoCuotas() || esDocumentoSip()) {
+            if (esDocumentoSip()) {
+                pintarPreviewDocumento();
+                return;
+            }
+            sincronizarPagosMibanco(true, "mibanco");
             pintarPreviewDocumento();
             return;
         }
@@ -100,11 +109,20 @@ document.addEventListener("DOMContentLoaded", () => {
         pintarPreviewDocumento();
     });
     document.getElementById("cuotaPagoCastigo")?.addEventListener("input", () => {
+        if (esDocumentoSip()) {
+            pintarPreviewDocumento();
+            return;
+        }
         sincronizarFechasCuotasCastigo(["armadas", "cuotas"].includes(modalidadCastigo()));
         pintarPreviewDocumento();
     });
     document.getElementById("agenciaDestinoCastigo")?.addEventListener("change", pintarPreviewDocumento);
-    document.getElementById("fechasCuotasCastigo")?.addEventListener("input", pintarPreviewDocumento);
+    document.getElementById("fechasCuotasCastigo")?.addEventListener("input", event => {
+        if (esDocumentoSip() && event.target.matches(".monto-mibanco")) {
+            actualizarConvenioSipDesdeCronograma();
+        }
+        pintarPreviewDocumento();
+    });
     document.getElementById("fechasCuotasCastigo")?.addEventListener("change", event => {
         const montoInput = event.target.closest(".monto-cuota-castigo");
         if (montoInput) recalcularCuotasPosterioresCastigo(Number(montoInput.dataset.cuota || 0));
@@ -140,7 +158,18 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
     document.getElementById("fechaPagoMibanco")?.addEventListener("change", () => {
-        if (esDocumentoMibanco()) pintarPreviewDocumento();
+        if (esDocumentoMibanco() || esDocumentoSip()) {
+            sincronizarPagosMibanco(false);
+            pintarPreviewDocumento();
+        }
+    });
+    ["cancelacion", "inicialCastigo", "cuotaPagoCastigo"].forEach(id => {
+        document.getElementById(id)?.addEventListener("change", () => {
+            if (!esDocumentoSip()) return;
+            sincronizarPagosMibanco(true, id === "cuotaPagoCastigo" ? "sip_cuota" : "sip_convenio");
+            actualizarResumenSip();
+            pintarPreviewDocumento();
+        });
     });
 });
 
@@ -316,6 +345,11 @@ function esDocumentoMibancoCuotas() {
 }
 
 
+function esDocumentoSip() {
+    return document.getElementById("documentoTipo")?.value === "sip_convenio_pagos_mes";
+}
+
+
 function esDocumentoCastigoFormatos() {
     return (document.getElementById("documentoTipo")?.value || "").endsWith("_formatos");
 }
@@ -330,11 +364,14 @@ function actualizarModoDocumento() {
     const cancelacionLabel = document.getElementById("cancelacion")?.closest("label");
     const esMibanco = esDocumentoMibanco();
     const esMibancoCuotas = esDocumentoMibancoCuotas();
+    const esSip = esDocumentoSip();
+    const usaCronogramaSIP = esMibancoCuotas || esSip;
     cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal() || (esMibanco && !esMibancoCuotas));
     if (cancelacionLabel?.firstChild) {
         let textoMonto = "Cancelacion a ingresar\n";
         if (esDocumentoCorreoPagoDirectoCuota()) textoMonto = "Monto de cuota a ingresar\n";
         if (esDocumentoCastigoCorreo() || esDocumentoMibanco()) textoMonto = "Monto total a cancelar\n";
+        if (esSip) textoMonto = "Monto del convenio\n";
         cancelacionLabel.firstChild.textContent = textoMonto;
     }
     document.getElementById("panelGrupal")?.classList.toggle("hidden", !esDocumentoGrupal() || !documentoSeleccionado);
@@ -346,12 +383,12 @@ function actualizarModoDocumento() {
     const esArmadas = modalidad === "armadas";
     const esCuotas = modalidad === "cuotas";
     document.getElementById("modalidadCastigoBox")?.classList.toggle("hidden", !esCastigoAcuerdo);
-    document.getElementById("cuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !esMibancoCuotas);
+    document.getElementById("cuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !usaCronogramaSIP);
     poblarOpcionesCuotasIndividual();
     document.getElementById("cuotasIndividualBox")?.classList.toggle("hidden", !esDocumentoCuotaIndividual());
-    document.getElementById("inicialCastigoBox")?.classList.toggle("hidden", !esMibancoCuotas);
-    document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !esMibancoCuotas);
-    document.getElementById("fechasCuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || (!esArmadas && !esCuotas)) && !esMibancoCuotas);
+    document.getElementById("inicialCastigoBox")?.classList.toggle("hidden", !usaCronogramaSIP);
+    document.getElementById("cuotaPagoCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || esUnPago) && !usaCronogramaSIP);
+    document.getElementById("fechasCuotasCastigoBox")?.classList.toggle("hidden", (!esCastigoAcuerdo || (!esArmadas && !esCuotas)) && !usaCronogramaSIP);
     const requiereAgenciaDestino = esDocumentoCastigoCorreo() || esDocumentoVigenteIndividual();
     document.getElementById("agenciaDestinoCastigoBox")?.classList.toggle("hidden", !requiereAgenciaDestino);
     const generacionGrid = document.querySelector(".documentos-generate-grid");
@@ -359,28 +396,35 @@ function actualizarModoDocumento() {
     generacionGrid?.classList.toggle("castigo-acuerdo-grid", esCastigoAcuerdo);
     generacionGrid?.classList.toggle("castigo-un-pago-grid", esCastigoAcuerdo && esUnPago);
     generacionGrid?.classList.toggle("vigente-individual-grid", esDocumentoVigenteIndividual());
-    generacionGrid?.classList.toggle("mibanco-cuotas-grid", esMibancoCuotas);
+    generacionGrid?.classList.toggle("mibanco-cuotas-grid", usaCronogramaSIP);
     const cuotasLabel = document.getElementById("cuotasCastigoBox");
     if (cuotasLabel?.firstChild) cuotasLabel.firstChild.textContent = esArmadas ? "Cantidad de pagos\n" : "Cantidad de cuotas\n";
     const cuotaPagoLabel = document.getElementById("cuotaPagoCastigoBox");
-    if (cuotaPagoLabel?.firstChild) cuotaPagoLabel.firstChild.textContent = esArmadas ? "Monto de armada\n" : "Cuota a pagar\n";
-    if (esMibancoCuotas) sincronizarPagosMibanco(false);
+    if (cuotaPagoLabel?.firstChild) cuotaPagoLabel.firstChild.textContent = esSip ? "Cuota regular\n" : esArmadas ? "Monto de armada\n" : "Cuota a pagar\n";
+    const inicialLabel = document.getElementById("inicialCastigoBox");
+    if (inicialLabel?.firstChild) inicialLabel.firstChild.textContent = esSip ? "Cuota inicial\n" : "Inicial\n";
+    const fechaPagoLabel = document.getElementById("fechaPagoMibancoBox");
+    if (fechaPagoLabel?.firstChild) fechaPagoLabel.firstChild.textContent = esSip ? "Fecha de solicitud / pago\n" : "Fecha del documento y pago\n";
+    if (usaCronogramaSIP) sincronizarPagosMibanco(false);
     else sincronizarFechasCuotasCastigo(false);
     document.querySelector(".documentos-format-box")?.classList.toggle("hidden", esDocumentoSoloCorreo());
     document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
     document.getElementById("btnGenerar")?.classList.toggle("hidden", esDocumentoSoloCorreo());
     document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo() || esDocumentoMibancoCuotas());
-    document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco);
-    document.getElementById("fechaPagoMibancoBox")?.classList.toggle("hidden", !esMibanco);
+    document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco || esSip);
+    document.getElementById("fechaPagoMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSip));
     document.getElementById("btnDirectorioAgencias")?.classList.toggle("hidden", esMibanco);
-    document.getElementById("codigoGrupoBusquedaBox")?.classList.toggle("hidden", esMibanco);
-    document.getElementById("codCreGrupalBusquedaBox")?.classList.toggle("hidden", esMibanco);
+    document.getElementById("codigoGrupoBusquedaBox")?.classList.toggle("hidden", esMibanco || esSip);
+    document.getElementById("codCreGrupalBusquedaBox")?.classList.toggle("hidden", esMibanco || esSip);
     document.getElementById("codigoClienteMibancoBox")?.classList.toggle("hidden", !esMibanco);
-    document.getElementById("nombreClienteMibancoBox")?.classList.toggle("hidden", !esMibanco);
-    document.querySelector(".documentos-form-grid")?.classList.toggle("mibanco-form-grid", esMibanco);
+    document.getElementById("nombreClienteMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSip));
+    document.querySelector(".documentos-form-grid")?.classList.toggle("mibanco-form-grid", esMibanco || esSip);
     const regla = document.querySelector(".documentos-rule");
     if (regla && esMibanco) {
         regla.innerHTML = "Cada operación debe registrar su <strong>monto a pagar</strong>. El pago debe ser igual o mayor a la campaña de esa operación; marca <strong>Excepción</strong> solo si se permitirá un monto menor.";
+    }
+    if (regla && esSip) {
+        regla.innerHTML = "El <strong>monto del convenio</strong> se calcula con la cuota inicial más las cuotas regulares. Debe ser igual o mayor a la campaña <strong>MEJOR_LTD</strong>; marca <strong>Excepción</strong> solo si se permitirá un monto menor.";
     }
     const tituloPersona = document.getElementById("tituloPersonaGrupal");
     if (tituloPersona) tituloPersona.textContent = esDocumentoCuotaGrupal() ? "Datos del fiador" : "Datos del encargado";
@@ -415,6 +459,10 @@ function setSummaryLabels() {
         summary[0].textContent = "Campaña total SQL";
         summary[1].textContent = "Deuda total seleccionada";
         summary[2].textContent = "Capital seleccionado";
+    } else if (esDocumentoSip()) {
+        summary[0].textContent = "Campaña MEJOR_LTD";
+        summary[1].textContent = "Deuda total";
+        summary[2].textContent = "Monto del convenio";
     } else if (esDocumentoCastigoCorreo()) {
         summary[0].textContent = "Monto campaña SQL";
         summary[1].textContent = "Deuda total";
@@ -477,6 +525,8 @@ async function buscarDatosDocumento() {
     if (!Object.values(filtros).some(Boolean)) {
         mostrarEstado(esDocumentoMibanco()
             ? "Ingresa DNI, operación, código de cliente o nombre para buscar en Mibanco."
+            : esDocumentoSip()
+                ? "Ingresa documento, nombre u operación para buscar en Financiera OH - SIP."
             : "Ingresa DNI, operación, cta grupal o cod grupal para buscar.", "warning");
         return;
     }
@@ -577,6 +627,25 @@ function seleccionarDocumento(index) {
         return;
     }
 
+    if (esDocumentoSip()) {
+        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - ${valueOrDash(documentoSeleccionado.TipoDocumento)} ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
+        document.getElementById("operacionSeleccionada").textContent = `Tarjeta ${valueOrDash(documentoSeleccionado.Operacion)}`;
+        document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
+        const campania = Number(documentoSeleccionado.MtoCancelacionCliente || 0);
+        const cancelacion = document.getElementById("cancelacion");
+        const inicial = document.getElementById("inicialCastigo");
+        const cuotas = document.getElementById("cuotasCastigo");
+        const cuota = document.getElementById("cuotaPagoCastigo");
+        if (cuotas) cuotas.value = "1";
+        if (inicial) inicial.value = "0.00";
+        if (cuota) cuota.value = numeroInputValue(campania);
+        if (cancelacion) cancelacion.value = numeroInputValue(campania);
+        sincronizarPagosMibanco(true);
+        actualizarResumenSip();
+        pintarPreviewDocumento();
+        return;
+    }
+
     if (esDocumentoGrupal()) {
         document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomGrupo)} - ${documentosResultados.length} integrante${documentosResultados.length === 1 ? "" : "s"}`;
         document.getElementById("operacionSeleccionada").textContent = `Grupo ${valueOrDash(documentoSeleccionado.CodigoGrupo)}`;
@@ -655,6 +724,16 @@ function actualizarResumenMibanco() {
 }
 
 
+function actualizarResumenSip() {
+    if (!esDocumentoSip() || !documentoSeleccionado) return;
+    const campania = Number(documentoSeleccionado.MtoCancelacionCliente || 0);
+    const monto = Number(document.getElementById("cancelacion")?.value || 0);
+    document.getElementById("montoMinimo").textContent = campania > 0 ? money(campania) : "CONVENIO";
+    document.getElementById("deudaTotal").textContent = money(documentoSeleccionado.DeudaTotal);
+    document.getElementById("condonacionEstimada").textContent = money(monto);
+}
+
+
 function pintarOperacionesMibanco() {
     const panel = document.getElementById("panelOperacionesMibanco");
     const tbody = document.getElementById("tbodyOperacionesMibanco");
@@ -685,27 +764,65 @@ function pintarOperacionesMibanco() {
 }
 
 
-function sincronizarPagosMibanco(forzar = false) {
-    if (!esDocumentoMibancoCuotas()) return;
+function actualizarConvenioSipDesdeCronograma() {
+    if (!esDocumentoSip()) return;
+    const montos = Array.from(document.querySelectorAll(".monto-mibanco")).map(input => Number(input.value || 0));
+    if (montos.length < 2) return;
+    const montoConvenio = montos.reduce((total, monto) => total + monto, 0);
+    const inicial = document.getElementById("inicialCastigo");
+    const total = document.getElementById("cancelacion");
+    const cuota = document.getElementById("cuotaPagoCastigo");
+    if (inicial) inicial.value = numeroInputValue(montos[0]);
+    if (total) total.value = numeroInputValue(montoConvenio);
+    if (cuota) cuota.value = numeroInputValue(montos[1]);
+    actualizarResumenSip();
+}
+
+
+function sincronizarPagosMibanco(forzar = false, origen = "mibanco") {
+    if (!esDocumentoMibancoCuotas() && !esDocumentoSip()) return;
     const box = document.getElementById("fechasCuotasCastigo");
     if (!box) return;
     const cantidad = Math.max(1, Number.parseInt(document.getElementById("cuotasCastigo")?.value || "1", 10) || 1);
     const total = Number(document.getElementById("cancelacion")?.value || 0);
     const inicial = Number(document.getElementById("inicialCastigo")?.value || 0);
-    const cuota = Math.max((total - inicial) / cantidad, 0);
+    const cuotaIngresada = Number(document.getElementById("cuotaPagoCastigo")?.value || 0);
+    const totalCentimos = montoEnCentimos(total);
+    const inicialCentimos = montoEnCentimos(inicial);
+    const saldoCuotasSip = Math.max(totalCentimos - inicialCentimos, 0);
+    const cuota = esDocumentoSip()
+        ? (origen === "sip_cuota" ? montoEnCentimos(cuotaIngresada) / 100 : Math.round(saldoCuotasSip / cantidad) / 100)
+        : Math.max((total - inicial) / cantidad, 0);
+    const montoConvenio = esDocumentoSip()
+        ? (origen === "sip_cuota"
+            ? (inicialCentimos + (cantidad * montoEnCentimos(cuota))) / 100
+            : totalCentimos / 100)
+        : total;
+    if (esDocumentoSip()) {
+        const montoInput = document.getElementById("cancelacion");
+        if (montoInput) montoInput.value = numeroInputValue(montoConvenio);
+        const cuotaInput = document.getElementById("cuotaPagoCastigo");
+        if (cuotaInput) cuotaInput.value = numeroInputValue(cuota);
+    }
     const actuales = Array.from(box.querySelectorAll(".monto-mibanco")).map(input => input.value);
     const fechas = Array.from(box.querySelectorAll(".fecha-mibanco")).map(input => input.value);
     const filas = Array.from({ length: cantidad + 1 }, (_, index) => {
         const numero = index + 1;
         const esInicial = index === 0;
-        const monto = esInicial ? inicial : cuota;
-        const fecha = !forzar && fechas[index] ? fechas[index] : fechaInputValue(ajustarFechaPagoCastigo(sumarMeses(new Date(), index)));
+        const monto = esInicial
+            ? inicial
+            : index === cantidad
+                ? Math.max((montoEnCentimos(montoConvenio) - inicialCentimos - (montoEnCentimos(cuota) * (cantidad - 1))) / 100, 0)
+                : cuota;
+        const fechaBase = document.getElementById("fechaPagoMibanco")?.value ? parseDateInput(document.getElementById("fechaPagoMibanco").value) : new Date();
+        const fecha = !forzar && fechas[index] ? fechas[index] : fechaInputValue(ajustarFechaPagoCastigo(sumarMeses(fechaBase, index)));
         const valor = !forzar && actuales[index] ? actuales[index] : numeroInputValue(monto);
         return `<tr><td><strong>${esInicial ? "Inicial" : `Cuota ${index}`}</strong></td><td><input class="monto-mibanco" type="number" step="0.01" min="0" data-numero="${numero}" value="${escapeAttr(valor)}"></td><td><input class="fecha-mibanco" type="date" value="${escapeAttr(fecha)}"></td></tr>`;
     }).join("");
     box.innerHTML = `<div class="documentos-installments-table-wrap"><table class="documentos-installments-table"><thead><tr><th>Pago</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${filas}</tbody></table></div>`;
     const cuotaInput = document.getElementById("cuotaPagoCastigo");
-    if (cuotaInput) cuotaInput.value = numeroInputValue(cuota);
+    if (cuotaInput && !esDocumentoSip()) cuotaInput.value = numeroInputValue(cuota);
+    if (esDocumentoSip()) actualizarResumenSip();
 }
 
 
@@ -940,7 +1057,9 @@ function seleccionarFormato(formato) {
 
 function pintarPreviewDocumento() {
     document.getElementById("panelPreview")?.classList.toggle("mail-only", esDocumentoSoloCorreo());
-    if (esDocumentoMibanco()) {
+    if (esDocumentoSip()) {
+        pintarPreviewSip();
+    } else if (esDocumentoMibanco()) {
         pintarPreviewMibanco();
     } else if (esDocumentoCastigoCorreo()) {
         pintarPreviewCastigoCorreo();
@@ -957,6 +1076,27 @@ function pintarPreviewDocumento() {
     }
     if (!esDocumentoSoloCorreo() && !esDocumentoMibanco()) pintarPreviewCorreo();
     programarPreviewReal();
+}
+
+
+function pintarPreviewSip() {
+    const panel = document.getElementById("panelPreview");
+    const preview = document.getElementById("documentoPreview");
+    if (!panel || !preview || !documentoSeleccionado) return;
+    const pagos = Array.from(document.querySelectorAll(".monto-mibanco")).map((input, index) => ({
+        nombre: index === 0 ? "CUOTA INICIAL" : "CUOTA MENSUAL",
+        monto: Number(input.value || 0),
+        fecha: document.querySelectorAll(".fecha-mibanco")[index]?.value || "",
+    }));
+    const rows = pagos.map((pago, index) => {
+        const fecha = parseDateInput(pago.fecha || "");
+        return `<tr><td>${index || ""}</td><td>${pago.nombre}</td><td>${escapeHtml(fecha ? fecha.toLocaleString("es-PE", { month: "long" }).toUpperCase() : "")}</td><td>${fecha?.getFullYear?.() || ""}</td><td>${fecha ? String(fecha.getDate()).padStart(2, "0") : ""}</td><td>${money(pago.monto)}</td><td></td><td></td></tr>`;
+    }).join("");
+    panel.classList.remove("hidden");
+    panel.classList.remove("mibanco-preview");
+    document.querySelector(".documentos-mail-preview")?.classList.add("hidden");
+    preview.classList.remove("documentos-preview-real");
+    preview.innerHTML = `<div class="sip-document-preview"><h1>Pagos por mes Convenio Tarjeta Sip</h1><h2>DATOS DEL CLIENTE</h2><p>Tipo Documento: ${escapeHtml(documentoSeleccionado.TipoDocumento || "")} &nbsp;&nbsp; Nro. Documento: ${escapeHtml(documentoSeleccionado.NumDocumento)}</p><p>Nombres y Apellidos: ${escapeHtml(documentoSeleccionado.NomCliente)}</p><p>Producto: TARJETA SIP(OH) &nbsp;&nbsp; Nro. Tarjeta: ${escapeHtml(documentoSeleccionado.Operacion)}</p><table><tbody><tr><th>Fecha Solicitud</th><td>${escapeHtml(fechaCortaDesdeFecha(parseDateInput(document.getElementById("fechaPagoMibanco")?.value || "")))}</td><th>Deuda total</th><td>${money(documentoSeleccionado.DeudaTotal)}</td></tr><tr><th>Monto Convenio</th><td>${money(document.getElementById("cancelacion")?.value || 0)}</td><th>Nro. Cuotas</th><td>${escapeHtml(document.getElementById("cuotasCastigo")?.value || "1")}</td></tr></tbody></table><p>El saldo del convenio se pagará de acuerdo al siguiente cronograma</p><table><thead><tr><th>NUM CUOTA</th><th>CUOTA</th><th>MES</th><th>AÑO</th><th>DIA</th><th>MONTO</th><th>PAGO CUMPLIDO</th><th>MONTO PAGADO</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 
@@ -2589,6 +2729,35 @@ function construirPayloadGeneracion(formato, silencioso = false) {
             excepcion: tieneExcepcion(),
             encargado: encargado,
             pagos_grupales: pagos,
+        };
+    }
+
+    if (esDocumentoSip()) {
+        const pagos = Array.from(document.querySelectorAll(".monto-mibanco")).map((input, index) => ({
+            numero: index + 1,
+            monto: Number(input.value || 0),
+            fecha: document.querySelectorAll(".fecha-mibanco")[index]?.value || "",
+        }));
+        const cuotasRegulares = pagos.slice(1);
+        const montoConvenio = pagos.reduce((total, pago) => total + pago.monto, 0);
+        const campania = Number(documentoSeleccionado.MtoCancelacionCliente || 0);
+        if (!cuotasRegulares.length || cuotasRegulares.some(pago => pago.monto <= 0)) {
+            avisar("Ingresa un monto mayor a cero para cada cuota regular SIP.", "warning");
+            return null;
+        }
+        if (campania > 0 && montoConvenio < campania && !tieneExcepcion()) {
+            avisar(`El monto del convenio ${money(montoConvenio)} es menor que la campaña MEJOR_LTD ${money(campania)}. Marca Excepción para permitirlo.`, "warning");
+            return null;
+        }
+        return {
+            documento_tipo: "sip_convenio_pagos_mes",
+            dni: String(documentoSeleccionado.NumDocumento || ""),
+            operacion: String(documentoSeleccionado.Operacion || ""),
+            cancelacion: montoConvenio,
+            fecha_pago: document.getElementById("fechaPagoMibanco")?.value || new Date().toISOString().slice(0, 10),
+            formato,
+            excepcion: tieneExcepcion(),
+            pagos_mibanco: pagos,
         };
     }
 

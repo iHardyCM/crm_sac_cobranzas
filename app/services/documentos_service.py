@@ -2,6 +2,7 @@
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from copy import deepcopy
 import re
 import unicodedata
 import zipfile
@@ -22,6 +23,8 @@ GERENTE_DNI = "10416012"
 GERENTE_CARGO = "GERENTE GENERAL"
 FIRMA_LUIS_PATH = TEMPLATES_DIR / "firma_luis_portuguez.png"
 LOGO_MIBANCO_PATH = TEMPLATES_DIR / "logo_mibanco.png"
+SIP_TEMPLATE_PATH = TEMPLATES_DIR / "convenio_pagos_sip_template.docx"
+LOGO_SIP_PATH = TEMPLATES_DIR / "logo_sip.png"
 
 DOCUMENT_TYPES = {
     "transaccion_cancelacion": {
@@ -164,6 +167,15 @@ DOCUMENT_TYPES = {
         "document_kind": "mibanco_cuotas",
         "sin_correo": True,
     },
+    "sip_convenio_pagos_mes": {
+        "id": "sip_convenio_pagos_mes",
+        "nombre": "Convenio de pagos por mes - Tarjeta SIP",
+        "descripcion": "Convenio SIP con cuota inicial, cuotas mensuales y cronograma de pago.",
+        "cartera_id": 132,
+        "cartera_nombre": "Financiera OH - SIP",
+        "document_kind": "sip_convenio",
+        "sin_correo": True,
+    },
 }
 
 DOCUMENT_QUERY_SCOPES = {
@@ -202,7 +214,13 @@ DOCUMENT_QUERY_SCOPES = {
         "entidad": "Mibanco",
         "consulta": "act_mibanco_castigo",
         "activo": True,
-    }
+    },
+    132: {
+        "nombre": "Financiera OH - SIP",
+        "entidad": "Financiera OH",
+        "consulta": "actualizacionfoh_sip",
+        "activo": True,
+    },
 }
 
 EMAIL_TEMPLATE_SCOPES = {
@@ -811,6 +829,8 @@ def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_c
     cartera_id = int(cartera_id or 133)
     if cartera_id == 112:
         return consultar_datos_documento_mibanco(dni=dni, operacion=operacion, codigo_cliente=codigo_cliente, nombre_cliente=nombre_cliente, limit=limit)
+    if cartera_id == 132:
+        return consultar_datos_documento_sip(dni=dni, operacion=operacion, nombre_cliente=nombre_cliente, limit=limit)
     if cartera_id in (124, 144):
         return consultar_datos_documento_castigo(
             cartera_id=cartera_id,
@@ -1205,6 +1225,66 @@ def consultar_datos_documento_mibanco(dni=None, operacion=None, codigo_cliente=N
             conn.close()
 
 
+def consultar_datos_documento_sip(dni=None, operacion=None, nombre_cliente=None, limit=20):
+    if limpiar_texto(operacion):
+        where, params = "RTRIM(LTRIM(CAST(F.NUM_CUENTA_ORI AS VARCHAR(50)))) = ?", [limpiar_texto(operacion)]
+    elif limpiar_texto(dni):
+        where, params = "RTRIM(LTRIM(CAST(F.DNI AS VARCHAR(50)))) = ?", [limpiar_texto(dni)]
+    elif limpiar_texto(nombre_cliente):
+        where, params = "UPPER(RTRIM(LTRIM(F.NOMBRE_COMPLETO))) LIKE ?", [f"%{limpiar_texto(nombre_cliente).upper()}%"]
+    else:
+        raise ValueError("Ingresa documento, nombre u operacion para buscar en Financiera OH - SIP.")
+
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT TOP {int(limit)}
+                CASE UPPER(LEFT(RTRIM(LTRIM(CAST(F.IDENTITY_CODE AS VARCHAR(50)))), 1))
+                    WHEN 'D' THEN 'DNI'
+                    WHEN 'C' THEN 'C.E.'
+                    WHEN 'R' THEN 'RUC'
+                    ELSE LEFT(RTRIM(LTRIM(CAST(F.IDENTITY_CODE AS VARCHAR(50)))), 1)
+                END AS TipoDocumento,
+                F.DNI AS NumDocumento,
+                F.NOMBRE_COMPLETO AS NomCliente,
+                F.NUM_CUENTA_ORI AS Operacion,
+                F.NUM_CUENTA_ORI AS CtaCliente,
+                F.SLD_TOTAL_ASIG AS DeudaTotal,
+                M.MejorLTD,
+                TRY_CONVERT(DECIMAL(18, 2), M.MejorLTD) AS MtoCancelacionCliente,
+                CAST(NULL AS NVARCHAR(255)) AS DireccionPrincipal,
+                CAST(NULL AS NVARCHAR(100)) AS CodigoGrupo,
+                CAST(NULL AS NVARCHAR(100)) AS CodCreGrupal,
+                CAST(NULL AS NVARCHAR(255)) AS NomGrupo,
+                CAST(NULL AS NVARCHAR(100)) AS NomOficina,
+                CAST(NULL AS DECIMAL(18, 2)) AS SdoCapital,
+                'S' AS Moneda,
+                132 AS CarteraId
+            FROM Desarrollo.dbo.actualizacionfoh F WITH(NOLOCK)
+            CROSS APPLY (
+                SELECT CASE
+                    WHEN F.LTD_PLUS <> 0 AND F.LTD_PLUS IS NOT NULL THEN CAST(F.LTD_PLUS AS VARCHAR(50))
+                    WHEN F.LTD_ESPECIAL_FERIA <> 0 AND F.LTD_ESPECIAL_FERIA IS NOT NULL THEN CAST(F.LTD_ESPECIAL_FERIA AS VARCHAR(50))
+                    WHEN F.LTD <> 0 AND F.LTD IS NOT NULL THEN CAST(F.LTD AS VARCHAR(50))
+                    ELSE 'CONVENIO'
+                END AS MejorLTD
+            ) M
+            WHERE {where}
+            ORDER BY F.NOMBRE_COMPLETO, F.NUM_CUENTA_ORI
+            """,
+            *params,
+        )
+        return fetch_resultset(cursor)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 def obtener_registro_unico(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cartera_id=133):
     rows = consultar_datos_documento(
         dni=dni,
@@ -1373,6 +1453,115 @@ def generar_docx_desde_template(template_path, output_path, replacements):
                     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
                 ).encode("utf-8")
 
+            zout.writestr(item, data)
+
+
+WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+
+
+def reemplazar_texto_ooxml(element, value):
+    textos = element.findall(".//w:t", WORD_NS)
+    if not textos:
+        return
+    textos[0].text = str(value or "")
+    for texto in textos[1:]:
+        texto.text = ""
+
+
+def reemplazar_texto_parrafo_ooxml(paragraph, marker, value):
+    """Cambia solo el texto de datos y conserva los rótulos decorativos del modelo."""
+    for texto in paragraph.findall(".//w:t", WORD_NS):
+        if marker in (texto.text or ""):
+            texto.text = str(value or "")
+            return
+
+
+def reemplazar_nodo_texto_ooxml(paragraph, index, value):
+    textos = paragraph.findall(".//w:t", WORD_NS)
+    if 0 <= index < len(textos):
+        textos[index].text = str(value or "")
+
+
+def celdas_ooxml(row):
+    return row.findall("w:tc", WORD_NS)
+
+
+def generar_docx_sip_desde_template(output_path, context):
+    """Completa la plantilla SIP preservando su estructura, estilos y espacios."""
+    if not SIP_TEMPLATE_PATH.exists():
+        generar_docx_limpio(output_path, context, document_kind="sip_convenio")
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(SIP_TEMPLATE_PATH, "r") as zin, zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ET.fromstring(data)
+                body = root.find("w:body", WORD_NS)
+                paragraphs = body.findall("w:p", WORD_NS) if body is not None else []
+                tables = body.findall("w:tbl", WORD_NS) if body is not None else []
+
+                # Solo se tocan los nodos de datos: los títulos gráficos y su formato
+                # permanecen intactos dentro de la plantilla.
+                if len(paragraphs) > 2:
+                    reemplazar_nodo_texto_ooxml(paragraphs[2], 1, context["tipo_documento"])
+                    reemplazar_nodo_texto_ooxml(paragraphs[2], 5, context["dni"])
+                if len(paragraphs) > 3:
+                    reemplazar_nodo_texto_ooxml(paragraphs[3], 5, context["cliente"])
+                if len(paragraphs) > 5:
+                    reemplazar_nodo_texto_ooxml(paragraphs[5], 15, context["tarjeta"])
+                if len(paragraphs) > 7:
+                    reemplazar_nodo_texto_ooxml(paragraphs[7], 1, f" {context['cuota_inicial']} ")
+                    reemplazar_nodo_texto_ooxml(paragraphs[7], 2, "")
+                    reemplazar_nodo_texto_ooxml(paragraphs[7], 3, "")
+                    reemplazar_nodo_texto_ooxml(paragraphs[7], 4, "")
+                # Los tres canales se muestran como lista tanto en Word como en PDF.
+                for index in (17, 18, 19):
+                    if len(paragraphs) > index:
+                        texto = "".join(node.text or "" for node in paragraphs[index].findall(".//w:t", WORD_NS)).strip()
+                        reemplazar_texto_ooxml(paragraphs[index], f"• {texto}")
+
+                if len(tables) >= 2:
+                    resumen = tables[0].findall("w:tr", WORD_NS)
+                    resumen_values = [
+                        [f"Fecha Solicitud:            {context['fecha_solicitud']}", "           Deuda total: ", f"S/{context['deuda_total']}"],
+                        ["Tipo de facilidad:         Convenio Pago", "           Monto Cuota:", f"S/{context['cuota_regular']}"],
+                        [f"Monto Convenio:          {context['monto_convenio']} SOLES", "Nro. Cuotas:", str(context['cantidad_cuotas'])],
+                    ]
+                    for row, values in zip(resumen, resumen_values):
+                        for cell, value in zip(celdas_ooxml(row), values):
+                            reemplazar_texto_ooxml(cell, value)
+
+                    detalle = tables[1].findall("w:tr", WORD_NS)
+                    detalle_values = [
+                        ["Monto convenio", context["monto_convenio"]],
+                        ["Cuota Inicial", context["cuota_inicial"]],
+                        ["Numero de Cuotas", str(context["cantidad_cuotas"])],
+                        ["Monto de cuota", context["cuota_regular"]],
+                    ]
+                    for row, values in zip(detalle, detalle_values):
+                        for cell, value in zip(celdas_ooxml(row), values):
+                            reemplazar_texto_ooxml(cell, value)
+
+                if len(tables) >= 3:
+                    cronograma_table = tables[2]
+                    cronograma_rows = cronograma_table.findall("w:tr", WORD_NS)
+                    cronograma = tabla_cronograma_sip(context)
+                    if len(cronograma) > len(cronograma_rows) - 1 and len(cronograma_rows) > 1:
+                        row_template = cronograma_rows[-1]
+                        for _ in range(len(cronograma) - (len(cronograma_rows) - 1)):
+                            cronograma_table.append(deepcopy(row_template))
+                        cronograma_rows = cronograma_table.findall("w:tr", WORD_NS)
+                    for row in cronograma_rows[1:]:
+                        for cell in celdas_ooxml(row):
+                            reemplazar_texto_ooxml(cell, "")
+                    for row, values in zip(cronograma_rows[1:], cronograma):
+                        for cell, value in zip(celdas_ooxml(row), values):
+                            reemplazar_texto_ooxml(cell, value)
+
+                ET.register_namespace("w", WORD_NS["w"])
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             zout.writestr(item, data)
 
 
@@ -2232,6 +2421,73 @@ def tabla_cuotas_mibanco(context):
     return headers, rows
 
 
+def nombre_mes_sip(value):
+    try:
+        parsed = datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        parsed = datetime.now(ZoneInfo("America/Lima")).date()
+    meses = ("ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE")
+    return meses[parsed.month - 1], str(parsed.year), str(parsed.day).zfill(2)
+
+
+def tabla_cronograma_sip(context):
+    rows = []
+    for index, pago in enumerate(context["pagos"]):
+        mes, anio, dia = nombre_mes_sip(pago["fecha"])
+        rows.append([
+            "" if index == 0 else str(index),
+            "CUOTA INICIAL" if index == 0 else "CUOTA MENSUAL",
+            mes,
+            anio,
+            dia,
+            pago["monto"],
+            "",
+            "",
+        ])
+    return rows
+
+
+def document_sip_xml(context):
+    resumen_izquierda = [
+        [context["fecha_solicitud"], f"S/ {context['deuda_total']}"],
+        ["Tipo de facilidad: Convenio Pago", f"Monto Cuota: S/ {context['cuota_regular']}"],
+        [f"Monto Convenio: {context['monto_convenio']} SOLES", f"Nro. Cuotas: {context['cantidad_cuotas']}"],
+    ]
+    detalle = [
+        ["Monto convenio", context["monto_convenio"]],
+        ["Cuota Inicial", context["cuota_inicial"]],
+        ["Numero de Cuotas", str(context["cantidad_cuotas"])],
+        ["Monto de cuota", context["cuota_regular"]],
+    ]
+    cronograma = tabla_cronograma_sip(context)
+    paragraphs = [
+        title_xml("Pagos por mes  Convenio Tarjeta Sip"),
+        paragraph_xml("DATOS DEL CLIENTE", bold=True, align="left", after=28, size=18),
+        paragraph_xml(f"Tipo Documento: {context['tipo_documento']}                                      Nro. Documento: {context['dni']}", after=22, size=17),
+        paragraph_xml(f"Nombres y Apellidos: {context['cliente']}", after=22, size=17),
+        paragraph_xml(f"Producto: TARJETA SIP(OH)                                      Nro. Tarjeta: {context['tarjeta']}", after=50, size=17),
+        simple_table_xml(["Fecha Solicitud", "Deuda total"], resumen_izquierda, [4700, 4700], font_size=15),
+        paragraph_xml(f"Cuota Inicial: {context['cuota_inicial']} SOLES", before=55, after=45, size=18),
+        simple_table_xml(["Concepto", "Monto"], detalle, [4400, 2200], font_size=16),
+        paragraph_xml("El saldo del convenio se pagará de acuerdo al siguiente cronograma", before=50, after=30, size=17),
+        simple_table_xml(["NUM CUOTA", "CUOTA", "MES", "AÑO", "DIA", "MONTO", "PAGO CUMPLIDO", "MONTO PAGADO"], cronograma, [850, 1600, 1250, 850, 650, 900, 1600, 1600], font_size=14),
+        paragraph_xml("1. Al mes de incumplimiento este convenio queda anulado.", before=55, after=18, size=16),
+        paragraph_xml("2. Se puede cancelar en:", after=10, size=16),
+        paragraph_xml("Plaza Vea (hasta el día de vencimiento de cuota)", after=10, size=16),
+        paragraph_xml("Promart, Oechsle, Makro (de preferencia hasta dos días antes del vencimiento de cuota)", after=10, size=16),
+        paragraph_xml("Pago link con cualquiera tarjeta de débito (de preferencia un día hábil antes del vencimiento)", after=18, size=16),
+        paragraph_xml("3. En caso de pago adelanto de cuotas, este cubrirá sus últimas cuotas.", after=18, size=16),
+        paragraph_xml("4. En caso de incumplimiento o simple atraso en el pago de cualquiera de las cuotas establecidas, FINANCIERA OH queda facultada a continuar el ejercicio de las acciones de cobro, cobrándose penalidades.", after=18, size=16),
+        paragraph_xml("5. La aplicación de la condonación ofrecida se realizará una vez cancelado el convenio antes mencionado; una vez pagada la última cuota puede solicitar a su sectorista su carta de no adeudo en un plazo de 5 días hábiles.", after=20, size=16),
+    ]
+    body = "".join(paragraphs)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body>{body}<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"620\" w:right=\"720\" w:bottom=\"620\" w:left=\"720\" w:header=\"360\" w:footer=\"360\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>"
+    )
+
+
 def styles_xml():
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -2246,6 +2502,7 @@ def styles_xml():
 def generar_docx_limpio(output_path, context, document_kind="transaccion_cancelacion"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     es_mibanco = document_kind in ("mibanco_contado", "mibanco_cuotas")
+    es_sip = document_kind == "sip_convenio"
     if document_kind == "cancelacion_grupal":
         document_body = document_grupal_xml(context)
     elif document_kind == "compromiso_cuota_grupal":
@@ -2254,6 +2511,8 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         document_body = document_cuota_individual_xml(context)
     elif document_kind in ("mibanco_contado", "mibanco_cuotas"):
         document_body = document_mibanco_xml(context)
+    elif es_sip:
+        document_body = document_sip_xml(context)
     else:
         document_body = document_xml(context)
     document_relationships = (
@@ -2261,7 +2520,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
-        + ('' if es_mibanco else '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>')
+        + ('' if es_mibanco or es_sip else '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>')
         + ('<Relationship Id="rIdLogoMibanco" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_mibanco.png"/>' if es_mibanco else '')
         + '</Relationships>'
     )
@@ -2297,7 +2556,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for name, content in parts.items():
             zout.writestr(name, content.encode("utf-8"))
-        if not es_mibanco and FIRMA_LUIS_PATH.exists():
+        if not es_mibanco and not es_sip and FIRMA_LUIS_PATH.exists():
             zout.write(FIRMA_LUIS_PATH, "word/media/firma_luis_portuguez.png")
         if es_mibanco and LOGO_MIBANCO_PATH.exists():
             zout.write(LOGO_MIBANCO_PATH, "word/media/logo_mibanco.png")
@@ -2446,6 +2705,115 @@ def generar_pdf_limpio(output_path, context):
         Spacer(1, 10),
         signature_table_pdf(),
     ]
+    doc.build(story)
+
+
+def generar_pdf_sip(output_path, context):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise ValueError("Para descargar en PDF instala la dependencia reportlab y reinicia el servidor.") from exc
+
+    font = "Calibri" if Path("C:/Windows/Fonts/calibri.ttf").exists() else "Helvetica"
+    bold = "Calibri-Bold" if Path("C:/Windows/Fonts/calibrib.ttf").exists() else "Helvetica-Bold"
+    if font == "Calibri": pdfmetrics.registerFont(TTFont(font, "C:/Windows/Fonts/calibri.ttf"))
+    if bold == "Calibri-Bold": pdfmetrics.registerFont(TTFont(bold, "C:/Windows/Fonts/calibrib.ttf"))
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("sip_body", parent=styles["Normal"], fontName=font, fontSize=8.4, leading=10.8)
+    indented = ParagraphStyle("sip_indented", parent=body, leftIndent=.52 * inch, rightIndent=.52 * inch)
+    center = ParagraphStyle("sip_center", parent=body, alignment=TA_CENTER)
+    title = ParagraphStyle("sip_title", parent=body, fontName=bold, fontSize=13, leading=16, alignment=TA_CENTER, spaceAfter=11)
+    label = ParagraphStyle("sip_label", parent=body, fontName=bold)
+    indented_label = ParagraphStyle("sip_indented_label", parent=indented, fontName=bold)
+    section_label = ParagraphStyle("sip_section", parent=body, fontName=bold, textColor=colors.white, alignment=TA_LEFT, fontSize=8.6, leading=10)
+    def p(value, style=body): return Paragraph(xml_text(value), style)
+    def bullet_item(value): return p(f"•   {value}", indented)
+    def datos_en_linea(values, widths):
+        row = Table([[p(value, label if index % 2 == 0 else body) for index, value in enumerate(values)]], colWidths=widths)
+        row.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        return row
+    def section(title_text):
+        band = Table([[p(title_text, section_label)]], colWidths=[6.2 * inch])
+        band.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B0F0")),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ]))
+        return band
+    def header_sip():
+        logo = Image(str(LOGO_SIP_PATH), width=.92 * inch, height=.57 * inch)
+        header = Table([["", logo]], colWidths=[5.28 * inch, .92 * inch], rowHeights=[.57 * inch])
+        header.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B0F0")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        return header
+    def grid(data, widths, header=True):
+        table = Table(data, colWidths=widths, repeatRows=1 if header else 0)
+        style = [("GRID", (0, 0), (-1, -1), .55, colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5)]
+        if header:
+            style += [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00B0F0")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), bold), ("ALIGN", (0, 0), (-1, -1), "CENTER")]
+        table.setStyle(TableStyle(style))
+        return table
+
+    resumen = [
+        [p(f"Fecha Solicitud:            {context['fecha_solicitud']}", label), p("Deuda total:", label), p(f"S/{context['deuda_total']}", label)],
+        [p("Tipo de facilidad:         Convenio Pago", label), p("Monto Cuota:", label), p(f"S/{context['cuota_regular']}", label)],
+        [p(f"Monto Convenio:          {context['monto_convenio']} SOLES", label), p("Nro. Cuotas:", label), p(str(context['cantidad_cuotas']), center)],
+    ]
+    detalle = [[p("Monto convenio", label), p(context["monto_convenio"], center)], [p("Cuota Inicial", label), p(context["cuota_inicial"], center)], [p("Numero de Cuotas", label), p(str(context["cantidad_cuotas"]), center)], [p("Monto de cuota", label), p(context["cuota_regular"], center)]]
+    cronograma = [[p(header, center) for header in ["NUM CUOTA", "CUOTA", "MES", "AÑO", "DIA", "MONTO", "PAGO CUMPLIDO", "MONTO PAGADO"]]]
+    cronograma += [[p(value, center) for value in row] for row in tabla_cronograma_sip(context)]
+    doc = SimpleDocTemplate(str(output_path), pagesize=letter, leftMargin=.55*inch, rightMargin=.55*inch, topMargin=.48*inch, bottomMargin=.48*inch)
+    story = []
+    if LOGO_SIP_PATH.exists():
+        story.extend([header_sip(), Spacer(1, 10)])
+    story.extend([
+        p("Pagos por mes  Convenio Tarjeta Sip", title),
+        section("DATOS DEL CLIENTE"),
+        Spacer(1, 4),
+        datos_en_linea(["Tipo de documento:", context["tipo_documento"], "Nro. documento:", context["dni"]], [1.18 * inch, 1.08 * inch, 1.42 * inch, 2.52 * inch]),
+        p(f"Nombres y Apellidos: {context['cliente']}", indented),
+        Spacer(1, 5), section("DATOS DE LA CUENTA Y TARJETA"), Spacer(1, 4),
+        datos_en_linea(["Producto:", "TARJETA SIP(OH)", "Nro. tarjeta:", context["tarjeta"]], [.72 * inch, 1.86 * inch, 1.22 * inch, 2.4 * inch]),
+        Spacer(1, 5), section("DATOS DE LA SOLICITUD"), Spacer(1, 5),
+        grid(resumen, [3.4*inch, 1.65*inch, 1.15*inch], header=False),
+        Spacer(1, 8), p(f"Cuota Inicial: {context['cuota_inicial']} SOLES", indented_label),
+        Spacer(1, 5), section("CRONOGRAMA DE PAGOS"), Spacer(1, 5),
+        grid([[p("Concepto", center), p("Monto", center)]] + detalle, [3.1*inch, 2.0*inch]),
+        Spacer(1, 8), p("El saldo del convenio se pagará de acuerdo al siguiente cronograma", indented),
+        Spacer(1, 5), grid(cronograma, [.58*inch, 1.12*inch, .86*inch, .55*inch, .42*inch, .72*inch, 1.12*inch, 1.02*inch]),
+    ])
+    story.append(KeepTogether([
+        Spacer(1, 10), section("CONDICIONES DE PAGO"), Spacer(1, 5),
+        p("1. Al mes de incumplimiento este convenio queda anulado.", indented),
+        p("2. Se puede cancelar en:", indented),
+        bullet_item("Plaza Vea (hasta el día de vencimiento de cuota)"),
+        bullet_item("Promart, Oechsle, Makro (de preferencia hasta dos días antes del vencimiento de cuota)"),
+        bullet_item("Pago link con cualquiera tarjeta de débito (de preferencia un día hábil antes del vencimiento)"),
+        p("3. En caso de pago adelanto de cuotas, este cubrirá sus últimas cuotas.", indented),
+        p("4. En caso de incumplimiento o simple atraso en el pago de cualquiera de las cuotas establecidas, FINANCIERA OH queda facultada a continuar el ejercicio de las acciones de cobro, cobrando penalidades.", indented),
+        p("5. La aplicación de la condonación ofrecida se realizará una vez cancelado el convenio antes mencionado, una vez pagada la última cuota puede solicitar a su sectorista su carta de no adeudo en un plazo de 5 días hábiles.", indented),
+    ]))
     doc.build(story)
 
 
@@ -3408,6 +3776,82 @@ def generar_documento_mibanco(config, dni=None, operacion=None, cancelacion=None
     }
 
 
+def preparar_contexto_sip(registro, cancelacion, fecha_pago, pagos_mibanco=None, excepcion=False):
+    pagos = []
+    for index, item in enumerate(pagos_mibanco or []):
+        monto = decimal_value(item.get("monto"), Decimal("0")) or Decimal("0")
+        if monto < 0:
+            raise ValueError("Los montos de inicial y cuotas SIP no pueden ser negativos.")
+        fecha = limpiar_texto(item.get("fecha")) or limpiar_texto(fecha_pago)
+        if not fecha:
+            fecha = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
+        pagos.append({"numero": index, "monto": monto, "fecha": fecha})
+    if len(pagos) < 2:
+        raise ValueError("Ingresa una cuota inicial y al menos una cuota regular para el convenio SIP.")
+
+    cantidad_cuotas = len(pagos) - 1
+    cuota_inicial = pagos[0]["monto"]
+    cuotas_regulares = pagos[1:]
+    cuota_regular = cuotas_regulares[0]["monto"]
+    if any(pago["monto"] <= 0 for pago in cuotas_regulares):
+        raise ValueError("Cada cuota regular SIP debe ser mayor a cero.")
+    # El cronograma es la fuente de verdad: inicial + cuotas regulares define el convenio.
+    monto_convenio = sum((pago["monto"] for pago in pagos), Decimal("0"))
+
+    campania = decimal_value(registro.get("MtoCancelacionCliente"))
+    if campania is not None and campania > 0 and not excepcion and monto_convenio < campania:
+        raise ValueError(f"El monto del convenio SIP es menor que la campaña de S/ {format_money(campania)}. Marca Excepción para permitirlo.")
+
+    return {
+        "cliente": limpiar_texto(registro.get("NomCliente")),
+        "dni": limpiar_texto(registro.get("NumDocumento")),
+        "tipo_documento": limpiar_texto(registro.get("TipoDocumento")),
+        "tarjeta": clave_operacion(registro.get("Operacion")),
+        "deuda_total": format_money(decimal_value(registro.get("DeudaTotal"), Decimal("0")) or Decimal("0")),
+        "campania": format_money(campania) if campania is not None else "",
+        "mejor_ltd": limpiar_texto(registro.get("MejorLTD")),
+        "fecha_solicitud": format_fecha_pago(fecha_pago) or datetime.now(ZoneInfo("America/Lima")).date().strftime("%d/%m/%Y"),
+        "cuota_inicial": format_money(cuota_inicial),
+        "cantidad_cuotas": cantidad_cuotas,
+        "cuota_regular": format_money(cuota_regular),
+        "monto_convenio": format_money(monto_convenio),
+        "pagos": [{"monto": format_money(pago["monto"]), "fecha": pago["fecha"]} for pago in pagos],
+    }
+
+
+def generar_documento_sip(config, dni=None, operacion=None, cancelacion=None, fecha_pago=None, formato="docx", pagos_mibanco=None, excepcion=False):
+    rows = consultar_datos_documento_sip(dni=dni, operacion=operacion, limit=2)
+    if not rows:
+        raise ValueError("No se encontró información SIP para generar el convenio.")
+    if len(rows) > 1 and not limpiar_texto(operacion):
+        raise ValueError("La búsqueda SIP devolvió más de una operación. Selecciona una operación antes de generar.")
+    registro = rows[0]
+    context = preparar_contexto_sip(registro, cancelacion, fecha_pago, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
+    formato = str(formato or "docx").lower()
+    if formato not in ("docx", "pdf"):
+        raise ValueError("Formato no soportado. Selecciona Word o PDF.")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{safe_filename(config['nombre'])}_{safe_filename(context['cliente'])}.{formato}"
+    output_path = OUTPUT_DIR / filename
+    if formato == "pdf":
+        generar_pdf_sip(output_path, context)
+    else:
+        generar_docx_sip_desde_template(output_path, context)
+    return {
+        "path": output_path,
+        "filename": filename,
+        "formato": formato,
+        "registro": registro,
+        "auditoria_detalle": {
+            "modalidad": "convenio_pagos_mes",
+            "monto_total_acordado": context["monto_convenio"],
+            "fecha_pago": context["fecha_solicitud"],
+            "cronograma": context["pagos"],
+            "operaciones": [{"operacion": context["tarjeta"], "campania": context["campania"], "pago": context["monto_convenio"]}],
+        },
+    }
+
+
 def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None):
     config = obtener_config_documento(documento_tipo)
     cartera_id = int(config.get("cartera_id") or 133)
@@ -3417,6 +3861,9 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
 
     if config.get("document_kind") in ("mibanco_contado", "mibanco_cuotas"):
         return generar_documento_mibanco(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, operaciones_mibanco=operaciones_mibanco, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
+
+    if config.get("document_kind") == "sip_convenio":
+        return generar_documento_sip(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
 
     if documento_tipo == "cancelacion_grupal":
         return generar_documento_grupal(

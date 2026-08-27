@@ -1515,6 +1515,75 @@ def metricas_cobertura_roles_v3(segmentos: List[Dict], mapping: Optional[Dict] =
     }
 
 
+def evaluar_calidad_transcripcion_v3(segmentos: List[Dict]) -> Dict:
+    """Determina si la fuente permite automatizar la evaluación sin alterar segmentos.
+
+    Es una compuerta de confianza: no corrige, fusiona ni reasigna texto. Solo
+    deja trazabilidad para que los criterios sensibles no se interpreten como
+    conclusiones definitivas cuando la diarización o el tiempo son insuficientes.
+    """
+    segmentos = [item for item in segmentos if isinstance(item, dict)]
+    integridad = validar_integridad_diarizacion(segmentos, len(segmentos)) if any(
+        item.get("speaker_original") for item in segmentos
+    ) else {}
+    roles = metricas_cobertura_roles_v3(segmentos)
+    total = len(segmentos)
+    con_tiempo = [
+        item for item in segmentos
+        if item.get("inicio_segundos") is not None and item.get("fin_segundos") is not None
+    ]
+    cobertura_tiempo = round((len(con_tiempo) / total) * 100, 2) if total else 0.0
+    fragmentos_cortos = sum(
+        1 for item in segmentos
+        if len(re.findall(r"\w+", str(item.get("texto_original") or item.get("texto") or ""))) <= 2
+    )
+    fragmentacion_pct = round((fragmentos_cortos / total) * 100, 2) if total else 0.0
+    motivos_criticos = []
+    motivos_advertencia = []
+
+    if not total:
+        motivos_criticos.append("No se generaron segmentos de transcripción.")
+    if roles.get("cobertura_roles_pct", 0) < 70:
+        motivos_criticos.append("La cobertura de roles AGENTE/CLIENTE es menor al 70%.")
+    if total and cobertura_tiempo < 70:
+        motivos_criticos.append("Menos del 70% de los segmentos tiene inicio y fin sincronizados.")
+    if integridad and (
+        not integridad.get("segmento_id_unicos")
+        or not integridad.get("orden_temporal_valido")
+        or integridad.get("segmentos_invalidos", 0) > 0
+        or integridad.get("segmentos_perdidos", 0) > 0
+    ):
+        motivos_criticos.append("La integridad de segmentos diarizados requiere revisión.")
+
+    if total and cobertura_tiempo < 95 and not motivos_criticos:
+        motivos_advertencia.append("Hay segmentos sin sincronización temporal completa.")
+    if total >= 12 and fragmentacion_pct >= 40:
+        motivos_advertencia.append("La transcripción está muy fragmentada; conviene revisar frases sensibles contra el audio.")
+    if len(roles.get("speakers_detectados") or []) > 2:
+        motivos_advertencia.append("La diarización detectó más de dos speakers; puede existir tercero o superposición.")
+
+    requiere_revision = bool(motivos_criticos)
+    nivel = "BAJA" if motivos_criticos else ("MEDIA" if motivos_advertencia else "ALTA")
+    confianza = "BAJA" if motivos_criticos else ("MEDIA" if motivos_advertencia or roles.get("confianza_mapping") == "MEDIA" else "ALTA")
+    return {
+        "nivel": nivel,
+        "confianza": confianza,
+        "requiere_revision_humana": requiere_revision,
+        "motivo": "; ".join([*motivos_criticos, *motivos_advertencia]) or "Fuente transcrita y diarizada con cobertura suficiente.",
+        "motivos_criticos": motivos_criticos,
+        "advertencias": motivos_advertencia,
+        "metricas": {
+            "total_segmentos": total,
+            "segmentos_con_tiempo": len(con_tiempo),
+            "cobertura_tiempo_pct": cobertura_tiempo,
+            "fragmentos_cortos": fragmentos_cortos,
+            "fragmentacion_pct": fragmentacion_pct,
+            "roles": roles,
+            "integridad": integridad,
+        },
+    }
+
+
 def construir_texto_con_timestamps(segments) -> Optional[str]:
     if not isinstance(segments, list) or not segments:
         return None
@@ -2567,10 +2636,23 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
         item for item in segmentos
         if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "AGENTE"
     ]
+    segmentos_cliente = [
+        item for item in segmentos
+        if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "CLIENTE"
+    ]
     evidencia_neutra = segmentos_agente[:1]
     dificultades_cliente = buscar_segmentos_dificultad_cliente_v3(segmentos)
     objeciones_cliente = buscar_segmentos_objecion_cliente_v3(segmentos)
     respuestas_gestion = buscar_segmentos_respuesta_gestion_agente_v3(segmentos)
+    tercero_confirmado = buscar_segmentos_tercero_confirmado_mibanco_v3(segmentos)
+    corte_abrupto = buscar_segmentos_corte_abrupto_mibanco_v3(segmentos)
+    sin_oportunidad_por_tercero_o_corte = bool(tercero_confirmado or corte_abrupto)
+    preguntas_causa = buscar_segmentos_sondeo_causa_agente_v3(segmentos)
+    causas_cliente = buscar_segmentos_causa_cliente_v3(segmentos)
+    preguntas_capacidad = buscar_segmentos_diagnostico_agente_v3(segmentos)
+    respuestas_capacidad = buscar_segmentos_capacidad_cliente_v3(segmentos)
+    tiene_causa = bool(preguntas_causa or causas_cliente)
+    tiene_capacidad = bool(preguntas_capacidad and respuestas_capacidad)
 
     # PECUF.1: Falta de respeto.
     if por_codigo.get("PECUF.1") and estado_sgc_normalizado(por_codigo["PECUF.1"]) == "REQUIERE_REVISION":
@@ -2596,12 +2678,13 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Confirmar comprensión antes de pasar a propuesta o cierre.",
             )
         else:
+            estado = "CUMPLE" if segmentos_cliente else "NO_APLICA"
             aplicar_resultado_guardado_v3(
                 por_codigo["PECUF.2"],
-                "NO_APLICA",
-                [],
-                "No se identifica información, objeción o consulta del cliente que exija escucha activa diferenciada.",
-                "Aplicar escucha activa cuando el cliente entregue información relevante.",
+                estado,
+                segmentos_cliente[:1] or evidencia_neutra,
+                "La interacción no presenta información adicional que exija confirmación específica." if segmentos_cliente else "No hubo interacción suficiente con el cliente para evaluar escucha activa.",
+                "Mantener escucha y confirmar comprensión cuando el cliente entregue información relevante.",
             )
 
     # PECUF.3: Precisión de la información de la deuda.
@@ -2633,62 +2716,93 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
 
     # PECN.1: Sondeo y diagnóstico.
     if por_codigo.get("PECN.1"):
-        preguntas_diagnostico = buscar_segmentos_diagnostico_agente_v3(segmentos)
-        respuestas_diagnostico = dificultades_cliente or buscar_segmentos_capacidad_cliente_v3(segmentos)
-        if preguntas_diagnostico and respuestas_diagnostico:
+        if tiene_causa and tiene_capacidad:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.1"],
                 "CUMPLE",
-                [preguntas_diagnostico[0], respuestas_diagnostico[0]],
-                "El agente realiza sondeo y obtiene información sobre causa o capacidad del cliente.",
+                [(preguntas_causa or causas_cliente)[0], (preguntas_capacidad or respuestas_capacidad)[0]],
+                "El agente obtiene información sobre la causa del atraso y la capacidad actual del cliente.",
                 "Profundizar causa, capacidad, monto y fecha para sostener la negociación.",
             )
-        elif preguntas_diagnostico or respuestas_diagnostico:
+        elif segmentos_agente or segmentos_cliente:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.1"],
-                "REQUIERE_REVISION",
-                [(preguntas_diagnostico or respuestas_diagnostico)[0]],
-                "Existe información de diagnóstico, pero no queda completa la relación entre pregunta, causa y capacidad.",
+                "NO_CUMPLE",
+                [(preguntas_capacidad or respuestas_capacidad or preguntas_causa or causas_cliente or evidencia_neutra)[0]],
+                "El diagnóstico no cubre de forma suficiente la causa del atraso y la capacidad actual de pago.",
                 "Completar el diagnóstico con causa, capacidad, monto disponible y fecha.",
+            )
+        else:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.1"],
+                "NO_CUMPLE",
+                evidencia_neutra,
+                "No se observa sondeo sobre vínculo, causa, intención o capacidad de pago.",
+                "Indagar vínculo con el titular y, cuando corresponda, causa, capacidad, monto y fecha.",
             )
 
     # PECN.2: Negociación escalonada.
     if por_codigo.get("PECN.2"):
         oportunidad = objeciones_cliente or dificultades_cliente
-        if oportunidad and respuestas_gestion:
+        if sin_oportunidad_por_tercero_o_corte:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.2"],
-                "CUMPLE",
-                [oportunidad[0], respuestas_gestion[0]],
-                "Ante la situación del cliente, el agente conduce la gestión con alternativa, abono, monto o fecha.",
-                "Mantener negociación escalonada vinculada a capacidad y fecha.",
+                "NO_APLICA",
+                (tercero_confirmado or corte_abrupto)[:1],
+                "La llamada no permitió gestionar una alternativa: se confirmó tercero o se produjo corte abrupto antes de responder.",
+                "Retomar la gestión con el titular cuando exista una oportunidad válida de negociación.",
             )
         elif oportunidad:
+            respuesta_negociacion = buscar_respuesta_posterior_v3(
+                segmentos,
+                oportunidad[0],
+                "AGENTE",
+                {"puede", "podemos", "abonar", "pagar", "cuota", "fecha", "alternativa", "opcion", "opción", "solucion", "solución", "fraccionamiento", "convenio", "monto", "recaudar", "descuento", "campana", "campaña", "rebaja", "reajuste", "vigencia"},
+                ventana=24,
+            )
+            negociacion_sustentada = bool(respuesta_negociacion and tiene_causa and tiene_capacidad)
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.2"],
+                "CUMPLE" if negociacion_sustentada else "NO_CUMPLE",
+                [oportunidad[0], *(respuesta_negociacion[:1] if respuesta_negociacion else [])],
+                "Ante la situación del cliente, el agente conduce la gestión con alternativa posterior y basada en el diagnóstico." if negociacion_sustentada else "La gestión no desarrolla una alternativa escalonada sustentada en causa y capacidad de pago.",
+                "Mantener negociación escalonada vinculada a capacidad y fecha.",
+            )
+        else:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.2"],
                 "NO_CUMPLE",
-                [oportunidad[0]],
-                "Existe oportunidad de negociación, pero no se observa una alternativa concreta posterior.",
+                oportunidad[:1] or evidencia_neutra,
+                "No se observa una alternativa concreta y adaptada que conduzca la gestión hacia pago o siguiente acción.",
                 "Ofrecer alternativa viable o abono acorde a la capacidad del cliente.",
             )
 
     # PECN.3: Manejo de objeciones.
     if por_codigo.get("PECN.3"):
-        if not objeciones_cliente:
+        if sin_oportunidad_por_tercero_o_corte:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.3"],
                 "NO_APLICA",
-                [],
-                "No se identifica una objeción real del cliente durante la llamada.",
-                "Aplicar manejo de objeciones solo cuando el cliente exprese rechazo, duda o imposibilidad.",
+                (tercero_confirmado or corte_abrupto)[:1],
+                "La llamada no permitió abordar una objeción: se confirmó tercero o se produjo corte abrupto antes de responder.",
+                "Retomar la gestión con el titular cuando exista una oportunidad válida de negociación.",
+            )
+        elif not objeciones_cliente:
+            estado = "CUMPLE" if respuestas_gestion else "NO_CUMPLE"
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.3"],
+                estado,
+                respuestas_gestion[:1] or evidencia_neutra,
+                "No surge una objeción explícita; la gestión continúa con una conducción orientada a solución." if respuestas_gestion else "No se identifica objeción explícita ni conducción posterior suficiente de la gestión.",
+                "Ante dudas, postergaciones o restricciones, explorar la condición y orientar una alternativa concreta.",
             )
         else:
             respuesta_objecion = buscar_respuesta_posterior_v3(
                 segmentos,
                 objeciones_cliente[0],
                 "AGENTE",
-                {"entiendo", "puede", "puedes", "abonar", "pagar", "cuanto", "cuánto", "fecha", "alternativa", "opcion", "opción", "solucion", "solución"},
-                ventana=6,
+                {"puede", "puedes", "abonar", "pagar", "cuanto", "cuánto", "fecha", "alternativa", "opcion", "opción", "solucion", "solución", "recaudar", "monto", "descuento", "campana", "campaña", "rebaja", "reajuste", "vigencia"},
+                ventana=24,
             )
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.3"],
@@ -2700,22 +2814,31 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
 
     # PECN.4: Cierre de negociación.
     if por_codigo.get("PECN.4"):
-        compromiso = buscar_segmentos_compromiso_pago_v3(segmentos)
-        if not compromiso:
+        compromiso = buscar_segmentos_compromiso_confirmado_mibanco_v3(segmentos)
+        siguiente_accion = buscar_segmentos_siguiente_accion_confirmada_mibanco_v3(segmentos)
+        if sin_oportunidad_por_tercero_o_corte:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.4"],
                 "NO_APLICA",
-                [],
-                "No se identifica una promesa o compromiso cerrado durante la llamada.",
+                (tercero_confirmado or corte_abrupto)[:1],
+                "La llamada no permitió inducir cierre: se confirmó tercero o se produjo corte abrupto antes de gestionar.",
+                "Retomar el contacto con el titular para conducir una acción verificable.",
+            )
+        elif not compromiso and not siguiente_accion:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.4"],
+                "NO_CUMPLE",
+                respuestas_gestion[:1] or evidencia_neutra,
+                "No se identifica promesa de pago ni siguiente acción verificable acordada con el cliente.",
                 "Inducir a promesa de pago cuando la conversación permita concretar un compromiso.",
             )
         else:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.4"],
                 "CUMPLE",
-                compromiso[:1],
-                "Se identifica conducción hacia una promesa, abono o compromiso de pago.",
-                "Cerrar con compromiso verificable cuando exista disposición de pago.",
+                compromiso[:1] or siguiente_accion,
+                "Se identifica una promesa de pago o una siguiente acción verificable acordada con el cliente.",
+                "Cerrar con promesa o siguiente acción verificable cuando exista disposición de gestión.",
             )
 
     # PECC.1: Filosofía Biznescob / imagen de Mibanco.
@@ -2731,7 +2854,7 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
 
     # PECC.2: Confirmación del acuerdo.
     if por_codigo.get("PECC.2"):
-        compromiso = buscar_segmentos_compromiso_pago_v3(segmentos)
+        compromiso = buscar_segmentos_compromiso_confirmado_mibanco_v3(segmentos)
         if not compromiso:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECC.2"],
@@ -2762,13 +2885,14 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
 
     # PENC.1: Saludo de bienvenida.
     if por_codigo.get("PENC.1"):
-        saludo = buscar_segmentos_por_tokens_v3(segmentos[:8], "AGENTE", {"hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "le saluda", "te saluda", "habla"})
+        saludo = buscar_segmentos_por_tokens_v3(segmentos[:8], "AGENTE", {"hola", "aló", "alo", "buen dia", "buen día", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "le saluda", "te saluda", "saludo", "habla"})
         entidad = buscar_segmentos_por_tokens_v3(segmentos[:12], "AGENTE", {"mibanco", "mi banco"})
+        estado_saludo = "CUMPLE" if saludo and entidad else ("NO_CUMPLE" if segmentos_agente else "NO_APLICA")
         aplicar_resultado_guardado_v3(
             por_codigo["PENC.1"],
-            "CUMPLE" if saludo and entidad else "REQUIERE_REVISION",
+            estado_saludo,
             (saludo[:1] + entidad[:1]) or evidencia_neutra,
-            "El agente saluda e identifica representación de Mibanco." if saludo and entidad else "La apertura no permite confirmar saludo completo con representación de Mibanco.",
+            "El agente saluda e identifica representación de Mibanco." if saludo and entidad else ("La llamada se interrumpe antes de una apertura atribuible al agente." if not segmentos_agente else "La apertura no incluye saludo e identificación completa en representación de Mibanco."),
             "Saludar indicando nombre/apellidos y representación de Mibanco.",
         )
 
@@ -2843,6 +2967,9 @@ def buscar_segmentos_objecion_cliente_v3(segmentos: List[Dict]) -> List[Dict]:
         "no puedo", "no tengo", "no cuento", "no me alcanza",
         "no voy a poder", "no podria", "no podría", "no acepto",
         "muy alto", "mucho monto", "no estoy en capacidad",
+        "ahorita no", "ahora no", "no puedo ahora", "no cuento con",
+        "no tengo el monto", "llamar mas tarde", "llamar más tarde",
+        "no uso whatsapp", "no tengo whatsapp",
         "estoy pagando", "problemas", "enfermedad", "operar",
         "me pagan", "cosecha", "otros bancos", "otro banco",
     }
@@ -2877,6 +3004,24 @@ def buscar_segmentos_diagnostico_agente_v3(segmentos: List[Dict]) -> List[Dict]:
         "que es lo que", "qué es lo que", "situacion", "situación",
     }
     return buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", tokens)
+
+
+def buscar_segmentos_sondeo_causa_agente_v3(segmentos: List[Dict]) -> List[Dict]:
+    tokens = {
+        "por que", "por qué", "motivo", "causa", "que paso", "qué pasó",
+        "que ocurrio", "qué ocurrió", "a que se debe", "a qué se debe",
+        "desde cuando", "desde cuándo", "que sucedio", "qué sucedió",
+    }
+    return buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", tokens)
+
+
+def buscar_segmentos_causa_cliente_v3(segmentos: List[Dict]) -> List[Dict]:
+    tokens = {
+        "debido", "desde que", "me quede", "me quedé",
+        "perdi", "perdí", "desemple", "enfermedad", "operar", "cosecha",
+        "problema", "otros bancos", "otro banco", "familia", "trabajo",
+    }
+    return buscar_segmentos_por_tokens_v3(segmentos, "CLIENTE", tokens)
 
 
 def buscar_segmentos_capacidad_cliente_v3(segmentos: List[Dict]) -> List[Dict]:
@@ -2932,6 +3077,92 @@ def buscar_segmentos_compromiso_pago_v3(segmentos: List[Dict]) -> List[Dict]:
     cliente = buscar_segmentos_por_tokens_v3(segmentos, "CLIENTE", tokens)
     agente = buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", {"programar", "compromiso", "queda", "entonces", "confirmamos", "monto", "fecha", "pago"})
     return cliente or agente
+
+
+def buscar_segmentos_compromiso_confirmado_mibanco_v3(segmentos: List[Dict]) -> List[Dict]:
+    """Detecta aceptación del cliente, no una propuesta aislada del agente."""
+    ordenados = sorted(
+        [item for item in segmentos if isinstance(item, dict)],
+        key=lambda item: int(item.get("segmento_id") or 0),
+    )
+    aceptaciones_breves = {"si", "sí", "correcto", "de acuerdo", "conforme", "esta bien", "está bien"}
+    compromisos = {
+        "me comprometo", "voy a pagar", "voy a cancelar", "voy a abonar",
+        "lo pago", "lo cancelo", "lo abono", "si voy a pagar", "sí voy a pagar",
+    }
+    condiciones_pago = {
+        "pago", "abono", "cancelar", "monto", "soles", "cuota", "fecha",
+        "hoy", "manana", "mañana", "lunes", "martes", "miercoles", "miércoles",
+        "jueves", "viernes", "sabado", "sábado", "domingo", "voucher",
+    }
+    encontrados = []
+    for indice, segmento in enumerate(ordenados):
+        if normalizar_hablante_v2(segmento.get("hablante") or segmento.get("rol")) != "CLIENTE":
+            continue
+        texto_original = str(segmento.get("texto") or segmento.get("texto_original") or "")
+        texto = limpiar_key_texto(texto_original)
+        if any(token in texto for token in compromisos) and _compromiso_cliente_especifico_v3(texto_original):
+            encontrados.append(segmento)
+            continue
+        if texto in {limpiar_key_texto(item) for item in aceptaciones_breves}:
+            previos_agente = ordenados[max(0, indice - 3):indice]
+            if any(
+                normalizar_hablante_v2(previo.get("hablante") or previo.get("rol")) == "AGENTE"
+                and _propuesta_pago_completa_v3(previo, condiciones_pago)
+                for previo in previos_agente
+            ):
+                encontrados.append(segmento)
+    return encontrados
+
+
+def _propuesta_pago_completa_v3(segmento: Dict, condiciones_pago: set[str]) -> bool:
+    texto_original = str(segmento.get("texto") or segmento.get("texto_original") or "")
+    texto = limpiar_key_texto(texto_original)
+    acciones_pago = {"pago", "abono", "cancelar", "monto", "soles", "cuota", "voucher"}
+    tiene_accion = any(token in texto for token in acciones_pago)
+    tiene_monto = bool(re.search(r"\b\d{2,6}(?:[.,]\d{1,2})?\b", texto_original))
+    tiene_fecha = any(token in texto for token in {
+        "hoy", "manana", "mañana", "lunes", "martes", "miercoles", "miércoles",
+        "jueves", "viernes", "sabado", "sábado", "domingo", "fecha",
+    })
+    return tiene_accion and tiene_monto and tiene_fecha
+
+
+def _compromiso_cliente_especifico_v3(texto_original: str) -> bool:
+    texto = limpiar_key_texto(texto_original)
+    tiene_monto = bool(re.search(r"\b\d{2,6}(?:[.,]\d{1,2})?\b", texto_original))
+    tiene_fecha = any(token in texto for token in {
+        "hoy", "manana", "mañana", "lunes", "martes", "miercoles", "miércoles",
+        "jueves", "viernes", "sabado", "sábado", "domingo", "fecha",
+    })
+    return tiene_monto or tiene_fecha
+
+
+def buscar_segmentos_siguiente_accion_confirmada_mibanco_v3(segmentos: List[Dict]) -> List[Dict]:
+    """Reconoce un agendamiento confirmado; no lo confunde con una promesa de pago."""
+    ordenados = sorted(
+        [item for item in segmentos if isinstance(item, dict)],
+        key=lambda item: int(item.get("segmento_id") or 0),
+    )
+    aceptaciones = {"si", "sí", "correcto", "de acuerdo", "conforme", "esta bien", "está bien"}
+    acciones = {"llamo", "llamar", "devolver la llamada", "me comunico", "comunicar", "contacto", "agendar", "agendamos"}
+    referencias_tiempo = {"hoy", "manana", "mañana", "tarde", "fecha", "hora"}
+    for indice, segmento in enumerate(ordenados):
+        if normalizar_hablante_v2(segmento.get("hablante") or segmento.get("rol")) != "AGENTE":
+            continue
+        texto_original = str(segmento.get("texto") or segmento.get("texto_original") or "")
+        texto = limpiar_key_texto(texto_original)
+        tiene_accion = any(limpiar_key_texto(token) in texto for token in acciones)
+        tiene_tiempo = any(limpiar_key_texto(token) in texto for token in referencias_tiempo) or bool(re.search(r"\b\d{1,2}(?::\d{2})?\b", texto_original))
+        if not (tiene_accion and tiene_tiempo):
+            continue
+        for siguiente in ordenados[indice + 1:indice + 4]:
+            if normalizar_hablante_v2(siguiente.get("hablante") or siguiente.get("rol")) != "CLIENTE":
+                continue
+            respuesta = limpiar_key_texto(siguiente.get("texto") or siguiente.get("texto_original") or "")
+            if respuesta in {limpiar_key_texto(item) for item in aceptaciones}:
+                return [segmento, siguiente]
+    return []
 
 
 def buscar_segmentos_validacion_acuerdo_agente_v3(segmentos: List[Dict]) -> List[Dict]:
@@ -3030,6 +3261,34 @@ def contiene_indicio_tercero_v3(texto_cliente: str) -> bool:
     }
     texto = limpiar_key_texto(texto_cliente)
     return any(limpiar_key_texto(token) in texto for token in tokens)
+
+
+def buscar_segmentos_tercero_confirmado_mibanco_v3(segmentos: List[Dict]) -> List[Dict]:
+    """Solo confirma tercero con expresiones explícitas; no infiere por silencio o duda."""
+    tokens = {
+        "no soy", "se equivoco de numero", "se equivocó de número", "no la conozco",
+        "no lo conozco", "soy su esposo", "soy su esposa", "soy su hijo", "soy su hija",
+        "soy su hermano", "soy su hermana", "no vive aqui", "no vive aquí",
+    }
+    return buscar_segmentos_por_tokens_v3(segmentos, "CLIENTE", tokens)
+
+
+def buscar_segmentos_corte_abrupto_mibanco_v3(segmentos: List[Dict]) -> List[Dict]:
+    """Reconoce cortes explícitos al final de la secuencia; evita inferirlos por falta de evidencia."""
+    ordenados = sorted(
+        [item for item in segmentos if isinstance(item, dict)],
+        key=lambda item: int(item.get("segmento_id") or 0),
+    )
+    if not ordenados:
+        return []
+    finales = ordenados[-3:]
+    tokens = {"voy a colgar", "voy a cortar", "cuelgo", "corto la llamada", "se corto", "se cortó"}
+    encontrados = []
+    for segmento in finales:
+        texto = limpiar_key_texto(segmento.get("texto") or segmento.get("texto_original") or "")
+        if any(limpiar_key_texto(token) in texto for token in tokens):
+            encontrados.append(segmento)
+    return encontrados
 
 
 def buscar_segmentos_por_tokens_v3(segmentos: List[Dict], rol: str, tokens: set[str]) -> List[Dict]:
@@ -3202,9 +3461,18 @@ def construir_respuesta_pipeline_v3(
     score = score_despues.get("score_tecnico", 0)
     cobertura = hechos.get("cobertura") if isinstance(hechos.get("cobertura"), dict) else {}
     metricas_roles = metricas_cobertura_roles_v3(segmentos)
+    calidad_transcripcion = evaluar_calidad_transcripcion_v3(segmentos)
     if metricas_roles.get("requiere_revision_humana") and "Cobertura de roles menor al 70%." not in motivos_revision:
         motivos_revision = [*motivos_revision, "Cobertura de roles menor al 70%."]
-    requiere_revision = bool(requiere_revision or metricas_roles.get("requiere_revision_humana"))
+    if calidad_transcripcion.get("requiere_revision_humana"):
+        for motivo in calidad_transcripcion.get("motivos_criticos") or []:
+            if motivo not in motivos_revision:
+                motivos_revision.append(motivo)
+    requiere_revision = bool(
+        requiere_revision
+        or metricas_roles.get("requiere_revision_humana")
+        or calidad_transcripcion.get("requiere_revision_humana")
+    )
     hallazgos_estimados = sum(
         1
         for item in criterios
@@ -3233,8 +3501,10 @@ def construir_respuesta_pipeline_v3(
             "requiere_revision_humana": requiere_revision,
             "motivos_revision": motivos_revision,
             "metricas_roles": metricas_roles,
+            "calidad_transcripcion": calidad_transcripcion,
         },
         "resultado_gestion": gestion,
+        "calidad_transcripcion": calidad_transcripcion,
         "tipificaciones_sugeridas": feedback.get("tipificaciones_sugeridas") if isinstance(feedback.get("tipificaciones_sugeridas"), list) else [],
         "resumen_ejecutivo": resumen,
         "interlocutores": {
@@ -3263,6 +3533,7 @@ def construir_respuesta_pipeline_v3(
             "criterios_evaluados": len(criterios),
             "cantidad_hallazgos_estimados": hallazgos_estimados,
             "cobertura_roles": metricas_roles,
+            "calidad_transcripcion": calidad_transcripcion,
             "inconsistencias_encontradas": len(auditoria.get("inconsistencias", [])),
             "criterios_corregidos": criterios_corregidos,
             "score_antes_auditoria": score_antes,
@@ -3480,6 +3751,11 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
     feedback_asesor = coaching.get("feedback_asesor") if isinstance(coaching.get("feedback_asesor"), dict) else {}
     interlocutores = normalizar_interlocutores_v2(data, transcripcion)
     data["interlocutores"] = interlocutores
+    calidad_transcripcion = data.get("calidad_transcripcion") if isinstance(data.get("calidad_transcripcion"), dict) else {}
+    if not calidad_transcripcion:
+        calidad_transcripcion = resultado.get("calidad_transcripcion") if isinstance(resultado.get("calidad_transcripcion"), dict) else {}
+    if not calidad_transcripcion:
+        calidad_transcripcion = evaluar_calidad_transcripcion_v3(interlocutores.get("segmentos") or [])
 
     evaluacion = normalizar_dimensiones_copc_v2(data.get("dimensiones"))
     if not es_pipeline_v3:
@@ -3512,7 +3788,7 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
     if estado_calidad not in {"APROBADA", "APROBADA_CON_MEJORAS", "NO_APROBADA", "DESCALIFICADA", "PENDIENTE_REVISION"}:
         if descalificada:
             estado_calidad = "DESCALIFICADA"
-        elif resultado.get("requiere_revision_humana") or any(item.get("requiere_revision") for item in evaluacion):
+        elif resultado.get("requiere_revision_humana") or calidad_transcripcion.get("requiere_revision_humana") or any(item.get("requiere_revision") for item in evaluacion):
             estado_calidad = "PENDIENTE_REVISION"
         elif score_tecnico >= 85:
             estado_calidad = "APROBADA"
@@ -3529,7 +3805,15 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         falta_anulante=descalificada,
     )
     motivos_revision = resultado.get("motivos_revision") if isinstance(resultado.get("motivos_revision"), list) else []
-    requiere_revision = bool(resultado.get("requiere_revision_humana") or motivos_revision or any(item.get("requiere_revision") for item in evaluacion))
+    motivo_calidad = str(calidad_transcripcion.get("motivo") or "").strip()
+    if calidad_transcripcion.get("requiere_revision_humana") and motivo_calidad and motivo_calidad not in motivos_revision:
+        motivos_revision = [*motivos_revision, motivo_calidad]
+    requiere_revision = bool(
+        resultado.get("requiere_revision_humana")
+        or calidad_transcripcion.get("requiere_revision_humana")
+        or motivos_revision
+        or any(item.get("requiere_revision") for item in evaluacion)
+    )
 
     hallazgos_no_criticos_crudos = None if es_pipeline_v3 else data.get("hallazgos_no_criticos")
     puntos_criticos = errores_criticos + normalizar_hallazgos_no_criticos_v2(hallazgos_no_criticos_crudos, evaluacion)
@@ -3588,8 +3872,9 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         "estado_tecnico": estado_tecnico,
         "nivel_riesgo": nivel_riesgo,
         "error_critico": error_critico,
-        "calidad_transcripcion": normalizar_confianza(resultado.get("confianza_global")),
-        "confianza_evaluacion": normalizar_confianza(resultado.get("confianza_global")),
+        "calidad_transcripcion": normalizar_confianza(calidad_transcripcion.get("nivel") or resultado.get("confianza_global")),
+        "calidad_transcripcion_detalle": calidad_transcripcion,
+        "confianza_evaluacion": normalizar_confianza(calidad_transcripcion.get("confianza") or resultado.get("confianza_global")),
         "requiere_revision_humana": requiere_revision,
         "motivo_revision": "; ".join(str(x) for x in motivos_revision) or (resultado.get("motivo_descalificacion") if requiere_revision else ""),
         "evaluacion_calidad": evaluacion,
@@ -4520,10 +4805,6 @@ def hallazgo_sgc_operativo(hallazgo, evidencia=None) -> bool:
     if not texto:
         return False
     positivos = [
-        "no se evidencia",
-        "no se evidencian",
-        "no se observa",
-        "no se observan",
         "no divulga",
         "no se divulga",
         "mantiene trato respetuoso",

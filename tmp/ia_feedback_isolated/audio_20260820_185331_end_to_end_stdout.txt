@@ -1,0 +1,162 @@
+{
+  "score": 53.75,
+  "estado": "NO_APROBADA",
+  "requiere_revision": false,
+  "calidad_transcripcion": "MEDIA",
+  "motivo_revision": "",
+  "criterios": [
+    {
+      "codigo": "PECUF.1",
+      "nombre": "Falta de respeto",
+      "estado": "CUMPLE",
+      "puntaje": 20.0,
+      "evidencia": "-"
+    },
+    {
+      "codigo": "PECUF.2",
+      "nombre": "Escucha activa",
+      "estado": "CUMPLE",
+      "puntaje": 2.0,
+      "evidencia": "trabajo? | trabajo fue?"
+    },
+    {
+      "codigo": "PECUF.3",
+      "nombre": "Precisión de la información de la deuda",
+      "estado": "NO_EVALUABLE",
+      "puntaje": 0.0,
+      "evidencia": "Ahorita la deuda total con todo intereses es del importe de 70.512 soles."
+    },
+    {
+      "codigo": "PECUF.4",
+      "nombre": "Claridad con la información",
+      "estado": "CUMPLE",
+      "puntaje": 3.0,
+      "evidencia": "¿Aló?"
+    },
+    {
+      "codigo": "PECN.1",
+      "nombre": "Sondeo y diagnóstico",
+      "estado": "CUMPLE",
+      "puntaje": 5.0,
+      "evidencia": "¿A qué se debió o por qué se generó esa deuda? | trabajo?"
+    },
+    {
+      "codigo": "PECN.2",
+      "nombre": "Negociación escalonada",
+      "estado": "NO_CUMPLE",
+      "puntaje": 0.0,
+      "evidencia": "Ahorita no."
+    },
+    {
+      "codigo": "PECN.3",
+      "nombre": "Manejo de objeciones",
+      "estado": "NO_CUMPLE",
+      "puntaje": 0.0,
+      "evidencia": "Ahorita no."
+    },
+    {
+      "codigo": "PECN.4",
+      "nombre": "Cierre de negociación",
+      "estado": "NO_CUMPLE",
+      "puntaje": 0.0,
+      "evidencia": "Yo me comunicaba para poder informarle sobre el beneficio que ahorita cuenta para poder cancelar la deuda pendiente. Queríamos saber si usted contaría con el importe para poder ayudarla a dirigir esa deuda que, bueno, ya lleva bastante tiempo, ¿no?"
+    },
+    {
+      "codigo": "PECC.1",
+      "nombre": "Filosofía Biznescob",
+      "estado": "CUMPLE",
+      "puntaje": 5.0,
+      "evidencia": "¿Aló?"
+    },
+    {
+      "codigo": "PECC.2",
+      "nombre": "Confirmación del acuerdo",
+      "estado": "NO_APLICA",
+      "puntaje": 0.0,
+      "evidencia": "-"
+    },
+    {
+      "codigo": "PECC.3",
+      "nombre": "Tipificación de la gestión",
+      "estado": "NO_EVALUABLE",
+      "puntaje": 0.0,
+      "evidencia": "-"
+    },
+    {
+      "codigo": "PENC.1",
+      "nombre": "Saludo de bienvenida",
+      "estado": "NO_CUMPLE",
+      "puntaje": 0.0,
+      "evidencia": "¿Aló?"
+    },
+    {
+      "codigo": "PENC.2",
+      "nombre": "Tono de voz",
+      "estado": "CUMPLE",
+      "puntaje": 3.0,
+      "evidencia": "¿Aló?"
+    },
+    {
+      "codigo": "PENC.3",
+      "nombre": "Claridad del lenguaje oral",
+      "estado": "CUMPLE",
+      "puntaje": 3.0,
+      "evidencia": "¿Aló?"
+    },
+    {
+      "codigo": "PENC.4",
+      "nombre": "Despedida adecuada",
+      "estado": "CUMPLE",
+      "puntaje": 2.0,
+      "evidencia": "O tiene otro número que tenga WhatsApp."
+    }
+  ],
+  "hallazgos": [
+    {
+      "segmento": "Precisión de Error Crítico del Negocio",
+      "segmento_copc": "Precisión de Error Crítico del Negocio",
+      "grupo_error_sgc": "Errores críticos del negocio",
+      "grupo_sgc_codigo": "ERROR_CRITICO_NEGOCIO",
+      "factor_sgc": "Cierre de negociación",
+      "categoria": "Cierre de negociación",
+      "severidad": "GRAVE",
+      "automatico": false,
+      "requiere_revision": false,
+      "calificacion": "No cumple",
+      "hallazgo": "No se identifica promesa de pago ni siguiente acción verificable acordada con el cliente.",
+      "frase_textual": "Yo me comunicaba para poder informarle sobre el beneficio que ahorita cuenta para poder cancelar la deuda pendiente. Queríamos saber si usted contaría con el importe para poder ayudarla a dirigir esa deuda que, bueno, ya lleva bastante tiempo, ¿no?",
+      "momento": "00:16",
+      "evidencia": "Yo me comunicaba para poder informarle sobre el beneficio que ahorita cuenta para poder cancelar la deuda pendiente. Queríamos saber si usted contaría con el importe para poder ayudarla a dirigir esa deuda que, bueno, ya lleva bastante tiempo, ¿no?",
+      "impacto": "Dificulta la formalización de acuerdos. | El cliente no tiene claridad sobre los siguientes pasos.",
+      "recomendacion": "Inducir a promesa de pago cuando la conversación permita concretar un compromiso.",
+      "codigo_criterio": "PECN.4",
+      "criterios_relacionados": [
+        "PECN.4"
+      ],
+      "error_sgc_confirmado": false
+    },
+    {
+      "segmento": "Precisión de Error No Crítico - Protocolos de Atención",
+      "segmento_copc": "Precisión de Error No Crítico - Protocolos de Atención",
+      "grupo_error_sgc": "Errores no críticos",
+      "grupo_sgc_codigo": "ERROR_NO_CRITICO",
+      "factor_sgc": "Saludo de bienvenida",
+      "categoria": "Saludo de bienvenida",
+      "severidad": "GRAVE",
+      "automatico": false,
+      "requiere_revision": false,
+      "calificacion": "No cumple",
+      "hallazgo": "La apertura no incluye saludo e identificación completa en representación de Mibanco.",
+      "frase_textual": "¿Aló?",
+      "momento": "00:00",
+      "evidencia": "¿Aló?",
+      "impacto": "-",
+      "recomendacion": "Saludar indicando nombre/apellidos y representación de Mibanco.",
+      "codigo_criterio": "PENC.1",
+      "criterios_relacionados": [
+        "PENC.1"
+      ],
+      "error_sgc_confirmado": false
+    }
+  ]
+}

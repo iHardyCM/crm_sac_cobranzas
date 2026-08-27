@@ -2,6 +2,7 @@ import unittest
 
 from app.services.ia_analysis_service import (
     aplicar_guardas_mibanco_v3,
+    evaluar_calidad_transcripcion_v3,
     normalizar_errores_criticos_v2,
     estado_sgc_normalizado,
     validar_mapping_speakers_estandar_v3,
@@ -26,6 +27,30 @@ def criterio(codigo, peso, estado="REQUIERE_REVISION"):
 
 
 class IaFeedbackStabilityTests(unittest.TestCase):
+    def test_transcription_quality_gate_marks_complete_diarization_as_usable(self):
+        segmentos = [
+            {"segmento_id": 1, "speaker_original": "A", "rol": "AGENTE", "inicio_segundos": 0, "fin_segundos": 2, "texto_original": "Buenos días."},
+            {"segmento_id": 2, "speaker_original": "B", "rol": "CLIENTE", "inicio_segundos": 2, "fin_segundos": 4, "texto_original": "Sí, dígame."},
+        ]
+
+        calidad = evaluar_calidad_transcripcion_v3(segmentos)
+
+        self.assertEqual(calidad["nivel"], "ALTA")
+        self.assertFalse(calidad["requiere_revision_humana"])
+        self.assertEqual(calidad["metricas"]["roles"]["cobertura_roles_pct"], 100.0)
+
+    def test_transcription_quality_gate_requires_review_for_low_role_coverage(self):
+        segmentos = [
+            {"segmento_id": 1, "speaker_original": "A", "rol": "AGENTE", "inicio_segundos": 0, "fin_segundos": 2, "texto_original": "Buenos días."},
+            {"segmento_id": 2, "speaker_original": "B", "rol": "NO_DETERMINADO", "inicio_segundos": 2, "fin_segundos": 4, "texto_original": "Sí."},
+        ]
+
+        calidad = evaluar_calidad_transcripcion_v3(segmentos)
+
+        self.assertEqual(calidad["nivel"], "BAJA")
+        self.assertTrue(calidad["requiere_revision_humana"])
+        self.assertIn("cobertura de roles", calidad["motivo"].lower())
+
     def test_reuses_canonical_diarized_transcription(self):
         canonica = "\n".join([
             "#TRANSCRIPCION_DIARIZADA_V1",
@@ -146,6 +171,112 @@ class IaFeedbackStabilityTests(unittest.TestCase):
         self.assertEqual(resultados[0]["PECUF.4"], ("CUMPLE", 3.0))
         self.assertEqual(resultados[0]["PECC.3"], ("NO_EVALUABLE", 0.0))
 
+    def test_pecn_requires_negotiation_and_close_without_confirmed_third_or_cut(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "Buenos días, le habla Ana de Mibanco."},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Sí, pero ahora no puedo pagar."},
+            {"segmento_id": 3, "rol": "AGENTE", "texto": "Entiendo."},
+        ]
+        data = {
+            "PECN.1": criterio("PECN.1", 5),
+            "PECN.2": criterio("PECN.2", 10),
+            "PECN.3": criterio("PECN.3", 15),
+            "PECN.4": criterio("PECN.4", 10),
+        }
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.1"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.4"]), "NO_CUMPLE")
+
+    def test_pecn_only_marks_no_aplica_for_confirmed_third_or_explicit_cut(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "Buenos días, ¿hablo con la titular?"},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "No soy, soy su hermano."},
+        ]
+        data = {
+            "PECN.1": criterio("PECN.1", 5),
+            "PECN.2": criterio("PECN.2", 10),
+            "PECN.3": criterio("PECN.3", 15),
+            "PECN.4": criterio("PECN.4", 10),
+        }
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertNotEqual(estado_sgc_normalizado(data["PECN.1"]), "NO_APLICA")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "NO_APLICA")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "NO_APLICA")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.4"]), "NO_APLICA")
+
+    def test_agent_proposal_is_not_a_confirmed_customer_commitment(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "Puede abonar 500 soles mañana."},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Lo voy a pensar."},
+        ]
+        data = {"PECN.4": criterio("PECN.4", 10), "PECC.2": criterio("PECC.2", 5)}
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.4"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECC.2"]), "NO_APLICA")
+
+    def test_pecn_accepts_a_later_discount_alternative_after_objection(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "¿A qué se debe el atraso y cuánto podría pagar?"},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Porque tuve un problema y no tengo forma de pagar ese importe ahora."},
+            *[
+                {"segmento_id": indice, "rol": "CLIENTE" if indice % 2 else "AGENTE", "texto": "Entiendo."}
+                for indice in range(3, 13)
+            ],
+            {"segmento_id": 13, "rol": "AGENTE", "texto": "Podemos aplicar el descuento vigente y dejar una cuota menor."},
+        ]
+        data = {
+            "PECN.2": criterio("PECN.2", 10),
+            "PECN.3": criterio("PECN.3", 15),
+        }
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "CUMPLE")
+
+    def test_pecn_requires_cause_and_capacity_for_diagnosis_and_escalation(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "¿Cuánto podría pagar hoy?"},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Podría pagar una parte."},
+            {"segmento_id": 3, "rol": "AGENTE", "texto": "Podemos aplicar un descuento."},
+        ]
+        data = {"PECN.1": criterio("PECN.1", 5), "PECN.2": criterio("PECN.2", 10)}
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.1"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "NO_CUMPLE")
+
+    def test_follow_up_schedule_closes_management_without_payment_agreement(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "Le llamaré hoy a las 17:00 para revisar la respuesta."},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Sí."},
+        ]
+        data = {"PECN.4": criterio("PECN.4", 10), "PECC.2": criterio("PECC.2", 5)}
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.4"]), "CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECC.2"]), "NO_APLICA")
+
+    def test_vague_future_intent_is_not_a_confirmed_payment_agreement(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "CLIENTE", "texto": "De todas formas lo voy a cancelar."},
+        ]
+        data = {"PECC.2": criterio("PECC.2", 5)}
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECC.2"]), "NO_APLICA")
+
     def test_mibanco_catalog_matches_current_excel_weights(self):
         self.assertEqual(len(obtener_pauta_mibanco()), 15)
         self.assertEqual(
@@ -199,6 +330,32 @@ class IaFeedbackStabilityTests(unittest.TestCase):
 
         self.assertIn("Manejo de objeciones", factores)
         self.assertIn("Cierre verificable 3C/4C", factores)
+
+    def test_mibanco_absence_findings_reach_sgc(self):
+        evaluacion = [
+            {
+                "codigo_criterio": codigo,
+                "segmento": "Gesti\u00f3n de soluci\u00f3n y negociaci\u00f3n",
+                "segmento_copc": "Gesti\u00f3n de soluci\u00f3n y negociaci\u00f3n",
+                "estado": "NO_CUMPLE",
+                "resultado": "No cumple",
+                "calificacion": "No cumple",
+                "hallazgo": hallazgo,
+                "evidencia": "CLIENTE: Ahorita no.",
+                "impacto": "No se conduce la gesti\u00f3n hacia una alternativa verificable.",
+                "recomendacion": "Profundizar la negociaci\u00f3n antes de cerrar.",
+                "error_sgc_confirmado": True,
+            }
+            for codigo, hallazgo in (
+                ("PECN.2", "No se observa una alternativa posterior y adaptada a la objeci\u00f3n."),
+                ("PECN.3", "No se observa abordaje posterior suficiente de la objeci\u00f3n."),
+                ("PECN.4", "No se identifica promesa de pago ni siguiente acci\u00f3n verificable."),
+            )
+        ]
+
+        hallazgos = normalizar_errores_criticos_v2(None, evaluacion)
+
+        self.assertEqual({item["codigo_criterio"] for item in hallazgos}, {"PECN.2", "PECN.3", "PECN.4"})
 
 
 if __name__ == "__main__":
