@@ -379,6 +379,7 @@
     function puedeAccederModulo(key) {
         if (key === "inicio") return true;
         if (key === "reportes") return true;
+        if (key === "documentos") return puedeAccederDocumentos();
         if (key === "admin") return esPerfilGerencial();
         if (key === "compromisos" && esPerfilGerencial()) return false;
         if (esPerfilGerencial()) return true;
@@ -406,9 +407,14 @@
             "compromisos",
             "ritmo_meta",
             "telefonos",
-            "documentos",
             ...(compartamos ? ["clientes"] : [])
         ].includes(key);
+    }
+
+    function puedeAccederDocumentos() {
+        const tipo = tipoUsuario();
+        return esUsuarioSupervisor()
+            || ["ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE CARTERA"].includes(tipo);
     }
 
     function tipoUsuario() {

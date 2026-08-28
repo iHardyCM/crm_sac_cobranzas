@@ -107,13 +107,6 @@ function obtenerModulosPorPerfil(tipo) {
             destacado: false
         });
 
-        modulos.push({
-            sigla: "DO",
-            titulo: "Documentos automatizados",
-            descripcion: "Genera documentos según la entidad, cartera y condiciones de pago seleccionadas.",
-            ruta: "documentos.html",
-            destacado: false
-        });
     }
 
     if (esSupervisor(tipo)) {
@@ -141,13 +134,6 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Validación de Teléfonos",
                 descripcion: "Consulta teléfonos activos y valida prioridad, Osiptel, timbrado y origen.",
                 ruta: "telefonos.html",
-                destacado: false
-            },
-            {
-                sigla: "DO",
-                titulo: "Documentos automatizados",
-                descripcion: "Genera documentos según la entidad, cartera y condiciones de pago seleccionadas.",
-                ruta: "documentos.html",
                 destacado: false
             },
             {
@@ -221,13 +207,6 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
-                sigla: "DO",
-                titulo: "Documentos automatizados",
-                descripcion: "Genera cartas de cancelacion usando datos de Compartamos y validacion de monto.",
-                ruta: "documentos.html",
-                destacado: false
-            },
-            {
                 sigla: "PA",
                 titulo: "Importacion de pagos",
                 descripcion: "Validacion y publicacion de pagos normalizados para BI.",
@@ -286,7 +265,23 @@ function obtenerModulosPorPerfil(tipo) {
         );
     }
 
+    if (puedeAccederDocumentos(tipo)) {
+        modulos.unshift({
+            sigla: "DO",
+            titulo: "Documentos automatizados",
+            descripcion: "Genera documentos según la entidad, cartera y condiciones de pago seleccionadas.",
+            ruta: "documentos.html",
+            destacado: false
+        });
+    }
+
     return modulos;
+}
+
+function puedeAccederDocumentos(tipo) {
+    const tipoNormalizado = normalizarTipoUsuario(tipo || localStorage.getItem("tipo"));
+    return esSupervisor(tipoNormalizado)
+        || ["ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE CARTERA"].includes(tipoNormalizado);
 }
 
 function pintarRoadmap() {
