@@ -49,6 +49,29 @@ def normalizar(texto):
     return str(texto or "").strip().upper()
 
 
+def obtener_campo(row, *nombres):
+    for nombre in nombres:
+        if nombre in row and row.get(nombre) not in (None, ""):
+            return row.get(nombre)
+
+    nombres_normalizados = {str(k).lower(): k for k in row.keys()}
+    for nombre in nombres:
+        key = nombres_normalizados.get(str(nombre).lower())
+        if key and row.get(key) not in (None, ""):
+            return row.get(key)
+
+    return None
+
+
+def obtener_nombre_cliente(rows):
+    for row in rows or []:
+        nombre = obtener_campo(row, "nombre_cliente", "NOMBRE_CLIENTE", "nom_cli", "NOM_CLI")
+        if nombre:
+            return str(nombre).strip()
+
+    return None
+
+
 def es_si(valor):
     return normalizar(valor) in ("SI", "SÍ", "1", "TRUE")
 
@@ -340,8 +363,11 @@ def enriquecer_telefonos(rows, contexto):
         )
 
         score_final = max(0, min(100, score_base + penalizacion))
+        nombre_cliente = obtener_campo(row, "nombre_cliente", "NOMBRE_CLIENTE", "nom_cli", "NOM_CLI")
 
         item = dict(row)
+        item["nombre_cliente"] = str(nombre_cliente).strip() if nombre_cliente else None
+        item["NOMBRE_CLIENTE"] = item["nombre_cliente"]
         item["CARTERA"] = CARTERAS.get(int(row["IDCARTERA"]), f"Cartera {row['IDCARTERA']}") if row.get("IDCARTERA") is not None else None
         item["TOTAL_DNIS_ASOCIADOS"] = total_dnis
         item["TOTAL_CARTERAS_ASOCIADAS"] = total_carteras
@@ -367,6 +393,7 @@ def construir_resumen(rows):
         return {
             "dni": None,
             "idcliente": None,
+            "nombre_cliente": None,
             "carteras": [],
             "total_telefonos": 0,
             "con_osiptel": 0,
@@ -397,6 +424,7 @@ def construir_resumen(rows):
     return {
         "dni": rows[0].get("DNI"),
         "idcliente": rows[0].get("IDCLIENTE"),
+        "nombre_cliente": obtener_nombre_cliente(rows),
         "carteras": carteras,
         "total_telefonos": len(telefonos),
         "con_osiptel": con_osiptel,
@@ -415,6 +443,7 @@ def obtener_relacionados_telefono(cursor, telefono):
         SELECT DISTINCT
             DNI,
             IDCLIENTE,
+            RTRIM(LTRIM(nom_cli)) AS NOMBRE_CLIENTE,
             IDCARTERA,
             ORIGEN,
             TIPO_BASE,
@@ -452,9 +481,10 @@ def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, tim
                 RTRIM(LTRIM(DNI)) = ?
                 OR CAST(IDCLIENTE AS VARCHAR(50)) = ?
                 OR CAST(TELEFONO AS VARCHAR(50)) = ?
+                OR UPPER(RTRIM(LTRIM(nom_cli))) LIKE ?
             )
         """
-        params = [q, q, q]
+        params = [q, q, q, f"%{q.upper()}%"]
 
         if idcartera and idcartera != "TODOS":
             where += " AND IDCARTERA = ?"
@@ -485,6 +515,7 @@ def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, tim
             SELECT TOP 200
                 RTRIM(LTRIM(DNI)) AS DNI,
                 IDCLIENTE,
+                RTRIM(LTRIM(nom_cli)) AS NOMBRE_CLIENTE,
                 TELEFONO,
                 PRIORIDAD,
                 IDCARTERA,

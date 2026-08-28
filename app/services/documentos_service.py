@@ -176,6 +176,15 @@ DOCUMENT_TYPES = {
         "document_kind": "sip_convenio",
         "sin_correo": True,
     },
+    "sip_constancia_pago": {
+        "id": "sip_constancia_pago",
+        "nombre": "Constancia de pago - Tarjeta SIP",
+        "descripcion": "Constancia SIP por un abono realizado por el cliente.",
+        "cartera_id": 132,
+        "cartera_nombre": "Financiera OH - SIP",
+        "document_kind": "sip_constancia",
+        "sin_correo": True,
+    },
 }
 
 DOCUMENT_QUERY_SCOPES = {
@@ -2488,6 +2497,43 @@ def document_sip_xml(context):
     )
 
 
+def document_sip_constancia_xml(context):
+    """Constancia SIP con la misma información mostrada en su preview PDF."""
+    paragraphs = [
+        image_xml(rel_id="rIdLogoSip", doc_id=41, cx=1250000, cy=760000, align="left"),
+        right_xml(f"Lima, {context['fecha_carta']}", after=210, size=20),
+        title_xml("CONSTANCIA DE PAGO"),
+        paragraph_xml("Estimado(a):", align="left", after=18, size=20),
+        paragraph_xml(context["cliente"], align="left", after=12, size=20),
+        paragraph_xml(f"{context['tipo_documento']} {context['dni']}", align="left", after=12, size=20),
+        paragraph_xml(f"TC {context['operacion']}", align="left", after=150, size=20),
+        paragraph_xml(
+            f"Le expedimos la presente constancia que acredita el abono realizado por usted el día {context['fecha_pago']}, "
+            f"correspondiente a la facilidad de pago denominada \"Limpia Tu Deuda\" por la suma de S/ {context['monto_pagado']}, "
+            "en el marco de la campaña vigente.",
+            align="both",
+            after=130,
+            size=20,
+        ),
+        paragraph_runs_xml([
+            {"text": "Este documento ", "bold": False},
+            {"text": "confirma la recepción del pago indicado", "bold": True},
+            {"text": ", el cual será validado en nuestro sistema. Una vez completada la verificación, se procederá con la condonación de la deuda total conforme a las condiciones pactadas.", "bold": False},
+        ], align="both", after=220, size=20),
+        paragraph_xml("Cordialmente,", align="left", after=165, size=20),
+        paragraph_xml("Financiera Sip\nÁrea de Cobranzas", align="left", after=0, size=20),
+    ]
+    body = "".join(paragraphs)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f"<w:body>{body}<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/>"
+        '<w:pgMar w:top="620" w:right="1150" w:bottom="850" w:left="1150" w:header="360" w:footer="360" w:gutter="0"/>'
+        "</w:sectPr></w:body></w:document>"
+    )
+
+
 def styles_xml():
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -2502,7 +2548,7 @@ def styles_xml():
 def generar_docx_limpio(output_path, context, document_kind="transaccion_cancelacion"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     es_mibanco = document_kind in ("mibanco_contado", "mibanco_cuotas")
-    es_sip = document_kind == "sip_convenio"
+    es_sip = document_kind in ("sip_convenio", "sip_constancia")
     if document_kind == "cancelacion_grupal":
         document_body = document_grupal_xml(context)
     elif document_kind == "compromiso_cuota_grupal":
@@ -2511,8 +2557,10 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         document_body = document_cuota_individual_xml(context)
     elif document_kind in ("mibanco_contado", "mibanco_cuotas"):
         document_body = document_mibanco_xml(context)
-    elif es_sip:
+    elif document_kind == "sip_convenio":
         document_body = document_sip_xml(context)
+    elif document_kind == "sip_constancia":
+        document_body = document_sip_constancia_xml(context)
     else:
         document_body = document_xml(context)
     document_relationships = (
@@ -2522,6 +2570,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         + ('' if es_mibanco or es_sip else '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>')
         + ('<Relationship Id="rIdLogoMibanco" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_mibanco.png"/>' if es_mibanco else '')
+        + ('<Relationship Id="rIdLogoSip" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_sip.png"/>' if document_kind == "sip_constancia" else '')
         + '</Relationships>'
     )
     parts = {
@@ -2560,6 +2609,8 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
             zout.write(FIRMA_LUIS_PATH, "word/media/firma_luis_portuguez.png")
         if es_mibanco and LOGO_MIBANCO_PATH.exists():
             zout.write(LOGO_MIBANCO_PATH, "word/media/logo_mibanco.png")
+        if document_kind == "sip_constancia" and LOGO_SIP_PATH.exists():
+            zout.write(LOGO_SIP_PATH, "word/media/logo_sip.png")
 
 
 def generar_pdf_limpio(output_path, context):
@@ -2748,7 +2799,7 @@ def generar_pdf_sip(output_path, context):
     def section(title_text):
         band = Table([[p(title_text, section_label)]], colWidths=[6.2 * inch])
         band.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B0F0")),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B4FF")),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ("LEFTPADDING", (0, 0), (-1, -1), 7),
@@ -2759,7 +2810,7 @@ def generar_pdf_sip(output_path, context):
         logo = Image(str(LOGO_SIP_PATH), width=.92 * inch, height=.57 * inch)
         header = Table([["", logo]], colWidths=[5.28 * inch, .92 * inch], rowHeights=[.57 * inch])
         header.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B0F0")),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B4FF")),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -2771,7 +2822,7 @@ def generar_pdf_sip(output_path, context):
         table = Table(data, colWidths=widths, repeatRows=1 if header else 0)
         style = [("GRID", (0, 0), (-1, -1), .55, colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5)]
         if header:
-            style += [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00B0F0")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), bold), ("ALIGN", (0, 0), (-1, -1), "CENTER")]
+            style += [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00B4FF")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), bold), ("ALIGN", (0, 0), (-1, -1), "CENTER")]
         table.setStyle(TableStyle(style))
         return table
 
@@ -2817,6 +2868,63 @@ def generar_pdf_sip(output_path, context):
     doc.build(story)
 
 
+def generar_pdf_sip_constancia(output_path, context):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise ValueError("Para descargar en PDF instala la dependencia reportlab y reinicia el servidor.") from exc
+
+    font = "Calibri" if Path("C:/Windows/Fonts/calibri.ttf").exists() else "Helvetica"
+    bold = "Calibri-Bold" if Path("C:/Windows/Fonts/calibrib.ttf").exists() else "Helvetica-Bold"
+    if font == "Calibri": pdfmetrics.registerFont(TTFont(font, "C:/Windows/Fonts/calibri.ttf"))
+    if bold == "Calibri-Bold": pdfmetrics.registerFont(TTFont(bold, "C:/Windows/Fonts/calibrib.ttf"))
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("sip_constancia_body", parent=styles["Normal"], fontName=font, fontSize=10.5, leading=14, alignment=TA_JUSTIFY)
+    title = ParagraphStyle("sip_constancia_title", parent=body, fontName=bold, fontSize=15, leading=18, alignment=TA_CENTER, spaceAfter=32)
+    recipient = ParagraphStyle("sip_constancia_recipient", parent=body, leftIndent=.48 * inch, rightIndent=.48 * inch)
+    right = ParagraphStyle("sip_constancia_right", parent=body, alignment=TA_RIGHT)
+    def p(value, style=body): return Paragraph(xml_text(value), style)
+    doc = SimpleDocTemplate(str(output_path), pagesize=letter, leftMargin=.7*inch, rightMargin=.7*inch, topMargin=.38*inch, bottomMargin=.7*inch)
+    story = []
+    if LOGO_SIP_PATH.exists():
+        logo = Image(str(LOGO_SIP_PATH), width=.98*inch, height=.6*inch)
+        header = Table([[logo, ""]], colWidths=[.98*inch, 5.82*inch], rowHeights=[.6*inch])
+        header.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#00B4FF")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.extend([header, Spacer(1, 68)])
+    story.extend([
+        p(f"Lima, {context['fecha_carta']}", right),
+        Spacer(1, 35),
+        p("CONSTANCIA DE PAGO", title),
+        p("Estimado(a):", recipient),
+        p(context["cliente"], recipient),
+        p(f"{context['tipo_documento']} {context['dni']}", recipient),
+        p(f"TC {context['operacion']}", recipient),
+        Spacer(1, 38),
+        p(f"Le expedimos la presente constancia que acredita el abono realizado por usted el día {context['fecha_pago']}, correspondiente a la facilidad de pago denominada \"Limpia Tu Deuda\" por la suma de S/ {context['monto_pagado']}, en el marco de la campaña vigente.", recipient),
+        Spacer(1, 22),
+        Paragraph("Este documento <b>confirma la recepción del pago indicado</b>, el cual será validado en nuestro sistema. Una vez completada la verificación, se procederá con la condonación de la deuda total conforme a las condiciones pactadas.", recipient),
+        Spacer(1, 50),
+        p("Cordialmente,", recipient),
+        Spacer(1, 35),
+        Paragraph("Financiera Sip<br/>Área de Cobranzas", recipient),
+    ])
+    doc.build(story)
+
+
 def generar_pdf_mibanco(output_path, context):
     try:
         from reportlab.lib import colors
@@ -2836,9 +2944,11 @@ def generar_pdf_mibanco(output_path, context):
     if bold == "Calibri-Bold": pdfmetrics.registerFont(TTFont(bold, "C:/Windows/Fonts/calibrib.ttf"))
     styles = getSampleStyleSheet()
     body = ParagraphStyle("mibanco_body", parent=styles["Normal"], fontName=font, fontSize=8.2, leading=10.2, alignment=TA_JUSTIFY)
+    indented = ParagraphStyle("mibanco_indented", parent=body, leftIndent=.52 * inch, rightIndent=.52 * inch)
     title = ParagraphStyle("mibanco_title", parent=body, fontName=bold, fontSize=13, leading=15, alignment=TA_CENTER, textColor=colors.white)
     center = ParagraphStyle("mibanco_center", parent=body, alignment=TA_CENTER)
     italic = ParagraphStyle("mibanco_italic", parent=body, fontName=font, fontSize=8.1, leading=15, alignment=TA_JUSTIFY, italic=True)
+    indented_italic = ParagraphStyle("mibanco_indented_italic", parent=italic, leftIndent=.52 * inch, rightIndent=.52 * inch)
     signature = ParagraphStyle("mibanco_signature", parent=center, fontName=bold, fontSize=7.5, leading=9)
     def p(value, style=body): return Paragraph(xml_text(value), style)
     doc = SimpleDocTemplate(str(output_path), pagesize=letter, leftMargin=.38*inch, rightMargin=.38*inch, topMargin=.4*inch, bottomMargin=.4*inch)
@@ -2855,7 +2965,7 @@ def generar_pdf_mibanco(output_path, context):
     datos.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("BOTTOMPADDING",(0,0),(-1,-1),7),("TOPPADDING",(0,0),(-1,-1),0)]))
     barra = Table([[p("ACUERDO DE CANCELACION DE DEUDA", title)]], colWidths=[6.43*inch])
     barra.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#008d48")),("BOX",(0,0),(-1,-1),1.2,colors.black),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
-    story += [datos, Spacer(1, 11), barra, Spacer(1, 8), p(f"En MIBANCO estamos comprometidos con nuestros clientes. Este documento busca generar un convenio entre MIBANCO, representado por nuestro proveedor BIZNESCOB y el cliente {context['cliente']}, con DNI: {context['dni']} con el fin de que pueda realizar la cancelación de su deuda bajo las siguientes condiciones:", italic)]
+    story += [datos, Spacer(1, 11), barra, Spacer(1, 8), p(f"En MIBANCO estamos comprometidos con nuestros clientes. Este documento busca generar un convenio entre MIBANCO, representado por nuestro proveedor BIZNESCOB y el cliente {context['cliente']}, con DNI: {context['dni']} con el fin de que pueda realizar la cancelación de su deuda bajo las siguientes condiciones:", indented_italic)]
     if context["es_cuotas"]:
         cuotas_headers, cuotas_rows = tabla_cuotas_mibanco(context)
         pagos = [[p(header, center) for header in cuotas_headers]] + [[p(cell, center) for cell in row] for row in cuotas_rows]
@@ -2871,9 +2981,9 @@ def generar_pdf_mibanco(output_path, context):
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
-        story += [Spacer(1,7), p(f"EL CLIENTE contrató con MIBANCO el siguiente préstamo, siendo que a la fecha mantiene un saldo deudor a favor de MIBANCO, monto que RECONOCE EN SU TOTALIDAD. Lima, {context['fecha_larga']}."), p("El CLIENTE reconoce deber y adeudar, dando estricto cumplimiento al siguiente convenio de pago. Se establecen las siguientes condiciones:"), Spacer(1,5), cronograma, Spacer(1,5), p("El descuento es sobre el capital."), p("Los pagos se realizarán los siguientes días y por los siguientes montos respectivamente, a través de nuestra red de agencias a nivel nacional:")]
+        story += [Spacer(1,7), p(f"EL CLIENTE contrató con MIBANCO el siguiente préstamo, siendo que a la fecha mantiene un saldo deudor a favor de MIBANCO, monto que RECONOCE EN SU TOTALIDAD. Lima, {context['fecha_larga']}.", indented), p("El CLIENTE reconoce deber y adeudar, dando estricto cumplimiento al siguiente convenio de pago. Se establecen las siguientes condiciones:", indented), Spacer(1,5), cronograma, Spacer(1,5), p("El descuento es sobre el capital.", indented), p("Los pagos se realizarán los siguientes días y por los siguientes montos respectivamente, a través de nuestra red de agencias a nivel nacional:", indented)]
     else:
-        story += [Spacer(1, 7), tabla, Spacer(1, 7), p("El descuento es sobre el capital."), p(f"La operación detallada corresponde a la CANCELACIÓN TOTAL CON DESCUENTO de los préstamos indicados. Pago único: S/ {context['monto_total']} el {context['fecha_corta']}.", center)]
+        story += [Spacer(1, 7), tabla, Spacer(1, 7), p("El descuento es sobre el capital.", indented), p(f"La operación detallada corresponde a la CANCELACIÓN TOTAL CON DESCUENTO de los préstamos indicados. Pago único: S/ {context['monto_total']} el {context['fecha_corta']}.", center)]
     firmas = Table(
         [[p("______________________________", center), p("______________________________", center)], [
             Paragraph("ROSARIO RODRIGUEZ MOSCOSO<br/>REPRESENTANTE<br/>MIBANCO", signature),
@@ -2882,7 +2992,7 @@ def generar_pdf_mibanco(output_path, context):
         colWidths=[3.2*inch,3.2*inch],
     )
     firmas.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("VALIGN",(0,0),(-1,-1),"BOTTOM"),("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)]))
-    story += [Spacer(1, 7), p("Este documento carece de valor si no se realiza el pago respectivo en la fecha pactada.", signature), p("Las cuotas no incluyen I.T.F.", italic), p(f"Nuestro cliente, {context['cliente']} y MIBANCO, dejamos constancia de la conformidad y pleno conocimiento del contenido, reafirmando todas y cada una de las condiciones presentes en este Acuerdo de Cancelación de Deuda. En señal de lo mencionado, se suscriben al documento.", body), Spacer(1, 10), p("Área de Recuperaciones", signature), Spacer(1, 48), firmas]
+    story += [Spacer(1, 7), p("Este documento carece de valor si no se realiza el pago respectivo en la fecha pactada.", signature), p("Las cuotas no incluyen I.T.F.", indented_italic), p(f"Nuestro cliente, {context['cliente']} y MIBANCO, dejamos constancia de la conformidad y pleno conocimiento del contenido, reafirmando todas y cada una de las condiciones presentes en este Acuerdo de Cancelación de Deuda. En señal de lo mencionado, se suscriben al documento.", indented), Spacer(1, 10), p("Área de Recuperaciones", signature), Spacer(1, 48), firmas]
     doc.build(story)
 
 
@@ -3852,7 +3962,51 @@ def generar_documento_sip(config, dni=None, operacion=None, cancelacion=None, fe
     }
 
 
-def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None):
+def generar_constancia_pago_sip(config, dni=None, operacion=None, cancelacion=None, fecha_pago=None, formato="docx", permitir_monto_cero=False):
+    rows = consultar_datos_documento_sip(dni=dni, operacion=operacion, limit=2)
+    if not rows:
+        raise ValueError("No se encontró información SIP para generar la constancia.")
+    if len(rows) > 1 and not limpiar_texto(operacion):
+        raise ValueError("La búsqueda SIP devolvió más de una operación. Selecciona una operación antes de generar.")
+    monto_pagado = decimal_value(cancelacion)
+    if monto_pagado is None or monto_pagado < 0 or (monto_pagado == 0 and not permitir_monto_cero):
+        raise ValueError("Ingresa un monto pagado mayor a cero para generar la constancia.")
+    registro = rows[0]
+    hoy = datetime.now(ZoneInfo("America/Lima")).date()
+    context = {
+        "cliente": limpiar_texto(registro.get("NomCliente")),
+        "dni": limpiar_texto(registro.get("NumDocumento")),
+        "tipo_documento": limpiar_texto(registro.get("TipoDocumento")) or "DNI",
+        "operacion": clave_operacion(registro.get("Operacion")),
+        "fecha_carta": fecha_larga_modelo_hoy(),
+        "fecha_pago": format_fecha_pago(fecha_pago) or hoy.strftime("%d/%m/%Y"),
+        "monto_pagado": format_money(monto_pagado),
+    }
+    formato = str(formato or "docx").lower()
+    if formato not in ("docx", "pdf"):
+        raise ValueError("Formato no soportado. Selecciona Word o PDF.")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{safe_filename(config['nombre'])}_{safe_filename(context['cliente'])}.{formato}"
+    output_path = OUTPUT_DIR / filename
+    if formato == "pdf":
+        generar_pdf_sip_constancia(output_path, context)
+    else:
+        generar_docx_limpio(output_path, context, document_kind="sip_constancia")
+    return {
+        "path": output_path,
+        "filename": filename,
+        "formato": formato,
+        "registro": registro,
+        "auditoria_detalle": {
+            "modalidad": "constancia_pago",
+            "fecha_pago": context["fecha_pago"],
+            "monto_pagado": context["monto_pagado"],
+            "operaciones": [{"operacion": context["operacion"], "pago": context["monto_pagado"]}],
+        },
+    }
+
+
+def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None, permitir_preview=False):
     config = obtener_config_documento(documento_tipo)
     cartera_id = int(config.get("cartera_id") or 133)
 
@@ -3864,6 +4018,9 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
 
     if config.get("document_kind") == "sip_convenio":
         return generar_documento_sip(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, pagos_mibanco=pagos_mibanco, excepcion=excepcion)
+
+    if config.get("document_kind") == "sip_constancia":
+        return generar_constancia_pago_sip(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, permitir_monto_cero=permitir_preview)
 
     if documento_tipo == "cancelacion_grupal":
         return generar_documento_grupal(

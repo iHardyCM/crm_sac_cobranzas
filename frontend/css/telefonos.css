@@ -243,7 +243,7 @@ body {
 
 .telefonos-client-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     margin: 14px 16px 0;
     border: 1px solid #dbe4ec;
     border-radius: 10px;
@@ -251,6 +251,7 @@ body {
 }
 
 .telefonos-client-grid div {
+    min-width: 0;
     padding: 13px 16px;
     border-right: 1px solid #e7eef5;
     background: #ffffff;
@@ -273,6 +274,7 @@ body {
     color: #0b66d8;
     font-size: 15px;
     font-weight: 900;
+    overflow-wrap: anywhere;
 }
 
 .telefonos-kpi-grid {
@@ -936,7 +938,6 @@ body {
     }
 
     .telefonos-filters-row,
-    .telefonos-client-grid,
     .telefonos-kpi-grid,
     .telefonos-side-column {
         grid-template-columns: 1fr;
@@ -1014,4 +1015,25 @@ body {
 
 .phone-link {
     font-size: 12px;
+}
+
+@media (min-width: 761px) {
+    .telefonos-client-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .telefonos-client-grid div {
+        border-right: 1px solid #e7eef5;
+        border-bottom: none;
+    }
+
+    .telefonos-client-grid div:last-child {
+        border-right: none;
+    }
+}
+
+@media (max-width: 760px) {
+    .telefonos-client-grid {
+        grid-template-columns: 1fr;
+    }
 }

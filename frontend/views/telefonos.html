@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="../css/app_layout.css">
 
     <!-- CSS propio de la vista -->
-    <link rel="stylesheet" href="../css/telefonos.css">
+    <link rel="stylesheet" href="../css/telefonos.css?v=20260828b">
 </head>
 
 <body>
@@ -19,7 +19,7 @@
     <section class="telefonos-page-header">
         <div>
             <h2>Validación de Teléfonos</h2>
-            <p>Consulta teléfonos activos por DNI, ID Cliente o número de teléfono.</p>
+            <p>Consulta teléfonos activos por DNI, ID Cliente, nombre o número de teléfono.</p>
         </div>
 
         <div class="telefonos-meta">
@@ -35,7 +35,7 @@
                 <input
                     type="text"
                     id="txtBuscar"
-                    placeholder="Buscar DNI / ID Cliente / Teléfono"
+                    placeholder="Buscar DNI / ID Cliente / Cliente / Teléfono"
                     autocomplete="off"
                 >
             </div>
@@ -98,6 +98,11 @@
             <div>
                 <span>ID Cliente</span>
                 <strong id="resumenIdCliente">--</strong>
+            </div>
+
+            <div>
+                <span>Nombre cliente</span>
+                <strong id="resumenNombreCliente">--</strong>
             </div>
 
             <div>
@@ -176,6 +181,7 @@
                             <tr>
                                 <th>Prioridad</th>
                                 <th>Teléfono</th>
+                                <th>Cliente</th>
                                 <th>Cartera</th>
                                 <th>Tipo</th>
                                 <th>WhatsApp</th>
@@ -191,7 +197,7 @@
 
                         <tbody id="tbodyTelefonos">
                             <tr>
-                                <td colspan="12" class="telefonos-empty-table">
+                                <td colspan="13" class="telefonos-empty-table">
                                     Realiza una búsqueda para ver teléfonos activos.
                                 </td>
                             </tr>
@@ -222,6 +228,7 @@
                 <div class="telefonos-detail-list">
                     <div><span>DNI:</span><strong id="detalleDni">--</strong></div>
                     <div><span>ID Cliente:</span><strong id="detalleIdCliente">--</strong></div>
+                    <div><span>Cliente:</span><strong id="detalleNombreCliente">--</strong></div>
                     <div><span>Cartera:</span><strong id="detalleCartera">--</strong></div>
                     <div><span>Tipo:</span><strong id="detalleTipo">--</strong></div>
                     <div><span>WhatsApp:</span><strong id="detalleWhatsapp">--</strong></div>
@@ -251,6 +258,7 @@
                             <tr>
                                 <th>DNI</th>
                                 <th>ID Cliente</th>
+                                <th>Cliente</th>
                                 <th>Cartera</th>
                                 <th>Origen</th>
                             </tr>
@@ -275,7 +283,7 @@
 <script src="../js/app_layout.js?v=20260825b"></script>
 
 <!-- JS propio de la vista -->
-<script src="../js/telefonos.js"></script>
+<script src="../js/telefonos.js?v=20260828b"></script>
 
 </body>
 </html>

@@ -220,6 +220,7 @@ async def previsualizar_documento_endpoint(payload: GenerarDocumentoRequest):
             cuotas_individual=payload.cuotas_individual,
             operaciones_mibanco=payload.operaciones_mibanco,
             pagos_mibanco=[item.dict() for item in payload.pagos_mibanco],
+            permitir_preview=True,
         )
         return FileResponse(
             result["path"],

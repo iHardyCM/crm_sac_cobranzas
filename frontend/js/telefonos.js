@@ -83,7 +83,7 @@ async function buscarTelefonos() {
     const q = document.getElementById("txtBuscar")?.value.trim();
 
     if (!q) {
-        mostrarEstado("Ingresa un DNI, ID Cliente o teléfono.", "warning");
+        mostrarEstado("Ingresa un DNI, ID Cliente, nombre de cliente o teléfono.", "warning");
         return;
     }
 
@@ -120,7 +120,7 @@ async function buscarTelefonos() {
             return;
         }
 
-        pintarResumen(data.resumen || {});
+        pintarResumen(data.resumen || {}, data.telefonos || []);
         pintarTelefonos(data.telefonos || []);
         pintarRelacionados(data.relacionados || []);
 
@@ -139,14 +139,23 @@ async function buscarTelefonos() {
 }
 
 
-function pintarResumen(resumen) {
+function pintarResumen(resumen, telefonos = []) {
     const panel = document.getElementById("panelResumen");
     if (!panel) return;
 
     panel.classList.remove("hidden");
 
+    const primerTelefono = Array.isArray(telefonos) && telefonos.length > 0 ? telefonos[0] : {};
+    const nombreResumen =
+        resumen.nombre_cliente ||
+        resumen.NOMBRE_CLIENTE ||
+        resumen.nom_cli ||
+        resumen.NOM_CLI ||
+        nombreCliente(primerTelefono);
+
     document.getElementById("resumenDni").textContent = valueOrDash(resumen.dni);
     document.getElementById("resumenIdCliente").textContent = valueOrDash(resumen.idcliente);
+    document.getElementById("resumenNombreCliente").textContent = valueOrDash(nombreResumen);
     document.getElementById("resumenCarteras").textContent = Array.isArray(resumen.carteras)
         ? resumen.carteras.join(", ")
         : "--";
@@ -228,6 +237,10 @@ function pintarTelefonos(telefonos) {
                 ${item.RECOMENDACION === "Recomendado para contacto" ? `<small class="tag-recommended">RECOMENDADO</small>` : ""}
             </td>
             <td>
+                <strong>${valueOrDash(nombreCliente(item))}</strong>
+                <small>DNI ${valueOrDash(item.DNI)} · ID ${valueOrDash(item.IDCLIENTE)}</small>
+            </td>
+            <td>
                 <strong>${valueOrDash(item.IDCARTERA)}</strong>
                 <small>${valueOrDash(item.CARTERA)}</small>
             </td>
@@ -289,6 +302,7 @@ function pintarRelacionados(relacionados) {
         tr.innerHTML = `
             <td>${valueOrDash(item.DNI)}</td>
             <td>${valueOrDash(item.IDCLIENTE)}</td>
+            <td>${valueOrDash(nombreCliente(item))}</td>
             <td>
                 <span class="badge badge-blue">${valueOrDash(item.IDCARTERA)}</span>
                 <small>${valueOrDash(item.CARTERA)}</small>
@@ -319,6 +333,7 @@ function verDetalle(item) {
 
     document.getElementById("detalleDni").textContent = valueOrDash(item.DNI);
     document.getElementById("detalleIdCliente").textContent = valueOrDash(item.IDCLIENTE);
+    document.getElementById("detalleNombreCliente").textContent = valueOrDash(nombreCliente(item));
     document.getElementById("detalleCartera").textContent = `${valueOrDash(item.IDCARTERA)} - ${valueOrDash(item.CARTERA)}`;
     document.getElementById("detalleTipo").textContent = valueOrDash(item.TIPO_FONO);
     document.getElementById("detalleWhatsapp").innerHTML = badgeSiNo(item.WHATSAPP);
@@ -374,7 +389,7 @@ function limpiarResultados() {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" class="telefonos-empty-table">
+                <td colspan="13" class="telefonos-empty-table">
                     Realiza una búsqueda para ver teléfonos activos.
                 </td>
             </tr>
@@ -444,6 +459,11 @@ function ocultarEstado() {
 function valueOrDash(value) {
     if (value === null || value === undefined || value === "") return "--";
     return String(value);
+}
+
+
+function nombreCliente(item) {
+    return item?.NOMBRE_CLIENTE || item?.nom_cli || item?.NOM_CLI || item?.nombre_cliente || null;
 }
 
 
