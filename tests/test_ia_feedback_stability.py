@@ -283,8 +283,8 @@ class IaFeedbackStabilityTests(unittest.TestCase):
             resumen_pesos_mibanco(),
             {
                 "PECUF": 30.0,
-                "PECN": 40.0,
-                "PECC": 20.0,
+                "PECN": 30.0,
+                "PECC": 30.0,
                 "PENC": 10.0,
                 "TOTAL": 100.0,
             },

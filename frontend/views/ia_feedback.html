@@ -13,7 +13,7 @@
         <section class="ia-hero copc-header quality-exec-header">
             <div>
                 <h2>Centro de Calidad</h2>
-                <p>COPC Cobranza + IA</p>
+                <p>Monitoreo de calidad ajustado + IA</p>
             </div>
             <div class="ia-hero-actions">
                 <div class="last-update period-pill">
@@ -26,7 +26,7 @@
             </div>
         </section>
 
-        <nav class="quality-nav" aria-label="Navegacion interna COPC">
+        <nav class="quality-nav" aria-label="Navegacion interna de calidad">
             <button class="active" type="button" data-view="reporte" onclick="toggleReporteriaIa()">Resumen</button>
             <button type="button" data-view="evaluaciones" onclick="mostrarVistaEvaluacionesIa()">Evaluaciones</button>
             <button type="button" data-view="coaching" onclick="mostrarVistaCoachingIa()">Planes de mejora</button>
@@ -198,7 +198,7 @@
 
                     <div class="field">
                         <label for="comentarioIa">Comentario del supervisor</label>
-                        <textarea id="comentarioIa" rows="3" placeholder="Ejemplo: revisar bajo COPC cobranza si hubo diagnostico, negociacion escalonada, cierre 3C y algun riesgo critico."></textarea>
+                        <textarea id="comentarioIa" rows="3" placeholder="Ejemplo: revisar diagnóstico, negociación, cierre y posibles riesgos según la pauta de la cartera."></textarea>
                     </div>
 
                     <button id="btnAnalizarIa" class="btn-primary" type="submit">Analizar llamada con IA</button>
@@ -1056,22 +1056,20 @@
             <section id="tabPromptIa" class="report-tab-panel prompt-only oculto">
                 <div class="tab-panel-head">
                     <div>
-                        <h4>Prompt IA</h4>
-                        <p>Configuración del prompt general y por cartera.</p>
+                        <h4>Pauta de monitoreo</h4>
+                        <p>La pauta publicada por cartera define los criterios, pesos, evidencia y reglas que utiliza la IA.</p>
                     </div>
                     <div class="prompt-tab-actions">
-                        <button class="btn-primary btn-action" type="button" onclick="abrirPromptIa()">Configurar prompt</button>
-                        <button class="btn-light btn-small" type="button" onclick="abrirPromptIa()">Ver historial</button>
-                        <button class="btn-light btn-small" type="button" onclick="abrirPromptIa()">Probar prompt</button>
+                        <button class="btn-primary btn-action" type="button" onclick="abrirAdministracionPautasIa()">Administrar pautas</button>
                     </div>
                 </div>
                 <div class="prompt-summary-grid">
-                    <article><span>Origen actual</span><strong id="promptOrigenResumenIa">No disponible</strong></article>
-                    <article><span>Cartera seleccionada</span><strong id="promptCarteraResumenIa">Prompt general</strong></article>
-                    <article><span>Versión activa</span><strong id="promptVersionResumenIa">No disponible</strong></article>
-                    <article><span>Última modificación</span><strong id="promptFechaResumenIa">No disponible</strong></article>
-                    <article><span>Usuario modificación</span><strong id="promptUsuarioResumenIa">No disponible</strong></article>
-                    <article><span>Estado</span><strong id="promptEstadoResumenIa">Activo</strong></article>
+                    <article><span>Fuente de evaluación</span><strong>Pauta publicada</strong></article>
+                    <article><span>Alcance</span><strong>Por cartera o grupo</strong></article>
+                    <article><span>Reglas de IA</span><strong>Criterios y evidencias</strong></article>
+                    <article><span>Versionado</span><strong>Sin alterar históricos</strong></article>
+                    <article><span>Estado</span><strong>Configurable</strong></article>
+                    <article><span>Próximo paso</span><strong>Crear o publicar pauta</strong></article>
                 </div>
             </section>
         </section>
@@ -1220,7 +1218,7 @@
     </main>
 
     <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260825b"></script>
-    <script src="../js/ia_feedback.js?v=20260826-ficha-sgc-completa"></script>
+    <script src="../js/app_layout.js?v=20260829-pautas"></script>
+    <script src="../js/ia_feedback.js?v=20260829-pauta-activa"></script>
 </body>
 </html>

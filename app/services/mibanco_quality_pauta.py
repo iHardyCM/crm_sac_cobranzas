@@ -22,8 +22,8 @@ FUENTE_MULTIFUENTE = "MULTIFUENTE"
 # (0.20, 0.05, etc.); aquí se conservan sobre escala 100.
 MIBANCO_PESOS_ESPERADOS = {
     PECUF: 30.0,
-    PECN: 40.0,
-    PECC: 20.0,
+    PECN: 30.0,
+    PECC: 30.0,
     PENC: 10.0,
 }
 
@@ -136,14 +136,14 @@ MIBANCO_PAUTA: List[Dict] = [
     },
     {
         "codigo_criterio": "PECN.4",
-        "bloque": PECN,
+        "bloque": PECC,
         "categoria": "PEC",
-        "subcategoria": "Precisión de Error Crítico del Negocio",
+        "subcategoria": "Precisión de Error Crítico de Cumplimiento",
         "nombre": "Cierre de negociación",
         "peso": 10,
         "detalle": "Inducir a cierre para una promesa de pago",
         "regla_evaluacion": "Luego de haber informado la deuda y haber hecho frente a sus objeciones, el agente debe cerrar la promesa de pago de forma efectiva y oportuna.",
-        "criticidad": "ERROR_CRITICO_NEGOCIO",
+        "criticidad": "ERROR_CRITICO_CUMPLIMIENTO",
         "fuente_evidencia": FUENTE_TRANSCRIPCION,
         "regla_aplicabilidad": "Aplica en toda conversación con el titular. Debe inducir una promesa o siguiente acción verificable. Solo puede ser NO_APLICA ante tercero confirmado o corte abrupto que impida gestionar.",
         "puede_descalificar": False,
@@ -255,6 +255,77 @@ MIBANCO_PAUTA: List[Dict] = [
         "requiere_evidencia": False,
     },
 ]
+
+# Textos operativos que la plantilla administrativa expone y el motor puede
+# consultar. Mantienen explícito qué observar sin convertir la pauta en reglas
+# de palabras clave.
+MIBANCO_REGLAS_RESULTADO = {
+    "PECUF.1": (
+        "Cumple cuando el agente mantiene un trato respetuoso, sin insultos, burlas, humillación, descalificación ni juicio ofensivo.",
+        "No cumple cuando el agente profiere insultos, ridiculiza, humilla, desacredita o usa expresiones ofensivas contra el cliente.",
+    ),
+    "PECUF.2": (
+        "Cumple cuando escucha la explicación, responde a lo planteado y confirma o profundiza cuando es necesario.",
+        "No cumple cuando interrumpe de forma improcedente, ignora la explicación del cliente o continúa sin atender su consulta u objeción.",
+    ),
+    "PECUF.3": (
+        "Cumple cuando los datos de deuda comunicados por el agente coinciden con la fuente disponible y se explican sin contradicción.",
+        "No cumple cuando comunica un monto, producto, mora, cuota o condición incorrecta frente a la fuente verificable disponible.",
+    ),
+    "PECUF.4": (
+        "Cumple cuando explica montos, condiciones y alternativas con orden, coherencia y lenguaje comprensible.",
+        "No cumple cuando la explicación contradice información previa, resulta confusa o impide al cliente comprender la gestión.",
+    ),
+    "PECN.1": (
+        "Cumple cuando sondea la causa del atraso y la posibilidad real de pago; con tercero, confirma el vínculo o una vía legítima de contacto.",
+        "No cumple cuando, existiendo interacción suficiente, no indaga causa, situación o posibilidad de pago, ni realiza el sondeo mínimo frente a un tercero.",
+    ),
+    "PECN.2": (
+        "Cumple cuando propone o ajusta alternativas de pago según el diagnóstico, buscando una opción concreta y viable.",
+        "No cumple cuando existe oportunidad de negociar y el agente no desarrolla una alternativa posterior o la propuesta ignora la situación planteada.",
+    ),
+    "PECN.3": (
+        "Cumple cuando reconoce la objeción, responde con una alternativa o argumento válido y reconduce la conversación hacia una solución.",
+        "No cumple cuando el cliente objeta o expresa imposibilidad y el agente no responde a esa objeción, la evade o presiona sin alternativa.",
+    ),
+    "PECN.4": (
+        "Cumple cuando induce una promesa de pago o siguiente acción verificable, adecuada a la conversación y a la capacidad expuesta.",
+        "No cumple cuando existía oportunidad de gestión y el agente no intenta concretar un compromiso, monto, fecha o siguiente acción verificable.",
+    ),
+    "PECC.1": (
+        "Cumple cuando se refiere a Mibanco, sus personas, canales y procesos de forma profesional y sin desacreditarlos.",
+        "No cumple cuando desacredita a Mibanco, sus colaboradores, procesos o canales, o culpa a terceros para justificar una mala gestión.",
+    ),
+    "PECC.2": (
+        "Cumple cuando, ante un acuerdo, confirma verbalmente las condiciones relevantes de forma clara para el cliente.",
+        "No cumple cuando existe acuerdo o promesa y el agente omite la confirmación verbal necesaria de sus condiciones principales.",
+    ),
+    "PECC.3": (
+        "Cumple cuando la tipificación y observación registradas en la fuente de sistema describen correctamente el resultado de la gestión.",
+        "No cumple cuando la fuente de sistema disponible evidencia tipificación u observación inconsistente con la gestión realizada.",
+    ),
+    "PENC.1": (
+        "Cumple cuando inicia con saludo, se identifica y comunica que actúa en representación de Mibanco.",
+        "No cumple cuando omite de forma material el saludo o la identificación requerida en una apertura audible.",
+    ),
+    "PENC.2": (
+        "Cumple cuando mantiene volumen, velocidad, dicción, modulación y fluidez apropiadas durante la gestión.",
+        "No cumple cuando el tono, velocidad, dicción o muletillas dificultan de forma observable una atención profesional.",
+    ),
+    "PENC.3": (
+        "Cumple cuando utiliza lenguaje claro, ordenado y comprensible, evitando tecnicismos o contradicciones innecesarias.",
+        "No cumple cuando usa un lenguaje confuso, contradictorio o incomprensible que afecta la comprensión del cliente.",
+    ),
+    "PENC.4": (
+        "Cumple cuando finaliza la llamada con una despedida cordial y profesional una vez concluida la gestión.",
+        "No cumple cuando, existiendo cierre audible y sin interrupción técnica, finaliza sin cortesía o con una despedida inadecuada.",
+    ),
+}
+
+for _criterio_mibanco in MIBANCO_PAUTA:
+    _cumple, _no_cumple = MIBANCO_REGLAS_RESULTADO[_criterio_mibanco["codigo_criterio"]]
+    _criterio_mibanco["regla_cumple"] = _cumple
+    _criterio_mibanco["regla_no_cumple"] = _no_cumple
 
 
 MIBANCO_REGLAS_DESCALIFICACION = [

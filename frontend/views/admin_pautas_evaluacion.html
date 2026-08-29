@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pautas de Evaluación</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260829a">
+    <link rel="stylesheet" href="../css/admin_pautas_evaluacion.css?v=20260829-block-description">
+</head>
+<body>
+<main class="pautas-page">
+    <section class="pautas-hero">
+        <div>
+            <span>Configuración de calidad</span>
+            <h2>Pautas de evaluación</h2>
+            <p>Administra versiones, bloques, criterios y alcance por cartera sin alterar evaluaciones históricas.</p>
+        </div>
+        <div class="pautas-actions">
+            <button class="btn-secondary" type="button" onclick="cargarPautasEvaluacion()">Actualizar</button>
+            <button class="btn-secondary" type="button" onclick="usarPlantillaGeneral()">Usar plantilla general</button>
+            <button class="btn-primary" type="button" onclick="nuevaPautaEvaluacion()">Nueva pauta</button>
+        </div>
+    </section>
+
+    <div id="pautasToast" class="pautas-toast"></div>
+
+    <section class="pautas-layout">
+        <aside class="pautas-list-card">
+            <div class="section-head">
+                <h3>Versiones disponibles</h3>
+                <p>Las publicadas se usan solo en nuevas evaluaciones.</p>
+            </div>
+            <div id="listaPautas" class="pautas-list"></div>
+        </aside>
+
+        <section class="pauta-editor-card">
+            <div id="pautaEmpty" class="pauta-empty">
+                <strong>Selecciona una pauta o crea una nueva.</strong>
+                <span>Un borrador puede editarse libremente; una pauta publicada se duplica para crear una nueva versión.</span>
+            </div>
+
+            <form id="formPauta" class="pauta-form oculto" onsubmit="return false;">
+                <div class="editor-head">
+                    <div>
+                        <span id="pautaVersionLabel" class="eyebrow">BORRADOR</span>
+                        <h3 id="pautaEditorTitulo">Nueva pauta</h3>
+                    </div>
+                    <div class="pautas-actions">
+                        <button id="btnDuplicarPauta" class="btn-secondary" type="button" onclick="duplicarPautaActual()">Duplicar versión</button>
+                        <button id="btnArchivarPauta" class="btn-secondary danger" type="button" onclick="archivarPautaActual()">Archivar</button>
+                    </div>
+                </div>
+
+                <input id="idPauta" type="hidden">
+                <details class="editor-section compact-section" open>
+                    <summary><span>Datos generales</span><small>Nombre, vigencia y descripción</small></summary>
+                    <div class="form-grid form-grid-three compact-section-body">
+                    <label class="field field-wide">
+                        <span>Nombre de la pauta</span>
+                        <input id="pautaNombre" type="text" maxlength="160" placeholder="Ej.: Cobranza telefónica - agosto 2026">
+                    </label>
+                    <label class="field">
+                        <span>Vigencia desde</span>
+                        <input id="pautaVigenciaDesde" type="date">
+                    </label>
+                    <label class="field">
+                        <span>Vigencia hasta</span>
+                        <input id="pautaVigenciaHasta" type="date">
+                    </label>
+                    <label class="field field-full">
+                        <span>Descripción</span>
+                        <textarea id="pautaDescripcion" rows="2" placeholder="Propósito, canal o contexto operativo de esta versión."></textarea>
+                    </label>
+                    </div>
+                </details>
+
+                <details class="editor-section compact-section">
+                    <summary><span>Alcance de la pauta</span><small>Define las carteras donde se aplicará</small></summary>
+                    <div class="compact-section-body">
+                    <div class="section-head inline-head">
+                        <div>
+                            <h4>Alcance de la pauta</h4>
+                            <p>Una pauta publicada reemplaza otras pautas activas que se crucen en las mismas carteras.</p>
+                        </div>
+                        <label class="switch-label"><input id="pautaTodasCarteras" type="checkbox" onchange="alternarAlcancePauta()"> Aplicar a todas las carteras</label>
+                    </div>
+                    <label class="field compact-field">
+                        <span>Nombre del grupo opcional</span>
+                        <input id="pautaGrupoNombre" type="text" maxlength="120" placeholder="Ej.: Carteras castigadas">
+                    </label>
+                    <div id="pautaCarteras" class="carteras-checks"></div>
+                    </div>
+                </details>
+
+                <section class="editor-section">
+                    <div class="section-head inline-head">
+                        <div>
+                            <h4>Bloques y criterios</h4>
+                            <p>Selecciona un bloque para revisar sus criterios. Un criterio puede ser puntuable o anulante de bloque.</p>
+                        </div>
+                        <button class="btn-secondary" type="button" onclick="agregarBloquePauta()">Agregar bloque</button>
+                    </div>
+                    <div id="bloquesPauta" class="bloques-pauta"></div>
+                </section>
+
+                <div class="validacion-pauta">
+                    <strong id="pesoPauta">Peso puntuable: 0.00 / 100</strong>
+                    <span id="estadoValidacionPauta">Completa los campos obligatorios antes de publicar.</span>
+                </div>
+
+                <div class="editor-footer">
+                    <button class="btn-secondary" type="button" onclick="validarPautaActual()">Validar borrador</button>
+                    <button id="btnGuardarPauta" class="btn-primary" type="button" onclick="guardarPautaActual()">Guardar borrador</button>
+                    <button id="btnPublicarPauta" class="btn-primary" type="button" onclick="publicarPautaActual()">Publicar pauta</button>
+                </div>
+            </form>
+        </section>
+    </section>
+</main>
+
+<script src="../js/session.js?v=20260825a"></script>
+<script src="../js/app_layout.js?v=20260829-pautas"></script>
+    <script src="../js/admin_pautas_evaluacion.js?v=20260829-block-description"></script>
+</body>
+</html>

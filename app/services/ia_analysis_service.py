@@ -21,6 +21,10 @@ from app.services.mibanco_quality_pauta import (
     obtener_pauta_mibanco,
     resumen_pesos_mibanco,
 )
+from app.services.pautas_evaluacion_service import (
+    aplicar_anulantes_bloque,
+    criterios_pauta_publicada_para_cartera,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT_DIR / ".env")
@@ -126,6 +130,30 @@ SGC_CODIGO_USUARIO = "ERROR_CRITICO_USUARIO_FINAL"
 SGC_CODIGO_CUMPLIMIENTO = "ERROR_CRITICO_CUMPLIMIENTO"
 SGC_CODIGO_NO_CRITICO = "ERROR_NO_CRITICO"
 
+SGC_GRUPO_DESDE_CRITICIDAD_PAUTA = {
+    "ERROR_CRITICO_NEGOCIO": (SGC_GRUPO_NEGOCIO, SGC_CODIGO_NEGOCIO),
+    "ERROR_CRITICO_USUARIO_FINAL": (SGC_GRUPO_USUARIO, SGC_CODIGO_USUARIO),
+    "ERROR_CRITICO_CUMPLIMIENTO": (SGC_GRUPO_CUMPLIMIENTO, SGC_CODIGO_CUMPLIMIENTO),
+    "ERROR_NO_CRITICO": (SGC_GRUPO_NO_CRITICO, SGC_CODIGO_NO_CRITICO),
+}
+
+
+def catalogo_sgc_desde_pauta(item: Dict) -> Dict:
+    """La pauta publicada manda para criterios que no pertenecen al catálogo COPC histórico."""
+    criticidad = str((item or {}).get("criticidad") or "").strip().upper()
+    grupo, codigo = SGC_GRUPO_DESDE_CRITICIDAD_PAUTA.get(
+        criticidad,
+        (SGC_GRUPO_NO_CRITICO, SGC_CODIGO_NO_CRITICO),
+    )
+    return {
+        "grupo_error_sgc": grupo,
+        "grupo_sgc_codigo": codigo,
+        "factor_sgc": str((item or {}).get("nombre") or "Criterio técnico"),
+        "severidad_base": "CRITICA" if codigo != SGC_CODIGO_NO_CRITICO else "MEDIA",
+        "bloque": (item or {}).get("bloque"),
+        "fuente_evidencia": (item or {}).get("fuente_evidencia"),
+    }
+
 SGC_CATALOGO = {
     "1.1": {"grupo_sgc_codigo": SGC_CODIGO_NO_CRITICO, "grupo_error_sgc": SGC_GRUPO_NO_CRITICO, "factor_sgc": "Identificación del gestor", "severidad_base": "LEVE"},
     "1.2": {"grupo_sgc_codigo": SGC_CODIGO_NO_CRITICO, "grupo_error_sgc": SGC_GRUPO_NO_CRITICO, "factor_sgc": "Identificación de la entidad", "severidad_base": "LEVE"},
@@ -196,6 +224,9 @@ def perfil_puede_editar_prompt(perfil: Optional[str]) -> bool:
 
 
 def obtener_pauta_evaluacion(cartera: Optional[str] = None) -> Optional[List[Dict]]:
+    pauta_publicada = criterios_pauta_publicada_para_cartera(cartera)
+    if pauta_publicada:
+        return pauta_publicada
     if es_cartera_mibanco(cartera):
         return obtener_pauta_mibanco()
     return None
@@ -220,8 +251,12 @@ def matriz_desde_pauta_mibanco(pauta: List[Dict]) -> List[Dict]:
             "criticidad": item.get("criticidad"),
             "fuente_evidencia": item.get("fuente_evidencia"),
             "regla_aplicabilidad": item.get("regla_aplicabilidad"),
+            "regla_cumple": item.get("regla_cumple"),
+            "regla_no_cumple": item.get("regla_no_cumple"),
             "puede_descalificar": bool(item.get("puede_descalificar")),
             "requiere_evidencia": bool(item.get("requiere_evidencia")),
+            "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+            "recomendacion": item.get("recomendacion"),
         })
     return matriz
 
@@ -335,7 +370,17 @@ def ia_real_configurada() -> bool:
 
 
 def prompt_base_sistema() -> str:
-    return prompt_copc_cobranza_v2()
+    """Contexto mínimo de compatibilidad; la pauta publicada define la evaluación real."""
+    return """
+Analiza exclusivamente la llamada entregada y responde con JSON válido.
+
+La pauta de monitoreo publicada para la cartera define los criterios, pesos,
+aplicabilidad, criticidad y reglas de evidencia. No sustituyas esa pauta por
+marcos genéricos, no inventes evidencia y no atribuyas al agente frases del
+cliente. Si la fuente requerida no está disponible, indica NO_EVALUABLE; si
+la evidencia o el rol es ambiguo para una falta sensible, indica
+REQUIERE_REVISION.
+""".strip()
 
 
 def prompt_copc_cobranza_v2() -> str:
@@ -1640,11 +1685,13 @@ def analizar_transcripcion_pipeline_v3(
     hechos = extraer_hechos_llamada(client, segmentos, comentario_supervisor=comentario_supervisor)
     criterios = evaluar_criterios_desde_hechos(client, segmentos, hechos, pauta=pauta)
     criterios = normalizar_criterios_pipeline_v3(criterios, segmentos, pauta=pauta)
+    criterios = aplicar_anulantes_bloque(criterios)
     criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios)
     score_antes = score_desde_criterios_pipeline_v3(criterios)
     auditoria = auditar_evaluacion(client, segmentos, hechos, criterios)
     criterios, criterios_corregidos = corregir_criterios_inconsistentes(client, segmentos, hechos, criterios, auditoria, pauta=pauta)
     criterios = normalizar_criterios_pipeline_v3(criterios, segmentos, pauta=pauta)
+    criterios = aplicar_anulantes_bloque(criterios)
     criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios)
     score_despues = score_desde_criterios_pipeline_v3(criterios)
     feedback = generar_feedback_desde_evaluacion(client, segmentos, hechos, criterios, score_despues)
@@ -1681,7 +1728,7 @@ def construir_prompt_analisis_calidad(
 Ajustes adicionales por cartera o configuracion interna:
 {prompt_personalizado}
 
-Estos ajustes pueden complementar el analisis, pero no reemplazan ni reducen la matriz COPC Cobranza.
+Estos ajustes pueden complementar el análisis, pero nunca reemplazan la pauta publicada de la cartera.
 """ if prompt_personalizado else ""
 
     return f"""
@@ -2391,8 +2438,13 @@ def normalizar_criterios_pipeline_v3(
             "criticidad": meta.get("criticidad"),
             "fuente_evidencia": meta.get("fuente_evidencia"),
             "regla_aplicabilidad": meta.get("regla_aplicabilidad"),
+            "regla_cumple": meta.get("regla_cumple"),
+            "regla_no_cumple": meta.get("regla_no_cumple"),
             "puede_descalificar": bool(meta.get("puede_descalificar")),
             "requiere_evidencia": bool(meta.get("requiere_evidencia")),
+            "tipo_criterio": meta.get("tipo_criterio") or "PUNTUABLE",
+            "anula_bloque": str(meta.get("tipo_criterio") or "").upper() == "ANULANTE_BLOQUE",
+            "recomendacion_configurada": meta.get("recomendacion"),
             "posible_descalificacion": bool(raw.get("posible_descalificacion")),
             "justificacion_descalificacion": raw.get("justificacion_descalificacion"),
             "evidencia_textual": evidencia_textual,
@@ -3399,6 +3451,36 @@ def score_desde_criterios_pipeline_v3(criterios: List[Dict]) -> Dict:
     }
 
 
+def metadatos_pauta_pipeline_v3(pauta: Optional[List[Dict]]) -> Dict:
+    if not pauta:
+        return {"nombre": "COPC_SGC", "version": "2.0", "pesos": None, "snapshot": None}
+    bloques: Dict[str, float] = {}
+    for criterio in pauta:
+        bloque = str(criterio.get("bloque") or criterio.get("subcategoria") or "Sin bloque")
+        if str(criterio.get("tipo_criterio") or "PUNTUABLE").upper() != "PUNTUABLE":
+            bloques.setdefault(bloque, 0.0)
+            continue
+        bloques[bloque] = round(bloques.get(bloque, 0.0) + float(criterio.get("peso") or 0), 2)
+    primero = pauta[0] if pauta else {}
+    nombre = str(primero.get("pauta_nombre") or "MIBANCO").strip()
+    version = primero.get("pauta_version") or "1.0"
+    snapshot = [{
+        "codigo_criterio": item.get("codigo_criterio") or item.get("codigo"),
+        "bloque": item.get("bloque"),
+        "nombre": item.get("nombre"),
+        "peso": item.get("peso"),
+        "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+        "criticidad": item.get("criticidad"),
+        "fuente_evidencia": item.get("fuente_evidencia"),
+    } for item in pauta]
+    return {
+        "nombre": nombre,
+        "version": version,
+        "pesos": {**bloques, "TOTAL": round(sum(bloques.values()), 2)},
+        "snapshot": snapshot,
+    }
+
+
 def construir_respuesta_pipeline_v3(
     *,
     segmentos: List[Dict],
@@ -3478,15 +3560,18 @@ def construir_respuesta_pipeline_v3(
         for item in criterios
         if item.get("estado") not in {"CUMPLE", "NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
     )
+    metadatos_pauta = metadatos_pauta_pipeline_v3(pauta)
     descalificacion = detectar_descalificacion_mibanco_v3(criterios, segmentos) if pauta else {"descalificada": False}
     if descalificacion.get("requiere_revision"):
         requiere_revision = True
         motivos_revision = [*motivos_revision, descalificacion.get("motivo") or "Posible falta descalificante requiere revisión humana."]
     return {
-        "version_evaluacion": "MIBANCO_1.0" if pauta else "2.0",
+        "version_evaluacion": f"{metadatos_pauta['nombre']}_{metadatos_pauta['version']}" if pauta else "2.0",
         "motor_evaluacion": "PIPELINE_MULTIPASO_V3",
-        "pauta": "MIBANCO" if pauta else "COPC_SGC",
-        "pauta_pesos": resumen_pesos_mibanco() if pauta else None,
+        "pauta": metadatos_pauta["nombre"],
+        "pauta_version": metadatos_pauta["version"],
+        "pauta_pesos": metadatos_pauta["pesos"],
+        "pauta_snapshot": metadatos_pauta["snapshot"],
         "resultado_evaluacion": {
             "score_tecnico": score,
             "score_maximo": 100,
@@ -3539,7 +3624,8 @@ def construir_respuesta_pipeline_v3(
             "score_antes_auditoria": score_antes,
             "score_despues_auditoria": score_despues,
             "cartera": cartera,
-            "pauta": "MIBANCO" if pauta else "COPC_SGC",
+            "pauta": metadatos_pauta["nombre"],
+            "pauta_version": metadatos_pauta["version"],
         },
         "validaciones": {
             "suma_dimensiones_correcta": True,
@@ -3552,7 +3638,7 @@ def construir_respuesta_pipeline_v3(
 
 def criterio_pipeline_a_v2(item: Dict) -> Dict:
     codigo = str(item.get("codigo") or "")
-    catalogo_sgc = obtener_catalogo_sgc(codigo)
+    catalogo_sgc = obtener_catalogo_sgc(codigo) or catalogo_sgc_desde_pauta(item)
     grupo_sgc = catalogo_sgc.get("grupo_error_sgc") or SGC_GRUPO_NO_CRITICO
     factor_sgc = catalogo_sgc.get("factor_sgc") or item.get("nombre") or "Criterio tecnico"
     evidencia_textual = item.get("evidencia_textual") if isinstance(item.get("evidencia_textual"), list) else []
@@ -3593,6 +3679,9 @@ def criterio_pipeline_a_v2(item: Dict) -> Dict:
         "fuente_evidencia": item.get("fuente_evidencia") or catalogo_sgc.get("fuente_evidencia"),
         "regla_aplicabilidad": item.get("regla_aplicabilidad"),
         "requiere_evidencia": bool(item.get("requiere_evidencia")),
+        "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+        "bloque_anulado": bool(item.get("bloque_anulado")),
+        "motivo_bloque_anulado": item.get("motivo_bloque_anulado") or "",
         "posible_descalificacion": bool(item.get("posible_descalificacion")),
         "justificacion_descalificacion": item.get("justificacion_descalificacion"),
         "factor": factor_sgc,
@@ -4241,6 +4330,10 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
     if catalogo_sgc:
         grupo_sgc = catalogo_sgc["grupo_error_sgc"]
         factor_sgc = catalogo_sgc["factor_sgc"]
+    elif str(criterio.get("criticidad") or "").strip():
+        catalogo_sgc = catalogo_sgc_desde_pauta(criterio)
+        grupo_sgc = catalogo_sgc["grupo_error_sgc"]
+        factor_sgc = catalogo_sgc["factor_sgc"]
     else:
         sgc = clasificar_item_sgc({
             "codigo_criterio": codigo_final,
@@ -4282,6 +4375,9 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
         "fuente_evidencia": criterio.get("fuente_evidencia") or catalogo_sgc.get("fuente_evidencia"),
         "regla_aplicabilidad": criterio.get("regla_aplicabilidad"),
         "requiere_evidencia": bool(criterio.get("requiere_evidencia")),
+        "tipo_criterio": criterio.get("tipo_criterio") or "PUNTUABLE",
+        "bloque_anulado": bool(criterio.get("bloque_anulado")),
+        "motivo_bloque_anulado": criterio.get("motivo_bloque_anulado") or "",
         "posible_descalificacion": bool(criterio.get("posible_descalificacion")),
         "justificacion_descalificacion": criterio.get("justificacion_descalificacion"),
         "peso": peso,

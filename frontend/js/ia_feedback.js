@@ -56,7 +56,6 @@ document.addEventListener("DOMContentLoaded", () => {
     cargarHistorialIa();
     activarVistaReporteriaIa({ scroll: false });
     cargarReporteriaIa();
-    cargarPromptIa();
     inicializarCabeceraReporteIa();
 });
 
@@ -75,7 +74,7 @@ function prepararFormularioIa() {
 
     const comentario = document.getElementById("comentarioIa");
     if (comentario) {
-        comentario.placeholder = "Ejemplo: revisar bajo COPC cobranza si hubo diagnostico, negociacion escalonada, cierre 3C y algun riesgo critico.";
+        comentario.placeholder = "Ejemplo: revisar diagnóstico, negociación, cierre y posibles riesgos según la pauta de la cartera.";
     }
 
     audioInput.addEventListener("change", () => {
@@ -7266,7 +7265,10 @@ function mostrarVistaReportesIa() {
 
 function mostrarVistaPromptIa() {
     activarVistaReporteriaIa({ view: "prompt" });
-    cargarReporteriaIa();
+}
+
+function abrirAdministracionPautasIa() {
+    window.location.href = "/frontend/views/admin_pautas_evaluacion.html";
 }
 
 async function cargarPromptIa() {
@@ -7695,6 +7697,7 @@ window.exportarReporteIa = exportarReporteIa;
 window.limpiarFiltrosReporteIa = limpiarFiltrosReporteIa;
 window.toggleFiltrosResumenIa = toggleFiltrosResumenIa;
 window.aplicarFiltrosResumenIa = aplicarFiltrosResumenIa;
+window.abrirAdministracionPautasIa = abrirAdministracionPautasIa;
 window.abrirPromptIa = abrirPromptIa;
 window.cerrarPromptIa = cerrarPromptIa;
 window.mostrarSeccionPromptIa = mostrarSeccionPromptIa;

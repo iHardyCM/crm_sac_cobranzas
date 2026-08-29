@@ -51,6 +51,11 @@
             title: "Metas por Agente",
             subtitle: "Configuracion de metas mensuales individuales"
         },
+        "admin_pautas_evaluacion.html": {
+            key: "pautas_evaluacion_admin",
+            title: "Pautas de Evaluación",
+            subtitle: "Versiones y criterios aplicables por cartera"
+        },
         "ritmo_meta.html": {
             key: "ritmo_meta",
             title: "Ritmo de Meta",
@@ -155,6 +160,13 @@
         label: "Metas Agentes",
         href: "admin_metas_agentes.html",
         icon: iconTarget()
+    });
+
+    NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
+        key: "pautas_evaluacion_admin",
+        label: "Pautas de Evaluación",
+        href: "admin_pautas_evaluacion.html",
+        icon: iconClipboard()
     });
 
     document.addEventListener("DOMContentLoaded", initCrmLayout);
