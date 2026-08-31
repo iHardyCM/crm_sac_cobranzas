@@ -339,3 +339,18 @@ body {
         grid-column: 1;
     }
 }
+
+/* 20260829: Apple-design home surface; preserves cards, access and role logic. */
+body { background: #f5f7fa; color: #13243a; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.home-topbar { background: rgba(255,255,255,.78); border-bottom-color: rgba(148,163,184,.24); backdrop-filter: blur(20px) saturate(145%); }
+.brand h1 { letter-spacing: -.035em; }
+.user-box button, .module-card button { border-color: rgba(148,163,184,.32); border-radius: 10px; background: rgba(255,255,255,.78); transition: transform .14s ease, background .14s ease; }
+.user-box button:active, .module-card button:active { transform: scale(.97); }
+.hero-panel { border: 1px solid rgba(255,255,255,.22); border-radius: 20px; background: linear-gradient(135deg, #0a315a, #126dc8); box-shadow: 0 22px 48px rgba(10,63,116,.18); }
+.hero-panel h2 { font-size: 34px; letter-spacing: -.045em; }
+.today-box { border-radius: 14px; background: rgba(255,255,255,.12); backdrop-filter: blur(12px); }
+.access-strip article, .module-card, .roadmap-card { border-color: rgba(148,163,184,.26); border-radius: 15px; background: rgba(255,255,255,.88); box-shadow: 0 11px 30px rgba(15,23,42,.06); }
+.module-card { transition: transform .18s ease, box-shadow .18s ease; }
+.module-card:hover { transform: translateY(-2px); box-shadow: 0 17px 36px rgba(15,23,42,.10); }
+.module-card.destacado { border-color: rgba(10,102,216,.38); box-shadow: 0 16px 36px rgba(10,102,216,.13); }
+.module-icon { border-radius: 13px; background: #eaf3ff; color: #0a66d8; }

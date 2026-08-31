@@ -377,3 +377,77 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Matriz: se prioriza lectura longitudinal y la primera columna operativa. */
+body.crm-shell .matriz-page { max-width: 1700px; padding-top: 30px; }
+body.crm-shell .matriz-toolbar { border-radius: 18px; background: linear-gradient(135deg,#ffffff,#f6faff); }
+body.crm-shell .metric-switch { padding: 4px; border: 1px solid #dfe8f2; border-radius: 11px; background: #f4f7fb; }
+body.crm-shell .metric-switch button { border-radius: 8px; }
+body.crm-shell .matriz-summary { gap: 12px; }
+body.crm-shell .matriz-card { border-radius: 18px; border-color: rgba(148,163,184,.24); box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .matriz-card-head { padding: 18px 20px 14px; }
+body.crm-shell .matriz-table-wrap { border: 1px solid #e1e9f2; border-radius: 13px; }
+body.crm-shell .matriz-page-table th { position: sticky; top: 0; z-index: 4; background: #f8fafc; }
+body.crm-shell .matriz-page-table th.agent-col { background: #0b5fc3; }
+body.crm-shell .matriz-page-table td.agent-col { background: #fbfdff; }
+body.crm-shell .matriz-page-table tbody tr:hover td { filter: brightness(.985); }
+
+/* Matriz: el cero es información secundaria; el valor operativo conserva el foco. */
+body.crm-shell .matriz-page { gap: 14px; }
+body.crm-shell .matriz-summary { gap: 8px; }
+body.crm-shell .matriz-alertas { gap: 8px; }
+body.crm-shell .alerta-critica { min-height: 72px; border-radius: 12px; }
+body.crm-shell .matriz-card { padding: 16px; }
+body.crm-shell .matriz-card-head { margin: 0 10px 12px; }
+body.crm-shell .matriz-table-wrap { border-color: #dfe7f0; border-radius: 13px; }
+body.crm-shell .matriz-page-table th,
+body.crm-shell .matriz-page-table td { border-right: 1px solid rgba(221,229,238,.75); }
+body.crm-shell .matriz-page-table th { font-weight: 700; }
+body.crm-shell .matriz-page-table td { font-variant-numeric: tabular-nums; }
+body.crm-shell .matriz-page-table .agent-col { min-width: 420px; }
+body.crm-shell .matriz-page-table td.agent-col { background: #fbfdff; }
+body.crm-shell .heat-zero {
+    background: #f1f4f8;
+    color: #708096;
+    font-weight: 500;
+}
+body.crm-shell .heat-low { background: #fff0f2; color: #bd2540; }
+body.crm-shell .heat-mid { background: #fff5d7; color: #8a600d; }
+body.crm-shell .heat-high { background: #e2f8eb; color: #087443; }
+body.crm-shell .total-ahead,
+body.crm-shell .total-new { background: #e2f8eb; color: #087443; }
+body.crm-shell .total-watch,
+body.crm-shell .total-mid { background: #fff5d7; color: #8a600d; }
+body.crm-shell .total-behind { background: #fff0f2; color: #bd2540; }
+body.crm-shell .summary-reference { background: #edf6ff; color: #145989; }
+body.crm-shell .var-up { background: #e2f8eb; color: #087443; }
+body.crm-shell .var-down { background: #fff0f2; color: #bd2540; }
+body.crm-shell .var-flat { background: #f1f4f8; color: #708096; }
+
+/* En foco, la matriz conserva contexto visual durante el desplazamiento horizontal. */
+body.crm-shell.crm-focus-mode .matriz-page {
+    min-height: 100vh;
+    padding: 16px 18px 22px !important;
+    background: #f5f7fa;
+}
+body.crm-shell.crm-focus-mode .matriz-card {
+    padding: 12px;
+    border: 1px solid #dfe7f0;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(15,23,42,.06);
+}
+body.crm-shell.crm-focus-mode .matriz-card-head {
+    position: sticky;
+    top: 0;
+    z-index: 9;
+    margin: 0;
+    padding: 8px 10px 12px;
+    background: #fff;
+}
+body.crm-shell .matriz-page-table th.agent-col,
+body.crm-shell .matriz-page-table td.agent-col {
+    box-shadow: 5px 0 12px rgba(15,38,65,.08), 1px 0 0 #ceddea;
+}
+body.crm-shell .matriz-page-table th.agent-col { z-index: 7; }
+body.crm-shell .matriz-page-table td.agent-col { z-index: 6; }

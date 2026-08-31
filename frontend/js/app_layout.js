@@ -98,6 +98,16 @@
         },
     };
 
+    const FOCUS_MODULES = new Set([
+        "corporativo",
+        "pdp_hoy",
+        "pagos",
+        "compromisos",
+        "gestiones",
+        "telefonos",
+        "control_horario"
+    ]);
+
     const NAV_GROUPS = [
         {
             title: "General",
@@ -195,6 +205,7 @@
         document.body.insertAdjacentHTML("afterbegin", renderTopbar(meta));
         document.body.insertAdjacentHTML("afterbegin", renderSidebar(activeKey));
         asegurarCrmDialog();
+        document.addEventListener("keydown", manejarAtajoFoco);
     }
 
     function asegurarCrmDialog() {
@@ -324,6 +335,7 @@
             <header class="crm-topbar">
                 <div class="crm-topbar-left">
                     <button class="crm-menu-button" type="button" onclick="crmToggleSidebar()" title="Contraer o expandir menú">${iconMenu()}</button>
+                    ${FOCUS_MODULES.has(meta.key) ? `<button id="crmFocusButton" class="crm-focus-button" type="button" onclick="crmToggleFocus()" title="Enfocar área de trabajo" aria-pressed="false">${iconFocus()}<span>Enfocar</span></button>` : ""}
                     <img class="crm-topbar-logo" src="logo_i_biznescob.png" alt="Biznescob">
                     <div>
                         <h1>${escapeHtml(meta.title)}</h1>
@@ -339,6 +351,22 @@
                 </div>
             </header>
         `;
+    }
+
+    window.crmToggleFocus = function () {
+        const activo = document.body.classList.toggle("crm-focus-mode");
+        const button = document.getElementById("crmFocusButton");
+        if (button) {
+            button.setAttribute("aria-pressed", String(activo));
+            button.title = activo ? "Salir del modo foco (Esc)" : "Enfocar área de trabajo";
+            button.querySelector("span").textContent = activo ? "Salir foco" : "Enfocar";
+        }
+    };
+
+    function manejarAtajoFoco(event) {
+        if (event.key !== "Escape" || !document.body.classList.contains("crm-focus-mode")) return;
+        if (!document.getElementById("crmDialogOverlay")?.classList.contains("oculto")) return;
+        window.crmToggleFocus();
     }
 
     function currentPage() {
@@ -393,7 +421,6 @@
         if (key === "reportes") return true;
         if (key === "documentos") return puedeAccederDocumentos();
         if (key === "admin") return esPerfilGerencial();
-        if (key === "compromisos" && esPerfilGerencial()) return false;
         if (esPerfilGerencial()) return true;
 
         const tipo = tipoUsuario();
@@ -491,6 +518,10 @@
 
     function iconMenu() {
         return svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
+    }
+
+    function iconFocus() {
+        return svg('<path d="M8 4H4v4M16 4h4v4M20 16v4h-4M4 16v4h4"/>');
     }
 
     function iconHome() {

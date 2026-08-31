@@ -233,3 +233,19 @@ td small {
         gap: 12px;
     }
 }
+
+/* Administración: separación clara entre asignar, revisar y guardar. */
+body.crm-shell .admin-super-page { max-width: 1560px; padding-top: 30px; }
+body.crm-shell .admin-hero { border-radius: 18px; background: linear-gradient(135deg,#ffffff,#f6faff); }
+body.crm-shell .admin-grid { gap: 16px; }
+body.crm-shell .card { border-radius: 17px; border-color: rgba(148,163,184,.24); box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .section-head { padding: 18px 20px 14px; }
+body.crm-shell .field { margin-inline: 20px; }
+body.crm-shell .field select { border-radius: 10px; }
+body.crm-shell .cartera-checks { margin: 16px 20px; border-radius: 13px; }
+body.crm-shell .actions { padding: 0 20px 20px; }
+body.crm-shell .btn-primary { border-radius: 10px; background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.17); }
+body.crm-shell .btn-secondary { border-radius: 10px; }
+body.crm-shell .table-wrap { margin: 0 20px 20px; border-radius: 13px; }
+body.crm-shell .table-wrap thead th { position: sticky; top: 0; z-index: 1; }
+body.crm-shell .note-card { border: 1px solid #dbe9f8; border-radius: 14px; background: #f7fbff; }

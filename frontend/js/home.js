@@ -186,6 +186,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: true
             },
             {
+                sigla: "PD",
+                titulo: "Compromisos",
+                descripcion: "Consulta y gestiona compromisos del mes desde la vista operativa.",
+                ruta: "compromisos.html",
+                destacado: true
+            },
+            {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",
                 descripcion: "Vista global de PDP hoy para seguimiento por cartera y agente.",

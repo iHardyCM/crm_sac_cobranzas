@@ -1337,3 +1337,18 @@ body.crm-shell .contenedor-creditos {
 body.crm-shell .clientes-search-card-main {
     width: 100%;
 }
+
+/* Consulta: búsqueda y lectura de operaciones como un único recorrido. */
+body.crm-shell .clientes-page { padding-top: 30px !important; }
+body.crm-shell .clientes-search-card { border-radius: 19px; background: linear-gradient(135deg,#ffffff,#f5faff); box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .clientes-search-row input { border-radius: 11px; }
+body.crm-shell .clientes-search-row .btn-primary { border-radius: 11px; background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.17); }
+body.crm-shell .clientes-search-row .btn-secondary { border-radius: 11px; }
+body.crm-shell .clientes-hero-tags span { border-radius: 999px; }
+body.crm-shell .resultado-panel { border-radius: 18px; }
+body.crm-shell .cliente-header,
+body.crm-shell .cliente-info,
+body.crm-shell .grupo-kpis,
+body.crm-shell .contenedor-creditos { border-radius: 16px; }
+body.crm-shell .credito-card-v2 { border-radius: 15px; box-shadow: 0 10px 26px rgba(15,23,42,.055); }
+body.crm-shell .metric-item { border-radius: 11px; }

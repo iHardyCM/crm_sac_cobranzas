@@ -1037,3 +1037,164 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Detail becomes an anchored, interruptible contextual drawer instead of a permanent column. */
+.telefonos-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3900;
+  background: rgba(7, 24, 45, .16);
+}
+body.crm-shell .telefonos-layout-grid { grid-template-columns: minmax(0, 1fr); }
+body.crm-shell .telefonos-side-column {
+    position: fixed;
+    z-index: 4000;
+    top: calc(var(--crm-topbar-height) + 12px);
+    right: 14px;
+    width: min(410px, calc(100vw - 28px));
+    max-height: calc(100dvh - var(--crm-topbar-height) - 26px);
+    overflow-y: auto;
+    padding: 2px;
+    transform: translateX(calc(100% + 28px));
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .34s cubic-bezier(.2, .8, .2, 1), opacity .2s ease;
+}
+body.crm-shell.telefonos-drawer-open .telefonos-side-column {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+body.crm-shell .telefonos-detail-card {
+    position: static;
+    overflow: hidden;
+    border-radius: 19px;
+    background: rgba(255,255,255,.96);
+}
+body.crm-shell .telefonos-phone-main { margin: 14px 0 10px; }
+.telefono-detail-caption { display: block; margin-top: 4px; color: #6b7b8d; font-size: 11px; font-weight: 700; }
+.telefonos-detail-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 18px; }
+.telefonos-detail-actions button {
+    height: 38px;
+    border: 1px solid rgba(148,163,184,.35);
+    border-radius: 10px;
+    background: #fff;
+    color: #15588e;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform .14s ease, background .14s ease, opacity .14s ease;
+}
+.telefonos-detail-actions button.primary { border-color: #075fc8; background: linear-gradient(180deg,#1476e8,#075fc8); color: #fff; }
+.telefonos-detail-actions button:active { transform: scale(.96); }
+.telefonos-detail-actions button:disabled { cursor: not-allowed; opacity: .45; }
+body.crm-shell .telefonos-related-card { margin-top: 12px; background: rgba(255,255,255,.96); }
+@media (max-width: 760px) {
+    body.crm-shell .telefonos-side-column { top: 8px; right: 8px; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .telefonos-drawer-backdrop { background: rgba(7,24,45,.24); }
+}
+@media (prefers-reduced-motion: reduce) { body.crm-shell .telefonos-side-column { transition: none; } }
+
+/* 20260829: decision-first phone validation flow. Data remains available in the detail pane. */
+body.crm-shell .telefonos-container { max-width: 1600px; }
+body.crm-shell .telefonos-page-header { margin: 4px 0 4px; align-items: center; }
+body.crm-shell .telefonos-page-header h2 { font-size: 28px; letter-spacing: -.04em; }
+body.crm-shell .telefonos-meta { padding: 8px 12px; border: 1px solid rgba(148,163,184,.24); border-radius: 12px; background: rgba(255,255,255,.58); }
+body.crm-shell .telefonos-search-card { padding: 14px; border-radius: 18px; background: rgba(255,255,255,.76); backdrop-filter: blur(18px); }
+body.crm-shell .telefonos-search-row { grid-template-columns: minmax(0,1fr) auto auto auto; gap: 10px; }
+body.crm-shell .telefonos-search-box input { height: 50px; border-radius: 13px; padding-left: 44px; font-size: 15px; }
+body.crm-shell .telefonos-search-box input:focus { border-color: #0a66d8; box-shadow: 0 0 0 4px rgba(10,102,216,.13); }
+body.crm-shell .telefonos-btn { height: 50px; border-radius: 12px; }
+body.crm-shell .telefonos-btn.primary { background: linear-gradient(180deg,#1476e8,#075fc8); border-color: #075fc8; box-shadow: 0 8px 18px rgba(7,95,200,.18); }
+body.crm-shell #btnToggleFiltros { min-width: 102px; }
+body.crm-shell #btnToggleFiltros.is-active { border-color: #0a66d8; color: #075fc8; background: #eff6ff; }
+body.crm-shell #contadorFiltros { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; border-radius: 999px; background: #e6eef8; font-size: 10px; }
+body.crm-shell .telefonos-filters-row { grid-template-columns: repeat(5, minmax(130px,1fr)); margin-top: 12px; padding: 13px; border: 1px solid rgba(148,163,184,.22); border-radius: 13px; background: rgba(248,250,252,.85); }
+body.crm-shell .telefonos-filter select { border-radius: 9px; }
+body.crm-shell #panelResumen { overflow: hidden; border-radius: 18px; }
+body.crm-shell .telefonos-section-title { padding: 18px 20px 0; }
+body.crm-shell .telefonos-client-grid { grid-template-columns: 1.05fr .7fr 1.7fr 1fr; margin: 14px 20px 0; border-radius: 13px; }
+body.crm-shell .telefonos-client-grid div { padding: 14px 16px; background: #fbfdff; }
+body.crm-shell .telefonos-client-grid strong { color: #163b63; }
+body.crm-shell .telefonos-kpi-grid { grid-template-columns: repeat(5,minmax(0,1fr)); margin: 14px 20px 0; gap: 10px; }
+body.crm-shell .telefonos-kpi-card { min-height: 76px; border-radius: 13px; background: rgba(255,255,255,.9); }
+body.crm-shell .telefonos-kpi-icon { width: 36px; height: 36px; flex-basis: 36px; }
+body.crm-shell .telefonos-kpi-card strong { font-size: 19px; }
+body.crm-shell .telefonos-alert { margin: 14px 20px 18px; border-radius: 12px; }
+body.crm-shell .telefonos-layout-grid { grid-template-columns: minmax(0,1fr) 350px; gap: 16px; }
+body.crm-shell .telefonos-table-card { border-radius: 18px; }
+body.crm-shell .telefonos-table-header { padding: 18px 20px 14px; }
+body.crm-shell .telefonos-table-header h3 { font-size: 17px; }
+body.crm-shell .telefonos-table-wrapper { width: calc(100% - 32px); margin: 0 16px; border-radius: 13px; }
+body.crm-shell .telefonos-table { min-width: 780px; }
+body.crm-shell .telefonos-table th { background: #f8fafc; color: #526174; }
+body.crm-shell .telefonos-table th, body.crm-shell .telefonos-table td { padding: 10px 11px; }
+body.crm-shell .telefonos-table tbody tr { cursor: pointer; }
+body.crm-shell .telefonos-table tbody tr:hover { background: #f3f8ff; }
+body.crm-shell .telefonos-signals { display: flex; flex-direction: column; gap: 4px; min-width: 105px; }
+body.crm-shell .telefonos-signals > span { display: flex; align-items: center; justify-content: space-between; gap: 5px; color: #64748b; font-size: 10px; font-weight: 800; }
+body.crm-shell .telefonos-signals .badge { min-width: 28px; padding: 2px 5px; font-size: 9px; }
+body.crm-shell .telefonos-detail-card { position: sticky; top: calc(var(--crm-topbar-height) + 16px); border-radius: 18px; box-shadow: 0 18px 44px rgba(15,23,42,.10); }
+body.crm-shell .telefonos-related-card { border-radius: 16px; }
+body.crm-shell .telefonos-detail-header button { border-radius: 9px; }
+body.crm-shell .telefonos-phone-main { padding: 14px; border-radius: 13px; background: #f8fbff; }
+body.crm-shell .telefonos-estado-operativo { border-radius: 12px; }
+
+/* Comparación: el detalle es opcional, la tabla conserva el protagonismo. */
+body.crm-shell .telefonos-layout-grid { grid-template-columns: minmax(0, 1fr); }
+body.crm-shell .telefonos-table tbody tr.is-selected {
+    background: #edf6ff;
+    box-shadow: inset 3px 0 0 #0a66d8;
+}
+body.crm-shell .mejor-opcion-telefonos {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 12px 16px 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(10,102,216,.22);
+    border-radius: 13px;
+    background: linear-gradient(135deg,#f4f9ff,#fbfdff);
+}
+body.crm-shell .mejor-opcion-telefonos > div { display: grid; gap: 2px; min-width: 0; }
+body.crm-shell .mejor-opcion-telefonos span {
+    color: #5d6f85;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+body.crm-shell .mejor-opcion-telefonos strong { color: #0d2748; font-size: 1rem; }
+body.crm-shell .mejor-opcion-telefonos small {
+    overflow: hidden;
+    color: #60738a;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body.crm-shell .mejor-opcion-telefonos button {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid #b9d7f5;
+    border-radius: 9px;
+    background: #fff;
+    color: #075ba8;
+    font-weight: 700;
+}
+body.crm-shell .mejor-opcion-telefonos button:hover { background: #eaf4ff; }
+@media (max-width: 1050px) {
+    body.crm-shell .telefonos-layout-grid { grid-template-columns: 1fr; }
+    body.crm-shell .telefonos-detail-card { position: static; }
+}
+@media (max-width: 760px) {
+    body.crm-shell .telefonos-search-row { grid-template-columns: 1fr 1fr; }
+    body.crm-shell .telefonos-search-box { grid-column: 1 / -1; }
+    body.crm-shell .telefonos-filters-row, body.crm-shell .telefonos-kpi-grid { grid-template-columns: 1fr; }
+    body.crm-shell .telefonos-client-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    body.crm-shell .mejor-opcion-telefonos { align-items: flex-start; margin-inline: 10px; }
+    body.crm-shell .mejor-opcion-telefonos small { white-space: normal; }
+}

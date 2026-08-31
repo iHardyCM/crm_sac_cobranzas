@@ -6,10 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Layout global del CRM -->
-    <link rel="stylesheet" href="../css/app_layout.css">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
 
     <!-- CSS propio de la vista -->
-    <link rel="stylesheet" href="../css/telefonos.css?v=20260828b">
+    <link rel="stylesheet" href="../css/telefonos.css?v=20260829-apple-spacing">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 
 <body>
@@ -41,10 +42,13 @@
             </div>
 
             <button id="btnBuscar" class="telefonos-btn primary">Buscar</button>
+            <button id="btnToggleFiltros" class="telefonos-btn secondary" type="button" aria-expanded="false">
+                Filtros <span id="contadorFiltros">5</span>
+            </button>
             <button id="btnLimpiar" class="telefonos-btn secondary">Limpiar</button>
         </div>
 
-        <div class="telefonos-filters-row">
+        <div id="panelFiltrosTelefonos" class="telefonos-filters-row hidden" aria-label="Filtros de búsqueda">
             <div class="telefonos-filter">
                 <label>Cartera</label>
                 <select id="filtroCartera">
@@ -175,20 +179,23 @@
                     <span id="contadorTelefonos">0 registros</span>
                 </div>
 
+                <div id="mejorOpcionTelefonos" class="mejor-opcion-telefonos hidden">
+                    <div>
+                        <span>Mejor opción</span>
+                        <strong id="mejorOpcionNumero">--</strong>
+                        <small id="mejorOpcionContexto">Selecciona un teléfono para ver más detalle.</small>
+                    </div>
+                    <button id="btnVerMejorOpcion" type="button">Ver detalle</button>
+                </div>
+
                 <div class="telefonos-table-wrapper">
                     <table class="telefonos-table">
                         <thead>
                             <tr>
                                 <th>Prioridad</th>
                                 <th>Teléfono</th>
-                                <th>Cliente</th>
-                                <th>Cartera</th>
-                                <th>Tipo</th>
-                                <th>WhatsApp</th>
-                                <th>Timbra</th>
-                                <th>Osiptel</th>
-                                <th>Origen</th>
-                                <th>Condición</th>
+                                <th>Cliente y cartera</th>
+                                <th>Señales</th>
                                 <th>Score</th>
                                 <th>Recomendación</th>
                                 <th>Acciones</th>
@@ -197,7 +204,7 @@
 
                         <tbody id="tbodyTelefonos">
                             <tr>
-                                <td colspan="13" class="telefonos-empty-table">
+                                <td colspan="7" class="telefonos-empty-table">
                                     Realiza una búsqueda para ver teléfonos activos.
                                 </td>
                             </tr>
@@ -222,7 +229,16 @@
 
                 <div class="telefonos-phone-main">
                     <div id="detallePhoneCircle" class="telefonos-phone-circle">☎</div>
-                    <strong id="detalleTelefono">--</strong>
+                    <div>
+                        <strong id="detalleTelefono">--</strong>
+                        <span class="telefono-detail-caption">Teléfono seleccionado</span>
+                    </div>
+                </div>
+
+                <div class="telefonos-detail-actions" aria-label="Acciones del teléfono seleccionado">
+                    <button id="btnCopiarDetalle" type="button">Copiar</button>
+                    <button id="btnLlamarTelefono" type="button">Llamar</button>
+                    <button id="btnWhatsappTelefono" type="button" class="primary">WhatsApp</button>
                 </div>
 
                 <div class="telefonos-detail-list">
@@ -279,11 +295,13 @@
 
 </main>
 
+<div id="telefonosDrawerBackdrop" class="telefonos-drawer-backdrop hidden" aria-hidden="true"></div>
+
 <!-- Layout global del CRM -->
-<script src="../js/app_layout.js?v=20260828a"></script>
+<script src="../js/app_layout.js?v=20260830-focus"></script>
 
 <!-- JS propio de la vista -->
-<script src="../js/telefonos.js?v=20260828b"></script>
+<script src="../js/telefonos.js?v=20260829-apple-compare"></script>
 
 </body>
 </html>

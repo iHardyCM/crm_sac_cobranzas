@@ -621,3 +621,84 @@ td {
 .modal-head {
     padding: 15px 18px;
 }
+
+/* Carga operativa y auditoría: menos ruido, acciones más evidentes. */
+body.crm-shell .container { max-width: 1680px; padding-top: 30px; }
+body.crm-shell .page-title { margin-bottom: 18px; }
+body.crm-shell .page-title h1 { letter-spacing: -.035em; }
+body.crm-shell .top-grid { gap: 16px; }
+body.crm-shell .panel {
+    overflow: hidden;
+    border-color: rgba(148,163,184,.24);
+    border-radius: 18px;
+    background: rgba(255,255,255,.9);
+    box-shadow: 0 14px 34px rgba(15,23,42,.06);
+}
+body.crm-shell .panel-title {
+    padding: 17px 18px 13px;
+    border-bottom: 1px solid #e8eef5;
+    color: #142b49;
+}
+body.crm-shell .form-grid { gap: 14px; }
+body.crm-shell .field select,
+body.crm-shell .field input,
+body.crm-shell .file-control,
+body.crm-shell .history-head input { border-color: #d5e0ec; border-radius: 10px; }
+body.crm-shell .field select:focus,
+body.crm-shell .field input:focus,
+body.crm-shell .history-head input:focus {
+    outline: none;
+    border-color: #0a66d8;
+    box-shadow: 0 0 0 3px rgba(10,102,216,.12);
+}
+body.crm-shell .file-control label {
+    background: #eef6ff;
+    color: #195889;
+}
+body.crm-shell .form-actions .btn-primary {
+    min-width: 150px;
+    border-radius: 10px;
+    background: linear-gradient(180deg,#1476e8,#075fc8);
+    box-shadow: 0 8px 18px rgba(7,95,200,.17);
+}
+body.crm-shell .summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+body.crm-shell .summary-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 13px;
+    box-shadow: none;
+}
+body.crm-shell .summary-card::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3px;
+    background: currentColor;
+    opacity: .34;
+}
+body.crm-shell .summary-card.blue { border-color: #bfdbfe; }
+body.crm-shell .summary-card.green { border-color: #b7e7c7; }
+body.crm-shell .summary-card.orange { border-color: #f7d7a5; }
+body.crm-shell .summary-card.purple { border-color: #ddd1fa; }
+body.crm-shell .history-head { padding: 17px 18px; }
+body.crm-shell .table-wrap {
+    max-height: min(56vh, 590px);
+    margin: 0 14px 14px;
+    padding: 0;
+    border: 1px solid #e3ebf3;
+    border-radius: 13px;
+}
+body.crm-shell .table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+body.crm-shell .table-wrap tbody tr:hover { background: #f5faff; }
+body.crm-shell .btn-table { border-radius: 8px; }
+body.crm-shell .modal { background: rgba(7,24,45,.18); backdrop-filter: blur(2px); }
+body.crm-shell .modal-card { border: 1px solid rgba(255,255,255,.82); border-radius: 20px; }
+body.crm-shell .modal-table { margin: 0 18px; border: 1px solid #e4ebf3; border-radius: 12px; }
+
+@media (max-width: 1150px) {
+    body.crm-shell .summary-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+}
+@media (max-width: 650px) {
+    body.crm-shell .summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

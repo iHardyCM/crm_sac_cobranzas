@@ -6962,3 +6962,162 @@ body.crm-shell {
         font-size: 20px;
     }
 }
+
+/* Centro de Calidad: navegación y evidencia como superficie de trabajo continua. */
+body.crm-shell .ia-workspace { max-width: 1740px; padding-top: 30px !important; }
+body.crm-shell .quality-exec-header { border-radius: 18px; background: linear-gradient(135deg,#ffffff,#f6faff); }
+body.crm-shell .quality-exec-header h2 { letter-spacing: -.04em; }
+body.crm-shell .quality-nav {
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid #e1e9f2;
+    border-radius: 14px;
+    background: rgba(255,255,255,.76);
+}
+body.crm-shell .quality-nav button { border-radius: 9px; font-weight: 600; }
+body.crm-shell .summary-filter-strip { border-radius: 14px; background: #f8fafc; }
+body.crm-shell .summary-filter-panel { border-radius: 16px; box-shadow: 0 12px 30px rgba(15,23,42,.06); }
+body.crm-shell .ia-panel,
+body.crm-shell .review-card,
+body.crm-shell .calibration-panel { border-radius: 17px; border-color: rgba(148,163,184,.24); box-shadow: 0 12px 30px rgba(15,23,42,.055); }
+body.crm-shell .panel-head,
+body.crm-shell .review-card-head { padding: 17px 18px 13px; }
+body.crm-shell .file-control,
+body.crm-shell .field input,
+body.crm-shell .field select,
+body.crm-shell .field textarea { border-radius: 10px; }
+body.crm-shell .btn-primary { border-radius: 10px; background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.16); }
+body.crm-shell .btn-light { border-radius: 10px; }
+body.crm-shell .detail-tabs { gap: 5px; padding: 6px; border-radius: 13px; background: #f4f7fb; }
+body.crm-shell .detail-tabs button { border-radius: 8px; }
+body.crm-shell .transcript-list,
+body.crm-shell .table-wrap { border: 1px solid #e2eaf3; border-radius: 12px; }
+
+/* Ficha de evaluación: evidencia, decisión y criterio se leen por separado. */
+body.crm-shell .audio-transcript-card { background: #fff; }
+body.crm-shell .audio-transcript-card .review-card-head { margin-bottom: 8px; }
+body.crm-shell .audio-player-wrap {
+    padding: 10px 12px;
+    border: 1px solid #e1e9f2;
+    border-radius: 13px;
+    background: #f6f9fc;
+}
+body.crm-shell .transcript-tabs { gap: 6px; margin: 12px 0 8px; padding: 4px; border: 0; border-radius: 10px; background: #f3f6fa; }
+body.crm-shell .transcript-tabs button { flex: 1; border-bottom: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; }
+body.crm-shell .transcript-tabs button.active { background: #fff; box-shadow: 0 2px 7px rgba(15,23,42,.09); }
+body.crm-shell .transcript-list { min-height: 390px; padding: 4px 10px; background: #fbfdff; }
+body.crm-shell .transcript-line { grid-template-columns: 62px 94px minmax(0,1fr); gap: 12px; padding: 10px 2px; }
+body.crm-shell .transcript-line button { border-radius: 8px; background: #fff; }
+body.crm-shell .transcript-line span { min-height: 22px; border-radius: 999px; font-size: 9px; }
+body.crm-shell .transcript-line p { font-size: 12px; line-height: 1.5; }
+body.crm-shell .review-side-stack > .review-card:first-child { background: linear-gradient(135deg,#ffffff,#f8fbff); }
+body.crm-shell .review-summary-copy { min-height: 38px; padding: 9px 0 11px; border-bottom: 1px solid #e7eef6; color: #263f5b; font-size: 13px; }
+body.crm-shell .classification-grid { gap: 9px; margin-top: 12px; }
+body.crm-shell .classification-grid div { min-height: 64px; border-radius: 11px; background: #f8fbff; }
+body.crm-shell .review-alert-box { gap: 6px; margin-top: 10px; }
+body.crm-shell .review-alert-box p { border-left-width: 3px; border-radius: 9px; padding: 9px 10px; font-size: 11px; line-height: 1.4; }
+
+body.crm-shell .findings-card { overflow: hidden; }
+body.crm-shell .finding-group { border-top-color: #e4ebf3; }
+body.crm-shell .finding-group-head {
+    min-height: 46px;
+    border-left: 4px solid #0a66d8;
+    background: #f8fafc;
+    color: #193754;
+    font-size: 12px;
+    letter-spacing: -.01em;
+}
+body.crm-shell .finding-group-head:hover { background: #f0f6fd; }
+body.crm-shell .finding-group-head b { background: #e5eef8; color: #24577f; }
+body.crm-shell .finding-row { gap: 12px; padding: 13px 16px; background: #fff; }
+body.crm-shell .finding-row[data-critical="1"] { background: #fffafb; }
+body.crm-shell .finding-row strong { color: #193754; }
+body.crm-shell .finding-row p { font-size: 12px; line-height: 1.45; }
+body.crm-shell .finding-actions button { border-radius: 9px; }
+
+body.crm-shell .matrix-context-strip { gap: 10px; }
+body.crm-shell .matrix-context-strip span { border-radius: 11px; background: #f8fafc; font-size: 11px; }
+body.crm-shell .quality-grouped-matrix { border-color: #dbe5ef; border-radius: 14px; }
+body.crm-shell .quality-grouped-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f4f7fb;
+    color: #466079;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .035em;
+}
+body.crm-shell .quality-grouped-table td { padding: 10px 11px; font-size: 11px; }
+body.crm-shell .quality-grouped-table tbody tr:hover td { background: #f8fbff; }
+body.crm-shell .matrix-segment-cell { background: #f7faff; box-shadow: inset 3px 0 0 #93a7bc; }
+body.crm-shell .matrix-segment-cell.is-critical { background: #fff8f8; box-shadow: inset 3px 0 0 #d53a48; }
+body.crm-shell .matrix-segment-cell.is-partial { background: #fffaf0; box-shadow: inset 3px 0 0 #d99a28; }
+body.crm-shell .matrix-item-cell strong { text-align: left; font-size: 11px; }
+body.crm-shell .quality-grouped-table p { line-height: 1.45; }
+body.crm-shell .quality-result-badge { border-radius: 8px; font-size: 9px; }
+
+/* Criterios de la pauta: jerarquía tranquila; el color intenso queda para la brecha. */
+body.crm-shell .audit-sgc-layout { gap: 12px; }
+body.crm-shell .audit-sgc-group { border-color: #d8e3ee; border-radius: 13px; box-shadow: 0 5px 14px rgba(15, 23, 42, .035); }
+body.crm-shell .audit-sgc-header {
+    min-height: 42px;
+    padding: 9px 13px;
+    background: #f5f8fc;
+    color: #193754;
+    border-left: 4px solid #1769c2;
+    font-size: 11px;
+    letter-spacing: .015em;
+}
+body.crm-shell .audit-sgc-header small {
+    border-color: #cbd9e8;
+    background: #fff;
+    color: #48627c;
+    font-size: 9px;
+}
+body.crm-shell .audit-sgc-table thead th { background: #fbfcfe; color: #5a7087; font-size: 9px; }
+body.crm-shell .audit-sgc-table th,
+body.crm-shell .audit-sgc-table td { padding: 10px 12px; font-size: 11px; }
+body.crm-shell .audit-sgc-table tbody tr:hover td { background: #f8fbff; }
+body.crm-shell .audit-sgc-table tbody tr.is-error td { background: #fffafb; border-left-color: #d74b58; }
+body.crm-shell .audit-sgc-table tbody tr.is-partial td { background: #fffdf8; border-left-color: #d99724; }
+body.crm-shell .audit-sgc-badge { border-radius: 8px; font-size: 9px; }
+
+/* La evidencia explica el hecho; el coaching queda separado para lectura operativa. */
+body.crm-shell .pauta-criterios-table .pauta-analisis-cell {
+    min-width: 330px;
+    padding: 0;
+}
+
+body.crm-shell .pauta-analisis-motivo,
+body.crm-shell .pauta-analisis-recomendacion {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+}
+
+body.crm-shell .pauta-analisis-recomendacion {
+    border-top: 1px solid #e6eef8;
+    background: #fbfdff;
+}
+
+body.crm-shell .pauta-analisis-cell span {
+    color: #60758c;
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+body.crm-shell .pauta-analisis-cell strong,
+body.crm-shell .pauta-analisis-cell p {
+    margin: 0;
+    color: #243b53;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+body.crm-shell .pauta-analisis-cell p { color: #48627c; }
+
+@media (max-width: 860px) {
+    body.crm-shell .pauta-criterios-table .pauta-analisis-cell { min-width: 270px; }
+}

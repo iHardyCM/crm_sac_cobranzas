@@ -242,6 +242,52 @@ class IaFeedbackStabilityTests(unittest.TestCase):
         self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "CUMPLE")
         self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "CUMPLE")
 
+    def test_pecn_rejects_generic_quota_offer_when_it_ignores_material_context(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "AGENTE", "texto": "¿A qué se debe el atraso y cuánto podría pagar actualmente?"},
+            {"segmento_id": 2, "rol": "CLIENTE", "texto": "Tuve una pérdida grande en agricultura y recién tendré dinero por la cosecha de marzo; ahora no puedo cancelar."},
+            {"segmento_id": 3, "rol": "AGENTE", "texto": "Ya entiendo. Puede abonar dos cuotas para ponerse al día."},
+            {"segmento_id": 4, "rol": "CLIENTE", "texto": "Pero necesito una alternativa que considere mi cosecha."},
+            {"segmento_id": 5, "rol": "AGENTE", "texto": "Puede ir pagando cuotas poco a poco."},
+        ]
+        data = {
+            "PECN.1": criterio("PECN.1", 5),
+            "PECN.2": criterio("PECN.2", 10),
+            "PECN.3": criterio("PECN.3", 15),
+        }
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECN.1"]), "CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "NO_CUMPLE")
+        self.assertIn("cosecha", " ".join(data["PECN.2"].get("evidencia_textual") or []).lower())
+
+    def test_coercion_and_humiliation_are_not_accepted_as_negotiation(self):
+        segmentos = [
+            {"segmento_id": 1, "rol": "CLIENTE", "texto": "No tengo dinero, estoy trabajando pero no me alcanza."},
+            {"segmento_id": 2, "rol": "AGENTE", "texto": "Lo va a tener que conseguir porque tiene que pagar; las leyes le va a obligar."},
+            {"segmento_id": 3, "rol": "AGENTE", "texto": "Parece que no es empresario, porque no tiene plata ni para pagarme."},
+            {"segmento_id": 4, "rol": "CLIENTE", "texto": "Llame otro día, estoy manejando."},
+            {"segmento_id": 5, "rol": "AGENTE", "texto": "Que tenga buen día."},
+        ]
+        data = {
+            "PECUF.1": criterio("PECUF.1", 20),
+            "PECN.2": criterio("PECN.2", 10),
+            "PECN.3": criterio("PECN.3", 15),
+            "PECN.4": criterio("PECN.4", 10),
+        }
+
+        aplicar_guardas_mibanco_v3(segmentos, data)
+
+        self.assertEqual(estado_sgc_normalizado(data["PECUF.1"]), "NO_CUMPLE")
+        self.assertTrue(data["PECUF.1"].get("posible_descalificacion"))
+        self.assertIn("no tiene plata", " ".join(data["PECUF.1"].get("evidencia_textual") or []).lower())
+        self.assertEqual(estado_sgc_normalizado(data["PECN.2"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.3"]), "NO_CUMPLE")
+        self.assertEqual(estado_sgc_normalizado(data["PECN.4"]), "NO_CUMPLE")
+        self.assertIn("manejando", " ".join(data["PECN.4"].get("evidencia_textual") or []).lower())
+
     def test_pecn_requires_cause_and_capacity_for_diagnosis_and_escalation(self):
         segmentos = [
             {"segmento_id": 1, "rol": "AGENTE", "texto": "¿Cuánto podría pagar hoy?"},

@@ -42,6 +42,17 @@ let ordenDireccion = "asc"; // asc | desc
 
 let dataFiltrada = [];
 
+document.querySelectorAll(".kpi-filter[data-estado]").forEach((card) => {
+    const filtrar = () => filtrarPorEstado(card.dataset.estado || "");
+    card.addEventListener("click", filtrar);
+    card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            filtrar();
+        }
+    });
+});
+
 // 🔥 CARGA INICIAL
 async function cargar() {
 
@@ -470,6 +481,21 @@ function aplicarFiltros() {
     pagina = 1;
     dataFiltrada = filtrado;
     renderTabla(dataFiltrada);
+    actualizarKpiSeleccionado(estado);
+}
+
+function filtrarPorEstado(estado) {
+    document.getElementById("filtro_estado").value = estado;
+    aplicarFiltros();
+    document.querySelector(".card-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function actualizarKpiSeleccionado(estado) {
+    document.querySelectorAll(".kpi-filter[data-estado]").forEach((card) => {
+        const seleccionado = (card.dataset.estado || "").toUpperCase() === (estado || "").toUpperCase();
+        card.classList.toggle("is-selected", seleccionado);
+        card.setAttribute("aria-pressed", String(seleccionado));
+    });
 }
 
 function aplicarFiltrosInicialesDesdeUrl() {

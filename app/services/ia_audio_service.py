@@ -1350,6 +1350,11 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
     data["estado_tecnico"] = resumen_sgc.get("estado_tecnico")
     data["tipificaciones_sugeridas"] = resumen_sgc.get("tipificaciones_sugeridas") or []
     data["feedback_asesor"] = resumen_sgc.get("feedback_asesor") or {}
+    if isinstance(json_copc_v2, dict):
+        data["pauta"] = json_copc_v2.get("pauta") or data.get("pauta")
+        data["pauta_version"] = json_copc_v2.get("pauta_version") or data.get("pauta_version")
+        data["pauta_pesos"] = json_copc_v2.get("pauta_pesos") or data.get("pauta_pesos")
+        data["pauta_snapshot"] = json_copc_v2.get("pauta_snapshot") if isinstance(json_copc_v2.get("pauta_snapshot"), list) else []
     data["audio_url"] = f"/ia-feedback/{data.get('id_feedback')}/audio" if data.get("id_feedback") and data.get("ruta_archivo") else None
     if isinstance(json_copc_v2, dict):
         interlocutores = json_copc_v2.get("interlocutores") if isinstance(json_copc_v2.get("interlocutores"), dict) else {}

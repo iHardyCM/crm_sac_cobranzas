@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compromisos</title>
-    <link rel="stylesheet" href="../css/compromisos.css?v=20260527c">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/compromisos.css?v=20260829-apple-structure">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
     <link rel="icon" href="logo_i_biznescob.png">
 </head>
 <body>
@@ -54,25 +55,25 @@
     </section>
 
     <section class="kpis" aria-label="Indicadores de compromisos">
-        <article class="card hoy">
+        <article class="card hoy kpi-filter" data-estado="Hoy" role="button" tabindex="0" aria-label="Filtrar compromisos de hoy">
             <span class="kpi-label">Hoy</span>
             <strong id="kpi_hoy">0</strong>
             <small>Promesas con fecha para hoy</small>
         </article>
 
-        <article class="card caida">
+        <article class="card caida kpi-filter" data-estado="Caída" role="button" tabindex="0" aria-label="Filtrar compromisos caídos">
             <span class="kpi-label">Caída</span>
             <strong id="kpi_caida">0</strong>
             <small>No llegaron a cumplirse en fecha</small>
         </article>
 
-        <article class="card vigente">
+        <article class="card vigente kpi-filter" data-estado="Vigente" role="button" tabindex="0" aria-label="Filtrar compromisos vigentes">
             <span class="kpi-label">Vigente</span>
             <strong id="kpi_vigente">0</strong>
             <small>Promesas con fechas futuras</small>
         </article>
 
-        <article class="card cumplida">
+        <article class="card cumplida kpi-filter" data-estado="Cumplida" role="button" tabindex="0" aria-label="Filtrar compromisos cumplidos">
             <span class="kpi-label">Cumplida</span>
             <strong id="kpi_cumplida">0</strong>
             <small>Promesas cumplidas</small>
@@ -146,8 +147,8 @@
 </div>
 
 <script src="../js/session.js?v=20260825a"></script>
-<script src="../js/app_layout.js?v=20260828a"></script>
-<script src="../js/compromisos.js?v=20260521"></script>
+<script src="../js/app_layout.js?v=20260830-focus"></script>
+<script src="../js/compromisos.js?v=20260829-apple-actions"></script>
 
 </body>
 </html>

@@ -1,12 +1,18 @@
 const BASE_URL_TELEFONOS = `${window.location.protocol}//${window.location.hostname}:8000`;
 
 let telefonosCache = [];
+let telefonoSeleccionado = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     cargarFiltros();
 
     document.getElementById("btnBuscar")?.addEventListener("click", buscarTelefonos);
     document.getElementById("btnLimpiar")?.addEventListener("click", limpiarVista);
+    document.getElementById("btnToggleFiltros")?.addEventListener("click", alternarFiltrosTelefonos);
+
+    ["filtroCartera", "filtroWhatsapp", "filtroTimbra", "filtroTipo", "filtroOrigen"].forEach(id => {
+        document.getElementById(id)?.addEventListener("change", actualizarContadorFiltros);
+    });
 
     document.getElementById("txtBuscar")?.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
@@ -14,10 +20,40 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    document.getElementById("btnCerrarDetalle")?.addEventListener("click", () => {
-        document.getElementById("panelDetalle")?.classList.add("hidden");
+    document.getElementById("btnCerrarDetalle")?.addEventListener("click", cerrarDetalleTelefonos);
+    document.getElementById("telefonosDrawerBackdrop")?.addEventListener("click", cerrarDetalleTelefonos);
+    document.getElementById("btnCopiarDetalle")?.addEventListener("click", () => copiarTelefono(telefonoSeleccionado?.TELEFONO));
+    document.getElementById("btnLlamarTelefono")?.addEventListener("click", llamarTelefonoSeleccionado);
+    document.getElementById("btnWhatsappTelefono")?.addEventListener("click", abrirWhatsappSeleccionado);
+    document.getElementById("btnVerMejorOpcion")?.addEventListener("click", () => {
+        if (telefonosCache[0]) verDetalle(telefonosCache[0]);
     });
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape") cerrarDetalleTelefonos();
+    });
+
+    actualizarContadorFiltros();
 });
+
+function alternarFiltrosTelefonos() {
+    const panel = document.getElementById("panelFiltrosTelefonos");
+    const button = document.getElementById("btnToggleFiltros");
+    if (!panel || !button) return;
+
+    const seAbrira = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !seAbrira);
+    button.setAttribute("aria-expanded", String(seAbrira));
+    button.classList.toggle("is-active", seAbrira);
+}
+
+function actualizarContadorFiltros() {
+    const target = document.getElementById("contadorFiltros");
+    if (!target) return;
+
+    const activos = ["filtroCartera", "filtroWhatsapp", "filtroTimbra", "filtroTipo", "filtroOrigen"]
+        .filter(id => valorFiltro(id) !== "TODOS").length;
+    target.textContent = activos ? String(activos) : "5";
+}
 
 
 async function cargarFiltros() {
@@ -124,10 +160,6 @@ async function buscarTelefonos() {
         pintarTelefonos(data.telefonos || []);
         pintarRelacionados(data.relacionados || []);
 
-        if (data.telefonos && data.telefonos.length > 0) {
-            verDetalle(data.telefonos[0]);
-        }
-
         actualizarUltimaConsulta();
         ocultarEstado();
 
@@ -227,6 +259,7 @@ function pintarTelefonos(telefonos) {
 
     telefonosCache.forEach((item, index) => {
         const tr = document.createElement("tr");
+        tr.dataset.index = String(index);
 
         tr.innerHTML = `
             <td>${badgePrioridad(item.PRIORIDAD)}</td>
@@ -238,18 +271,13 @@ function pintarTelefonos(telefonos) {
             </td>
             <td>
                 <strong>${valueOrDash(nombreCliente(item))}</strong>
-                <small>DNI ${valueOrDash(item.DNI)} · ID ${valueOrDash(item.IDCLIENTE)}</small>
+                <small>DNI ${valueOrDash(item.DNI)} · ID ${valueOrDash(item.IDCLIENTE)} · ${valueOrDash(item.IDCARTERA)} - ${valueOrDash(item.CARTERA)}</small>
             </td>
-            <td>
-                <strong>${valueOrDash(item.IDCARTERA)}</strong>
-                <small>${valueOrDash(item.CARTERA)}</small>
+            <td class="telefonos-signals">
+                <span title="WhatsApp">WA ${badgeSiNo(item.WHATSAPP)}</span>
+                <span title="Timbra">T ${badgeTimbra(item.TIMBRA)}</span>
+                <span title="Osiptel">OS ${badgeOsiptel(item.OSIPTEL)}</span>
             </td>
-            <td>${valueOrDash(item.TIPO_FONO)}</td>
-            <td>${badgeSiNo(item.WHATSAPP)}</td>
-            <td>${badgeTimbra(item.TIMBRA)}</td>
-            <td>${badgeOsiptel(item.OSIPTEL)}</td>
-            <td>${badgeOrigen(item.ORIGEN)}</td>
-            <td>${badgeCondicion(item.CONDICION_TELEFONO)}</td>
             <td>${badgeScore(item.SCORE_CONTACTO)}</td>
             <td>${badgeRecomendacion(item.RECOMENDACION)}</td>
             <td>
@@ -261,7 +289,14 @@ function pintarTelefonos(telefonos) {
         `;
 
         tbody.appendChild(tr);
+
+        tr.addEventListener("click", event => {
+            if (event.target.closest("button")) return;
+            verDetalle(telefonosCache[index]);
+        });
     });
+
+    pintarMejorOpcionTelefonos();
 
     tbody.querySelectorAll("[data-index]").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -318,7 +353,14 @@ function pintarRelacionados(relacionados) {
 function verDetalle(item) {
     if (!item) return;
 
+    telefonoSeleccionado = item;
+    const selectedIndex = telefonosCache.indexOf(item);
+    document.querySelectorAll("#tbodyTelefonos tr[data-index]").forEach(row => {
+        row.classList.toggle("is-selected", Number(row.dataset.index) === selectedIndex);
+    });
     document.getElementById("panelDetalle")?.classList.remove("hidden");
+    document.getElementById("telefonosDrawerBackdrop")?.classList.remove("hidden");
+    document.body.classList.add("telefonos-drawer-open");
 
     // document.getElementById("detalleTelefono").textContent = valueOrDash(item.TELEFONO);
     const detalleTelefono = document.getElementById("detalleTelefono");
@@ -363,6 +405,64 @@ function verDetalle(item) {
     }
 
     estado.textContent = item.RECOMENDACION || "--";
+
+    const telefonoDisponible = normalizarTelefonoAccion(item.TELEFONO);
+    const whatsappDisponible = esWhatsappDisponible(item.WHATSAPP) && Boolean(telefonoDisponible);
+    document.getElementById("btnCopiarDetalle")?.toggleAttribute("disabled", !telefonoDisponible);
+    document.getElementById("btnLlamarTelefono")?.toggleAttribute("disabled", !telefonoDisponible);
+    document.getElementById("btnWhatsappTelefono")?.toggleAttribute("disabled", !whatsappDisponible);
+}
+
+function pintarMejorOpcionTelefonos() {
+    const panel = document.getElementById("mejorOpcionTelefonos");
+    const numero = document.getElementById("mejorOpcionNumero");
+    const contexto = document.getElementById("mejorOpcionContexto");
+    if (!panel || !numero || !contexto) return;
+
+    const mejor = telefonosCache[0];
+    if (!mejor) {
+        panel.classList.add("hidden");
+        return;
+    }
+
+    const señales = [];
+    if (esWhatsappDisponible(mejor.WHATSAPP)) señales.push("WhatsApp disponible");
+    if (Number(mejor.TIMBRA || 0) > 0) señales.push(`Timbra ${mejor.TIMBRA}`);
+    señales.push(`Score ${valueOrDash(mejor.SCORE_CONTACTO)}`);
+
+    numero.textContent = valueOrDash(mejor.TELEFONO);
+    contexto.textContent = señales.join(" · ");
+    panel.classList.remove("hidden");
+}
+
+function cerrarDetalleTelefonos() {
+    document.getElementById("panelDetalle")?.classList.add("hidden");
+    document.getElementById("telefonosDrawerBackdrop")?.classList.add("hidden");
+    document.body.classList.remove("telefonos-drawer-open");
+}
+
+function normalizarTelefonoAccion(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.length >= 7 ? digits : "";
+}
+
+function esWhatsappDisponible(value) {
+    const text = normalize(value);
+    return text === "SI" || text === "SÍ";
+}
+
+function llamarTelefonoSeleccionado() {
+    const telefono = normalizarTelefonoAccion(telefonoSeleccionado?.TELEFONO);
+    if (!telefono) return;
+    window.location.href = `tel:${telefono}`;
+}
+
+function abrirWhatsappSeleccionado() {
+    const telefono = normalizarTelefonoAccion(telefonoSeleccionado?.TELEFONO);
+    if (!telefono || !esWhatsappDisponible(telefonoSeleccionado?.WHATSAPP)) return;
+
+    const telefonoWhatsapp = telefono.length === 9 ? `51${telefono}` : telefono;
+    window.open(`https://wa.me/${telefonoWhatsapp}`, "_blank", "noopener,noreferrer");
 }
 
 
@@ -375,6 +475,8 @@ function limpiarVista() {
     document.getElementById("filtroTipo").value = "TODOS";
     document.getElementById("filtroOrigen").value = "TODOS";
 
+    actualizarContadorFiltros();
+
     limpiarResultados();
     ocultarEstado();
 }
@@ -382,14 +484,14 @@ function limpiarVista() {
 
 function limpiarResultados() {
     document.getElementById("panelResumen")?.classList.add("hidden");
-    document.getElementById("panelDetalle")?.classList.add("hidden");
+    cerrarDetalleTelefonos();
     document.getElementById("panelRelacionados")?.classList.add("hidden");
 
     const tbody = document.getElementById("tbodyTelefonos");
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="13" class="telefonos-empty-table">
+                <td colspan="7" class="telefonos-empty-table">
                     Realiza una búsqueda para ver teléfonos activos.
                 </td>
             </tr>
@@ -401,6 +503,8 @@ function limpiarResultados() {
 
     const contador = document.getElementById("contadorTelefonos");
     if (contador) contador.textContent = "0 registros";
+
+    document.getElementById("mejorOpcionTelefonos")?.classList.add("hidden");
 }
 
 

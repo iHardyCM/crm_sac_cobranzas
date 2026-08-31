@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Biznescob - Importación de Pagos</title>
-    <link rel="stylesheet" href="../css/pagos.css?v=20260527e">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260616b">
+    <link rel="stylesheet" href="../css/pagos.css?v=20260829-apple-breathing">
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
 
@@ -57,6 +58,12 @@
                     <p>Selecciona el formato y archivo antes de validar la información.</p>
                 </div>
             </div>
+
+            <ol class="pagos-flow" aria-label="Progreso de importación">
+                <li class="is-active"><span>1</span><div><b>Preparar</b><small>Formato y archivo</small></div></li>
+                <li><span>2</span><div><b>Revisar</b><small>Validación previa</small></div></li>
+                <li><span>3</span><div><b>Publicar</b><small>Corte para BI</small></div></li>
+            </ol>
 
             <form id="formPagos" class="form-grid">
                 <div class="field">
@@ -236,7 +243,7 @@
     </main>
 
     <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260828a"></script>
-    <script src="../js/pagos.js?v=20260606a"></script>
+    <script src="../js/app_layout.js?v=20260830-focus"></script>
+    <script src="../js/pagos.js?v=20260829-apple-progress"></script>
 </body>
 </html>

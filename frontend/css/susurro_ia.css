@@ -498,3 +498,27 @@ textarea:focus {
         justify-content: flex-start;
     }
 }
+
+/* Susurro: la sugerencia actual es el centro de la llamada. */
+body.crm-shell .whisper-page { max-width: 1560px; padding-top: 30px; }
+body.crm-shell .whisper-hero { border-radius: 18px; background: linear-gradient(135deg,#ffffff,#f6faff); }
+body.crm-shell .whisper-hero h2 { letter-spacing: -.04em; }
+body.crm-shell .live-pill { border-radius: 999px; }
+body.crm-shell .assist-panel,
+body.crm-shell .call-panel,
+body.crm-shell .metrics-panel,
+body.crm-shell .alerts-panel,
+body.crm-shell .history-panel { border-radius: 17px; border-color: rgba(148,163,184,.24); box-shadow: 0 12px 30px rgba(15,23,42,.055); }
+body.crm-shell .assist-panel { background: linear-gradient(135deg,#fbfdff,#f2f8ff); }
+body.crm-shell .panel-head { padding: 17px 18px 13px; }
+body.crm-shell .speaker-toggle { padding: 5px; border-radius: 12px; background: #f2f6fa; }
+body.crm-shell .speaker-toggle button { border-radius: 8px; }
+body.crm-shell textarea { border-radius: 11px; }
+body.crm-shell .btn-primary { border-radius: 10px; background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.16); }
+body.crm-shell .btn-light { border-radius: 10px; }
+body.crm-shell .objective-box,
+body.crm-shell .next-step { border-radius: 12px; }
+body.crm-shell .check-grid div,
+body.crm-shell .mini-metrics div { border-radius: 11px; }
+body.crm-shell .timeline { border: 1px solid #e3ebf3; border-radius: 13px; padding: 10px; background: #fbfdff; }
+body.crm-shell .timeline-item { border-radius: 11px; }

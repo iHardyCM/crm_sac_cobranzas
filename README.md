@@ -135,3 +135,7 @@ Tipo de medición: CONTENCION
 | `IND`  |        126 | Compartamos Vigente Individual |
 | `CCM`  |        128 | Compartamos Vigente CCM        |
 | `GRU`  |        133 | Compartamos Vigente Grupal     |
+
+
+python -m http.server 5500
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload                                                               

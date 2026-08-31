@@ -138,7 +138,26 @@ function renderResumen(data) {
     document.getElementById("barActual").style.width = limitarPct(timing.cumplimiento_actual_pct);
     document.getElementById("barEstimado").style.width = limitarPct(timing.cumplimiento_estimado_pct);
 
+    pintarFocoMeta(timing);
     renderComparativoTipo(data.comparativo_tipo || []);
+}
+
+function pintarFocoMeta(timing) {
+    const desvio = Number(timing.desvio_pct || 0);
+    const restantes = Number(timing.dias_habiles_restantes || 0);
+    const alDia = desvio >= 0;
+    const panel = document.getElementById("metasFocus");
+
+    panel?.classList.toggle("is-on-track", alDia);
+    panel?.classList.toggle("is-at-risk", !alDia);
+    document.getElementById("metasFocusIcon").innerText = alDia ? "↑" : "!";
+    document.getElementById("metasFocusLabel").innerText = alDia ? "Ritmo favorable" : "Atención al ritmo";
+    document.getElementById("metasFocusTitulo").innerText = alDia
+        ? "El avance está por encima de lo esperado a la fecha."
+        : "El avance está por debajo de lo esperado a la fecha.";
+    document.getElementById("metasFocusTexto").innerText = restantes > 0
+        ? `Quedan ${numero(restantes)} días hábiles. Necesario diario: ${soles(timing.necesario_diario)}.`
+        : "No quedan días hábiles para el período seleccionado.";
 }
 
 function renderComparativoTipo(data) {

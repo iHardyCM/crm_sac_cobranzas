@@ -1331,3 +1331,29 @@ body {
         align-items: stretch;
     }
 }
+
+/* Documentos: flujo de búsqueda, selección y generación sin alterar el PDF. */
+body.crm-shell .documentos-container { max-width: 1660px; padding-top: 30px; }
+body.crm-shell .documentos-header { border-radius: 18px; background: linear-gradient(135deg,#ffffff,#f6faff); }
+body.crm-shell .documentos-meta { border-radius: 12px; background: rgba(255,255,255,.72); }
+body.crm-shell .documentos-card { border-radius: 18px; border-color: rgba(148,163,184,.24); box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .documentos-form-card { background: rgba(255,255,255,.9); }
+body.crm-shell .documentos-form-grid label,
+body.crm-shell .documentos-generate-grid label { border-radius: 11px; }
+body.crm-shell .documentos-form-grid input,
+body.crm-shell .documentos-form-grid select,
+body.crm-shell .documentos-generate-grid input,
+body.crm-shell .documentos-generate-grid select { border-radius: 9px; }
+body.crm-shell .documentos-form-grid input:focus,
+body.crm-shell .documentos-form-grid select:focus,
+body.crm-shell .documentos-generate-grid input:focus,
+body.crm-shell .documentos-generate-grid select:focus { outline: none; border-color: #0a66d8; box-shadow: 0 0 0 3px rgba(10,102,216,.12); }
+body.crm-shell .documentos-btn { border-radius: 10px; }
+body.crm-shell .documentos-btn.primary { background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.17); }
+body.crm-shell .documentos-section-head { padding: 18px 20px 14px; }
+body.crm-shell .documentos-summary > div { border-radius: 13px; }
+body.crm-shell .documentos-table-wrapper { border: 1px solid #e3ebf3; border-radius: 13px; }
+body.crm-shell .documentos-table thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+body.crm-shell .documentos-table tbody tr:hover { background: #f5faff; }
+body.crm-shell .documentos-generate { border-color: #b8d9fa; background: linear-gradient(135deg,#fbfdff,#f5faff); }
+body.crm-shell .documentos-group-panel { border-radius: 15px; }

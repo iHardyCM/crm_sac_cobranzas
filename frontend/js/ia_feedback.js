@@ -396,13 +396,14 @@ async function cargarHistorialIa() {
     }
 }
 
-async function verAnalisisIa(idFeedback) {
+async function verAnalisisIa(idFeedback, tabDetalle = "revision") {
     try {
         const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}`, {}, 15000);
         const data = await leerJsonSeguro(response);
         if (!response.ok) throw new Error(data.detail || "No se pudo obtener el análisis.");
         cambiarEstadoProceso(data.estado || "PENDIENTE");
         renderResultadoIa(data);
+        mostrarTabDetalleIa(tabDetalle);
         window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
         mostrarMensajeIa(error.message || "Error obteniendo detalle.", "error");
@@ -450,6 +451,7 @@ function renderResultadoIa(data) {
     document.getElementById("resultadoVacioIa").classList.add("oculto");
     document.getElementById("resultadoContenidoIa").classList.remove("oculto");
     setDetalleSgcVisibleIa(false);
+    actualizarPestanasPorPautaIa(data);
 
     setText("trazaAudioIa", data.archivo_nombre || "-");
     setText("trazaSupervisorIa", data.supervisor || "-");
@@ -478,7 +480,7 @@ function renderResultadoIa(data) {
     pintarCabeceraFichaSgcIa(data);
     // La ficha es auditable: muestra todos los criterios de la matriz. Los
     // hallazgos consolidados siguen alimentando el resumen ejecutivo aparte.
-    pintarFichaAuditoriaSgcIa(evaluacionItems);
+    pintarFichaAuditoriaSgcIa(evaluacionItems, data);
     pintarCierreFichaSgcIa(data);
     pintarHabilidadesBlandas(data.habilidades_blandas_lista || habilidadesBlandasDesdeEvaluacionIa(evaluacionItems));
     pintarLista("fortalezasIa", data.fortalezas_lista || []);
@@ -693,6 +695,31 @@ function claveAlertaResumenIa(textoNormalizado = "") {
 function pintarDimensionesFichaIa(items = [], data = {}) {
     const el = document.getElementById("dimensionesFichaIa");
     if (!el) return;
+    if (tienePautaAplicadaIa(data)) {
+        const bloques = new Map();
+        items.map(itemSgcIa).forEach(item => {
+            const bloque = bloquePautaItemIa(item, data);
+            const actual = bloques.get(bloque) || { bloque, nota: 0, peso: 0, total: 0, noAplica: 0, revision: 0 };
+            const resultado = String(item.resultado || item.calificacion || "").toLowerCase();
+            actual.total += 1;
+            if (resultado.includes("no aplica") || resultado.includes("no evaluable")) {
+                actual.noAplica += 1;
+            } else {
+                actual.peso += Number(item.peso ?? item.puntaje_maximo ?? 0);
+                actual.nota += Number(item.nota ?? item.puntaje_obtenido ?? 0);
+            }
+            if (resultado.includes("revision") || resultado.includes("revisión")) actual.revision += 1;
+            bloques.set(bloque, actual);
+        });
+        const cards = [...bloques.values()].map(item => {
+            const score = item.peso ? (item.nota / item.peso) * 100 : null;
+            const estado = !item.total ? "Sin criterios" : item.total === item.noAplica ? "No evaluable" : item.revision ? "Revisión humana" : score >= 85 ? "Cumple" : score >= 60 ? "Parcial" : "No cumple";
+            const clase = estado.includes("Cumple") ? "ok" : estado.includes("Parcial") || estado.includes("Revisión") ? "warn" : estado.includes("No evaluable") ? "info" : "risk";
+            return `<article class="${clase}"><span>${escapeHtml(item.bloque)}</span><strong>${score == null ? estado : `${formatoPeso(item.nota)}/${formatoPeso(item.peso)}`}</strong><div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div><small>${escapeHtml(estado)}</small></article>`;
+        }).join("");
+        el.innerHTML = `${cards}<article class="dimension-total"><span>Total de la pauta</span><strong>${escapeHtml(formatoScoreSobre100Ia(scoreTecnicoFichaIa(data)))}</strong><small>${escapeHtml(data.pauta || "Pauta aplicada")}${data.pauta_version ? ` · v${escapeHtml(data.pauta_version)}` : ""}</small></article>`;
+        return;
+    }
     const dimensiones = [
         { key: "Cumplimiento", label: "Cumplimiento y control de contacto", max: 15 },
         { key: "Diagnóstico", label: "Diagnóstico", max: 15 },
@@ -780,8 +807,9 @@ function pintarHallazgosAcordeonIa(items = [], data = {}) {
     window.auditoriaFichaIa = auditoriaFichaIa;
     const filtros = document.getElementById("filtrosHallazgosIa");
     if (filtros) {
+        const destinoAuditoria = tienePautaAplicadaIa(data) ? "Ver criterios de la pauta" : "Ver ficha SGC/PEC";
         filtros.innerHTML = `
-            <span title="La ficha muestra los hallazgos más relevantes; usa Ver ficha SGC/PEC para auditoría total.">Principales ${formatoNumero(rowsResumen.length)} de ${formatoNumero(rows.length)}</span>
+            <span title="La ficha muestra los hallazgos más relevantes; usa ${escapeHtml(destinoAuditoria)} para auditoría total.">Principales ${formatoNumero(rowsResumen.length)} de ${formatoNumero(rows.length)}</span>
             <button class="active" type="button" data-findings-filter="todos" onclick="filtrarHallazgosFichaIa('todos')">Todos ${formatoNumero(rowsResumen.length)}</button>
             <button type="button" data-findings-filter="criticos" onclick="filtrarHallazgosFichaIa('criticos')">Críticos ${formatoNumero(totalCriticosResumen)}</button>
             <button type="button" data-findings-filter="no-criticos" onclick="filtrarHallazgosFichaIa('no-criticos')">No críticos ${formatoNumero(totalNoCriticosResumen)}</button>
@@ -1305,6 +1333,25 @@ function evaluacionCalidadItemsIa(data = {}) {
         return data.evaluacion_calidad;
     }
     return [];
+}
+
+function tienePautaAplicadaIa(data = {}) {
+    return Array.isArray(data.pauta_snapshot) && data.pauta_snapshot.length > 0;
+}
+
+function actualizarPestanasPorPautaIa(data = {}) {
+    const esPauta = tienePautaAplicadaIa(data);
+    document.querySelectorAll("[data-pauta-tab], [data-pauta-action]").forEach(el => el.classList.toggle("oculto", !esPauta));
+    document.querySelectorAll("[data-legacy-tab], [data-legacy-action]").forEach(el => el.classList.toggle("oculto", esPauta));
+    setText("subtituloDimensionesIa", esPauta ? "Pauta aplicada" : "Base COPC adaptada");
+    setText("tituloFichaPautaIa", esPauta ? "Detalle de la evaluación" : "Ficha de errores SGC/PEC");
+    setText("descripcionFichaPautaIa", esPauta
+        ? "Detalle completo de los criterios, pesos, resultados y evidencias de la pauta aplicada."
+        : "Documento oficial de auditoría agrupado por clasificación gerencial.");
+    setText("ayudaFichaPautaIa", esPauta
+        ? "La ficha conserva todos los criterios evaluados, incluso los que cumplen, no aplican o no son evaluables."
+        : "La matriz técnica sustenta el score; la Ficha SGC/PEC consolida los hallazgos para supervisión, feedback y coaching.");
+    setText("btnExportarFichaPautaIa", esPauta ? "Exportar detalle" : "Exportar ficha SGC/PEC");
 }
 
 function hallazgosSgcItemsIa(data = {}) {
@@ -2641,7 +2688,7 @@ function pintarAgentesPriorizadosGerencialIa(detalle) {
                         <td>${row.errorCriticoPct.toFixed(1)}%</td>
                         <td>${escapeHtml(row.brechaPrincipal)}</td>
                         <td>${badgeGerencialIa(row.estadoCoaching, claseBadgeEstadoIa(row.estadoCoaching))}</td>
-                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.idFeedback || 0)})">${String(row.estadoCoaching || "").toUpperCase() === "PENDIENTE" ? "Programar" : "Ver"}</button></td>
+                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.idFeedback || 0)}, 'coaching')">${String(row.estadoCoaching || "").toUpperCase() === "PENDIENTE" ? "Programar" : "Ver plan"}</button></td>
                     </tr>
                 `;
             }).join("")}</tbody>
@@ -2720,7 +2767,7 @@ function pintarVistaCoachingIa(detalle) {
                         <td>${badgeGerencialIa(row.estado_feedback || (requiereFeedbackIa(row) ? "PENDIENTE" : "NO REQUIERE"), requiereFeedbackIa(row) ? "medio" : "bajo")}</td>
                         <td>${badgeGerencialIa(estado, claseBadgeEstadoIa(estado))}</td>
                         <td>${row.fecha_coaching ? formatoFecha(row.fecha_coaching) : "-"}</td>
-                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.id_feedback || 0)})">${accionCoachingIa(estado)}</button></td>
+                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.id_feedback || 0)}, 'coaching')">${accionCoachingIa(estado)}</button></td>
                     </tr>
                 `;
             }).join("")}</tbody>
@@ -5070,14 +5117,19 @@ function pintarCabeceraFichaSgcIa(data = {}) {
     const el = document.getElementById("cabeceraFichaSgcIa");
     if (!el) return;
     const score = data.score_final ?? data.score_normalizado ?? data.score_calidad;
+    const esPauta = tienePautaAplicadaIa(data);
+    const metricaPauta = esPauta
+        ? `<article><span>Pauta aplicada</span><strong>${escapeHtml(data.pauta || "Pauta sin nombre")}${data.pauta_version ? ` v${escapeHtml(data.pauta_version)}` : ""}</strong></article>
+           <article><span>Puntos aplicables</span><strong>${formatoPeso(data.peso_aplicable ?? 0)} / ${formatoPeso(data.peso_total ?? 100)}</strong></article>`
+        : `<article><span>Riesgo</span><strong>${escapeHtml(formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo))}</strong></article>`;
     el.innerHTML = `
         <article><span>Evaluación</span><strong>${escapeHtml(data.id_feedback || "-")}</strong></article>
         <article><span>Cartera</span><strong>${escapeHtml(data.cartera || "-")}</strong></article>
         <article><span>Supervisor</span><strong>${escapeHtml(data.supervisor || "-")}</strong></article>
         <article><span>Fecha llamada</span><strong>${escapeHtml(formatoFecha(data.fecha_llamada || data.fecha_creacion))}</strong></article>
         <article><span>Score técnico</span><strong>${score != null ? `${Number(score).toFixed(1)} / 100` : "-"}</strong></article>
-        <article><span>Riesgo</span><strong>${escapeHtml(formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo))}</strong></article>
-        <p>Documento gerencial SGC/PEC sustentado por la matriz técnica. Base metodológica inspirada en buenas prácticas COPC y adaptada a cobranza telefónica.</p>
+        ${metricaPauta}
+        <p>${esPauta ? "Evaluación trazable construida directamente desde la pauta aplicada a la llamada." : "Documento gerencial SGC/PEC sustentado por la matriz técnica. Base metodológica inspirada en buenas prácticas COPC y adaptada a cobranza telefónica."}</p>
     `;
 }
 
@@ -5235,7 +5287,66 @@ function seleccionarFeedbackAlarmanteSgcIa(items = [], data = {}) {
     return `${accion}: ${brecha.factor_auditoria_sgc || "factor SGC/PEC"} - ${brecha.motivo || brecha.hallazgo || "hallazgo crítico sin detalle"}.`;
 }
 
-function pintarFichaAuditoriaSgcIa(items) {
+function codigoPautaItemIa(item = {}) {
+    return String(item.codigo_criterio || item.codigo || item.item || "").trim().toUpperCase();
+}
+
+function bloquePautaItemIa(item = {}, data = {}) {
+    const codigo = codigoPautaItemIa(item);
+    const snapshot = Array.isArray(data.pauta_snapshot) ? data.pauta_snapshot : [];
+    const definido = snapshot.find(criterio => codigoPautaItemIa(criterio) === codigo) || {};
+    return String(item.bloque || definido.bloque || item.subcategoria || "Otros criterios").trim() || "Otros criterios";
+}
+
+function pintarFichaPautaIa(items, data = {}) {
+    const el = document.getElementById("fichaAuditoriaSgcIa");
+    if (!el) return;
+    const grupos = new Map();
+    items.map(itemSgcIa).forEach(item => {
+        const bloque = bloquePautaItemIa(item, data);
+        const lista = grupos.get(bloque) || [];
+        lista.push(item);
+        grupos.set(bloque, lista);
+    });
+    if (!grupos.size) {
+        el.innerHTML = `<div class="empty-report-state"><strong>Sin criterios de pauta disponibles.</strong><small>La evaluación no contiene ítems suficientes para construir la ficha.</small></div>`;
+        return;
+    }
+    el.innerHTML = [...grupos.entries()].map(([bloque, criterios]) => {
+        const peso = criterios.reduce((total, item) => total + Number(item.peso ?? item.puntaje_maximo ?? 0), 0);
+        const nota = criterios.reduce((total, item) => total + Number(item.nota ?? item.puntaje_obtenido ?? 0), 0);
+        const brechas = criterios.filter(item => ["NC", "P", "RH"].includes(calificacionCortaSgcIa(item.calificacion))).length;
+        return `
+            <section class="audit-sgc-group pauta-criterios-group">
+                <header class="audit-sgc-header"><span>${escapeHtml(bloque)}</span><small>${formatoPeso(nota)} / ${formatoPeso(peso)} pts · ${formatoNumero(brechas)} brecha(s)</small></header>
+                <div class="audit-sgc-table-wrap">
+                    <table class="audit-sgc-table pauta-criterios-table">
+                        <thead><tr><th>Criterio</th><th>Peso</th><th>Nota</th><th>Resultado</th><th>Evidencia</th><th>Análisis y siguiente paso</th></tr></thead>
+                        <tbody>${criterios.map(item => `
+                            <tr class="${claseFilaFichaSgcIa({ ...item, calificacion: item.calificacion })}">
+                                <td><strong>${escapeHtml(itemCopcVisibleIa(item))}</strong></td>
+                                <td>${formatoPeso(item.peso ?? item.puntaje_maximo ?? 0)}</td>
+                                <td><strong>${formatoPeso(item.nota ?? item.puntaje_obtenido ?? 0)}</strong></td>
+                                <td>${badgeFichaCalificacionSgcIa(calificacionCortaSgcIa(item.calificacion), item.calificacion)}</td>
+                                <td>${escapeHtml(item.evidencia || "-")}</td>
+                                <td class="pauta-analisis-cell">
+                                    <div class="pauta-analisis-motivo"><span>Motivo</span><strong>${escapeHtml(item.motivo || item.hallazgo || "-")}</strong></div>
+                                    ${item.recomendacion ? `<div class="pauta-analisis-recomendacion"><span>Recomendación</span><p>${escapeHtml(item.recomendacion)}</p></div>` : ""}
+                                </td>
+                            </tr>
+                        `).join("")}</tbody>
+                    </table>
+                </div>
+            </section>
+        `;
+    }).join("");
+}
+
+function pintarFichaAuditoriaSgcIa(items, data = {}) {
+    if (tienePautaAplicadaIa(data)) {
+        pintarFichaPautaIa(items, data);
+        return;
+    }
     const el = document.getElementById("fichaAuditoriaSgcIa");
     if (!el) return;
     const rows = consolidarItemsFichaAuditoriaSgcIa(items);
@@ -7606,26 +7717,38 @@ function exportarFichaSgcIa() {
         mostrarMensajeIa("No hay datos suficientes para exportar la ficha SGC/PEC.", "error");
         return;
     }
-    const filas = itemsFichaAuditoriaSgcIa(evaluacion);
+    const esPauta = tienePautaAplicadaIa(resultadoActualIa || {});
+    const filas = esPauta ? evaluacion.map(itemSgcIa) : itemsFichaAuditoriaSgcIa(evaluacion);
     const csvRows = [
-        ["FICHA DE ERRORES SGC/PEC"],
+        [esPauta ? "FICHA DE CRITERIOS DE LA PAUTA" : "FICHA DE ERRORES SGC/PEC"],
         ["audio", resultadoActualIa?.archivo_nombre || "-"],
         ["supervisor", resultadoActualIa?.supervisor || "-"],
+        ...(esPauta ? [["pauta", resultadoActualIa?.pauta || "-"], ["version_pauta", resultadoActualIa?.pauta_version || "-"]] : []),
         ["score_final", Number(resultadoActualIa?.score_final ?? resultadoActualIa?.score_calidad ?? 0).toFixed(1)],
         [],
-        ["grupo_sgc", "factor", "calificacion_corta", "calificacion", "motivo", "evidencia", "recomendacion"],
+        esPauta
+            ? ["bloque", "criterio", "peso", "nota", "calificacion", "motivo", "evidencia", "recomendacion"]
+            : ["grupo_sgc", "factor", "calificacion_corta", "calificacion", "motivo", "evidencia", "recomendacion"],
         ...filas.map(item => [
-            item.grupo_auditoria_sgc || "",
-            item.factor_auditoria_sgc || "",
-            item.calificacion_corta || "",
-            item.calificacion || "",
+            ...(esPauta ? [
+                bloquePautaItemIa(item, resultadoActualIa || {}),
+                itemCopcVisibleIa(item),
+                item.peso ?? item.puntaje_maximo ?? "",
+                item.nota ?? item.puntaje_obtenido ?? "",
+                item.calificacion || item.resultado || "",
+            ] : [
+                item.grupo_auditoria_sgc || "",
+                item.factor_auditoria_sgc || "",
+                item.calificacion_corta || "",
+                item.calificacion || "",
+            ]),
             item.motivo || item.hallazgo || "",
             item.evidencia || "",
             item.recomendacion || "",
         ])
     ];
-    descargarCsvIa(csvRows, `ficha_sgc_pec_${new Date().toISOString().slice(0, 10)}.csv`);
-    mostrarMensajeIa("Ficha SGC/PEC exportada correctamente.", "ok");
+    descargarCsvIa(csvRows, `${esPauta ? "criterios_pauta" : "ficha_sgc_pec"}_${new Date().toISOString().slice(0, 10)}.csv`);
+    mostrarMensajeIa(esPauta ? "Detalle de la evaluación exportado correctamente." : "Ficha SGC/PEC exportada correctamente.", "ok");
 }
 
 function descargarCsvIa(csvRows, filename) {

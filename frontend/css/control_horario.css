@@ -16,6 +16,65 @@ body {
     gap: 14px;
 }
 
+/* 20260829 Apple-design pass: presentation only; existing filters, tables and drilldowns stay intact. */
+body.crm-shell .control-page {
+    color: #13243a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    gap: 18px;
+}
+body.crm-shell .card,
+body.crm-shell .control-toolbar {
+    border-color: rgba(148, 163, 184, .25);
+    border-radius: 16px;
+    background: rgba(255,255,255,.88);
+    box-shadow: 0 12px 34px rgba(15, 23, 42, .06);
+}
+body.crm-shell .control-toolbar {
+    padding: 22px 24px;
+    background: linear-gradient(135deg, rgba(255,255,255,.92), rgba(245,249,255,.78));
+}
+body.crm-shell .control-toolbar h2 { font-size: 25px; letter-spacing: -.035em; }
+body.crm-shell .control-toolbar p, body.crm-shell .section-head p { color: #64748b; }
+body.crm-shell .control-eyebrow { color: #0a66d8; letter-spacing: .08em; }
+body.crm-shell .btn-primary,
+body.crm-shell .btn-secondary {
+    min-height: 38px;
+    border-radius: 11px;
+    transition: transform .14s ease, box-shadow .14s ease, background .14s ease;
+}
+body.crm-shell .btn-primary { background: linear-gradient(180deg, #1476e8, #075fc8); border-color: #075fc8; box-shadow: 0 8px 18px rgba(7,95,200,.18); }
+body.crm-shell .btn-secondary { border-color: rgba(148,163,184,.35); background: rgba(255,255,255,.78); color: #21557f; }
+body.crm-shell .btn-primary:active, body.crm-shell .btn-secondary:active { transform: scale(.97); }
+body.crm-shell .control-filtros {
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255,255,255,.68);
+    backdrop-filter: blur(16px);
+}
+body.crm-shell .field input,
+body.crm-shell .field select {
+    height: 40px;
+    border-color: rgba(148,163,184,.38);
+    border-radius: 10px;
+    background: rgba(255,255,255,.85);
+}
+body.crm-shell .field input:focus,
+body.crm-shell .field select:focus { outline: none; border-color: #0a66d8; box-shadow: 0 0 0 3px rgba(10,102,216,.12); }
+body.crm-shell .check-field { min-height: 40px; border-radius: 10px; border-color: rgba(148,163,184,.32); background: rgba(248,251,255,.82); }
+body.crm-shell .kpi-grid { gap: 12px; }
+body.crm-shell .kpi-card { border-color: rgba(148,163,184,.23); border-radius: 14px; box-shadow: 0 10px 28px rgba(15,23,42,.05); }
+body.crm-shell .kpi-card:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(15,23,42,.09); }
+body.crm-shell .section-head { padding: 2px 2px 16px; }
+body.crm-shell .table-wrap { border: 1px solid rgba(148,163,184,.22); border-radius: 12px; }
+body.crm-shell .table-wrap table thead th { background: #f8fafc; color: #475569; border-bottom: 1px solid rgba(148,163,184,.24); }
+body.crm-shell .table-wrap table tbody tr:hover { background: #f7fbff; }
+body.crm-shell .chart-switch { padding: 3px; border: 1px solid rgba(148,163,184,.27); border-radius: 10px; background: #f1f5f9; }
+body.crm-shell .chart-switch button { border-radius: 7px; }
+body.crm-shell .chart-switch button.active { background: #fff; color: #0a66d8; box-shadow: 0 2px 7px rgba(15,23,42,.10); }
+body.crm-shell .control-modal { background: rgba(7, 24, 45, .38); backdrop-filter: blur(5px); }
+body.crm-shell .control-modal-card { border: 1px solid rgba(255,255,255,.7); border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: 0 28px 80px rgba(5,23,45,.28); }
+@media (prefers-reduced-motion: reduce) { body.crm-shell .btn-primary, body.crm-shell .btn-secondary, body.crm-shell .kpi-card { transition: none; } }
+
 .card,
 .control-toolbar {
     background: #ffffff;
@@ -1132,3 +1191,28 @@ tbody tr:hover {
         flex-direction: column;
     }
 }
+
+/* Final cascade for the shared visual pass. */
+body.crm-shell .control-page { color: #13243a; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; gap: 18px; }
+body.crm-shell .card, body.crm-shell .control-toolbar { border-color: rgba(148,163,184,.25); border-radius: 16px; background: rgba(255,255,255,.88); box-shadow: 0 12px 34px rgba(15,23,42,.06); }
+body.crm-shell .control-toolbar { padding: 22px 24px; background: linear-gradient(135deg, rgba(255,255,255,.92), rgba(245,249,255,.78)); }
+body.crm-shell .control-toolbar h2 { font-size: 25px; letter-spacing: -.035em; }
+body.crm-shell .control-eyebrow { color: #0a66d8; letter-spacing: .08em; }
+body.crm-shell .btn-primary, body.crm-shell .btn-secondary { min-height: 38px; border-radius: 11px; transition: transform .14s ease, box-shadow .14s ease, background .14s ease; }
+body.crm-shell .btn-primary { background: linear-gradient(180deg, #1476e8, #075fc8); border-color: #075fc8; box-shadow: 0 8px 18px rgba(7,95,200,.18); }
+body.crm-shell .btn-secondary { border-color: rgba(148,163,184,.35); background: rgba(255,255,255,.78); color: #21557f; }
+body.crm-shell .btn-primary:active, body.crm-shell .btn-secondary:active { transform: scale(.97); }
+body.crm-shell .control-filtros { padding: 12px; border-radius: 16px; background: rgba(255,255,255,.68); backdrop-filter: blur(16px); }
+body.crm-shell .field input, body.crm-shell .field select { height: 40px; border-color: rgba(148,163,184,.38); border-radius: 10px; background: rgba(255,255,255,.85); }
+body.crm-shell .field input:focus, body.crm-shell .field select:focus { outline: none; border-color: #0a66d8; box-shadow: 0 0 0 3px rgba(10,102,216,.12); }
+body.crm-shell .check-field { min-height: 40px; border-radius: 10px; border-color: rgba(148,163,184,.32); background: rgba(248,251,255,.82); }
+body.crm-shell .kpi-grid { gap: 12px; }
+body.crm-shell .kpi-card { border-color: rgba(148,163,184,.23); border-radius: 14px; box-shadow: 0 10px 28px rgba(15,23,42,.05); }
+body.crm-shell .table-wrap { border: 1px solid rgba(148,163,184,.22); border-radius: 12px; }
+body.crm-shell .table-wrap table thead th { background: #f8fafc; color: #475569; border-bottom: 1px solid rgba(148,163,184,.24); }
+body.crm-shell .table-wrap table tbody tr:hover { background: #f7fbff; }
+body.crm-shell .chart-switch { padding: 3px; border: 1px solid rgba(148,163,184,.27); border-radius: 10px; background: #f1f5f9; }
+body.crm-shell .chart-switch button { border-radius: 7px; }
+body.crm-shell .chart-switch button.active { background: #fff; color: #0a66d8; box-shadow: 0 2px 7px rgba(15,23,42,.10); }
+body.crm-shell .control-modal { background: rgba(7,24,45,.38); backdrop-filter: blur(5px); }
+body.crm-shell .control-modal-card { border: 1px solid rgba(255,255,255,.7); border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: 0 28px 80px rgba(5,23,45,.28); }

@@ -714,3 +714,125 @@ tbody td {
 .modal-nombre {
     font-size: 15px;
 }
+
+/* Acciones rápidas y una jerarquía más clara para la revisión operativa. */
+body.crm-shell .compromisos-page { max-width: 1680px; }
+body.crm-shell .compromisos-hero {
+    border-radius: 18px;
+    background: linear-gradient(135deg, #ffffff, #f7fbff);
+}
+body.crm-shell .goal-panel {
+    border-radius: 14px;
+    background: rgba(255,255,255,.76);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85);
+}
+body.crm-shell .goal-grid div {
+    padding: 7px 8px;
+    border-radius: 9px;
+    background: #f7faff;
+}
+body.crm-shell .card { border-radius: 16px; }
+body.crm-shell .kpi-filter {
+    cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+body.crm-shell .kpi-filter:hover {
+    transform: translateY(-2px);
+    border-color: #b6d2ef;
+    box-shadow: 0 14px 30px rgba(15,56,99,.11);
+}
+body.crm-shell .kpi-filter:focus-visible {
+    outline: 3px solid rgba(10,102,216,.25);
+    outline-offset: 3px;
+}
+body.crm-shell .kpi-filter.is-selected {
+    border-color: #0a66d8;
+    box-shadow: 0 0 0 3px rgba(10,102,216,.12), 0 14px 30px rgba(15,56,99,.10);
+}
+body.crm-shell .kpi-filter.is-selected::after {
+    content: "Filtrando";
+    position: absolute;
+    top: 13px;
+    right: 14px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #eaf4ff;
+    color: #075fc8;
+    font-size: 9px;
+    font-weight: 800;
+}
+body.crm-shell .card-table { border-radius: 18px; }
+body.crm-shell .table-header { align-items: center; }
+body.crm-shell .filtros {
+    padding: 8px;
+    border: 1px solid #e3ebf4;
+    border-radius: 13px;
+    background: #f8fafc;
+}
+body.crm-shell .filtros input,
+body.crm-shell .filtros select { border-radius: 9px; background: #fff; }
+body.crm-shell .table-scroll { max-height: min(57vh, 590px); }
+body.crm-shell .table-scroll thead th { position: sticky; top: 0; z-index: 1; }
+body.crm-shell .table-scroll tbody tr { transition: background .14s ease; }
+body.crm-shell .table-scroll tbody tr:hover { background: #f5faff; }
+body.crm-shell .paginacion { border-top: 1px solid #e8eef5; }
+
+@media (prefers-reduced-motion: reduce) {
+    body.crm-shell .kpi-filter { transition: none; }
+    body.crm-shell .kpi-filter:hover { transform: none; }
+}
+
+/* Compromisos: indicadores en una sola lectura y cabecera de meta compacta. */
+body.crm-shell .compromisos-hero {
+    grid-template-columns: minmax(270px,.75fr) minmax(520px,1.25fr) auto;
+    min-height: 0;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+}
+body.crm-shell .compromisos-hero h2 { font-size: 21px; text-transform: none; letter-spacing: -.035em; }
+body.crm-shell .goal-panel { padding: 10px 12px; }
+body.crm-shell .goal-main strong { font-size: 18px; }
+body.crm-shell .goal-progress { margin: 7px 0; }
+body.crm-shell .goal-grid div { padding: 6px 8px; }
+body.crm-shell .goal-actions { margin-top: 7px; }
+body.crm-shell .goal-actions a { min-height: 27px; }
+body.crm-shell .kpis {
+    gap: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    border: 1px solid #e0e8f1;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(15,23,42,.05);
+}
+body.crm-shell .kpis .card {
+    min-height: 96px;
+    padding: 16px 18px;
+    border: 0;
+    border-right: 1px solid #e7edf4;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+}
+body.crm-shell .kpis .card:last-child { border-right: 0; }
+body.crm-shell .kpis .card::before { width: 3px; }
+body.crm-shell .kpis .card:hover { border-color: transparent; box-shadow: none; transform: none; background: #f8fbff; }
+body.crm-shell .kpis .card strong { margin: 6px 0; color: #112b4c; font-size: 23px; letter-spacing: -.035em; }
+body.crm-shell .kpis .card small { font-size: 11px; }
+body.crm-shell .kpi-filter.is-selected { box-shadow: inset 0 0 0 2px #0a66d8; }
+body.crm-shell .kpi-filter.is-selected::after { top: 10px; right: 12px; }
+body.crm-shell .card-table { border-radius: 18px; }
+body.crm-shell .table-header { padding: 17px 20px; }
+body.crm-shell .filtros { padding: 7px; }
+
+@media (max-width: 900px) {
+    body.crm-shell .compromisos-hero { grid-template-columns: 1fr; }
+    body.crm-shell .kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    body.crm-shell .kpis .card:nth-child(2) { border-right: 0; }
+}
+@media (max-width: 560px) {
+    body.crm-shell .kpis { grid-template-columns: 1fr; }
+    body.crm-shell .kpis .card { border-right: 0; border-bottom: 1px solid #e7edf4; }
+    body.crm-shell .kpis .card:last-child { border-bottom: 0; }
+}

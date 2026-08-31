@@ -76,6 +76,7 @@ async function validarArchivo(event) {
 
 function pintarResumen(data) {
     document.getElementById("resumenPanel").classList.remove("oculto");
+    document.querySelector(".pagos-main-grid")?.classList.remove("is-publishing", "is-published");
     document.querySelector(".pagos-main-grid")?.classList.add("with-preview");
     document.getElementById("rFormato").innerText = texto(data.formato);
     document.getElementById("rArchivo").innerText = texto(data.archivo);
@@ -127,8 +128,10 @@ async function confirmarImportacion() {
     }
 
     const btn = document.getElementById("btnConfirmar");
+    let publicado = false;
 
     try {
+        document.querySelector(".pagos-main-grid")?.classList.add("is-publishing");
         btn.disabled = true;
         btn.innerText = "Publicando...";
 
@@ -141,18 +144,26 @@ async function confirmarImportacion() {
             throw new Error(result.detail || "No se pudo publicar la importación.");
         }
 
+        const flujo = document.querySelector(".pagos-main-grid");
+        flujo?.classList.remove("is-publishing");
+        flujo?.classList.add("is-published");
+        publicado = true;
+        btn.innerText = "Publicado";
         mostrarToast(`Importación publicada correctamente: ${numero(result.filas_publicadas)} filas.`, "success");
-        limpiarResumen();
         document.getElementById("formPagos").reset();
         actualizarNombreArchivo();
         await cargarHistorial(false);
+        window.setTimeout(limpiarResumen, 900);
 
     } catch (error) {
         console.error("ERROR CONFIRMANDO PAGOS:", error);
+        document.querySelector(".pagos-main-grid")?.classList.remove("is-publishing");
         mostrarToast(error.message || "Error publicando importación.", "error");
     } finally {
-        btn.disabled = false;
-        btn.innerText = "Confirmar importación";
+        if (!publicado) {
+            btn.disabled = false;
+            btn.innerText = "Confirmar importación";
+        }
     }
 }
 
@@ -164,7 +175,12 @@ function cancelarResumen() {
 function limpiarResumen() {
     idImportacionActual = null;
     document.getElementById("resumenPanel").classList.add("oculto");
-    document.querySelector(".pagos-main-grid")?.classList.remove("with-preview");
+    document.querySelector(".pagos-main-grid")?.classList.remove("with-preview", "is-publishing", "is-published");
+    const btnConfirmar = document.getElementById("btnConfirmar");
+    if (btnConfirmar) {
+        btnConfirmar.disabled = false;
+        btnConfirmar.innerText = "Confirmar importación";
+    }
     document.getElementById("tablaResumenCartera").innerHTML = "";
 }
 

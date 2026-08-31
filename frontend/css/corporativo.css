@@ -1009,3 +1009,127 @@ td {
     font-size: 10px;
     padding: 4px 8px;
 }
+
+/* 20260829 Apple-design pass for Promesas Hoy. Data shape and filters remain unchanged. */
+body.crm-shell .contenedor {
+    color: #13243a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+body.crm-shell .pdp-resumen { gap: 12px; margin-bottom: 16px; }
+body.crm-shell .pdp-resumen .card {
+    min-height: 94px;
+    border-color: rgba(148,163,184,.25);
+    border-radius: 15px;
+    background: rgba(255,255,255,.88);
+    box-shadow: 0 11px 30px rgba(15,23,42,.06);
+}
+body.crm-shell .pdp-resumen .card:first-child { background: linear-gradient(135deg, #0b5fc3, #147be9); border-color: transparent; }
+body.crm-shell .pdp-resumen .card:first-child p,
+body.crm-shell .pdp-resumen .card:first-child h3 { color: #fff; }
+body.crm-shell .pdp-resumen .card:first-child .icono { background: rgba(255,255,255,.16); color: #fff; }
+body.crm-shell .pdp-resumen .icono { width: 40px; height: 40px; border-radius: 12px; }
+body.crm-shell .pdp-resumen .card h3 { font-size: 24px; letter-spacing: -.03em; }
+body.crm-shell .filtros-panel {
+    gap: 10px;
+    padding: 13px;
+    border-color: rgba(148,163,184,.25);
+    border-radius: 16px;
+    background: rgba(255,255,255,.78);
+    box-shadow: 0 10px 28px rgba(15,23,42,.05);
+    backdrop-filter: blur(15px);
+}
+body.crm-shell .campo-filtro select,
+body.crm-shell .campo-filtro input { height: 40px; border-color: rgba(148,163,184,.38); border-radius: 10px; background: rgba(255,255,255,.9); }
+body.crm-shell .campo-filtro select:focus,
+body.crm-shell .campo-filtro input:focus { outline: none; border-color: #0a66d8; box-shadow: 0 0 0 3px rgba(10,102,216,.12); }
+body.crm-shell .tabla-card { border-color: rgba(148,163,184,.24); border-radius: 16px; box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .tabla-header { padding: 18px 20px 14px; }
+body.crm-shell .tabla-header h2 { font-size: 19px; text-transform: none; letter-spacing: -.025em; }
+body.crm-shell .tabla-scroll { margin: 0 14px 14px; width: calc(100% - 28px); border: 1px solid rgba(148,163,184,.22); border-radius: 12px; }
+body.crm-shell .tabla-card th { background: #f8fafc; color: #526174; border-bottom: 1px solid rgba(148,163,184,.25); }
+body.crm-shell .tabla-card .th-sort:hover,
+body.crm-shell .tabla-card .th-sort.activo { background: #eff6ff; color: #075fc8; }
+body.crm-shell .tabla-card tbody tr:hover { background: #f8fbff; }
+body.crm-shell .estado-pdp, body.crm-shell .badge { border-radius: 999px; }
+body.crm-shell .btn-ver-detalle,
+body.crm-shell .btn-cerrar-modal { border-radius: 10px; border-color: rgba(148,163,184,.35); background: rgba(255,255,255,.82); color: #15588e; transition: transform .14s ease, background .14s ease; }
+body.crm-shell .btn-ver-detalle:active,
+body.crm-shell .btn-cerrar-modal:active { transform: scale(.96); }
+body.crm-shell .modal-pdp { background: rgba(7,24,45,.4); backdrop-filter: blur(5px); }
+body.crm-shell .modal-pdp-card { border: 1px solid rgba(255,255,255,.76); border-radius: 20px; background: rgba(255,255,255,.96); box-shadow: 0 28px 80px rgba(5,23,45,.28); }
+body.crm-shell .modal-grid div, body.crm-shell .modal-bloque-pdp { border-color: rgba(148,163,184,.22); border-radius: 12px; background: #f8fafc; }
+@media (prefers-reduced-motion: reduce) { body.crm-shell .btn-ver-detalle, body.crm-shell .btn-cerrar-modal { transition: none; } }
+
+/* Panel corporativo: una superficie de decisión, no cinco tarjetas aisladas. */
+body.crm-shell .contenedor > .cabecera-panel {
+    margin-bottom: 12px;
+    padding: 6px 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body.crm-shell .contenedor > .cabecera-panel h2 { font-size: 25px; letter-spacing: -.04em; text-transform: none; }
+body.crm-shell .contenedor > .cabecera-panel p { margin-top: 4px; }
+body.crm-shell .contenedor > .cabecera-panel .btn-descargar { border-radius: 10px; background: #0a66d8; color: #fff; box-shadow: 0 8px 18px rgba(7,95,200,.16); }
+body.crm-shell .contenedor > .cabecera-panel .btn-secundario { border-radius: 10px; }
+body.crm-shell .contenedor > .cabecera-panel + .filtros-panel {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border: 1px solid #e0e8f1;
+    border-radius: 15px;
+    background: rgba(255,255,255,.78);
+    box-shadow: none;
+}
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0,1fr));
+    gap: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    border: 1px solid #e0e8f1;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(15,23,42,.05);
+}
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card {
+    min-height: 102px;
+    padding: 18px 16px;
+    border: 0;
+    border-right: 1px solid #e7edf4;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card:last-child { border-right: 0; }
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card:first-child { background: linear-gradient(135deg,#f1f7ff,#fff); }
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .icono { display: none; }
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card h3 { margin: 8px 0 0; color: #112b4c; font-size: 22px; letter-spacing: -.035em; }
+body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card p { color: #62758a; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+body.crm-shell .alertas-card {
+    margin-bottom: 16px;
+    border-radius: 16px;
+    border-color: #e5ebf2;
+    box-shadow: none;
+}
+body.crm-shell .alertas-card .tabla-header { padding-bottom: 9px; }
+body.crm-shell .alertas-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; padding: 0 14px 14px; }
+body.crm-shell .alerta { min-height: 78px; border-radius: 12px; box-shadow: none; }
+body.crm-shell .tabla-card { border-radius: 18px; }
+body.crm-shell .tabla-card .tabla-header { display: flex; align-items: center; min-height: 68px; }
+body.crm-shell .tabla-scroll { max-height: min(61vh,650px); }
+body.crm-shell .tabla-scroll thead th { position: sticky; top: 0; z-index: 2; }
+
+@media (max-width: 1150px) {
+    body.crm-shell .contenedor > .cards:not(.pdp-resumen) { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card:nth-child(3) { border-right: 0; }
+    body.crm-shell .alertas-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 650px) {
+    body.crm-shell .contenedor > .cards:not(.pdp-resumen) { grid-template-columns: 1fr; }
+    body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card { border-right: 0; border-bottom: 1px solid #e7edf4; }
+    body.crm-shell .contenedor > .cards:not(.pdp-resumen) .card:last-child { border-bottom: 0; }
+    body.crm-shell .alertas-grid { grid-template-columns: 1fr; }
+}

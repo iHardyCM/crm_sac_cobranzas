@@ -847,7 +847,7 @@ body.crm-shell .pagos-container input {
 }
 
 .pagos-container {
-    padding: 16px 20px 26px;
+    padding: 28px 20px 26px;
 }
 
 .topbar h1,
@@ -964,4 +964,109 @@ td {
 
 .pagos-container tbody tr:hover td {
     background: #f8fbff;
+}
+
+/* Flujo de importación: explica el estado sin cambiar la operación. */
+body.crm-shell .panel-importacion { overflow: hidden; }
+body.crm-shell .pagos-flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 12px 18px 16px;
+    list-style: none;
+    border-bottom: 1px solid #e8eef5;
+}
+body.crm-shell .pagos-flow li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: #7b8ba0;
+}
+body.crm-shell .pagos-flow li > span {
+    display: grid;
+    flex: 0 0 24px;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #d9e2ed;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #718096;
+    font-size: 11px;
+    font-weight: 800;
+}
+body.crm-shell .pagos-flow li div { display: grid; min-width: 0; gap: 1px; }
+body.crm-shell .pagos-flow b { color: inherit; font-size: 11px; }
+body.crm-shell .pagos-flow small {
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body.crm-shell .pagos-flow .is-active { color: #075fc8; }
+body.crm-shell .pagos-flow .is-active > span {
+    border-color: #0a66d8;
+    background: #0a66d8;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(10,102,216,.22);
+}
+body.crm-shell .pagos-main-grid.with-preview .pagos-flow li:first-child { color: #16804a; }
+body.crm-shell .pagos-main-grid.with-preview .pagos-flow li:first-child > span {
+    border-color: #b9e5c8;
+    background: #eaf8ef;
+    color: #16804a;
+    font-size: 0;
+    box-shadow: none;
+}
+body.crm-shell .pagos-main-grid.with-preview .pagos-flow li:first-child > span::after {
+    content: "✓";
+    font-size: 12px;
+}
+body.crm-shell .pagos-main-grid.with-preview .pagos-flow li:nth-child(2) { color: #075fc8; }
+body.crm-shell .pagos-main-grid.with-preview .pagos-flow li:nth-child(2) > span {
+    border-color: #0a66d8;
+    background: #0a66d8;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(10,102,216,.22);
+}
+body.crm-shell .pagos-main-grid.is-publishing .pagos-flow li:nth-child(2),
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(2),
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(3) { color: #16804a; }
+body.crm-shell .pagos-main-grid.is-publishing .pagos-flow li:nth-child(2) > span,
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(2) > span,
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(3) > span {
+    border-color: #b9e5c8;
+    background: #eaf8ef;
+    color: #16804a;
+    font-size: 0;
+    box-shadow: none;
+}
+body.crm-shell .pagos-main-grid.is-publishing .pagos-flow li:nth-child(2) > span::after,
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(2) > span::after,
+body.crm-shell .pagos-main-grid.is-published .pagos-flow li:nth-child(3) > span::after {
+    content: "✓";
+    font-size: 12px;
+}
+body.crm-shell .pagos-main-grid.is-publishing .pagos-flow li:nth-child(3) { color: #075fc8; }
+body.crm-shell .pagos-main-grid.is-publishing .pagos-flow li:nth-child(3) > span {
+    border-color: #0a66d8;
+    background: #0a66d8;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(10,102,216,.22);
+}
+body.crm-shell .pagos-container .historial-scroll {
+    max-height: 440px;
+    border: 1px solid #e5ebf2;
+    border-radius: 13px;
+}
+body.crm-shell .pagos-container .historial-scroll thead th { position: sticky; top: 0; z-index: 1; }
+body.crm-shell .pagos-container .tabla-card { border-radius: 13px; }
+body.crm-shell .pagos-container .tabla-card:has(table) { border: 1px solid #e5ebf2; }
+
+@media (max-width: 620px) {
+    body.crm-shell .pagos-flow { gap: 6px; padding-inline: 14px; }
+    body.crm-shell .pagos-flow small { display: none; }
+    body.crm-shell .pagos-flow b { font-size: 10px; }
 }

@@ -933,3 +933,37 @@ tbody tr:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* Importación segura: jerarquía de revisión antes de ejecutar cambios. */
+body.crm-shell .import-page { max-width: 1680px; padding-top: 30px; }
+body.crm-shell .import-hero { border-radius: 19px; background: linear-gradient(135deg,#ffffff,#f5faff); }
+body.crm-shell .hero-status { border-radius: 13px; background: rgba(255,255,255,.78); }
+body.crm-shell .import-tabs {
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid #e2eaf3;
+    border-radius: 14px;
+    background: rgba(255,255,255,.72);
+}
+body.crm-shell .import-tabs button { border-radius: 9px; }
+body.crm-shell .card { border-color: rgba(148,163,184,.24); border-radius: 18px; box-shadow: 0 14px 34px rgba(15,23,42,.06); }
+body.crm-shell .section-head { padding: 18px 20px 14px; }
+body.crm-shell .import-form { padding: 0 20px 20px; }
+body.crm-shell .field select,
+body.crm-shell .field input,
+body.crm-shell .file-control { border-radius: 10px; }
+body.crm-shell .field select:focus,
+body.crm-shell .field input:focus { outline: none; border-color: #0a66d8; box-shadow: 0 0 0 3px rgba(10,102,216,.12); }
+body.crm-shell .file-button { background: #edf6ff; color: #145786; }
+body.crm-shell .btn-primary { border-radius: 10px; background: linear-gradient(180deg,#1476e8,#075fc8); box-shadow: 0 8px 18px rgba(7,95,200,.17); }
+body.crm-shell .btn-secondary { border-radius: 10px; }
+body.crm-shell .analysis-result .kpi-grid { gap: 12px; }
+body.crm-shell .impact-card { background: linear-gradient(135deg,#fbfdff,#f5faff); }
+body.crm-shell .analysis-grid { gap: 16px; }
+body.crm-shell .table-wrap { border: 1px solid #e2eaf2; border-radius: 13px; }
+body.crm-shell .table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+body.crm-shell .quick-filters { gap: 6px; padding: 5px; border-radius: 11px; background: #f4f7fb; }
+body.crm-shell .quick-filters button { border-radius: 8px; }
+body.crm-shell .confirm-load-panel { border-color: #b8d9fa; background: linear-gradient(135deg,#f5faff,#fff); }
+body.crm-shell .confirm-overlay { background: rgba(7,24,45,.18); backdrop-filter: blur(2px); }
+body.crm-shell .confirm-modal { border-radius: 20px; }

@@ -2064,6 +2064,9 @@ No uses REQUIERE_REVISION como salida genérica por falta de IDs. Para criterios
 Para CUMPLE, segmentos_evidencia es recomendable pero no obligatorio si conducta_observada y hallazgo explican el cumplimiento.
 Para NO_CUMPLE observable, segmentos_evidencia o segmentos_contexto es obligatorio. Para faltas críticas o posibles descalificaciones, la evidencia debe ser de AGENTE con confianza suficiente.
 Usa REQUIERE_REVISION solo si la evidencia existe pero es ambigua, el rol AGENTE/CLIENTE es dudoso, hay contradicción real o la falta crítica necesita validación humana.
+
+Para PECN.2 y PECN.3 no basta que el agente diga "puede pagar", "cuota" o "abonar". La evidencia debe mostrar la secuencia: objeción o restricción concreta del CLIENTE, respuesta posterior del AGENTE y conexión de esa respuesta con la causa, capacidad, monto o fecha expuestos. Una propuesta genérica que ignora un dato relevante, como cosecha, ingreso futuro, enfermedad o imposibilidad actual, no cumple negociación escalonada ni manejo de objeciones.
+Para PECN.4, usa la promesa o siguiente acción realmente aceptada por el CLIENTE, no una frase previa donde el AGENTE solo informa la deuda. Para PECC.2, diferencia la promesa del cliente de la confirmación verbal del agente: exige una recapitulación posterior de las condiciones principales.
 """
         contrato_estado = "CUMPLE|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION"
     else:
@@ -2705,9 +2708,23 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
     respuestas_capacidad = buscar_segmentos_capacidad_cliente_v3(segmentos)
     tiene_causa = bool(preguntas_causa or causas_cliente)
     tiene_capacidad = bool(preguntas_capacidad and respuestas_capacidad)
+    conducta_grave = detectar_conducta_grave_agente_v3(segmentos)
 
     # PECUF.1: Falta de respeto.
-    if por_codigo.get("PECUF.1") and estado_sgc_normalizado(por_codigo["PECUF.1"]) == "REQUIERE_REVISION":
+    if por_codigo.get("PECUF.1") and conducta_grave["segmentos"]:
+        aplicar_resultado_guardado_v3(
+            por_codigo["PECUF.1"],
+            "NO_CUMPLE",
+            conducta_grave["segmentos"],
+            conducta_grave["motivo"],
+            "Suspender expresiones de presión, humillación o descalificación; retomar la gestión con trato respetuoso y una alternativa verificable.",
+        )
+        # La descalificación solo se confirma después de comprobar rol y confianza
+        # de la evidencia en detectar_descalificacion_mibanco_v3.
+        por_codigo["PECUF.1"]["puede_descalificar"] = True
+        por_codigo["PECUF.1"]["posible_descalificacion"] = True
+        por_codigo["PECUF.1"]["justificacion_descalificacion"] = conducta_grave["motivo"]
+    elif por_codigo.get("PECUF.1") and estado_sgc_normalizado(por_codigo["PECUF.1"]) == "REQUIERE_REVISION":
         if not contiene_riesgo_trato_agente_v3(texto_agente):
             aplicar_resultado_guardado_v3(
                 por_codigo["PECUF.1"],
@@ -2793,9 +2810,11 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Indagar vínculo con el titular y, cuando corresponda, causa, capacidad, monto y fecha.",
             )
 
+    oportunidad = objeciones_cliente or dificultades_cliente
+    secuencia_objecion = analizar_secuencia_objecion_mibanco_v3(segmentos, objeciones_cliente)
+
     # PECN.2: Negociación escalonada.
     if por_codigo.get("PECN.2"):
-        oportunidad = objeciones_cliente or dificultades_cliente
         if sin_oportunidad_por_tercero_o_corte:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.2"],
@@ -2805,20 +2824,20 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Retomar la gestión con el titular cuando exista una oportunidad válida de negociación.",
             )
         elif oportunidad:
-            respuesta_negociacion = buscar_respuesta_posterior_v3(
-                segmentos,
-                oportunidad[0],
-                "AGENTE",
-                {"puede", "podemos", "abonar", "pagar", "cuota", "fecha", "alternativa", "opcion", "opción", "solucion", "solución", "fraccionamiento", "convenio", "monto", "recaudar", "descuento", "campana", "campaña", "rebaja", "reajuste", "vigencia"},
-                ventana=24,
+            respuesta_negociacion = secuencia_objecion["propuestas"]
+            negociacion_sustentada = bool(
+                respuesta_negociacion
+                and tiene_causa
+                and tiene_capacidad
+                and secuencia_objecion["adaptada"]
+                and secuencia_objecion["escalonada"]
             )
-            negociacion_sustentada = bool(respuesta_negociacion and tiene_causa and tiene_capacidad)
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.2"],
                 "CUMPLE" if negociacion_sustentada else "NO_CUMPLE",
-                [oportunidad[0], *(respuesta_negociacion[:1] if respuesta_negociacion else [])],
-                "Ante la situación del cliente, el agente conduce la gestión con alternativa posterior y basada en el diagnóstico." if negociacion_sustentada else "La gestión no desarrolla una alternativa escalonada sustentada en causa y capacidad de pago.",
-                "Mantener negociación escalonada vinculada a capacidad y fecha.",
+                [secuencia_objecion["objecion"] or oportunidad[0], *(respuesta_negociacion[:2] if respuesta_negociacion else [])],
+                "Ante la situación del cliente, el agente conduce la gestión con alternativas posteriores y conectadas con el diagnóstico." if negociacion_sustentada else "La gestión presenta una propuesta, pero no desarrolla una negociación escalonada conectada con la causa, capacidad, monto o fecha expuestos por el cliente.",
+                "Retomar la causa y capacidad expresadas; ofrecer opciones escalonadas y concretar monto y fecha de la alternativa elegida.",
             )
         else:
             aplicar_resultado_guardado_v3(
@@ -2849,19 +2868,18 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Ante dudas, postergaciones o restricciones, explorar la condición y orientar una alternativa concreta.",
             )
         else:
-            respuesta_objecion = buscar_respuesta_posterior_v3(
-                segmentos,
-                objeciones_cliente[0],
-                "AGENTE",
-                {"puede", "puedes", "abonar", "pagar", "cuanto", "cuánto", "fecha", "alternativa", "opcion", "opción", "solucion", "solución", "recaudar", "monto", "descuento", "campana", "campaña", "rebaja", "reajuste", "vigencia"},
-                ventana=24,
+            respuesta_objecion = secuencia_objecion["propuestas"]
+            manejo_sustentado = bool(
+                respuesta_objecion
+                and secuencia_objecion["validacion"]
+                and secuencia_objecion["adaptada"]
             )
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.3"],
-                "CUMPLE" if respuesta_objecion else "NO_CUMPLE",
-                [objeciones_cliente[0], *(respuesta_objecion[:1] if respuesta_objecion else [])],
-                "El agente aborda la objeción del cliente con una respuesta orientada a solución." if respuesta_objecion else "El cliente presenta una objeción y no se observa abordaje posterior suficiente.",
-                "Explorar alternativa, monto o fecha frente a cada objeción relevante.",
+                "CUMPLE" if manejo_sustentado else "NO_CUMPLE",
+                [secuencia_objecion["objecion"] or objeciones_cliente[0], *(respuesta_objecion[:2] if respuesta_objecion else [])],
+                "El agente reconoce la objeción y responde con una alternativa conectada con la situación expuesta." if manejo_sustentado else "El cliente presenta una objeción material y la respuesta posterior no demuestra validación ni adaptación suficiente a su situación.",
+                "Reconocer la objeción, resumir el dato relevante y construir una alternativa con monto o fecha antes de continuar.",
             )
 
     # PECN.4: Cierre de negociación.
@@ -2880,7 +2898,7 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.4"],
                 "NO_CUMPLE",
-                respuestas_gestion[:1] or evidencia_neutra,
+                evidencia_ausencia_cierre_mibanco_v3(segmentos, oportunidad, respuestas_gestion) or evidencia_neutra,
                 "No se identifica promesa de pago ni siguiente acción verificable acordada con el cliente.",
                 "Inducir a promesa de pago cuando la conversación permita concretar un compromiso.",
             )
@@ -2976,9 +2994,51 @@ def contiene_riesgo_trato_agente_v3(texto_agente: str) -> bool:
         "mentiroso", "irresponsable", "sinverguenza", "sinvergüenza",
         "usted nunca paga", "no quiere pagar", "mal cliente", "burla",
         "ridiculiza", "humilla", "callese", "cállese", "no entiende nada",
+        "no tiene plata ni para pagarme", "parece que no es empresario",
+        "lo va a tener que conseguir", "las leyes le va a obligar",
     }
     texto = limpiar_key_texto(texto_agente)
     return any(limpiar_key_texto(token) in texto for token in tokens)
+
+
+def detectar_conducta_grave_agente_v3(segmentos: List[Dict]) -> Dict:
+    """Ubica presión indebida o humillación atribuida al AGENTE.
+
+    No infiere la falta por el vocabulario de deuda: conserva el turno literal
+    para que la posterior descalificación sea revisable y trazable.
+    """
+    patrones_humillacion = {
+        "no tiene plata ni para pagarme",
+        "parece que no es empresario",
+        "no es empresario porque no tiene plata",
+        "usted nunca paga",
+        "mal cliente",
+    }
+    patrones_coaccion = {
+        "lo va a tener que conseguir",
+        "las leyes le va a obligar",
+        "las leyes lo van a obligar",
+        "te voy a obligar a pagar",
+        "lo voy a obligar a pagar",
+    }
+    evidencias = []
+    categorias = set()
+    for item in segmentos:
+        if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) != "AGENTE":
+            continue
+        texto = limpiar_key_texto(item.get("texto") or item.get("texto_original") or "")
+        if any(patron in texto for patron in patrones_humillacion):
+            evidencias.append(item)
+            categorias.add("humillación o descalificación")
+        elif any(patron in texto for patron in patrones_coaccion):
+            evidencias.append(item)
+            categorias.add("coacción o presión indebida")
+    if not evidencias:
+        return {"segmentos": [], "motivo": ""}
+    return {
+        "segmentos": evidencias,
+        "motivo": "Se identifica " + " y ".join(sorted(categorias)) + " atribuida al agente; requiere revisión prioritaria por posible falta descalificante.",
+    }
 
 
 def contiene_corte_deliberado_v3(texto_agente: str) -> bool:
@@ -3045,7 +3105,105 @@ def buscar_segmentos_respuesta_gestion_agente_v3(segmentos: List[Dict]) -> List[
         "acuerdo", "compromiso", "opcion", "opción", "alternativa",
         "solucion", "solución", "recaudar", "programar", "voucher",
     }
-    return buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", tokens)
+    return [
+        item for item in buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", tokens)
+        if not es_presion_no_negociable_mibanco_v3(item)
+    ]
+
+
+def es_presion_no_negociable_mibanco_v3(item: Dict) -> bool:
+    texto = limpiar_key_texto(item.get("texto") or item.get("texto_original") or "")
+    return any(patron in texto for patron in {
+        "lo va a tener que conseguir", "las leyes le va a obligar",
+        "las leyes lo van a obligar", "tiene que pagar", "tienes que pagar",
+        "debe pagar", "debes pagar",
+    })
+
+
+def es_propuesta_accionable_mibanco_v3(item: Dict) -> bool:
+    """Una exigencia de pago no es una alternativa de negociación."""
+    if es_presion_no_negociable_mibanco_v3(item):
+        return False
+    texto = limpiar_key_texto(item.get("texto") or item.get("texto_original") or "")
+    marcadores_accion = {
+        "puede abonar", "puede pagar", "podemos", "opcion", "opción",
+        "alternativa", "convenio", "descuento", "rebaja", "reajuste",
+        "fraccionamiento", "amortizacion", "amortización", "pago a cuenta",
+        "cuota menor", "programar", "coordinar",
+    }
+    return any(marcador in texto for marcador in marcadores_accion)
+
+
+def analizar_secuencia_objecion_mibanco_v3(segmentos: List[Dict], objeciones: List[Dict]) -> Dict:
+    """Distingue una propuesta genérica de una respuesta realmente adaptada."""
+    salida = {"objecion": None, "propuestas": [], "validacion": [], "adaptada": False, "escalonada": False}
+    if not objeciones:
+        return salida
+
+    ordenados = sorted(
+        [item for item in segmentos if isinstance(item, dict)],
+        key=lambda item: int(item.get("segmento_id") or 0),
+    )
+    marcadores_contexto = {
+        "agricultura", "cosecha", "marzo", "seis meses", "ingreso", "trabajo",
+        "enfermedad", "operacion", "operación", "otros bancos", "otro banco",
+        "familia", "perdida", "pérdida", "desempleo",
+    }
+    marcadores_validacion = {"entiendo", "comprendo", "lamento", "veo que", "de acuerdo", "claro", "correcto"}
+    marcadores_indagacion = {"cuanto", "cuánto", "fecha", "cuando", "cuándo", "podria", "podría", "capacidad", "disponible"}
+
+    def texto(item: Dict) -> str:
+        return limpiar_key_texto(item.get("texto") or item.get("texto_original") or "")
+
+    def riqueza(item: Dict) -> tuple[int, int]:
+        contenido = texto(item)
+        return (sum(1 for marcador in marcadores_contexto if marcador in contenido), len(contenido))
+
+    objecion = max(objeciones, key=riqueza)
+    salida["objecion"] = objecion
+    try:
+        indice_objecion = ordenados.index(objecion)
+    except ValueError:
+        indice_objecion = -1
+    posteriores = ordenados[indice_objecion + 1:indice_objecion + 31] if indice_objecion >= 0 else []
+    agentes = [
+        item for item in posteriores
+        if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "AGENTE"
+    ]
+    propuestas = [item for item in agentes if es_propuesta_accionable_mibanco_v3(item)]
+    validacion = [item for item in agentes if any(marcador in texto(item) for marcador in marcadores_validacion)]
+    contexto_objecion = {marcador for marcador in marcadores_contexto if marcador in texto(objecion)}
+    conecta_contexto = any(
+        any(marcador in texto(respuesta) for marcador in contexto_objecion)
+        for respuesta in agentes
+    )
+    profundiza = any(any(marcador in texto(respuesta) for marcador in marcadores_indagacion) for respuesta in agentes)
+    alternativa_directa = any(
+        any(marcador in texto(respuesta) for marcador in {"descuento", "rebaja", "reajuste", "convenio", "fraccionamiento"})
+        for respuesta in propuestas
+    )
+
+    salida["propuestas"] = propuestas
+    salida["validacion"] = validacion
+    # Si el cliente entrega una condición material, la propuesta debe retomarla
+    # o profundizarla; de otro modo es una respuesta estándar, no adaptada.
+    salida["adaptada"] = bool(propuestas) and (not contexto_objecion or conecta_contexto or profundiza)
+    salida["escalonada"] = bool(propuestas) and (len(propuestas) >= 2 or alternativa_directa or profundiza)
+    return salida
+
+
+def evidencia_ausencia_cierre_mibanco_v3(segmentos: List[Dict], oportunidad: List[Dict], respuestas_gestion: List[Dict]) -> List[Dict]:
+    """Muestra el tramo final relevante, nunca una frase de apertura como cierre."""
+    ordenados = sorted(
+        [item for item in segmentos if isinstance(item, dict)],
+        key=lambda item: int(item.get("segmento_id") or 0),
+    )
+    final = ordenados[-4:]
+    cierre_relevante = [
+        item for item in final
+        if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) in {"AGENTE", "CLIENTE"}
+    ]
+    return cierre_relevante[-2:] or (oportunidad[-1:] + respuestas_gestion[-1:])
 
 
 def buscar_segmentos_diagnostico_agente_v3(segmentos: List[Dict]) -> List[Dict]:
@@ -3934,7 +4092,9 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
     return {
         "version_evaluacion": data.get("version_evaluacion") or "2.0",
         "pauta": data.get("pauta") or "COPC_SGC",
+        "pauta_version": data.get("pauta_version"),
         "pauta_pesos": data.get("pauta_pesos"),
+        "pauta_snapshot": data.get("pauta_snapshot") if isinstance(data.get("pauta_snapshot"), list) else [],
         "json_copc_v2": data,
         "hechos_llamada": data.get("hechos_llamada") if isinstance(data.get("hechos_llamada"), dict) else {},
         "auditoria_consistencia": data.get("auditoria_consistencia") if isinstance(data.get("auditoria_consistencia"), dict) else {},
@@ -5611,6 +5771,10 @@ def normalizar_analisis(data: Dict, transcripcion: str = "") -> Dict:
 
     return {
         "version_evaluacion": data.get("version_evaluacion"),
+        "pauta": data.get("pauta"),
+        "pauta_version": data.get("pauta_version"),
+        "pauta_pesos": data.get("pauta_pesos"),
+        "pauta_snapshot": data.get("pauta_snapshot") if isinstance(data.get("pauta_snapshot"), list) else [],
         "json_copc_v2": data.get("json_copc_v2"),
         "interlocutores": interlocutores,
         "segmentos_interlocutores": segmentos_interlocutores,
