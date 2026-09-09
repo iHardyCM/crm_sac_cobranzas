@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -36,6 +37,7 @@ async def importar_archivo_canales(
     idcartera: int = Form(...),
     cartera: str = Form(...),
     usuario_carga: str = Form(default="SIN_USUARIO"),
+    fecha_lanzamiento: Optional[str] = Form(default=None),
     archivo: UploadFile = File(...),
 ):
     try:
@@ -46,6 +48,7 @@ async def importar_archivo_canales(
             idcartera=idcartera,
             cartera=cartera,
             usuario_carga=usuario_carga,
+            fecha_lanzamiento=fecha_lanzamiento,
             archivo_nombre=archivo.filename or "archivo.xlsx",
             contenido=contenido,
         )

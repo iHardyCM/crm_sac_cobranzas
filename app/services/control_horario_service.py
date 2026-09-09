@@ -31,9 +31,9 @@ GRUPOS_CARTERA = {
     135: {"id": "MIBANCO", "nombre": "MIBANCO", "ids": [112, 143, 135]},
     124: {"id": "COMPARTAMOS_CASTIGO", "nombre": "COMPARTAMOS CASTIGO", "ids": [124, 144]},
     144: {"id": "COMPARTAMOS_CASTIGO", "nombre": "COMPARTAMOS CASTIGO", "ids": [124, 144]},
-    126: {"id": "COMPARTAMOS_VIGENTE", "nombre": "COMPARTAMOS VIGENTE", "ids": [126, 128, 133]},
-    128: {"id": "COMPARTAMOS_VIGENTE", "nombre": "COMPARTAMOS VIGENTE", "ids": [126, 128, 133]},
-    133: {"id": "COMPARTAMOS_VIGENTE", "nombre": "COMPARTAMOS VIGENTE", "ids": [126, 128, 133]},
+    126: {"id": "COMPARTAMOS_VIGENTE_IND_CCM", "nombre": "COMPARTAMOS VIGENTE INDIVIDUAL / CCM", "ids": [126, 128]},
+    128: {"id": "COMPARTAMOS_VIGENTE_IND_CCM", "nombre": "COMPARTAMOS VIGENTE INDIVIDUAL / CCM", "ids": [126, 128]},
+    133: {"id": "COMPARTAMOS_VIGENTE_GRUPAL", "nombre": "COMPARTAMOS VIGENTE GRUPAL / CSM", "ids": [133]},
     132: {"id": "132", "nombre": "FINANCIERA OH", "ids": [132]},
     148: {"id": "148", "nombre": "FINANCIERA OH PROPIA", "ids": [148]},
     117: {"id": "117", "nombre": "INTERBANK", "ids": [117]},
@@ -41,6 +41,7 @@ GRUPOS_CARTERA = {
 }
 
 PERFILES_RECUPERO_APOYO = {"ADM", "SUPERVISOR", "JEFE"}
+CARTERAS_EXCLUIDAS_CONTROL = {120, 139, 141, 146}
 
 
 def serialize_value(value):
@@ -110,6 +111,7 @@ def obtener_dotacion_grupos(cursor):
             COUNT(1) AS agentes_asignados
         FROM SISCOB.DBO.USUARIO WITH(NOLOCK)
         WHERE IDCARTERA IS NOT NULL
+          AND IDCARTERA NOT IN (120, 139, 141, 146)
           AND UPPER(LTRIM(RTRIM(ISNULL(TIPOUSUARIO, '')))) = 'GESTOR'
           AND UPPER(LTRIM(RTRIM(ISNULL(ESTADO, '')))) <> 'E'
         GROUP BY IDCARTERA
@@ -209,6 +211,14 @@ def enriquecer_por_usuario(rows, mapa_id, mapa_usuario, incluir_apoyo_recupero=F
         if idcartera_resultado is None:
             continue
 
+        try:
+            idcartera_resultado_int = int(idcartera_resultado)
+        except (TypeError, ValueError):
+            continue
+
+        if idcartera_resultado_int in CARTERAS_EXCLUIDAS_CONTROL:
+            continue
+
         grupo_gestion = obtener_grupo_cartera(idcartera_resultado)
         grupo_usuario = obtener_grupo_cartera(info["idcartera"])
 
@@ -241,7 +251,7 @@ def obtener_clientes_unicos_control(cursor, fecha=None, idcartera=None, idusuari
         "G.IDCLIENTE IS NOT NULL",
         "G.IDUSUARIO IS NOT NULL",
         "G.IDCARTERA IS NOT NULL",
-        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
+        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 120, 139, 141, 146, 125, 119, 127, 121, 130, 98, 122)",
         "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
     ]
 
@@ -316,7 +326,7 @@ def obtener_compromisos_activos_control(cursor, fecha=None, idcartera=None, idus
         "ISNULL(C.MONTO, 0) > 0",
         "G.IDUSUARIO IS NOT NULL",
         "G.IDCARTERA IS NOT NULL",
-        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
+        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 120, 139, 141, 146, 125, 119, 127, 121, 130, 98, 122)",
         "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
         "UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')",
     ]
@@ -381,6 +391,170 @@ def obtener_compromisos_activos_control(cursor, fecha=None, idcartera=None, idus
     return resultado
 
 
+def obtener_compromisos_hora_control(cursor, fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
+    fecha_base = fecha_desde_parametro(fecha)
+    fecha_fin = fecha_base + timedelta(days=1)
+    params = [fecha_base, fecha_fin]
+    filtros = [
+        "C.FECHAGENERO >= ?",
+        "C.FECHAGENERO < ?",
+        "ISNULL(C.MONTO, 0) > 0",
+        "G.IDUSUARIO IS NOT NULL",
+        "G.IDCARTERA IS NOT NULL",
+        "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 120, 139, 141, 146, 125, 119, 127, 121, 130, 98, 122)",
+        "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
+        "UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')",
+    ]
+
+    if incluir_apoyo_recupero:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
+    else:
+        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+
+    if idcartera is not None:
+        filtros.append("G.IDCARTERA = ?")
+        params.append(idcartera)
+
+    if idusuario is not None:
+        filtros.append("G.IDUSUARIO = ?")
+        params.append(idusuario)
+
+    cursor.execute(
+        f"""
+        SELECT
+            G.IDUSUARIO,
+            G.IDCARTERA,
+            DATEPART(HOUR, C.FECHAGENERO) AS HORA_CORTE,
+            COUNT(1) AS Q_PDP_GEN,
+            SUM(ISNULL(C.MONTO, 0)) AS PDP_GEN
+        FROM SISCOB.DBO.COMPROMISO C WITH(NOLOCK)
+        LEFT JOIN SISCOB.DBO.GESTION G WITH(NOLOCK)
+            ON G.IDGESTION = C.IDGESTION
+        LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK)
+            ON U.IDUSUARIO = G.IDUSUARIO
+        LEFT JOIN SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+            ON CL.IDCLIENTE = G.IDCLIENTE
+        WHERE {" AND ".join(filtros)}
+        GROUP BY
+            G.IDUSUARIO,
+            G.IDCARTERA,
+            DATEPART(HOUR, C.FECHAGENERO)
+        """,
+        *params
+    )
+
+    por_agente = {}
+    por_cartera = {}
+    for id_usuario, id_cartera, hora, q_pdp, pdp in cursor.fetchall():
+        try:
+            id_usuario = int(id_usuario)
+            id_cartera = int(id_cartera)
+            hora = int(hora)
+        except (TypeError, ValueError):
+            continue
+
+        valores = {
+            "Q_PDP_GEN": int(q_pdp or 0),
+            "PDP_GEN": float(pdp or 0),
+        }
+        por_agente[(id_usuario, id_cartera, hora)] = valores
+
+        key_cartera = (id_cartera, hora)
+        actual = por_cartera.setdefault(key_cartera, {"Q_PDP_GEN": 0, "PDP_GEN": 0})
+        actual["Q_PDP_GEN"] += valores["Q_PDP_GEN"]
+        actual["PDP_GEN"] += valores["PDP_GEN"]
+
+    return {"por_agente": por_agente, "por_cartera": por_cartera}
+
+
+def hora_corte_row(row):
+    valor = valor_por_claves(row, [
+        "HORA_CORTE",
+        "hora_corte",
+        "HORA",
+        "hora",
+        "TRAMO",
+        "tramo",
+        "RANGO_HORA",
+        "rango_hora",
+    ])
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+
+    digitos = ""
+    for char in texto:
+        if char.isdigit():
+            digitos += char
+        elif digitos:
+            break
+
+    if not digitos:
+        return None
+
+    try:
+        return int(digitos)
+    except ValueError:
+        return None
+
+
+def aplicar_compromisos_hora(rows, compromisos_hora, por_agente=False):
+    fuente = compromisos_hora["por_agente"] if por_agente else compromisos_hora["por_cartera"]
+    vistos = set()
+
+    for row in rows:
+        try:
+            idcartera = int(row.get("IDCARTERA_ORIGINAL", row.get("IDCARTERA")))
+            hora = hora_corte_row(row)
+            if hora is None:
+                continue
+            key = (int(row.get("IDUSUARIO")), idcartera, hora) if por_agente else (idcartera, hora)
+        except (TypeError, ValueError):
+            continue
+
+        vistos.add(key)
+        valores = fuente.get(key, {"Q_PDP_GEN": 0, "PDP_GEN": 0})
+        row["Q_PDP_GEN"] = valores.get("Q_PDP_GEN", 0)
+        row["PDP_GEN"] = valores.get("PDP_GEN", 0)
+
+    if por_agente:
+        return
+
+    for (idcartera, hora), valores in fuente.items():
+        key = (idcartera, hora)
+        if key in vistos:
+            continue
+        rows.append({
+            "IDCARTERA": idcartera,
+            "IDCARTERA_ORIGINAL": idcartera,
+            "CARTERA": CARTERAS.get(idcartera, f"Cartera {idcartera}"),
+            "HORA_CORTE": hora,
+            "RANGO_HORA": f"{hora:02d}:00 - {hora + 1:02d}:00",
+            "GESTIONES": 0,
+            "CEF": 0,
+            "Q_PDP_GEN": valores.get("Q_PDP_GEN", 0),
+            "PDP_GEN": valores.get("PDP_GEN", 0),
+        })
+
+
+def completar_cartera_horas(rows, idcartera=None):
+    if idcartera in (None, ""):
+        return
+
+    try:
+        id_value = int(idcartera)
+    except (TypeError, ValueError):
+        return
+
+    for row in rows:
+        if row.get("IDCARTERA_ORIGINAL") in (None, ""):
+            row["IDCARTERA_ORIGINAL"] = id_value
+        if row.get("IDCARTERA") in (None, ""):
+            row["IDCARTERA"] = id_value
+        if row.get("CARTERA") in (None, ""):
+            row["CARTERA"] = CARTERAS.get(id_value, f"Cartera {id_value}")
+
+
 def aplicar_compromisos_activos(detalle, compromisos_activos):
     for row in detalle:
         try:
@@ -403,7 +577,7 @@ def aplicar_compromisos_activos(detalle, compromisos_activos):
         row["AVANCE"] = (pago * 100 / proyectado) if proyectado else 0
 
 
-def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False):
+def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False, incluir_agente_hora=True):
     conn = None
     cursor = None
 
@@ -424,10 +598,15 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
         )
 
         resultsets = []
+        resultset_index = 0
 
         while True:
             if cursor.description is not None:
-                resultsets.append(fetch_resultset(cursor))
+                if incluir_agente_hora or resultset_index != 6:
+                    resultsets.append(fetch_resultset(cursor))
+                else:
+                    resultsets.append([])
+                resultset_index += 1
 
             if not cursor.nextset():
                 break
@@ -446,7 +625,7 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             mapa_id,
             mapa_usuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
-        )
+        ) if incluir_agente_hora else []
         clientes_unicos = obtener_clientes_unicos_control(
             cursor,
             fecha=fecha,
@@ -461,8 +640,20 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             idusuario=idusuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         )
+        compromisos_hora = obtener_compromisos_hora_control(
+            cursor,
+            fecha=fecha,
+            idcartera=idcartera,
+            idusuario=idusuario,
+            incluir_apoyo_recupero=incluir_apoyo_recupero
+        )
         aplicar_clientes_unicos(detalle, clientes_unicos)
         aplicar_compromisos_activos(detalle, compromisos_activos)
+        horas = resultsets[5] if len(resultsets) > 5 else []
+        completar_cartera_horas(horas, idcartera=idcartera)
+        aplicar_compromisos_hora(horas, compromisos_hora, por_agente=False)
+        if incluir_agente_hora:
+            aplicar_compromisos_hora(agente_hora, compromisos_hora, por_agente=True)
 
         return {
             "detalle": detalle,
@@ -470,8 +661,9 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             "top_avance": resultsets[2] if len(resultsets) > 2 else [],
             "pendientes_criticos": resultsets[3] if len(resultsets) > 3 else [],
             "alertas": resultsets[4] if len(resultsets) > 4 else [],
-            "horas": resultsets[5] if len(resultsets) > 5 else [],
+            "horas": horas,
             "agente_hora": agente_hora,
+            "agente_hora_cargado": bool(incluir_agente_hora),
             "dotacion_grupos": dotacion_grupos,
         }
 
@@ -851,7 +1043,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
         agentes = {}
 
         filtros = [
-            "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 141, 125, 119, 127, 121, 120, 130, 98, 122)",
+            "G.IDCARTERA NOT IN (106, 100, 108, 110, 104, 120, 139, 141, 146, 125, 119, 127, 121, 130, 98, 122)",
             "G.IDCARTERA IS NOT NULL",
             "G.IDUSUARIO IS NOT NULL",
             "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",

@@ -67,6 +67,11 @@
                         <input id="usuarioCarga" type="text" readonly>
                     </div>
 
+                    <div class="field">
+                        <label for="fechaLanzamiento">Fecha lanzamiento *</label>
+                        <input id="fechaLanzamiento" name="fecha_lanzamiento" type="date" required>
+                    </div>
+
                     <div class="field file-field">
                         <label for="archivoCanal">Archivo Excel *</label>
                         <div class="file-control">
@@ -103,6 +108,10 @@
                         <b id="resFecha">-</b>
                         <span>Fecha Carga</span>
                     </div>
+                    <div class="summary-card teal">
+                        <b id="resFechaLanzamiento">-</b>
+                        <span>Fecha Lanzamiento</span>
+                    </div>
                 </div>
                 <div id="mensajeResultado" class="result-message oculto"></div>
             </article>
@@ -123,6 +132,7 @@
                         <tr>
                             <th>ID carga</th>
                             <th>Fecha carga</th>
+                            <th>Fecha lanzamiento</th>
                             <th>Canal</th>
                             <th>Cartera</th>
                             <th>Archivo</th>
@@ -174,6 +184,6 @@
 
     <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260830-focus"></script>
-    <script src="../js/canales.js?v=20260527a"></script>
+    <script src="../js/canales.js?v=20260901a"></script>
 </body>
 </html>

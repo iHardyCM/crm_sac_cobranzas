@@ -4,6 +4,8 @@ from app.services.ia_analysis_service import (
     aplicar_guardas_mibanco_v3,
     evaluar_calidad_transcripcion_v3,
     normalizar_errores_criticos_v2,
+    perfil_puede_editar_prompt,
+    perfil_puede_ver_historial_global_ia,
     estado_sgc_normalizado,
     validar_mapping_speakers_estandar_v3,
 )
@@ -27,6 +29,12 @@ def criterio(codigo, peso, estado="REQUIERE_REVISION"):
 
 
 class IaFeedbackStabilityTests(unittest.TestCase):
+    def test_monitor_calidad_can_view_global_history_without_prompt_access(self):
+        self.assertTrue(perfil_puede_ver_historial_global_ia("MONITOR CALIDAD"))
+        self.assertTrue(perfil_puede_ver_historial_global_ia("Monitor de Calidad"))
+        self.assertFalse(perfil_puede_editar_prompt("MONITOR CALIDAD"))
+        self.assertFalse(perfil_puede_ver_historial_global_ia("AGENTE"))
+
     def test_transcription_quality_gate_marks_complete_diarization_as_usable(self):
         segmentos = [
             {"segmento_id": 1, "speaker_original": "A", "rol": "AGENTE", "inicio_segundos": 0, "fin_segundos": 2, "texto_original": "Buenos días."},

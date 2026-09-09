@@ -423,7 +423,10 @@
         if (key === "admin") return esPerfilGerencial();
         if (esPerfilGerencial()) return true;
 
-        const tipo = tipoUsuario();
+        if (esUsuarioMonitorCalidad()) {
+            return key === "ia_feedback";
+        }
+
         const compartamos = carteraCompartamos();
 
         if (esUsuarioSupervisor()) {
@@ -469,6 +472,11 @@
         return tipo === "SUPERVISOR"
             || tipo === "SUPERVISORA"
             || tipo.includes("SUPERVISOR");
+    }
+
+    function esUsuarioMonitorCalidad() {
+        const tipo = tipoUsuario();
+        return tipo.includes("MONITOR") && tipo.includes("CALIDAD");
     }
 
     function esPerfilGerencial() {

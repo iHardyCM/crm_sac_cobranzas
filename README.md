@@ -137,5 +137,5 @@ Tipo de medición: CONTENCION
 | `GRU`  |        133 | Compartamos Vigente Grupal     |
 
 
-python -m http.server 5500
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload                                                               
+<!-- python -m http.server 5500 -->
+<!-- python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload -->

@@ -910,6 +910,53 @@ tbody tr:hover {
     color: #b91c1c;
 }
 
+.format-note {
+    min-width: 250px;
+    border: 1px solid #cfe1f5;
+    border-radius: 10px;
+    background: #f5faff;
+    padding: 10px 12px;
+}
+
+.format-note span,
+.saldos-summary span {
+    display: block;
+    color: #52677f;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.format-note strong,
+.saldos-summary strong {
+    display: block;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+}
+
+.saldos-form {
+    grid-template-columns: 1fr 1fr;
+}
+
+.saldos-analysis-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+}
+
+.saldos-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    padding: 14px;
+}
+
+.saldos-summary > div {
+    min-height: 66px;
+    border: 1px solid #d7e3ef;
+    border-radius: 8px;
+    background: #f8fbfe;
+    padding: 10px 11px;
+}
+
 @media (max-width: 1100px) {
     .import-form,
     .analysis-grid,
@@ -925,12 +972,23 @@ tbody tr:hover {
         align-items: stretch;
         flex-direction: column;
     }
+
+    .format-note {
+        min-width: 0;
+    }
 }
 
 @media (max-width: 640px) {
     .confirm-modal,
-    .confirm-detail {
+    .confirm-detail,
+    .saldos-summary {
         grid-template-columns: 1fr;
+    }
+
+
+    #panelReemplazarSaldos .section-head {
+        align-items: stretch;
+        flex-direction: column;
     }
 }
 

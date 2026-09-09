@@ -35,6 +35,8 @@ FORMATS = {
         "monto": "TOTAL_PAGADOMN",
         "fecha": "FECHA_AMORT",
         "codmes": "PERIODOCAMPAÑA",
+        "cod_cliente": "CU",
+        "num_operacion": "CJ",
         "idcartera": 117,
         "tipo_medicion": "RECUPERO",
     },
@@ -44,6 +46,8 @@ FORMATS = {
         "filter_val": "BIZNESCOB",
         "monto": "SUMA_PAGOS_MES",
         "fecha": "FECHA_PROCESO",
+        "num_operacion": "NUM_CUENTA_ORI",
+        "cliente": "NOMBRE_CLIENTE",
         "idcartera": 132,
         "tipo_medicion": "RECUPERO",
     },
@@ -261,14 +265,17 @@ def leer_archivo(formato: str, filename: str, content: bytes) -> pd.DataFrame:
 
     config = FORMATS[formato]
     sheet = config.get("sheet")
+    read_options = {"sheet_name": sheet}
+    if formato == "INTERBANK":
+        read_options["dtype"] = str
 
     if ext == ".xlsb":
-        return pd.read_excel(stream, sheet_name=sheet, engine="pyxlsb")
+        return pd.read_excel(stream, engine="pyxlsb", **read_options)
 
     if ext == ".xls":
-        return pd.read_excel(stream, sheet_name=sheet, engine="xlrd")
+        return pd.read_excel(stream, engine="xlrd", **read_options)
 
-    return pd.read_excel(stream, sheet_name=sheet, engine="openpyxl")
+    return pd.read_excel(stream, engine="openpyxl", **read_options)
 
 
 def leer_financiera_oh(stream: BytesIO, ext: str) -> pd.DataFrame:
@@ -378,15 +385,25 @@ def normalizar_registros(
             "segmentacion": obtener_segmentacion(row, df, formato),
             "usuario_asignado": valor_texto(row, df, config.get("filter_col")),
             "usuario_carga": usuario_carga,
-            "cod_cliente": valor_texto(row, df, "COD_CLI") or valor_texto(row, df, "codcliente"),
+            "cod_cliente": (
+                valor_texto(row, df, config.get("cod_cliente"))
+                or valor_texto(row, df, "COD_CLI")
+                or valor_texto(row, df, "codcliente")
+            ),
             "num_operacion": (
-                valor_texto(row, df, "COD_PRE")
+                valor_texto(row, df, config.get("num_operacion"))
+                or valor_texto(row, df, "COD_PRE")
                 or valor_texto(row, df, "NUMOPERACION")
                 or valor_texto(row, df, "CodOperacion")
                 or valor_texto(row, df, "OPERACION")
             ),
             "documento": valor_texto(row, df, "DNI") or valor_texto(row, df, "NRO_DOCUMENTO"),
-            "cliente": valor_texto(row, df, "NOM_CLI") or valor_texto(row, df, "CLIENTE") or valor_texto(row, df, "NomCliente"),
+            "cliente": (
+                valor_texto(row, df, config.get("cliente"))
+                or valor_texto(row, df, "NOM_CLI")
+                or valor_texto(row, df, "CLIENTE")
+                or valor_texto(row, df, "NomCliente")
+            ),
             "monto_pago": monto,
             "monto_pago_soles": monto_soles,
             "capital_contenido": capital,

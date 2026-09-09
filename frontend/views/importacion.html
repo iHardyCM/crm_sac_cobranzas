@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Importacion de Cartera</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/importacion.css?v=20260829-apple-import">
+    <link rel="stylesheet" href="../css/importacion.css?v=20260907-saldos1">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
@@ -274,7 +274,105 @@
     </section>
 
     <section id="tab-metas" class="tab-panel"><article class="card empty-tab">Metas: Proximamente.</article></section>
-    <section id="tab-saldos" class="tab-panel"><article class="card empty-tab">Saldos: Proximamente.</article></section>
+    <section id="tab-saldos" class="tab-panel">
+        <article class="card">
+            <div class="section-head">
+                <div>
+                    <span class="eyebrow">Reemplazo completo</span>
+                    <h3>Importar base de saldos</h3>
+                    <p>Carga el archivo sin cabeceras. Las columnas se asignan por su posicion en la tabla destino.</p>
+                </div>
+                <div class="format-note" aria-label="Formato requerido">
+                    <span>CSV o TXT</span>
+                    <strong>Sin cabeceras · Separado por tabulaciones</strong>
+                </div>
+            </div>
+
+            <form id="formSaldos" class="import-form saldos-form">
+                <div class="field span-2">
+                    <label for="configSaldos">Configuracion de saldos</label>
+                    <select id="configSaldos" required>
+                        <option value="">Cargando configuracion...</option>
+                    </select>
+                </div>
+
+                <div class="field span-2 file-field">
+                    <label for="archivoSaldos">Archivo de saldos</label>
+                    <div class="file-control">
+                        <label for="archivoSaldos" class="file-button">Seleccionar archivo</label>
+                        <span id="nombreArchivoSaldos" class="file-name">Ningun archivo seleccionado</span>
+                        <input id="archivoSaldos" type="file" accept=".csv,.txt,text/csv,text/plain" required>
+                    </div>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button class="btn-secondary" type="button" onclick="limpiarSaldos()">Limpiar</button>
+                    <button id="btnAnalizarSaldos" class="btn-primary" type="submit">Analizar archivo</button>
+                </div>
+            </form>
+        </article>
+
+        <section id="resultadoAnalisisSaldos" class="analysis-result hidden">
+            <article id="kpisSaldos" class="kpi-grid"></article>
+
+            <div class="analysis-grid saldos-analysis-grid">
+                <article class="card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Validacion del archivo</h3>
+                            <p>El reemplazo solo se habilita cuando la estructura coincide exactamente.</p>
+                        </div>
+                    </div>
+                    <div id="alertasSaldos" class="alert-list"></div>
+                </article>
+
+                <article class="card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Destino</h3>
+                            <p>La base actual se conserva si la insercion presenta un error.</p>
+                        </div>
+                    </div>
+                    <div id="resumenSaldos" class="saldos-summary"></div>
+                </article>
+            </div>
+
+            <article class="card">
+                <div class="section-head">
+                    <div>
+                        <h3>Vista previa</h3>
+                        <p>Primeras 5 filas con los primeros 12 campos asignados por posicion.</p>
+                    </div>
+                </div>
+                <div class="table-wrap preview-wrap">
+                    <table id="tablaPreviewSaldos"></table>
+                </div>
+            </article>
+
+            <article id="panelReemplazarSaldos" class="card confirm-load-panel">
+                <div class="section-head">
+                    <div>
+                        <h3>Confirmar reemplazo</h3>
+                        <p>Esta es la unica accion disponible para saldos: retirar la base actual y publicar el archivo completo.</p>
+                    </div>
+                    <button id="btnReemplazarSaldos" class="btn-danger" type="button" onclick="abrirConfirmacionSaldos()">
+                        Reemplazar base de saldos
+                    </button>
+                </div>
+                <div id="mensajeReemplazoSaldos" class="load-message"></div>
+            </article>
+
+            <article id="resultadoReemplazoSaldos" class="card analysis-result hidden">
+                <div class="section-head">
+                    <div>
+                        <h3>Resultado del reemplazo</h3>
+                        <p>Resumen del lote registrado en el historial de importaciones.</p>
+                    </div>
+                </div>
+                <div id="detalleReemplazoSaldos" class="cierre-grid"></div>
+            </article>
+        </section>
+    </section>
     <section id="tab-configuracion" class="tab-panel"><article class="card empty-tab">Configuracion avanzada: Proximamente.</article></section>
 </main>
 
@@ -311,8 +409,25 @@
     </section>
 </div>
 
+<div id="modalConfirmacionSaldos" class="confirm-backdrop hidden" aria-hidden="true">
+    <section class="confirm-modal wide" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacionSaldos">
+        <div class="confirm-icon warn">!</div>
+        <div class="confirm-copy">
+            <span class="eyebrow">Confirmacion requerida</span>
+            <h3 id="tituloConfirmacionSaldos">Reemplazar base de saldos</h3>
+            <p>Se retiraran todos los registros actuales y se insertara el archivo analizado.</p>
+            <div id="detalleModalConfirmacionSaldos" class="confirm-detail"></div>
+            <div class="confirm-warning">Si alguna fila falla, la transaccion conservara la base anterior completa.</div>
+        </div>
+        <div class="confirm-actions">
+            <button id="btnCancelarConfirmacionSaldos" class="btn-secondary" type="button">Cancelar</button>
+            <button id="btnAceptarConfirmacionSaldos" class="btn-danger" type="button">Reemplazar saldos</button>
+        </div>
+    </section>
+</div>
+
 <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260830-focus"></script>
-<script src="../js/importacion.js?v=20260601b"></script>
+<script src="../js/importacion.js?v=20260907-saldos1"></script>
 </body>
 </html>

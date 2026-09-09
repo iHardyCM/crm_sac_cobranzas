@@ -51,6 +51,10 @@ function obtenerDescripcionPerfil(tipo) {
         return "Puedes revisar tu equipo, entrar a la vista de agentes y dar seguimiento a las promesas del dia.";
     }
 
+    if (esUsuarioMonitorCalidad(tipoNormalizado)) {
+        return "Puedes cargar llamadas, revisar evaluaciones y apoyar la calibración del análisis IA.";
+    }
+
     return "Puedes revisar tus compromisos, gestionar clientes y controlar el avance de tus promesas.";
 }
 
@@ -79,6 +83,16 @@ function pintarModulos() {
 function obtenerModulosPorPerfil(tipo) {
     const modulos = [];
     const compartamos = esCarteraCompartamos();
+
+    if (esUsuarioMonitorCalidad(tipo)) {
+        return [{
+            sigla: "IA",
+            titulo: "Analisis IA",
+            descripcion: "Carga audios, revisa resultados y realiza pruebas de calidad del análisis.",
+            ruta: "ia_feedback.html",
+            destacado: true
+        }];
+    }
 
     if (!esSupervisor(tipo) && !puedeVerCorporativo(tipo)) {
         if (compartamos) {
@@ -289,6 +303,11 @@ function puedeAccederDocumentos(tipo) {
     const tipoNormalizado = normalizarTipoUsuario(tipo || localStorage.getItem("tipo"));
     return esSupervisor(tipoNormalizado)
         || ["ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE CARTERA"].includes(tipoNormalizado);
+}
+
+function esUsuarioMonitorCalidad(tipo) {
+    const tipoNormalizado = normalizarTipoUsuario(tipo || localStorage.getItem("tipo"));
+    return tipoNormalizado.includes("MONITOR") && tipoNormalizado.includes("CALIDAD");
 }
 
 function pintarRoadmap() {

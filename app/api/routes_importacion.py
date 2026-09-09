@@ -7,11 +7,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.services.importacion_service import (
     analizar_archivo_importacion,
+    analizar_archivo_saldos,
     confirmar_carga_importacion,
     ejecutar_cierre_historico,
     listar_errores_lote_importacion,
     listar_configuraciones_importacion,
     listar_lotes_importacion,
+    reemplazar_saldos_desde_archivo,
     validar_cierre_historico,
 )
 
@@ -56,6 +58,46 @@ async def analizar_importacion(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error analizando archivo: {exc}")
+
+
+@router.post("/saldos/analizar")
+async def analizar_saldos(
+    id_config: int = Form(...),
+    archivo: UploadFile = File(...),
+):
+    try:
+        contenido = await archivo.read()
+        return await run_in_threadpool(
+            analizar_archivo_saldos,
+            id_config=id_config,
+            archivo_nombre=archivo.filename or "saldos.csv",
+            contenido=contenido,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error analizando saldos: {exc}")
+
+
+@router.post("/saldos/reemplazar")
+async def reemplazar_saldos(
+    id_config: int = Form(...),
+    usuario: Optional[str] = Form(default=None),
+    archivo: UploadFile = File(...),
+):
+    try:
+        contenido = await archivo.read()
+        return await run_in_threadpool(
+            reemplazar_saldos_desde_archivo,
+            id_config=id_config,
+            usuario=usuario,
+            archivo_nombre=archivo.filename or "saldos.csv",
+            contenido=contenido,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error reemplazando saldos: {exc}")
 
 
 @router.get("/lotes")

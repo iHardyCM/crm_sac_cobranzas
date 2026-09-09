@@ -295,6 +295,11 @@ body {
     color: #6d28d9;
 }
 
+.summary-card.teal {
+    background: #ecfeff;
+    color: #0f766e;
+}
+
 .result-message {
     margin: 0 20px 20px;
     border-radius: 8px;
@@ -681,6 +686,7 @@ body.crm-shell .summary-card.blue { border-color: #bfdbfe; }
 body.crm-shell .summary-card.green { border-color: #b7e7c7; }
 body.crm-shell .summary-card.orange { border-color: #f7d7a5; }
 body.crm-shell .summary-card.purple { border-color: #ddd1fa; }
+body.crm-shell .summary-card.teal { border-color: #99f6e4; }
 body.crm-shell .history-head { padding: 17px 18px; }
 body.crm-shell .table-wrap {
     max-height: min(56vh, 590px);

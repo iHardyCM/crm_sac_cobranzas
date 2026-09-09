@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 import math
 import re
 import unicodedata
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from sqlalchemy import text
@@ -86,15 +87,25 @@ def importar_canales(
     idcartera: int,
     cartera: str,
     usuario_carga: str,
+    fecha_lanzamiento: Optional[str],
     archivo_nombre: str,
     contenido: bytes,
 ) -> Dict:
     canal = normalizar_canal(canal)
     usuario_carga = (usuario_carga or "").strip() or "SIN_USUARIO"
     cartera = (cartera or "").strip()
+    fecha_lanzamiento_normalizada = normalizar_fecha_lanzamiento(fecha_lanzamiento)
 
     with engine_siscob.begin() as conn:
-        id_carga = crear_cabecera(conn, canal, idcartera, cartera, archivo_nombre, usuario_carga)
+        id_carga = crear_cabecera(
+            conn,
+            canal,
+            idcartera,
+            cartera,
+            archivo_nombre,
+            usuario_carga,
+            fecha_lanzamiento_normalizada,
+        )
 
     df = leer_excel(contenido)
     columnas = mapear_columnas(df)
@@ -125,15 +136,24 @@ def importar_canales(
         "id_carga": id_carga,
         "canal": canal,
         "archivo_nombre": archivo_nombre,
+        "fecha_lanzamiento": fecha_lanzamiento_normalizada,
         **totales,
         "mensaje": "Importación procesada correctamente",
     }
 
 
 def listar_importaciones_canales(limit: int = 100) -> List[Dict]:
-    query = text("""
+    with engine_siscob.connect() as conn:
+        tiene_fecha_lanzamiento = columna_existe(conn, "CobAuto", "dbo", "canales_carga", "fecha_lanzamiento")
+
+    fecha_lanzamiento_sql = (
+        "fecha_lanzamiento"
+        if tiene_fecha_lanzamiento
+        else "CAST(NULL AS date) AS fecha_lanzamiento"
+    )
+    query = text(f"""
         SELECT TOP (:limit)
-            id_carga, fecha_carga, canal, idcartera, cartera, archivo_nombre,
+            id_carga, fecha_carga, {fecha_lanzamiento_sql}, canal, idcartera, cartera, archivo_nombre,
             usuario_carga, total_registros, registros_validos, registros_error, estado
         FROM CobAuto.dbo.canales_carga WITH(NOLOCK)
         ORDER BY fecha_carga DESC, id_carga DESC
@@ -144,9 +164,17 @@ def listar_importaciones_canales(limit: int = 100) -> List[Dict]:
 
 
 def obtener_importacion_canales(id_carga: int) -> Dict:
-    cabecera_query = text("""
+    with engine_siscob.connect() as conn:
+        tiene_fecha_lanzamiento = columna_existe(conn, "CobAuto", "dbo", "canales_carga", "fecha_lanzamiento")
+
+    fecha_lanzamiento_sql = (
+        "fecha_lanzamiento"
+        if tiene_fecha_lanzamiento
+        else "CAST(NULL AS date) AS fecha_lanzamiento"
+    )
+    cabecera_query = text(f"""
         SELECT
-            id_carga, fecha_carga, canal, idcartera, cartera, archivo_nombre,
+            id_carga, fecha_carga, {fecha_lanzamiento_sql}, canal, idcartera, cartera, archivo_nombre,
             usuario_carga, total_registros, registros_validos, registros_error, estado
         FROM CobAuto.dbo.canales_carga WITH(NOLOCK)
         WHERE id_carga = :id_carga
@@ -171,21 +199,34 @@ def obtener_importacion_canales(id_carga: int) -> Dict:
     }
 
 
-def crear_cabecera(conn, canal, idcartera, cartera, archivo_nombre, usuario_carga) -> int:
-    query = text("""
-        INSERT INTO CobAuto.dbo.canales_carga
-            (canal, idcartera, cartera, archivo_nombre, usuario_carga, estado, fecha_carga)
-        OUTPUT INSERTED.id_carga
-        VALUES
-            (:canal, :idcartera, :cartera, :archivo_nombre, :usuario_carga, 'RECIBIDO', GETDATE())
-    """)
-    return int(conn.execute(query, {
+def crear_cabecera(conn, canal, idcartera, cartera, archivo_nombre, usuario_carga, fecha_lanzamiento) -> int:
+    params = {
         "canal": canal,
         "idcartera": idcartera,
         "cartera": cartera,
         "archivo_nombre": archivo_nombre,
         "usuario_carga": usuario_carga,
-    }).scalar())
+        "fecha_lanzamiento": fecha_lanzamiento,
+    }
+
+    if columna_existe(conn, "CobAuto", "dbo", "canales_carga", "fecha_lanzamiento"):
+        query = text("""
+            INSERT INTO CobAuto.dbo.canales_carga
+                (canal, idcartera, cartera, archivo_nombre, usuario_carga, fecha_lanzamiento, estado, fecha_carga)
+            OUTPUT INSERTED.id_carga
+            VALUES
+                (:canal, :idcartera, :cartera, :archivo_nombre, :usuario_carga, :fecha_lanzamiento, 'RECIBIDO', GETDATE())
+        """)
+    else:
+        query = text("""
+            INSERT INTO CobAuto.dbo.canales_carga
+                (canal, idcartera, cartera, archivo_nombre, usuario_carga, estado, fecha_carga)
+            OUTPUT INSERTED.id_carga
+            VALUES
+                (:canal, :idcartera, :cartera, :archivo_nombre, :usuario_carga, 'RECIBIDO', GETDATE())
+        """)
+
+    return int(conn.execute(query, params).scalar())
 
 
 def actualizar_cabecera(conn, id_carga, total, validos, errores, estado):
@@ -352,6 +393,36 @@ def normalizar_fecha(value):
     if pd.isna(fecha):
         return None
     return fecha.to_pydatetime().date()
+
+
+def normalizar_fecha_lanzamiento(value):
+    texto = limpiar_texto(value)
+    if not texto:
+        return datetime.now(ZoneInfo("America/Lima")).date()
+
+    fecha = pd.to_datetime(texto, errors="coerce", format="%Y-%m-%d")
+    if pd.isna(fecha):
+        fecha = pd.to_datetime(texto, errors="coerce", dayfirst=True)
+    if pd.isna(fecha):
+        raise ValueError("Fecha de lanzamiento inválida.")
+    return fecha.to_pydatetime().date()
+
+
+def columna_existe(conn, catalogo: str, esquema: str, tabla: str, columna: str) -> bool:
+    query = text("""
+        SELECT 1
+        FROM CobAuto.INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_CATALOG = :catalogo
+          AND TABLE_SCHEMA = :esquema
+          AND TABLE_NAME = :tabla
+          AND COLUMN_NAME = :columna
+    """)
+    return conn.execute(query, {
+        "catalogo": catalogo,
+        "esquema": esquema,
+        "tabla": tabla,
+        "columna": columna,
+    }).first() is not None
 
 
 def quitar_tildes(value: str) -> str:

@@ -36,13 +36,15 @@ def resumen_control_horario(
     fecha: Optional[str] = Query(default=None),
     idcartera: Optional[int] = Query(default=None),
     idusuario: Optional[int] = Query(default=None),
-    incluir_apoyo_recupero: bool = Query(default=False)
+    incluir_apoyo_recupero: bool = Query(default=False),
+    incluir_agente_hora: bool = Query(default=True)
 ):
     return obtener_resumen_control_horario(
         fecha=fecha,
         idcartera=idcartera,
         idusuario=idusuario,
-        incluir_apoyo_recupero=incluir_apoyo_recupero
+        incluir_apoyo_recupero=incluir_apoyo_recupero,
+        incluir_agente_hora=incluir_agente_hora
     )
 
 

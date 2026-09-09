@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("archivoCanal").addEventListener("change", actualizarNombreArchivo);
     document.getElementById("buscarHistorial").addEventListener("input", pintarHistorial);
 
+    inicializarFechaLanzamiento();
     cargarCarteras();
     cargarHistorial();
 });
@@ -43,10 +44,11 @@ async function importarCanal(event) {
     const carteraSelect = document.getElementById("carteraSelect");
     const idcartera = carteraSelect.value;
     const cartera = carteraSelect.selectedOptions[0]?.dataset?.cartera || "";
+    const fechaLanzamiento = document.getElementById("fechaLanzamiento").value || fechaHoyLocal();
     const archivo = document.getElementById("archivoCanal").files[0];
 
-    if (!canal || !idcartera || !archivo) {
-        mostrarMensaje("Selecciona canal, cartera y archivo antes de importar.", "error");
+    if (!canal || !idcartera || !fechaLanzamiento || !archivo) {
+        mostrarMensaje("Selecciona canal, cartera, fecha de lanzamiento y archivo antes de importar.", "error");
         return;
     }
 
@@ -55,6 +57,7 @@ async function importarCanal(event) {
     data.set("idcartera", idcartera);
     data.set("cartera", cartera);
     data.set("usuario_carga", document.getElementById("usuarioCarga").value || "SIN_USUARIO");
+    data.set("fecha_lanzamiento", fechaLanzamiento);
     data.set("archivo", archivo);
 
     const btn = document.getElementById("btnImportar");
@@ -110,6 +113,7 @@ function pintarHistorial() {
             <tr>
                 <td>${item.id_carga}</td>
                 <td>${formatearFechaHora(item.fecha_carga)}</td>
+                <td>${formatearFechaCorta(item.fecha_lanzamiento)}</td>
                 <td><span class="canal">${item.canal}</span></td>
                 <td>${item.idcartera} - ${escapeHtml(item.cartera || "-")}</td>
                 <td class="archivo">${escapeHtml(item.archivo_nombre || "-")}</td>
@@ -124,7 +128,7 @@ function pintarHistorial() {
                 </td>
             </tr>
         `).join("")
-        : `<tr><td colspan="11" class="sin-data">No hay importaciones registradas.</td></tr>`;
+        : `<tr><td colspan="12" class="sin-data">No hay importaciones registradas.</td></tr>`;
 }
 
 async function verDetalle(idCarga) {
@@ -136,7 +140,7 @@ async function verDetalle(idCarga) {
         const cab = json.cabecera || {};
         document.getElementById("modalTitulo").innerText = `Detalle de Importación - ID Carga: ${cab.id_carga}`;
         document.getElementById("modalMeta").innerText =
-            `Canal: ${cab.canal} | Cartera: ${cab.idcartera} - ${cab.cartera || "-"} | Archivo: ${cab.archivo_nombre || "-"} | Usuario: ${cab.usuario_carga || "-"}`;
+            `Canal: ${cab.canal} | Cartera: ${cab.idcartera} - ${cab.cartera || "-"} | Lanzamiento: ${formatearFechaCorta(cab.fecha_lanzamiento)} | Archivo: ${cab.archivo_nombre || "-"} | Usuario: ${cab.usuario_carga || "-"}`;
 
         const tbody = document.getElementById("tablaDetalle");
         const detalle = json.detalle || [];
@@ -169,12 +173,14 @@ function pintarResumen(data) {
     document.getElementById("resValidos").innerText = numero(data.registros_validos);
     document.getElementById("resErrores").innerText = numero(data.registros_error);
     document.getElementById("resFecha").innerText = formatearFechaHora(data.fecha_carga);
+    document.getElementById("resFechaLanzamiento").innerText = formatearFechaCorta(data.fecha_lanzamiento);
 }
 
 function limpiarFormulario(limpiarMensaje = true) {
     document.getElementById("formCanales").reset();
     document.getElementById("usuarioCarga").value =
         localStorage.getItem("dni") || localStorage.getItem("agente") || "SIN_USUARIO";
+    inicializarFechaLanzamiento();
     actualizarNombreArchivo();
     if (limpiarMensaje) {
         document.getElementById("mensajeResultado").classList.add("oculto");
@@ -184,6 +190,21 @@ function limpiarFormulario(limpiarMensaje = true) {
 function actualizarNombreArchivo() {
     const archivo = document.getElementById("archivoCanal").files[0];
     document.getElementById("nombreArchivo").innerText = archivo?.name || "Ningún archivo seleccionado";
+}
+
+function inicializarFechaLanzamiento() {
+    const input = document.getElementById("fechaLanzamiento");
+    if (input && !input.value) {
+        input.value = fechaHoyLocal();
+    }
+}
+
+function fechaHoyLocal() {
+    const fecha = new Date();
+    const year = fecha.getFullYear();
+    const month = String(fecha.getMonth() + 1).padStart(2, "0");
+    const day = String(fecha.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
 }
 
 function mostrarMensaje(mensaje, tipo) {
@@ -220,6 +241,23 @@ function formatearFechaHora(value) {
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+    });
+}
+
+function formatearFechaCorta(value) {
+    if (!value) return "-";
+    const [fechaTexto] = String(value).split("T");
+    const partes = fechaTexto.split("-");
+    if (partes.length === 3) {
+        return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    const fecha = new Date(value);
+    if (Number.isNaN(fecha.getTime())) return "-";
+    return fecha.toLocaleDateString("es-PE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
     });
 }
 

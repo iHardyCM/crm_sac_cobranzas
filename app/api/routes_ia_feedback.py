@@ -10,6 +10,7 @@ from app.services.ia_analysis_service import (
     guardar_prompt_configuracion,
     obtener_prompt_configuracion,
     perfil_puede_editar_prompt,
+    perfil_puede_ver_historial_global_ia,
 )
 from app.services.ia_audio_service import (
     analizar_feedback,
@@ -257,7 +258,7 @@ def listar_ia_feedback(
     perfil: str | None = Query(default=None),
 ):
     try:
-        if perfil_puede_editar_prompt(perfil):
+        if perfil_puede_ver_historial_global_ia(perfil):
             supervisor_filtro = None
         else:
             if not supervisor:
@@ -275,7 +276,7 @@ def reporteria_ia_feedback(
     perfil: str | None = Query(default=None),
 ):
     try:
-        if perfil_puede_editar_prompt(perfil):
+        if perfil_puede_ver_historial_global_ia(perfil):
             supervisor_filtro = None
         else:
             if not supervisor:

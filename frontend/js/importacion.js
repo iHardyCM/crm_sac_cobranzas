@@ -10,6 +10,8 @@ let filtroPreviewEstado = "TODOS";
 let previewVisible = false;
 let analisisConfirmado = false;
 let progresoConfirmacionTimer = null;
+let ultimoAnalisisSaldos = null;
+let reemplazoSaldosEnEjecucion = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
@@ -20,8 +22,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (periodoCierre && !periodoCierre.value) periodoCierre.value = codmesActual();
 
     document.getElementById("formImportacion")?.addEventListener("submit", analizarImportacion);
+    document.getElementById("formSaldos")?.addEventListener("submit", analizarSaldos);
     document.getElementById("formCierreHistorico")?.addEventListener("submit", validarCierreHistorico);
     document.getElementById("archivoImportacion")?.addEventListener("change", actualizarNombreArchivoImportacion);
+    document.getElementById("archivoSaldos")?.addEventListener("change", actualizarNombreArchivoSaldos);
 
     cargarConfiguracionesImportacion();
     cargarLotesImportacion(false);
@@ -35,11 +39,13 @@ function cambiarTabImportacion(tab) {
         panel.classList.toggle("active", panel.id === `tab-${tab}`);
     });
     if (tab === "historial") cargarLotesImportacion(false);
+    if (tab === "saldos") document.getElementById("configSaldos")?.focus();
 }
 
 async function cargarConfiguracionesImportacion() {
     const select = document.getElementById("configImportacion");
     const selectCierre = document.getElementById("configCierreImportacion");
+    const selectSaldos = document.getElementById("configSaldos");
     try {
         const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/configuraciones`, { cache: "no-store" });
         const json = await res.json();
@@ -53,11 +59,31 @@ async function cargarConfiguracionesImportacion() {
         `).join("");
         if (select) select.innerHTML = opciones;
         if (selectCierre) selectCierre.innerHTML = opciones;
+        if (selectSaldos) {
+            const saldos = configuracionesImportacion.filter(esConfiguracionSaldosCliente);
+            selectSaldos.innerHTML = saldos.length
+                ? `<option value="">Seleccionar configuracion</option>${saldos.map(item => `
+                    <option value="${item.id_config}">
+                        ${h(item.cartera || "Saldos")} - ${h(item.producto || "Base")} | ${h(item.tabla_destino || "-")}
+                    </option>
+                `).join("")}`
+                : `<option value="">No hay una configuracion activa de saldos</option>`;
+            if (saldos.length === 1) selectSaldos.value = String(saldos[0].id_config);
+        }
     } catch (error) {
         if (select) select.innerHTML = `<option value="">Error cargando configuraciones</option>`;
         if (selectCierre) selectCierre.innerHTML = `<option value="">Error cargando configuraciones</option>`;
+        if (selectSaldos) selectSaldos.innerHTML = `<option value="">Error cargando configuracion</option>`;
         toastImportacion(error.message, "error");
     }
+}
+
+function esConfiguracionSaldosCliente(item) {
+    const texto = `${item?.cartera || ""} ${item?.producto || ""} ${item?.tabla_destino || ""}`
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    return texto.includes("saldo") || texto.includes("sac_car_biznescob");
 }
 
 async function analizarImportacion(event) {
@@ -757,6 +783,260 @@ function claseItemResultadoCarga(estado) {
 function nuevoAnalisisImportacion() {
     limpiarAnalisisImportacion();
     document.getElementById("configImportacion")?.focus();
+}
+
+async function analizarSaldos(event) {
+    event.preventDefault();
+    const idConfig = document.getElementById("configSaldos")?.value;
+    const archivo = document.getElementById("archivoSaldos")?.files?.[0];
+    if (!idConfig || !archivo) {
+        toastImportacion("Selecciona la configuracion y el archivo de saldos.", "error");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.set("id_config", idConfig);
+    formData.set("archivo", archivo);
+    const btn = document.getElementById("btnAnalizarSaldos");
+
+    try {
+        btn.disabled = true;
+        btn.textContent = "Analizando...";
+        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/saldos/analizar`, {
+            method: "POST",
+            body: formData
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.detail || "No se pudo analizar la base de saldos.");
+
+        ultimoAnalisisSaldos = json;
+        renderAnalisisSaldos(json);
+        toastImportacion("Base de saldos validada.", "ok");
+    } catch (error) {
+        ultimoAnalisisSaldos = null;
+        document.getElementById("resultadoAnalisisSaldos")?.classList.add("hidden");
+        toastImportacion(error.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Analizar archivo";
+    }
+}
+
+function renderAnalisisSaldos(data) {
+    document.getElementById("resultadoAnalisisSaldos")?.classList.remove("hidden");
+    document.getElementById("resultadoReemplazoSaldos")?.classList.add("hidden");
+
+    const kpis = [
+        ["Filas del archivo", numero(data.total_filas), "ok"],
+        ["Registros actuales", numero(data.total_registros_actuales), "warn"],
+        ["Columnas archivo", numero(data.total_columnas_archivo), "info"],
+        ["Columnas destino", numero(data.total_columnas_destino), "info"],
+        ["Filas reconstruidas", numero(data.filas_reconstruidas), data.filas_reconstruidas ? "info" : "ok"]
+    ];
+    document.getElementById("kpisSaldos").innerHTML = kpis.map(([label, value, tone]) => `
+        <article class="kpi-card ${tone}">
+            <span>${h(label)}</span>
+            <strong>${h(value)}</strong>
+        </article>
+    `).join("");
+
+    document.getElementById("alertasSaldos").innerHTML = (data.alertas || []).map(alerta => `
+        <div class="alert-item ${h(alerta.tipo || "info")}">
+            <span>${h(alerta.mensaje || "-")}</span>
+        </div>
+    `).join("");
+
+    const resumen = [
+        ["Tabla destino", data.tabla_destino || "-"],
+        ["Archivo", data.archivo_nombre || "-"],
+        ["Formato", `${data.delimitador || "TAB"} · ${data.tiene_cabecera ? "Con cabecera" : "Sin cabecera"}`],
+        ["Codificacion", data.codificacion || "-"],
+        ["Periodo de auditoria", data.periodo || "-"],
+        ["Caracteres nulos limpiados", numero(data.caracteres_nulos)],
+        ["Campos automaticos", (data.columnas_default_omitidas || []).join(", ") || "-"]
+    ];
+    document.getElementById("resumenSaldos").innerHTML = resumen.map(([label, value]) => `
+        <div><span>${h(label)}</span><strong>${h(value)}</strong></div>
+    `).join("");
+
+    renderPreviewSaldos(data.preview || []);
+    const panel = document.getElementById("panelReemplazarSaldos");
+    const btn = document.getElementById("btnReemplazarSaldos");
+    const mensaje = document.getElementById("mensajeReemplazoSaldos");
+    panel?.classList.remove("hidden");
+    if (btn) btn.disabled = !data.puede_reemplazar;
+    if (mensaje) {
+        mensaje.innerHTML = data.puede_reemplazar
+            ? `<div class="warn">Se reemplazaran ${numero(data.total_registros_actuales)} registros actuales por ${numero(data.total_filas)} filas validadas.</div>`
+            : `<div class="bad">La estructura no permite ejecutar el reemplazo.</div>`;
+    }
+}
+
+function renderPreviewSaldos(rows) {
+    const table = document.getElementById("tablaPreviewSaldos");
+    if (!table) return;
+    if (!rows.length) {
+        table.innerHTML = `<tbody><tr><td class="empty-row">No hay filas para previsualizar.</td></tr></tbody>`;
+        return;
+    }
+    const columnas = Object.keys(rows[0]);
+    table.innerHTML = `
+        <thead><tr>${columnas.map(col => `<th>${h(col)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(row => `
+            <tr>${columnas.map(col => `<td>${h(valorVacio(row[col]))}</td>`).join("")}</tr>
+        `).join("")}</tbody>
+    `;
+}
+
+function abrirConfirmacionSaldos() {
+    const archivo = document.getElementById("archivoSaldos")?.files?.[0];
+    if (!ultimoAnalisisSaldos || !archivo) {
+        toastImportacion("Primero analiza y conserva seleccionado el archivo.", "error");
+        return;
+    }
+
+    const modal = document.getElementById("modalConfirmacionSaldos");
+    const detalle = document.getElementById("detalleModalConfirmacionSaldos");
+    const aceptar = document.getElementById("btnAceptarConfirmacionSaldos");
+    const cancelar = document.getElementById("btnCancelarConfirmacionSaldos");
+    if (!modal || !detalle || !aceptar || !cancelar) return;
+
+    detalle.innerHTML = `
+        <div><span>Archivo</span><strong>${h(ultimoAnalisisSaldos.archivo_nombre || "-")}</strong></div>
+        <div><span>Tabla destino</span><strong>${h(ultimoAnalisisSaldos.tabla_destino || "-")}</strong></div>
+        <div><span>Registros actuales</span><strong>${numero(ultimoAnalisisSaldos.total_registros_actuales)}</strong></div>
+        <div><span>Filas a insertar</span><strong>${numero(ultimoAnalisisSaldos.total_filas)}</strong></div>
+        <div class="danger-note"><span>Accion</span><strong>Reemplazo completo de la base actual.</strong></div>
+    `;
+
+    const cerrar = () => {
+        modal.classList.add("hidden");
+        modal.setAttribute("aria-hidden", "true");
+        aceptar.onclick = null;
+        cancelar.onclick = null;
+        modal.onclick = null;
+        document.removeEventListener("keydown", onKeydown);
+    };
+    const onKeydown = event => {
+        if (event.key === "Escape") cerrar();
+    };
+    aceptar.onclick = async () => {
+        cerrar();
+        await confirmarReemplazoSaldos();
+    };
+    cancelar.onclick = cerrar;
+    modal.onclick = event => {
+        if (event.target === modal) cerrar();
+    };
+    document.addEventListener("keydown", onKeydown);
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    cancelar.focus();
+}
+
+async function confirmarReemplazoSaldos() {
+    if (reemplazoSaldosEnEjecucion) return;
+    const archivo = document.getElementById("archivoSaldos")?.files?.[0];
+    const analisis = ultimoAnalisisSaldos;
+    if (!analisis || !archivo) return;
+
+    const formData = new FormData();
+    formData.set("id_config", analisis.id_config);
+    formData.set("usuario", usuarioActualImportacion());
+    formData.set("archivo", archivo);
+    const btn = document.getElementById("btnReemplazarSaldos");
+    const mensaje = document.getElementById("mensajeReemplazoSaldos");
+    const inicio = Date.now();
+
+    try {
+        reemplazoSaldosEnEjecucion = true;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Reemplazando...";
+        }
+        iniciarProgresoConfirmacion({
+            mensaje,
+            inicio,
+            totalInsertar: analisis.total_filas,
+            totalActualizar: 0,
+            periodo: analisis.periodo,
+            cartera: analisis.cartera
+        });
+        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/saldos/reemplazar`, {
+            method: "POST",
+            body: formData
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.detail || "No se pudo reemplazar la base de saldos.");
+
+        renderResultadoSaldos(json);
+        ultimoAnalisisSaldos = null;
+        await cargarLotesImportacion(false);
+        toastImportacion(
+            json.ok ? "Base de saldos reemplazada correctamente." : "La base anterior se conservo por un error.",
+            json.ok ? "ok" : "error"
+        );
+    } catch (error) {
+        renderResultadoSaldos({
+            ok: false,
+            estado: "ERROR",
+            id_lote: "-",
+            tabla_destino: analisis.tabla_destino,
+            total_registros_reemplazados: 0,
+            insertados: 0,
+            rechazados: analisis.total_filas,
+            observacion: error.message
+        });
+        toastImportacion(error.message, "error");
+    } finally {
+        detenerProgresoConfirmacion();
+        reemplazoSaldosEnEjecucion = false;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Reemplazar base de saldos";
+        }
+    }
+}
+
+function renderResultadoSaldos(data) {
+    document.getElementById("panelReemplazarSaldos")?.classList.add("hidden");
+    const panel = document.getElementById("resultadoReemplazoSaldos");
+    const detalle = document.getElementById("detalleReemplazoSaldos");
+    panel?.classList.remove("hidden", "load-ok", "load-warn", "load-bad");
+    panel?.classList.add(data.ok ? "load-ok" : "load-bad");
+    if (!detalle) return;
+    const filas = [
+        ["Estado", data.estado || "-", data.ok ? "ok" : "bad"],
+        ["ID lote", data.id_lote || "-"],
+        ["Tabla destino", data.tabla_destino || "-"],
+        ["Registros anteriores", numero(data.total_registros_reemplazados)],
+        ["Insertados", numero(data.insertados), data.ok ? "ok" : "bad"],
+        ["Rechazados", numero(data.rechazados), data.rechazados ? "bad" : "ok"]
+    ];
+    detalle.innerHTML = filas.map(([label, value, tone]) => `
+        <div class="cierre-item ${tone || ""}"><span>${h(label)}</span><strong>${h(value)}</strong></div>
+    `).join("") + `
+        <div class="load-final-message"><strong>${h(data.observacion || "-")}</strong></div>
+    `;
+}
+
+function limpiarSaldos() {
+    ultimoAnalisisSaldos = null;
+    reemplazoSaldosEnEjecucion = false;
+    document.getElementById("formSaldos")?.reset();
+    document.getElementById("nombreArchivoSaldos").textContent = "Ningun archivo seleccionado";
+    document.getElementById("resultadoAnalisisSaldos")?.classList.add("hidden");
+    document.getElementById("resultadoReemplazoSaldos")?.classList.add("hidden");
+    document.getElementById("panelReemplazarSaldos")?.classList.remove("hidden");
+    const saldos = configuracionesImportacion.filter(esConfiguracionSaldosCliente);
+    if (saldos.length === 1) document.getElementById("configSaldos").value = String(saldos[0].id_config);
+}
+
+function actualizarNombreArchivoSaldos() {
+    const archivo = document.getElementById("archivoSaldos")?.files?.[0];
+    document.getElementById("nombreArchivoSaldos").textContent = archivo?.name || "Ningun archivo seleccionado";
+    ultimoAnalisisSaldos = null;
+    document.getElementById("resultadoAnalisisSaldos")?.classList.add("hidden");
 }
 
 async function validarCierreHistorico(event) {

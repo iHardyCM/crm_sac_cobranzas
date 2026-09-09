@@ -223,6 +223,14 @@ def perfil_puede_editar_prompt(perfil: Optional[str]) -> bool:
     }
 
 
+def perfil_puede_ver_historial_global_ia(perfil: Optional[str]) -> bool:
+    """El monitor de calidad revisa pruebas históricas, sin administrar prompts."""
+    normalizado = str(perfil or "").strip().upper()
+    return perfil_puede_editar_prompt(normalizado) or (
+        "MONITOR" in normalizado and "CALIDAD" in normalizado
+    )
+
+
 def obtener_pauta_evaluacion(cartera: Optional[str] = None) -> Optional[List[Dict]]:
     pauta_publicada = criterios_pauta_publicada_para_cartera(cartera)
     if pauta_publicada:

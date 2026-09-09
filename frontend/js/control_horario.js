@@ -24,8 +24,10 @@ let ordenResumen = { campo: "gestiones", direccion: "desc" };
 let ordenAgentes = { campo: "cef", direccion: "desc" };
 let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
 let vistaCarteraControl = "AGRUPADO";
+let agenteHoraScopesControl = new Set();
+let cargandoAgenteHoraControl = null;
 
-const CACHE_CONTROL_HORARIO = "controlHorarioCacheV7";
+const CACHE_CONTROL_HORARIO = "controlHorarioCacheV10Carteras";
 
 const CARTERAS_CONTROL = {
     112: "MIBANCO 1",
@@ -119,7 +121,7 @@ async function cargarControlHorario() {
     try {
         mostrarToast("Actualizando control horario...", "info");
 
-        const data = await obtenerDataControlHorario(fecha);
+        const data = await obtenerDataControlHorario(fecha, { incluirAgenteHora: true });
         procesarDataControlHorario(data);
         guardarCacheControlHorario(fecha || "");
         mostrarToast("Control horario actualizado.", "ok");
@@ -129,7 +131,7 @@ async function cargarControlHorario() {
     }
 }
 
-async function obtenerDataControlHorario(fecha) {
+async function obtenerDataControlHorario(fecha, opciones = {}) {
     const idsSupervisor = carterasPermitidasSupervisor();
 
     if (idsSupervisor.length) {
@@ -139,18 +141,20 @@ async function obtenerDataControlHorario(fecha) {
             return dataVaciaControlHorario();
         }
 
-        const respuestas = await Promise.all(idsConsulta.map(id => fetchControlHorario(fecha, id)));
+        const respuestas = await Promise.all(idsConsulta.map(id => fetchControlHorario(fecha, id, opciones)));
         return unirRespuestasControlHorario(respuestas);
     }
 
-    return fetchControlHorario(fecha, "");
+    return fetchControlHorario(fecha, "", opciones);
 }
 
-async function fetchControlHorario(fecha, idcartera) {
+async function fetchControlHorario(fecha, idcartera, opciones = {}) {
     const params = new URLSearchParams();
+    const incluirAgenteHora = opciones.incluirAgenteHora !== false;
     if (fecha) params.set("fecha", fecha);
     if (idcartera) params.set("idcartera", idcartera);
     if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
+    params.set("incluir_agente_hora", incluirAgenteHora ? "true" : "false");
 
     const response = await fetch(`${BASE_URL_CONTROL}/control-horario/resumen?${params.toString()}`, {
         cache: "no-store"
@@ -240,6 +244,7 @@ function unirRespuestasControlHorario(respuestas) {
         base.alertas.push(...(data.alertas || []));
         base.horas.push(...(data.horas || []));
         base.agente_hora.push(...(data.agente_hora || []));
+        base.agente_hora_cargado = Boolean(base.agente_hora_cargado || data.agente_hora_cargado);
         base.kpis = sumarKpisControl(base.kpis, data.kpis || {});
 
         Object.entries(data.dotacion_grupos || {}).forEach(([key, value]) => {
@@ -259,6 +264,7 @@ function dataVaciaControlHorario() {
         alertas: [],
         horas: [],
         agente_hora: [],
+        agente_hora_cargado: false,
         dotacion_grupos: {}
     };
 }
@@ -396,11 +402,53 @@ function idsCarteraSeleccionada() {
 function rowPerteneceACarteraSeleccionada(row) {
     const ids = idsCarteraSeleccionada();
     if (!ids.length) return true;
-    return ids.includes(String(getIdCarteraBase(row)));
+    const idsRow = idsCarteraRow(row);
+    return ids.some(id => idsRow.includes(String(id)));
+}
+
+function idsCarteraRow(row) {
+    const valores = [
+        getIdCarteraBase(row),
+        getIdCartera(row),
+        valor(row, ["IDS_CARTERA_GRUPO", "ids_cartera_grupo", "ids_cartera"], "")
+    ];
+    const ids = new Set();
+
+    valores.forEach(value => {
+        String(value || "")
+            .split(",")
+            .map(item => item.trim())
+            .filter(Boolean)
+            .forEach(item => {
+                if (/^\d+$/.test(item)) ids.add(item);
+                const grupo = grupoCarteraPorClave(item);
+                if (grupo) grupo.ids.forEach(id => ids.add(String(id)));
+            });
+    });
+
+    const nombre = normalizar(`${valor(row, CAMPOS.cartera, "")} ${valor(row, ["GRUPO_CARTERA", "grupo_cartera"], "")}`);
+    [...GRUPOS_CARTERA_CONTROL, ...CARTERAS_UNIFICADAS_CONTROL].forEach(grupo => {
+        const nombreGrupo = normalizar(`${grupo.key} ${grupo.cartera}`);
+        if (nombre && nombreGrupo && (nombre === nombreGrupo || nombre.includes(nombreGrupo) || nombreGrupo.includes(nombre))) {
+            grupo.ids.forEach(id => ids.add(String(id)));
+        }
+    });
+
+    return [...ids];
+}
+
+function grupoCarteraPorClave(value) {
+    const key = normalizar(value);
+    return [...GRUPOS_CARTERA_CONTROL, ...CARTERAS_UNIFICADAS_CONTROL].find(grupo =>
+        normalizar(grupo.key) === key || normalizar(grupo.cartera) === key
+    );
 }
 
 function procesarDataControlHorario(data) {
     dataControlHorario = data || {};
+    agenteHoraScopesControl = dataControlHorario.agente_hora_cargado
+        ? new Set(["__ALL__"])
+        : new Set();
     modoVistaCarteraActual();
     resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
     resumenCarteras = construirResumenVisible();
@@ -1207,13 +1255,15 @@ function renderDetalleAgentes(data) {
     window._detalleAgentesActual = visibleData;
 }
 
-function abrirDetalleAgente(index) {
+async function abrirDetalleAgente(index) {
     const row = window._detalleAgentesActual?.[index];
     if (!row) return;
 
     const idusuario = String(valor(row, CAMPOS.idusuario, ""));
     const agente = valor(row, CAMPOS.agente, "Agente");
     const cartera = resumenDeCartera(carteraSeleccionada);
+
+    await asegurarAgenteHoraControl(idsCarteraSeleccionada());
 
     document.getElementById("tituloModalAgente").innerText = agente;
     document.getElementById("subtituloModalAgente").innerText =
@@ -1450,7 +1500,9 @@ function construirCurvaSuave(points) {
     return d;
 }
 
-function filtrarHora(hora) {
+async function filtrarHora(hora) {
+    await asegurarAgenteHoraControl(idsCarteraSeleccionada());
+
     const ids = idsCarteraSeleccionada();
     const data = agenteHoraFiltrado().filter(row => {
         const mismaHora = String(getHora(row)) === String(hora) || String(horaOrden(row)) === String(hora);
@@ -1460,6 +1512,71 @@ function filtrarHora(hora) {
 
     renderAgenteHora(data, hora);
     document.getElementById("modalHoraControl").classList.add("activo");
+}
+
+async function asegurarAgenteHoraControl(ids = []) {
+    const idsLimpios = [...new Set((ids || []).map(String).filter(id => /^\d+$/.test(id)))];
+    if (dataControlHorario.agente_hora_cargado && agenteHoraScopesControl.has("__ALL__")) return;
+
+    const scopesPendientes = idsLimpios.length
+        ? idsLimpios.filter(id => !agenteHoraScopesControl.has(id))
+        : (agenteHoraScopesControl.has("__ALL__") ? [] : [""]);
+
+    if (!scopesPendientes.length) return;
+    if (cargandoAgenteHoraControl) {
+        await cargandoAgenteHoraControl;
+        return;
+    }
+
+    cargandoAgenteHoraControl = (async () => {
+        const fecha = document.getElementById("filtroFecha")?.value || fechaLocalInput();
+        mostrarToast("Cargando detalle agente/hora...", "info");
+        const respuestas = await Promise.all(scopesPendientes.map(id =>
+            fetchControlHorario(fecha, id, { incluirAgenteHora: true })
+        ));
+        const detalle = unirAgenteHoraControl(respuestas);
+        dataControlHorario.agente_hora = fusionarAgenteHoraControl(
+            dataControlHorario.agente_hora || [],
+            detalle
+        );
+        respuestas.forEach((_, index) => {
+            const scope = scopesPendientes[index];
+            agenteHoraScopesControl.add(scope || "__ALL__");
+        });
+        dataControlHorario.agente_hora_cargado = agenteHoraScopesControl.has("__ALL__");
+    })();
+
+    try {
+        await cargandoAgenteHoraControl;
+    } catch (error) {
+        console.error("ERROR DETALLE AGENTE HORA:", error);
+        mostrarToast(`No se pudo cargar el detalle agente/hora. ${error.message || ""}`, "error");
+    } finally {
+        cargandoAgenteHoraControl = null;
+    }
+}
+
+function unirAgenteHoraControl(respuestas) {
+    const rows = [];
+    respuestas.forEach(data => rows.push(...(data?.agente_hora || [])));
+    return rows;
+}
+
+function fusionarAgenteHoraControl(actual, nuevo) {
+    const map = new Map();
+    [...(actual || []), ...(nuevo || [])].forEach(row => {
+        const key = [
+            valor(row, CAMPOS.idusuario, ""),
+            getIdCarteraBase(row),
+            getHora(row),
+            numeroCampo(row, CAMPOS.gestiones),
+            numeroCampo(row, CAMPOS.cef),
+            numeroCampo(row, CAMPOS.qPdp),
+            getPdpGenerado(row)
+        ].join("|");
+        map.set(key, row);
+    });
+    return [...map.values()];
 }
 
 function agenteHoraFiltrado() {

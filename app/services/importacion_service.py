@@ -1,11 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, TextIOWrapper
 import math
 import re
 import time
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from sqlalchemy import text
@@ -251,6 +252,404 @@ def analizar_archivo_importacion(
         "preview": preview,
         "alertas": alertas,
     }
+
+
+def analizar_archivo_saldos(
+    id_config: int,
+    archivo_nombre: str,
+    contenido: bytes,
+) -> Dict[str, Any]:
+    contexto = preparar_archivo_saldos(
+        id_config=id_config,
+        archivo_nombre=archivo_nombre,
+        contenido=contenido,
+        incluir_preview=True,
+    )
+    tabla_destino = contexto["tabla_destino"]
+    total_actual = contar_tabla(tabla_destino)
+    estadisticas = contexto["estadisticas"]
+
+    alertas: List[Dict[str, str]] = [{
+        "tipo": "ok",
+        "mensaje": (
+            f"Estructura valida: {contexto['total_columnas_archivo']} columnas del archivo "
+            "coinciden por posicion con la tabla destino."
+        ),
+    }]
+    if contexto["columnas_default_omitidas"]:
+        alertas.append({
+            "tipo": "info",
+            "mensaje": (
+                "La tabla completara automaticamente: "
+                + ", ".join(col["column_name"] for col in contexto["columnas_default_omitidas"])
+                + "."
+            ),
+        })
+    if estadisticas["filas_reconstruidas"]:
+        alertas.append({
+            "tipo": "info",
+            "mensaje": (
+                f"Se reconstruyeron {estadisticas['filas_reconstruidas']} fila(s) con saltos de linea "
+                "dentro de campos de texto."
+            ),
+        })
+    if estadisticas["caracteres_nulos"]:
+        alertas.append({
+            "tipo": "info",
+            "mensaje": (
+                f"Se limpiaron {estadisticas['caracteres_nulos']} caracter(es) nulo(s) del archivo."
+            ),
+        })
+    alertas.append({
+        "tipo": "advertencia",
+        "mensaje": (
+            f"Al confirmar se reemplazaran los {total_actual} registros actuales de {tabla_destino}. "
+            "La operacion se ejecutara en una sola transaccion."
+        ),
+    })
+
+    return {
+        "id_config": contexto["config"]["id_config"],
+        "cartera": contexto["config"].get("cartera"),
+        "producto": contexto["config"].get("producto"),
+        "tabla_destino": tabla_destino,
+        "archivo_nombre": archivo_nombre,
+        "periodo": periodo_saldos_desde_archivo(archivo_nombre),
+        "total_filas": contexto["total_filas"],
+        "total_registros_actuales": total_actual,
+        "total_columnas_archivo": contexto["total_columnas_archivo"],
+        "total_columnas_destino": len(contexto["columnas_destino"]),
+        "total_columnas_tabla": len(contexto["columnas_tabla"]),
+        "columnas_destino": [col["column_name"] for col in contexto["columnas_destino"]],
+        "columnas_default_omitidas": [
+            col["column_name"] for col in contexto["columnas_default_omitidas"]
+        ],
+        "preview": contexto["preview"],
+        "filas_fisicas": estadisticas["filas_fisicas"],
+        "filas_reconstruidas": estadisticas["filas_reconstruidas"],
+        "caracteres_nulos": estadisticas["caracteres_nulos"],
+        "codificacion": "CP850",
+        "delimitador": "TAB",
+        "tiene_cabecera": False,
+        "puede_reemplazar": True,
+        "alertas": alertas,
+    }
+
+
+def reemplazar_saldos_desde_archivo(
+    id_config: int,
+    usuario: Optional[str],
+    archivo_nombre: str,
+    contenido: bytes,
+) -> Dict[str, Any]:
+    tiempo_inicio = time.perf_counter()
+    contexto = preparar_archivo_saldos(
+        id_config=id_config,
+        archivo_nombre=archivo_nombre,
+        contenido=contenido,
+        incluir_preview=False,
+    )
+    config = contexto["config"]
+    tabla_destino = contexto["tabla_destino"]
+    columnas_destino = contexto["columnas_destino"]
+    total_filas = contexto["total_filas"]
+    periodo = periodo_saldos_desde_archivo(archivo_nombre)
+    usuario_limpio = str(usuario or "SIN_USUARIO").strip()[:50]
+    total_actual = contar_tabla(tabla_destino)
+
+    asegurar_tablas_carga_importacion()
+    with engine_siscob.begin() as conn_lote:
+        lote_id = crear_lote_importacion(
+            conn=conn_lote,
+            config=config,
+            periodo=periodo,
+            tipo_proceso="REEMPLAZAR_SALDOS",
+            archivo_nombre=archivo_nombre,
+            usuario=usuario_limpio,
+            total_filas=total_filas,
+        )
+
+    destino_sql = nombre_tabla_sql(tabla_destino)
+    columnas = [col["column_name"] for col in columnas_destino]
+    columnas_sql = ", ".join(quote_identificador(columna) for columna in columnas)
+    placeholders = ", ".join("?" for _ in columnas)
+    insert_sql = f"INSERT INTO {destino_sql} ({columnas_sql}) VALUES ({placeholders})"
+    insertados = 0
+
+    try:
+        with engine_siscob.begin() as conn:
+            conn.execute(text(f"DELETE FROM {destino_sql}"))
+            raw_connection = getattr(conn.connection, "driver_connection", None)
+            if raw_connection is None:
+                raw_connection = conn.connection.connection
+
+            cursor = raw_connection.cursor()
+            try:
+                try:
+                    cursor.fast_executemany = True
+                except Exception:
+                    pass
+
+                lote: List[Tuple[Any, ...]] = []
+                estadisticas: Dict[str, int] = {}
+                for valores in iterar_filas_saldos_sin_cabecera(
+                    contenido=contenido,
+                    total_columnas=len(columnas),
+                    estadisticas=estadisticas,
+                ):
+                    lote.append(tuple(valores))
+                    if len(lote) >= 500:
+                        cursor.executemany(insert_sql, lote)
+                        insertados += len(lote)
+                        lote = []
+
+                if lote:
+                    cursor.executemany(insert_sql, lote)
+                    insertados += len(lote)
+            finally:
+                cursor.close()
+
+            if insertados != total_filas:
+                raise ValueError(
+                    f"Conteo inconsistente: se validaron {total_filas} filas y se prepararon {insertados}."
+                )
+
+            actualizar_lote_importacion(
+                conn=conn,
+                id_lote=lote_id,
+                estado="CARGADO",
+                insertados=insertados,
+                actualizados=0,
+                rechazados=0,
+                observacion=(
+                    "Base de saldos reemplazada correctamente. "
+                    f"Se retiraron {total_actual} registros previos."
+                ),
+            )
+    except Exception as exc:
+        marcar_lote_error(lote_id, str(exc))
+        return {
+            "ok": False,
+            "id_lote": lote_id,
+            "estado": "ERROR",
+            "cartera": config.get("cartera"),
+            "producto": config.get("producto"),
+            "periodo": periodo,
+            "tabla_destino": tabla_destino,
+            "total_filas": total_filas,
+            "total_registros_reemplazados": 0,
+            "insertados": 0,
+            "actualizados": 0,
+            "rechazados": total_filas,
+            "observacion": (
+                "No se reemplazo la base. La transaccion restauro los registros anteriores. "
+                f"Detalle: {exc}"
+            ),
+            "tiempos": {"total": round(time.perf_counter() - tiempo_inicio, 3)},
+        }
+
+    return {
+        "ok": True,
+        "id_lote": lote_id,
+        "estado": "CARGADO",
+        "cartera": config.get("cartera"),
+        "producto": config.get("producto"),
+        "periodo": periodo,
+        "tabla_destino": tabla_destino,
+        "total_filas": total_filas,
+        "total_registros_reemplazados": total_actual,
+        "insertados": insertados,
+        "actualizados": 0,
+        "rechazados": 0,
+        "observacion": "Base de saldos reemplazada correctamente.",
+        "tiempos": {"total": round(time.perf_counter() - tiempo_inicio, 3)},
+    }
+
+
+def preparar_archivo_saldos(
+    id_config: int,
+    archivo_nombre: str,
+    contenido: bytes,
+    incluir_preview: bool,
+) -> Dict[str, Any]:
+    validar_extension_saldos(archivo_nombre)
+    if not contenido:
+        raise ValueError("Archivo obligatorio.")
+
+    config = obtener_configuracion(id_config)
+    if not config:
+        raise ValueError("La configuracion no existe o no esta activa.")
+    if not es_configuracion_saldos(config):
+        raise ValueError("La configuracion seleccionada no corresponde a la base de saldos.")
+
+    tabla_destino = str(config.get("tabla_destino") or "").strip()
+    if not tabla_destino:
+        raise ValueError("La configuracion de saldos no tiene tabla_destino.")
+
+    columnas_tabla = columnas_insertables_saldos(obtener_columnas_tabla(tabla_destino))
+    if not columnas_tabla:
+        raise ValueError(f"La tabla destino no existe o no tiene columnas insertables: {tabla_destino}")
+
+    total_columnas_archivo = detectar_total_columnas_saldos(contenido)
+    if total_columnas_archivo > len(columnas_tabla):
+        raise ValueError(
+            f"El archivo tiene {total_columnas_archivo} columnas y la tabla destino solo "
+            f"{len(columnas_tabla)} columnas insertables."
+        )
+
+    columnas_default_omitidas = columnas_tabla[total_columnas_archivo:]
+    if any(not bandera_sql_activa(col.get("has_default")) for col in columnas_default_omitidas):
+        raise ValueError(
+            f"El archivo tiene {total_columnas_archivo} columnas y la tabla destino requiere "
+            f"{len(columnas_tabla)}. Solo se pueden omitir columnas finales con valor automatico."
+        )
+    columnas_destino = columnas_tabla[:total_columnas_archivo]
+
+    estadisticas: Dict[str, int] = {}
+    total_filas = 0
+    preview: List[Dict[str, Any]] = []
+    nombres_preview = [col["column_name"] for col in columnas_destino[:12]]
+    for valores in iterar_filas_saldos_sin_cabecera(
+        contenido=contenido,
+        total_columnas=len(columnas_destino),
+        estadisticas=estadisticas,
+    ):
+        total_filas += 1
+        if incluir_preview and len(preview) < 5:
+            preview.append({
+                nombre: serializar_valor(valores[indice])
+                for indice, nombre in enumerate(nombres_preview)
+            })
+
+    if total_filas == 0:
+        raise ValueError("El archivo no contiene registros de saldos.")
+
+    return {
+        "config": config,
+        "tabla_destino": tabla_destino,
+        "columnas_destino": columnas_destino,
+        "columnas_tabla": columnas_tabla,
+        "columnas_default_omitidas": columnas_default_omitidas,
+        "total_columnas_archivo": total_columnas_archivo,
+        "total_filas": total_filas,
+        "preview": preview,
+        "estadisticas": estadisticas,
+    }
+
+
+def detectar_total_columnas_saldos(contenido: bytes) -> int:
+    total = 0
+    for linea in BytesIO(contenido):
+        limpia = linea.rstrip(b"\r\n")
+        if not limpia:
+            continue
+        total = max(total, limpia.count(b"\t") + 1)
+    if total <= 1:
+        raise ValueError("El archivo de saldos no esta separado por tabulaciones.")
+    return total
+
+
+def iterar_filas_saldos_sin_cabecera(
+    contenido: bytes,
+    total_columnas: int,
+    estadisticas: Optional[Dict[str, int]] = None,
+):
+    if total_columnas <= 0:
+        raise ValueError("La tabla destino no tiene una estructura valida para importar saldos.")
+
+    stats = estadisticas if estadisticas is not None else {}
+    stats.clear()
+    stats.update({
+        "filas_fisicas": 0,
+        "filas_reconstruidas": 0,
+        "caracteres_nulos": 0,
+    })
+    tabs_esperados = total_columnas - 1
+    partes: List[str] = []
+    tabs_acumulados = 0
+    linea_inicio = 0
+
+    stream = TextIOWrapper(BytesIO(contenido), encoding="cp850", errors="strict", newline=None)
+    try:
+        for numero_linea, linea in enumerate(stream, start=1):
+            stats["filas_fisicas"] += 1
+            limpia = linea.rstrip("\r\n")
+            stats["caracteres_nulos"] += limpia.count("\x00")
+            limpia = limpia.replace("\x00", "")
+
+            if not partes and not limpia:
+                continue
+            if not partes:
+                linea_inicio = numero_linea
+
+            partes.append(limpia)
+            tabs_acumulados += limpia.count("\t")
+            if tabs_acumulados > tabs_esperados:
+                raise ValueError(
+                    f"La fila iniciada en la linea {linea_inicio} supera las {total_columnas} columnas esperadas."
+                )
+            if tabs_acumulados < tabs_esperados:
+                continue
+
+            fila_texto = " ".join(partes)
+            valores = fila_texto.split("\t")
+            if len(valores) != total_columnas:
+                raise ValueError(
+                    f"La fila iniciada en la linea {linea_inicio} tiene {len(valores)} columnas; "
+                    f"se esperaban {total_columnas}."
+                )
+            if len(partes) > 1:
+                stats["filas_reconstruidas"] += 1
+            yield [valor_celda_saldos(valor) for valor in valores]
+            partes = []
+            tabs_acumulados = 0
+
+        if partes:
+            columnas_encontradas = tabs_acumulados + 1
+            raise ValueError(
+                f"La ultima fila, iniciada en la linea {linea_inicio}, tiene {columnas_encontradas} columnas; "
+                f"se esperaban {total_columnas}."
+            )
+    finally:
+        stream.close()
+
+
+def valor_celda_saldos(value: str) -> Optional[str]:
+    texto = str(value or "").replace("\u00a0", " ").strip()
+    return texto or None
+
+
+def columnas_insertables_saldos(columnas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        columna
+        for columna in columnas
+        if not bandera_sql_activa(columna.get("is_identity"))
+        and not bandera_sql_activa(columna.get("is_computed"))
+        and str(columna.get("data_type") or "").lower() not in ("timestamp", "rowversion")
+    ]
+
+
+def bandera_sql_activa(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(value) == 1
+    return str(value or "").strip().upper() in ("1", "TRUE", "YES", "SI", "SÍ")
+
+
+def validar_extension_saldos(archivo_nombre: str) -> None:
+    extension = archivo_nombre.lower().rsplit(".", 1)[-1] if "." in archivo_nombre else ""
+    if extension not in ("csv", "txt"):
+        raise ValueError("La base de saldos debe ser un archivo .csv o .txt sin cabeceras.")
+
+
+def periodo_saldos_desde_archivo(archivo_nombre: str) -> str:
+    coincidencias = re.findall(r"(20\d{2})(0[1-9]|1[0-2])(?:[0-3]\d)?", archivo_nombre or "")
+    if coincidencias:
+        anio, mes = coincidencias[-1]
+        return f"{anio}{mes}"
+    ahora_lima = datetime.now(ZoneInfo("America/Lima"))
+    return ahora_lima.strftime("%Y%m")
 
 
 def listar_lotes_importacion(limit: int = 100) -> List[Dict[str, Any]]:
@@ -1133,6 +1532,7 @@ def obtener_columnas_tabla(tabla: str) -> List[Dict[str, Any]]:
             c.column_id AS ordinal_position,
             c.is_nullable AS is_nullable,
             c.is_identity AS is_identity,
+            c.is_computed AS is_computed,
             CASE WHEN dc.object_id IS NULL THEN 0 ELSE 1 END AS has_default
         FROM [{database}].sys.columns c
         INNER JOIN [{database}].sys.tables tb
@@ -2536,7 +2936,8 @@ def es_columna_meta(columna: Any) -> bool:
 
 def es_configuracion_saldos(config: Dict[str, Any]) -> bool:
     texto = f"{config.get('cartera') or ''} {config.get('producto') or ''} {config.get('tabla_destino') or ''}"
-    return "saldo" in normalizar_columna(texto)
+    normalizado = normalizar_columna(texto)
+    return "saldo" in normalizado or "sac_car_biznescob" in normalizado
 
 
 def validar_ruta_historica_compartamos(
