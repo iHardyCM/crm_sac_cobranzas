@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Horario de Gestion y Recupero</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/control_horario.css?v=20260829-apple-pass">
+    <link rel="stylesheet" href="../css/control_horario.css?v=20260909-friendly-states2">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
@@ -22,7 +22,7 @@
             <button class="btn-secondary" type="button" onclick="limpiarFiltrosControl()">Limpiar filtros</button>
             <button class="btn-secondary" type="button" onclick="abrirMatrizMensual()">Matriz mensual</button>
             <button class="btn-secondary" type="button" onclick="exportarControlHorario()">Exportar</button>
-            <button class="btn-primary" type="button" onclick="cargarControlHorario()">Actualizar</button>
+            <button id="btnActualizarControl" class="btn-primary" type="button" onclick="cargarControlHorario()">Actualizar</button>
         </div>
     </section>
 
@@ -60,6 +60,24 @@
     </section>
 
     <div id="controlToast" class="control-toast"></div>
+
+    <section id="estadoExperienciaControl" class="control-experience hidden" role="status" aria-live="polite" aria-atomic="true">
+        <div class="control-experience-mark" aria-hidden="true">
+            <span class="control-experience-spinner"></span>
+            <span class="control-experience-symbol"></span>
+        </div>
+        <div class="control-experience-copy">
+            <strong id="estadoExperienciaTitulo">Estamos preparando tus resultados...</strong>
+            <span id="estadoExperienciaDetalle">Consultando la informacion mas reciente de esta cartera.</span>
+        </div>
+        <div class="control-experience-actions">
+            <button id="btnReintentarControl" class="btn-secondary hidden" type="button" onclick="cargarControlHorario()">Reintentar</button>
+            <button id="btnRestablecerControl" class="btn-secondary hidden" type="button" onclick="restablecerConsultaControl()">Ver resultados de hoy</button>
+        </div>
+        <div class="control-experience-skeleton" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+        </div>
+    </section>
 
     <section class="kpi-grid" id="kpiControlHorario"></section>
 
@@ -250,6 +268,6 @@
 
 <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260830-focus"></script>
-<script src="../js/control_horario.js?v=20260901-carteras-fix1"></script>
+<script src="../js/control_horario.js?v=20260911-detail-groups1"></script>
 </body>
 </html>

@@ -26,6 +26,7 @@ let ordenAgenteHora = { campo: "gestiones", direccion: "desc" };
 let vistaCarteraControl = "AGRUPADO";
 let agenteHoraScopesControl = new Set();
 let cargandoAgenteHoraControl = null;
+let cargandoControlHorario = false;
 
 const CACHE_CONTROL_HORARIO = "controlHorarioCacheV10Carteras";
 
@@ -89,7 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const vistaCartera = document.getElementById("filtroVistaCartera");
     if (vistaCartera) {
         vistaCartera.value = vistaCarteraControl;
-        vistaCartera.addEventListener("change", cambiarVistaCartera);
     }
 
     const fecha = document.getElementById("filtroFecha");
@@ -116,19 +116,148 @@ function cambiarApoyoRecupero() {
 }
 
 async function cargarControlHorario() {
+    if (cargandoControlHorario) {
+        return;
+    }
+
     const fecha = document.getElementById("filtroFecha")?.value;
+    const conservaResultados = tieneResultadosControl(dataControlHorario);
+    cargandoControlHorario = true;
+    establecerCargaControl(true);
+    mostrarEstadoExperienciaControl("loading", {
+        compacto: conservaResultados,
+        titulo: conservaResultados ? "Estamos actualizando tus resultados..." : "Estamos preparando tus resultados...",
+        detalle: conservaResultados
+            ? "Puedes seguir revisando el ultimo corte mientras consultamos la informacion mas reciente."
+            : "Consultando la informacion mas reciente de las carteras disponibles."
+    });
+    if (!conservaResultados) {
+        pintarEsqueletoInicialControl();
+    }
 
     try {
-        mostrarToast("Actualizando control horario...", "info");
-
         const data = await obtenerDataControlHorario(fecha, { incluirAgenteHora: true });
         procesarDataControlHorario(data);
         guardarCacheControlHorario(fecha || "");
-        mostrarToast("Control horario actualizado.", "ok");
+        if (tieneResultadosControl(data)) {
+            ocultarEstadoExperienciaControl();
+            mostrarToast("Listo, el control horario esta actualizado.", "ok");
+        } else {
+            mostrarEstadoExperienciaControl("empty", {
+                titulo: "No encontramos resultados para esta consulta",
+                detalle: "Prueba con la fecha de hoy o revisa los filtros seleccionados."
+            });
+        }
     } catch (error) {
         console.error("ERROR CONTROL HORARIO:", error);
+        mostrarEstadoExperienciaControl("error", {
+            compacto: conservaResultados,
+            titulo: conservaResultados ? "No pudimos actualizar el ultimo corte" : "No pudimos mostrar los resultados",
+            detalle: conservaResultados
+                ? "Los datos que ya estabas revisando siguen disponibles. Puedes intentarlo nuevamente."
+                : "Revisa la conexion con el servidor e intenta nuevamente."
+        });
         mostrarToast(`No se pudo cargar el control horario. ${error.message || ""}`, "error");
+    } finally {
+        cargandoControlHorario = false;
+        establecerCargaControl(false);
     }
+}
+
+function tieneResultadosControl(data) {
+    if (!data) return false;
+    const colecciones = ["detalle", "horas", "top_avance", "pendientes_criticos", "alertas"];
+    if (colecciones.some(clave => Array.isArray(data[clave]) && data[clave].length > 0)) return true;
+
+    return Object.values(data.kpis || {}).some(value => Number.isFinite(Number(value)) && Number(value) !== 0);
+}
+
+function establecerCargaControl(activa) {
+    const pagina = document.querySelector(".control-page");
+    const boton = document.getElementById("btnActualizarControl");
+    pagina?.setAttribute("aria-busy", activa ? "true" : "false");
+    if (boton) {
+        boton.disabled = activa;
+        boton.textContent = activa ? "Actualizando..." : "Actualizar";
+    }
+}
+
+function mostrarEstadoExperienciaControl(tipo, opciones = {}) {
+    const panel = document.getElementById("estadoExperienciaControl");
+    if (!panel) return;
+
+    const titulo = document.getElementById("estadoExperienciaTitulo");
+    const detalle = document.getElementById("estadoExperienciaDetalle");
+    const reintentar = document.getElementById("btnReintentarControl");
+    const restablecer = document.getElementById("btnRestablecerControl");
+
+    panel.className = `control-experience ${tipo}${opciones.compacto ? " compact" : ""}`;
+    document.querySelector(".control-page")?.setAttribute("data-experience-state", tipo);
+    if (titulo) titulo.textContent = opciones.titulo || "Estamos preparando tus resultados...";
+    if (detalle) detalle.textContent = opciones.detalle || "Consultando la informacion mas reciente.";
+    reintentar?.classList.toggle("hidden", tipo !== "error");
+    restablecer?.classList.toggle("hidden", tipo !== "empty");
+}
+
+function ocultarEstadoExperienciaControl() {
+    document.getElementById("estadoExperienciaControl")?.classList.add("hidden");
+    document.querySelector(".control-page")?.removeAttribute("data-experience-state");
+}
+
+function pintarEsqueletoInicialControl() {
+    const kpis = document.getElementById("kpiControlHorario");
+    const resumen = document.getElementById("tablaResumenCarteras");
+    const grafico = document.getElementById("graficoHoras");
+
+    if (kpis) {
+        kpis.innerHTML = Array.from({ length: 8 }, () => `
+            <article class="kpi-card control-skeleton-kpi" aria-hidden="true">
+                <span class="control-skeleton-line short"></span>
+                <span class="control-skeleton-line value"></span>
+            </article>`).join("");
+    }
+
+    if (resumen) {
+        resumen.innerHTML = Array.from({ length: 5 }, () => `
+            <tr class="control-skeleton-row" aria-hidden="true">
+                ${Array.from({ length: 11 }, (_, index) => `
+                    <td><span class="control-skeleton-line ${index === 0 ? "wide" : ""}"></span></td>`).join("")}
+            </tr>`).join("");
+    }
+
+    if (grafico) {
+        grafico.innerHTML = `
+            <div class="line-chart control-chart-skeleton" aria-hidden="true">
+                ${Array.from({ length: 12 }, () => "<span></span>").join("")}
+            </div>`;
+    }
+
+    ["topAvanceControl", "pendientesControl", "alertasControl"].forEach(id => {
+        const contenedor = document.getElementById(id);
+        if (!contenedor) return;
+        contenedor.innerHTML = `
+            <div class="control-skeleton-side" aria-hidden="true">
+                <span class="control-skeleton-line wide"></span>
+                <span class="control-skeleton-line"></span>
+                <span class="control-skeleton-line short"></span>
+            </div>`;
+    });
+}
+
+function restablecerConsultaControl() {
+    const fecha = document.getElementById("filtroFecha");
+    const apoyo = document.getElementById("filtroApoyoRecupero");
+    const cartera = document.getElementById("filtroCartera");
+    const agente = document.getElementById("filtroAgente");
+    if (fecha) fecha.value = fechaLocalInput();
+    if (apoyo) apoyo.checked = false;
+    if (cartera) cartera.value = "";
+    if (agente) agente.value = "";
+    limpiarFiltroCarteraControl();
+    carteraSeleccionada = null;
+    agenteSeleccionado = null;
+    sessionStorage.removeItem(CACHE_CONTROL_HORARIO);
+    cargarControlHorario();
 }
 
 async function obtenerDataControlHorario(fecha, opciones = {}) {
@@ -407,8 +536,16 @@ function rowPerteneceACarteraSeleccionada(row) {
 }
 
 function idsCarteraRow(row) {
+    const idBase = String(getIdCarteraBase(row) || "").trim();
+
+    if (modoVistaCarteraActual() === "DETALLADO") {
+        const unificada = CARTERAS_UNIFICADAS_CONTROL.find(grupo => grupo.ids.includes(idBase));
+        if (unificada) return unificada.ids.map(String);
+        return /^\d+$/.test(idBase) ? [idBase] : [];
+    }
+
     const valores = [
-        getIdCarteraBase(row),
+        idBase,
         getIdCartera(row),
         valor(row, ["IDS_CARTERA_GRUPO", "ids_cartera_grupo", "ids_cartera"], "")
     ];
@@ -519,6 +656,7 @@ function aplicarFiltroAgente() {
 
 function cambiarVistaCartera() {
     modoVistaCarteraActual();
+    sincronizarFiltroConVistaCartera();
     carteraSeleccionada = null;
     resumenOpcionesCarteras = construirResumenCarteras(detalleFiltradoPorAgente(dataControlHorario.detalle || []));
     resumenCarteras = construirResumenVisible();
@@ -631,6 +769,44 @@ function limpiarFiltroCarteraControl() {
     carteraFiltroControl = null;
     idsFiltroCarteraControl = [];
     etiquetaFiltroCarteraControl = "";
+}
+
+function sincronizarFiltroConVistaCartera() {
+    const idsActuales = [...new Set(idsFiltroCarteraControl.map(id => String(id || "").trim()).filter(Boolean))];
+    if (!idsActuales.length) return;
+
+    if (vistaCarteraControl === "DETALLADO") {
+        const unificada = CARTERAS_UNIFICADAS_CONTROL.find(grupo =>
+            idsActuales.every(id => grupo.ids.includes(id))
+        );
+
+        if (unificada) {
+            carteraFiltroControl = unificada.key;
+            idsFiltroCarteraControl = unificada.ids.map(String);
+            etiquetaFiltroCarteraControl = unificada.cartera;
+            return;
+        }
+
+        if (idsActuales.length === 1) {
+            const id = idsActuales[0];
+            carteraFiltroControl = id;
+            idsFiltroCarteraControl = [id];
+            etiquetaFiltroCarteraControl = CARTERAS_CONTROL[id] || etiquetaFiltroCarteraControl || id;
+            return;
+        }
+
+        limpiarFiltroCarteraControl();
+        return;
+    }
+
+    const grupo = GRUPOS_CARTERA_CONTROL.find(item =>
+        idsActuales.some(id => item.ids.includes(id))
+    );
+    if (!grupo) return;
+
+    carteraFiltroControl = grupo.key;
+    idsFiltroCarteraControl = grupo.ids.map(String);
+    etiquetaFiltroCarteraControl = grupo.cartera;
 }
 
 function actualizarContexto() {
@@ -1501,6 +1677,23 @@ function construirCurvaSuave(points) {
 }
 
 async function filtrarHora(hora) {
+    const modal = document.getElementById("modalHoraControl");
+    const tbody = document.getElementById("tablaAgenteHoraControl");
+    const titulo = document.getElementById("tituloDrillHora");
+    if (titulo) titulo.textContent = `Detalle agente/hora - ${hora}`;
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7">
+                    <div class="hour-detail-loading" role="status">
+                        <span class="control-experience-spinner" aria-hidden="true"></span>
+                        <span><strong>Estamos preparando el detalle...</strong>Consultando las gestiones de este horario.</span>
+                    </div>
+                </td>
+            </tr>`;
+    }
+    modal?.classList.add("activo");
+
     await asegurarAgenteHoraControl(idsCarteraSeleccionada());
 
     const ids = idsCarteraSeleccionada();
@@ -1511,7 +1704,7 @@ async function filtrarHora(hora) {
     });
 
     renderAgenteHora(data, hora);
-    document.getElementById("modalHoraControl").classList.add("activo");
+    modal?.classList.add("activo");
 }
 
 async function asegurarAgenteHoraControl(ids = []) {
@@ -1530,7 +1723,7 @@ async function asegurarAgenteHoraControl(ids = []) {
 
     cargandoAgenteHoraControl = (async () => {
         const fecha = document.getElementById("filtroFecha")?.value || fechaLocalInput();
-        mostrarToast("Cargando detalle agente/hora...", "info");
+        mostrarToast("Estamos preparando el detalle de este horario...", "info");
         const respuestas = await Promise.all(scopesPendientes.map(id =>
             fetchControlHorario(fecha, id, { incluirAgenteHora: true })
         ));
