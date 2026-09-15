@@ -437,6 +437,7 @@
                 "pdp_hoy",
                 "control_horario",
                 "ia_feedback",
+                "importacion",
                 "pagos",
                 "canales",
                 "telefonos",

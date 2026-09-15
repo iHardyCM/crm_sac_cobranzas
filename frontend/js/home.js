@@ -174,6 +174,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "IC",
+                titulo: "Importacion de cartera",
+                descripcion: "Analisis previo y carga de archivos de asignacion al CRM.",
+                ruta: "importacion.html",
+                destacado: false
+            },
+            {
                 sigla: "PA",
                 titulo: "Pagos del negocio",
                 descripcion: "Validacion y publicacion de pagos normalizados para BI.",

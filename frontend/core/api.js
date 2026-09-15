@@ -3,6 +3,7 @@ async function buscar() {
     const loader = document.getElementById("loader");
     const resultado = document.getElementById("resultado");
     const valor = valorInput ? valorInput.value.trim() : "";
+    const submit = valorInput?.closest("form")?.querySelector("button[type='submit']");
 
     if (!valor) {
         mostrarMensajeCliente("Ingresa un DNI, codigo de cliente, operacion o grupo para buscar.", "warning");
@@ -10,8 +11,17 @@ async function buscar() {
         return;
     }
 
+    window._clientes = [];
+    window._indiceOperacionSeleccionada = null;
     if (loader) loader.style.display = "block";
-    if (resultado) resultado.innerHTML = "";
+    if (resultado) {
+        resultado.innerHTML = "";
+        resultado.setAttribute("aria-busy", "true");
+    }
+    if (submit) {
+        submit.disabled = true;
+        submit.setAttribute("aria-disabled", "true");
+    }
 
     try {
         const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -23,8 +33,6 @@ async function buscar() {
 
         const data = await res.json();
 
-        if (loader) loader.style.display = "none";
-
         if (!data.encontrado) {
             mostrarMensajeCliente("No se encontraron clientes u operaciones con ese dato.", "empty");
             return;
@@ -33,8 +41,14 @@ async function buscar() {
         renderCliente(data.data);
     } catch (e) {
         console.error("Error consultando cliente:", e);
-        if (loader) loader.style.display = "none";
         mostrarMensajeCliente(`No se pudo completar la consulta. ${e.message || ""}`, "error");
+    } finally {
+        if (loader) loader.style.display = "none";
+        if (resultado) resultado.setAttribute("aria-busy", "false");
+        if (submit) {
+            submit.disabled = false;
+            submit.removeAttribute("aria-disabled");
+        }
     }
 }
 
@@ -48,36 +62,6 @@ function mostrarMensajeCliente(mensaje, tipo = "empty") {
             <span>Verifica el dato ingresado o intenta nuevamente.</span>
         </div>
     `;
-}
-
-function verDetalle(index) {
-    const c = window._clientes?.[index];
-    const detalle = document.getElementById("detalle");
-    if (!c || !detalle) return;
-
-    detalle.innerHTML = `
-        <div class="card">
-            <h3>${escapeClienteHtml(c.NomCliente)}</h3>
-            <p><b>DNI:</b> ${escapeClienteHtml(c.DNI)}</p>
-            <p><b>CodCliente:</b> ${escapeClienteHtml(c.codcliente)}</p>
-            <p><b>Operacion:</b> ${escapeClienteHtml(c["Cod Operacion"] || c.CodOperacion)}</p>
-        </div>
-    `;
-}
-
-function formatearNumero(valor) {
-    if (!valor) return "0";
-    return new Intl.NumberFormat("es-PE").format(valor);
-}
-
-function copiarTexto(texto) {
-    if (!texto) {
-        mostrarMensajeCliente("No hay numero para copiar.", "warning");
-        return;
-    }
-
-    navigator.clipboard.writeText(texto);
-    mostrarMensajeCliente("Numero copiado al portapapeles.", "empty");
 }
 
 function escapeClienteHtml(value) {

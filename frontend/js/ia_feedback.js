@@ -529,14 +529,17 @@ function pintarFichaRevisionIa(data = {}) {
         meta.innerHTML = [
             ["Tipo de llamada", tipoLlamadaVisibleIa(data)],
             ["Agente", agente],
-            ["Score IA", formatoScoreSobre100Ia(scoreIa)],
-            ["Score final", scoreFinal == null ? "Pendiente" : formatoScoreSobre100Ia(scoreFinal)],
+            // El modulo esta en validacion: el score de la IA no es una nota oficial
+            // y el rotulo debe decirlo donde se lee, no en un pie de pagina.
+            ["Score IA (referencial)", formatoScoreSobre100Ia(scoreIa)],
+            ["Nota de Calidad", scoreFinal == null ? "La define el analista" : formatoScoreSobre100Ia(scoreFinal)],
             ["Error crítico", errorCritico ? "Sí" : "No"],
             ["Revisión", revision.texto],
         ].map(([label, value]) => `
             <article>
                 <span>${escapeHtml(label)}</span>
                 <strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong>
+                ${label.includes("referencial") ? `<small class="score-nota-referencial">En validación. No constituye nota oficial.</small>` : ""}
             </article>
         `).join("");
     }
@@ -717,7 +720,7 @@ function pintarDimensionesFichaIa(items = [], data = {}) {
             const clase = estado.includes("Cumple") ? "ok" : estado.includes("Parcial") || estado.includes("Revisión") ? "warn" : estado.includes("No evaluable") ? "info" : "risk";
             return `<article class="${clase}"><span>${escapeHtml(item.bloque)}</span><strong>${score == null ? estado : `${formatoPeso(item.nota)}/${formatoPeso(item.peso)}`}</strong><div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div><small>${escapeHtml(estado)}</small></article>`;
         }).join("");
-        el.innerHTML = `${cards}<article class="dimension-total"><span>Total de la pauta</span><strong>${escapeHtml(formatoScoreSobre100Ia(scoreTecnicoFichaIa(data)))}</strong><small>${escapeHtml(data.pauta || "Pauta aplicada")}${data.pauta_version ? ` · v${escapeHtml(data.pauta_version)}` : ""}</small></article>`;
+        el.innerHTML = `${cards}<article class="dimension-total"><span>Total de la pauta</span><strong>${escapeHtml(formatoScoreSobre100Ia(scoreTecnicoFichaIa(data)))}</strong><small>${escapeHtml(data.pauta || "Pauta aplicada")}${data.pauta_version ? ` · v${escapeHtml(data.pauta_version)}` : ""}${textoPesoEvaluableIa(data)}</small></article>`;
         return;
     }
     const dimensiones = [
@@ -1396,6 +1399,17 @@ function calcularScoreTecnicoDesdeCriteriosIa(items = []) {
     });
     if (peso <= 0) return null;
     return peso === 100 ? nota : (nota / peso) * 100;
+}
+
+// Deja explicito sobre cuanto peso se esta calificando. Criterios con fuente no
+// observable en audio (TIPIFICACION, MULTIFUENTE) salen del denominador, y sin
+// esta nota el score parece estar sobre 100 cuando no lo esta.
+function textoPesoEvaluableIa(data) {
+    const total = Number(data?.peso_total);
+    const aplicable = Number(data?.peso_aplicable);
+    if (!Number.isFinite(total) || !Number.isFinite(aplicable)) return "";
+    if (!(total > 0) || !(aplicable > 0) || aplicable >= total) return "";
+    return ` · sobre ${formatoPeso(aplicable)} pts evaluables de ${formatoPeso(total)}`;
 }
 
 function formatoScoreSobre100Ia(value) {
@@ -5431,6 +5445,7 @@ function mostrarTabDetalleIa(tab = "resumen") {
         document.getElementById(id)?.classList.toggle("oculto", key !== tab);
     });
     if (tab === "matriz") setText("btnDetalleCalidadIa", "Ver matriz técnica");
+    if (tab === "calibracion") cargarCalibracionCriteriosIa();
 }
 
 function pintarEvidenciasDetalleIa(data = {}) {
@@ -7847,3 +7862,246 @@ window.mostrarVistaAlertasIa = mostrarVistaAlertasIa;
 window.mostrarVistaReportesIa = mostrarVistaReportesIa;
 window.mostrarVistaPromptIa = mostrarVistaPromptIa;
 
+
+
+/* =====================================================================
+   CALIBRACION POR CRITERIO
+   Calidad confirma o corrige cada criterio evaluado por la IA.
+
+   Por que existe: sin un acto humano explicito por criterio no hay forma de
+   medir la precision del modulo. Un criterio que nadie reviso no es una
+   coincidencia, es un no-dato, y confundir ambas cosas inflaria la precision.
+   Por eso "Confirmar" tambien registra: confirmar es revisar.
+   ===================================================================== */
+
+const CALIBRACION_BASE_IA = IA_FEEDBACK_BASE.replace(/\/ia-feedback\/?$/, "/calibracion");
+
+let motivosCalibracionIa = [];
+let calibracionCriteriosIa = [];
+let criterioCalibracionAbiertoIa = null;
+
+function idFeedbackActualIa() {
+    return resultadoActualIa?.id_feedback || null;
+}
+
+function usuarioActualIa() {
+    try {
+        return localStorage.getItem("dni") || "SIN_USUARIO";
+    } catch {
+        return "SIN_USUARIO";
+    }
+}
+
+async function cargarMotivosCalibracionIa() {
+    if (motivosCalibracionIa.length) return motivosCalibracionIa;
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/motivos`, {}, 12000);
+        const data = await response.json();
+        motivosCalibracionIa = Array.isArray(data?.data) ? data.data : [];
+    } catch {
+        motivosCalibracionIa = [];
+    }
+    return motivosCalibracionIa;
+}
+
+async function cargarCalibracionCriteriosIa(forzar = false) {
+    const contenedor = document.getElementById("calibracionCriteriosIa");
+    if (!contenedor) return;
+    const idFeedback = idFeedbackActualIa();
+    if (!idFeedback) {
+        contenedor.innerHTML = `<p class="calibration-empty">Abre una evaluación para calibrarla.</p>`;
+        return;
+    }
+    if (!forzar && contenedor.dataset.idFeedback === String(idFeedback)) return;
+
+    contenedor.innerHTML = `<p class="calibration-empty">Cargando criterios…</p>`;
+    await cargarMotivosCalibracionIa();
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/${idFeedback}`, {}, 15000);
+        const data = await response.json();
+        calibracionCriteriosIa = Array.isArray(data?.criterios) ? data.criterios : [];
+        contenedor.dataset.idFeedback = String(idFeedback);
+        pintarAvanceCalibracionIa(data?.resumen || {});
+        pintarCalibracionCriteriosIa();
+    } catch (error) {
+        contenedor.innerHTML = `<p class="calibration-empty">No se pudo cargar la calibración: ${escapeHtml(error.message || "error")}</p>`;
+    }
+}
+
+function pintarAvanceCalibracionIa(resumen = {}) {
+    const el = document.getElementById("calibracionAvanceIa");
+    if (!el) return;
+    const total = Number(resumen.total_criterios || 0);
+    if (!total) {
+        // Sin filas en CRM_IA_EVALUACION_CRITERIO la evaluacion es anterior a la
+        // persistencia por criterio. Se dice, en vez de mostrar un cero ambiguo.
+        el.innerHTML = `<p class="calibration-empty">Esta evaluación no tiene criterios persistidos. Vuelve a analizarla para poder calibrarla.</p>`;
+        return;
+    }
+    const revisados = Number(resumen.revisados || 0);
+    const pct = Number(resumen.avance_pct || 0);
+    el.innerHTML = `
+        <div class="calibration-progress-bar"><i style="width:${Math.max(2, Math.min(100, pct))}%"></i></div>
+        <small>${revisados} de ${total} criterios revisados · ${pct}%</small>`;
+}
+
+function estadoCalibracionEtiquetaIa(item) {
+    if (!item.calibrado) return `<span class="cal-chip pendiente">Pendiente</span>`;
+    const accion = item.accion === "CORREGIR" ? "Corregido" : "Confirmado";
+    const clase = item.accion === "CORREGIR" ? "corregido" : "confirmado";
+    const estado = item.estado_calibracion === "PUBLICADA" ? " · publicado"
+                 : item.estado_calibracion === "EN_REVISION" ? " · en revisión" : " · borrador";
+    return `<span class="cal-chip ${clase}">${accion}${estado}</span>`;
+}
+
+function pintarCalibracionCriteriosIa() {
+    const contenedor = document.getElementById("calibracionCriteriosIa");
+    if (!contenedor) return;
+    if (!calibracionCriteriosIa.length) {
+        contenedor.innerHTML = "";
+        return;
+    }
+    contenedor.innerHTML = calibracionCriteriosIa.map(item => {
+        const abierto = criterioCalibracionAbiertoIa === item.id_evaluacion_criterio;
+        const evidencia = item.evidencia_texto
+            ? `<blockquote>${escapeHtml(item.evidencia_texto)}${item.momento_llamada ? ` <span>· ${escapeHtml(item.momento_llamada)}</span>` : ""}</blockquote>`
+            : `<p class="cal-sin-cita">Conclusión por barrido de la llamada, sin cita puntual.</p>`;
+        return `
+        <article class="cal-criterio ${item.calibrado ? "calibrado" : ""}">
+            <header>
+                <div>
+                    <strong>${escapeHtml(item.codigo_criterio)}</strong>
+                    <span>${escapeHtml(item.nombre_criterio || "")}</span>
+                </div>
+                <div class="cal-criterio-estado">
+                    <span class="cal-resultado ${escapeHtml(String(item.resultado_ia || "").toLowerCase())}">${escapeHtml(item.resultado_ia)}</span>
+                    ${estadoCalibracionEtiquetaIa(item)}
+                </div>
+            </header>
+            <p class="cal-motivo">${escapeHtml(item.motivo_ia || "-")}</p>
+            ${evidencia}
+            <footer>
+                <button type="button" class="btn-light btn-small"
+                        onclick="confirmarCriterioCalibracionIa(${item.id_evaluacion_criterio})">Confirmar</button>
+                <button type="button" class="btn-light btn-small"
+                        onclick="abrirCorreccionCalibracionIa(${item.id_evaluacion_criterio})">Corregir</button>
+                <span class="cal-confianza">Confianza IA: ${escapeHtml(item.confianza_ia || "-")}</span>
+            </footer>
+            ${abierto ? formularioCorreccionCalibracionIa(item) : ""}
+        </article>`;
+    }).join("");
+}
+
+function formularioCorreccionCalibracionIa(item) {
+    // Solo se ofrecen los motivos que aplican a una correccion de resultado.
+    const motivos = motivosCalibracionIa.filter(m => m.aplica_resultado);
+    return `
+    <div class="cal-form">
+        <label>Resultado correcto
+            <select id="calResultado_${item.id_evaluacion_criterio}">
+                ${["CUMPLE", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE"]
+                    .map(v => `<option value="${v}" ${v === item.resultado_ia ? "" : ""}>${v}</option>`).join("")}
+            </select>
+        </label>
+        <label>¿La evidencia citada sustenta la conclusión?
+            <select id="calEvidencia_${item.id_evaluacion_criterio}">
+                <option value="SI">Sí</option>
+                <option value="PARCIAL">Parcialmente</option>
+                <option value="NO" selected>No</option>
+            </select>
+        </label>
+        <label>Motivo
+            <select id="calMotivo_${item.id_evaluacion_criterio}"
+                    onchange="mostrarPruebaMotivoIa(${item.id_evaluacion_criterio})">
+                <option value="">Selecciona…</option>
+                ${motivos.map(m => `<option value="${m.id_motivo}">${escapeHtml(m.nombre)}</option>`).join("")}
+            </select>
+        </label>
+        <p class="cal-prueba" id="calPrueba_${item.id_evaluacion_criterio}"></p>
+        <label>Evidencia correcta según Calidad
+            <textarea id="calEvidenciaRevisor_${item.id_evaluacion_criterio}" rows="2"
+                      placeholder="Cita el pasaje que sí sustenta el resultado"></textarea>
+        </label>
+        <label>Comentario
+            <textarea id="calComentario_${item.id_evaluacion_criterio}" rows="2"></textarea>
+        </label>
+        <div class="cal-form-actions">
+            <button type="button" class="btn-light btn-small" onclick="cerrarCorreccionCalibracionIa()">Cancelar</button>
+            <button type="button" class="btn-primary btn-small"
+                    onclick="guardarCorreccionCalibracionIa(${item.id_evaluacion_criterio})">Guardar corrección</button>
+        </div>
+    </div>`;
+}
+
+function mostrarPruebaMotivoIa(idEvaluacionCriterio) {
+    // La prueba de decision es lo que mantiene la clasificacion consistente entre
+    // analistas. Si dos personas eligen motivos distintos para el mismo caso, la
+    // metrica por motivo deja de servir.
+    const select = document.getElementById(`calMotivo_${idEvaluacionCriterio}`);
+    const destino = document.getElementById(`calPrueba_${idEvaluacionCriterio}`);
+    if (!select || !destino) return;
+    const motivo = motivosCalibracionIa.find(m => String(m.id_motivo) === String(select.value));
+    destino.textContent = motivo?.prueba_decision || "";
+}
+
+function abrirCorreccionCalibracionIa(idEvaluacionCriterio) {
+    criterioCalibracionAbiertoIa = idEvaluacionCriterio;
+    pintarCalibracionCriteriosIa();
+}
+
+function cerrarCorreccionCalibracionIa() {
+    criterioCalibracionAbiertoIa = null;
+    pintarCalibracionCriteriosIa();
+}
+
+async function enviarCalibracionCriterioIa(payload) {
+    const response = await fetchIa(`${CALIBRACION_BASE_IA}/criterio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    }, 15000);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
+    return data;
+}
+
+async function confirmarCriterioCalibracionIa(idEvaluacionCriterio) {
+    try {
+        await enviarCalibracionCriterioIa({
+            id_evaluacion_criterio: idEvaluacionCriterio,
+            accion: "CONFIRMAR",
+            evidencia_valida: "SI",
+            usuario: usuarioActualIa(),
+        });
+        criterioCalibracionAbiertoIa = null;
+        await cargarCalibracionCriteriosIa(true);
+    } catch (error) {
+        alert(`No se pudo confirmar: ${error.message}`);
+    }
+}
+
+async function guardarCorreccionCalibracionIa(idEvaluacionCriterio) {
+    const resultado = document.getElementById(`calResultado_${idEvaluacionCriterio}`)?.value || "";
+    const evidencia = document.getElementById(`calEvidencia_${idEvaluacionCriterio}`)?.value || "NO";
+    const motivo = document.getElementById(`calMotivo_${idEvaluacionCriterio}`)?.value || "";
+    if (!motivo) {
+        alert("Indica el motivo de la corrección.");
+        return;
+    }
+    try {
+        await enviarCalibracionCriterioIa({
+            id_evaluacion_criterio: idEvaluacionCriterio,
+            accion: "CORREGIR",
+            resultado_esperado: resultado,
+            evidencia_valida: evidencia,
+            id_motivo: Number(motivo),
+            evidencia_revisor: document.getElementById(`calEvidenciaRevisor_${idEvaluacionCriterio}`)?.value || null,
+            comentario: document.getElementById(`calComentario_${idEvaluacionCriterio}`)?.value || null,
+            usuario: usuarioActualIa(),
+        });
+        criterioCalibracionAbiertoIa = null;
+        await cargarCalibracionCriteriosIa(true);
+    } catch (error) {
+        alert(`No se pudo guardar la corrección: ${error.message}`);
+    }
+}

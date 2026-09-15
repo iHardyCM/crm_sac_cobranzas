@@ -7121,3 +7121,47 @@ body.crm-shell .pauta-analisis-cell p { color: #48627c; }
 @media (max-width: 860px) {
     body.crm-shell .pauta-criterios-table .pauta-analisis-cell { min-width: 270px; }
 }
+
+/* ---------------------------------------------------------------
+   Calibración por criterio
+   --------------------------------------------------------------- */
+.calibration-progress { margin: 12px 0 16px; }
+.calibration-progress-bar { height: 6px; border-radius: 4px; background: #e6eaf0; overflow: hidden; }
+.calibration-progress-bar i { display: block; height: 100%; background: #2f6fd0; }
+.calibration-progress small { display: block; margin-top: 6px; color: #64748b; font-size: 12px; }
+
+.calibration-empty { color: #64748b; font-size: 13px; padding: 10px 0; }
+
+.calibration-criteria { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+
+.cal-criterio { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; background: #fff; }
+.cal-criterio.calibrado { border-left: 3px solid #2f6fd0; }
+.cal-criterio header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.cal-criterio header strong { font-size: 13px; }
+.cal-criterio header span { color: #475569; font-size: 13px; margin-left: 6px; }
+.cal-criterio-estado { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+.cal-resultado { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #334155; }
+.cal-resultado.cumple { background: #e7f6ec; color: #1b7f3b; }
+.cal-resultado.no_cumple { background: #fdeaea; color: #b42318; }
+.cal-resultado.requiere_revision { background: #fdf3e2; color: #a86412; }
+
+.cal-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #475569; }
+.cal-chip.confirmado { background: #e7f6ec; color: #1b7f3b; }
+.cal-chip.corregido { background: #fdf3e2; color: #a86412; }
+
+.cal-motivo { margin: 8px 0; font-size: 13px; color: #1f2937; }
+.cal-criterio blockquote { margin: 0; padding: 8px 10px; border-left: 2px solid #cbd5e1; background: #f8fafc; font-size: 12px; color: #334155; }
+.cal-criterio blockquote span { color: #64748b; }
+.cal-sin-cita { font-size: 12px; color: #64748b; font-style: italic; margin: 0; }
+
+.cal-criterio footer { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.cal-confianza { margin-left: auto; font-size: 11px; color: #64748b; }
+
+.cal-form { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0; display: grid; gap: 10px; }
+.cal-form label { display: grid; gap: 4px; font-size: 12px; color: #475569; }
+.cal-form select, .cal-form textarea { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; font-size: 13px; font-family: inherit; }
+.cal-prueba { margin: 0; font-size: 12px; color: #2f6fd0; min-height: 16px; }
+.cal-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.score-nota-referencial { display: block; margin-top: 4px; font-size: 10px; color: #a86412; line-height: 1.3; }

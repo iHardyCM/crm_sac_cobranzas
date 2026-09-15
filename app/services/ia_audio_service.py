@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -31,6 +32,8 @@ from app.services.ia_analysis_service import (
     transcribir_audio_real,
 )
 
+
+logger = logging.getLogger(__name__)
 
 TABLA_FEEDBACK = "CobAuto.dbo.ia_feedback_llamadas"
 TABLA_RECALIBRACIONES = "CobAuto.dbo.ia_feedback_recalibraciones"
@@ -427,7 +430,20 @@ def obtener_transcripcion_para_analisis(registro: Dict, *, forzar_transcripcion:
         return transcripcion_guardada, False
 
     if ia_real_configurada():
-        return transcribir_audio_real(registro.get("ruta_archivo") or ""), True
+        # FIX: se deja rastro del preproceso de audio (recorte de timbrado) para
+        # poder correlacionarlo despues con los casos de diarizacion dudosa.
+        info_preproceso: Dict = {}
+        transcripcion = transcribir_audio_real(
+            registro.get("ruta_archivo") or "", info_preproceso
+        )
+        if info_preproceso.get("recortado"):
+            logger.info(
+                "IA feedback %s: se descartaron %.2fs de timbrado antes de transcribir (%s)",
+                registro.get("id_feedback"),
+                info_preproceso.get("segundos_descartados") or 0.0,
+                info_preproceso.get("motivo") or "",
+            )
+        return transcripcion, True
 
     if transcripcion_guardada:
         return transcripcion_guardada, False

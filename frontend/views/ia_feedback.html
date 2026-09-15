@@ -362,7 +362,7 @@
                     <section id="detalleResumenPanelIa" class="detail-tab-panel">
                         <div class="detail-score-grid">
                             <article id="cardScoreFinalIa"><span>Score final validado</span><strong id="scoreCalidadIa">-</strong></article>
-                            <article id="cardScorePreliminarIa"><span>Score IA preliminar</span><strong id="scorePreliminarIa">-</strong></article>
+                            <article id="cardScorePreliminarIa"><span>Score IA referencial</span><strong id="scorePreliminarIa">-</strong><small class="score-nota-referencial">En validación. No constituye nota oficial.</small></article>
                             <article id="cardResultadoGestionIa"><span>Resultado de gestión</span><strong id="resultadoGestionIa">-</strong></article>
                             <article id="cardNivelRiesgoIa"><span>Nivel de riesgo</span><strong id="nivelRiesgoDetalleIa">-</strong></article>
                             <article id="cardFaltaAnulanteIa"><span>Falta anulante</span><strong id="faltaAnulanteIa">-</strong></article>
@@ -686,10 +686,13 @@
                                 <p>Resuelve discrepancias entre la evaluación IA y la validación humana con trazabilidad por criterio.</p>
                             </div>
                             <div class="calibration-actions">
+                                <button id="btnRefrescarCalibracionIa" class="btn-light btn-small" type="button" onclick="cargarCalibracionCriteriosIa(true)">Actualizar</button>
                                 <button id="btnNuevaRecalibracionIa" class="btn-light btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
                                 <button id="btnExportarTrazabilidadIa" class="btn-light btn-small" type="button" onclick="exportarTrazabilidadCalibracionIa()">Exportar trazabilidad</button>
                             </div>
                         </div>
+                        <div id="calibracionAvanceIa" class="calibration-progress"></div>
+                        <div id="calibracionCriteriosIa" class="calibration-criteria"></div>
                         <div id="calibracionResumenIa"></div>
                     </section>
 
@@ -1219,7 +1222,7 @@
     </main>
 
     <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260901-monitor-calidad"></script>
+    <script src="../js/app_layout.js?v=20260915-supervisor-importacion1"></script>
     <script src="../js/ia_feedback.js?v=20260830-evidencia-prioritaria"></script>
 </body>
 </html>

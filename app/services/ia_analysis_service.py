@@ -12,6 +12,12 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 
 from app.core.db_siscob import engine_siscob
+# FIX: preproceso que recorta el timbrado previo a la conversacion. Solo usa
+# biblioteca estandar; si el formato no es WAV PCM devuelve el audio intacto.
+from app.services.ia_audio_preproceso import (
+    limpiar_recorte,
+    preparar_audio_para_transcripcion,
+)
 from app.services.mibanco_quality_pauta import (
     FUENTE_AUDIO,
     FUENTE_TRANSCRIPCION,
@@ -862,7 +868,20 @@ Estructura exacta requerida:
 """.strip()
 
 
-def transcribir_audio_real(ruta_audio: str) -> str:
+def transcribir_audio_real(ruta_audio: str, info_preproceso: Optional[Dict] = None) -> str:
+    """Transcribe el audio con diarizacion.
+
+    FIX: antes de enviar el archivo se descarta el timbrado previo a la
+    conversacion cuando existe. En llamadas manuales ese tramo puede ocupar
+    uno de los dos cupos de hablante del transcriptor y dejar toda la
+    conversacion en el cupo restante (caso 28 segmentos AGENTE / 2 CLIENTE).
+    Si no hay timbrado, o el formato no es WAV PCM, se envia el audio tal cual.
+
+    Los tiempos que devuelve el transcriptor se corrigen sumando el tramo
+    descartado, para que la evidencia siga apuntando al minuto real del audio
+    que escucha el usuario. Si se pasa `info_preproceso`, queda con el detalle
+    de lo que se hizo.
+    """
     if not ia_real_configurada():
         raise RuntimeError("OPENAI_API_KEY no configurada.")
     if OpenAI is None:
@@ -872,34 +891,43 @@ def transcribir_audio_real(ruta_audio: str) -> str:
     if not ruta.exists():
         raise RuntimeError("No se encontro el archivo de audio para transcribir.")
 
+    ruta_efectiva, preproceso = preparar_audio_para_transcripcion(str(ruta))
+    if isinstance(info_preproceso, dict):
+        info_preproceso.clear()
+        info_preproceso.update(preproceso)
+    offset = float(preproceso.get("segundos_descartados") or 0.0)
+
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    with ruta.open("rb") as audio_file:
-        try:
-            result = client.audio.transcriptions.create(
-                model=TRANSCRIPTION_MODEL,
-                file=audio_file,
-                response_format="diarized_json",
-                chunking_strategy="auto",
-            )
-            diarizada = normalizar_transcripcion_diarizada(result)
-            if diarizada.get("segmentos"):
-                diarizada["speaker_role_mapping"] = asignar_roles_speakers(client, diarizada["segmentos"])
-                return construir_texto_diarizado_canonico(diarizada)
-        except Exception:
-            audio_file.seek(0)
+    try:
+        with Path(ruta_efectiva).open("rb") as audio_file:
             try:
                 result = client.audio.transcriptions.create(
-                    model=TRANSCRIPTION_FALLBACK_MODEL,
+                    model=TRANSCRIPTION_MODEL,
                     file=audio_file,
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment"],
+                    response_format="diarized_json",
+                    chunking_strategy="auto",
                 )
+                diarizada = normalizar_transcripcion_diarizada(result, offset_segundos=offset)
+                if diarizada.get("segmentos"):
+                    diarizada["speaker_role_mapping"] = asignar_roles_speakers(client, diarizada["segmentos"])
+                    return construir_texto_diarizado_canonico(diarizada)
             except Exception:
                 audio_file.seek(0)
-                result = client.audio.transcriptions.create(
-                    model=TRANSCRIPTION_FALLBACK_MODEL,
-                    file=audio_file,
-                )
+                try:
+                    result = client.audio.transcriptions.create(
+                        model=TRANSCRIPTION_FALLBACK_MODEL,
+                        file=audio_file,
+                        response_format="verbose_json",
+                        timestamp_granularities=["segment"],
+                    )
+                except Exception:
+                    audio_file.seek(0)
+                    result = client.audio.transcriptions.create(
+                        model=TRANSCRIPTION_FALLBACK_MODEL,
+                        file=audio_file,
+                    )
+    finally:
+        limpiar_recorte(preproceso)
 
     text = getattr(result, "text", None)
     if not text and isinstance(result, dict):
@@ -908,7 +936,7 @@ def transcribir_audio_real(ruta_audio: str) -> str:
     segments = getattr(result, "segments", None)
     if segments is None and isinstance(result, dict):
         segments = result.get("segments")
-    texto_segmentado = construir_texto_con_timestamps(segments)
+    texto_segmentado = construir_texto_con_timestamps(segments, offset_segundos=offset)
     if texto_segmentado:
         return texto_segmentado
 
@@ -917,7 +945,21 @@ def transcribir_audio_real(ruta_audio: str) -> str:
     return text.strip()
 
 
-def normalizar_transcripcion_diarizada(result) -> Dict:
+def desplazar_segundos_v3(valor, offset_segundos: float = 0.0):
+    """FIX: reubica un tiempo del audio recortado en el audio original.
+    Si no hubo recorte (offset 0) o el valor es nulo, no cambia nada."""
+    if valor is None or not offset_segundos:
+        return valor
+    try:
+        return round(float(valor) + float(offset_segundos), 3)
+    except (TypeError, ValueError):
+        return valor
+
+
+def normalizar_transcripcion_diarizada(result, offset_segundos: float = 0.0) -> Dict:
+    # FIX: `offset_segundos` es el tramo de timbrado que se descarto antes de
+    # transcribir. Se suma a cada tiempo para que los timestamps sigan
+    # correspondiendo al audio original que escucha el usuario.
     data = result
     if not isinstance(data, dict):
         try:
@@ -963,13 +1005,16 @@ def normalizar_transcripcion_diarizada(result) -> Dict:
             or raw.get("speaker_original")
             or ""
         ).strip()
+        # FIX: se devuelven los tiempos del audio ORIGINAL, no los del recorte.
+        inicio_real = desplazar_segundos_v3(normalizar_segundos_v2(inicio), offset_segundos)
+        fin_real = desplazar_segundos_v3(normalizar_segundos_v2(fin), offset_segundos)
         segmentos.append({
             "segmento_id": len(segmentos) + 1,
             "speaker_original": speaker or "speaker_unknown",
             "rol": None,
-            "inicio_segundos": normalizar_segundos_v2(inicio),
-            "fin_segundos": normalizar_segundos_v2(fin),
-            "timestamp": formatear_timestamp(inicio),
+            "inicio_segundos": inicio_real,
+            "fin_segundos": fin_real,
+            "timestamp": formatear_timestamp(inicio_real),
             "texto_original": texto_segmento,
             "texto_limpio": None,
             "texto": texto_segmento,
@@ -1379,39 +1424,130 @@ def validar_mapping_dos_speakers_v3(speakers: Dict[str, List[Dict]], mapping_ia:
     return parcial
 
 
+# --- Senales para decidir quien es el agente y quien el cliente ---------------
+#
+# Las tres listas NO pesan igual, y esa es la correccion de fondo. Antes todas
+# las senales valian 1, de modo que el vocabulario de cobranza ("deuda",
+# "cuota", "pagar") decidia el rol; pero de plata hablan los dos, asi que el
+# lado con mas palabras de dominio ganaba sin que eso significara nada.
+#
+# DECISIVAS: el guion de la llamada. Solo las dice un rol, y una sola basta.
+# El agente se presenta ("le saluda Fulano", "estoy llamando por encargo de")
+# y el cliente confirma identidad ("si soy yo", "con el habla").
+SENALES_AGENTE_DECISIVAS_V3 = (
+    "le saluda", "te saluda", "les saluda", "le habla", "mi nombre es",
+    "estoy llamando", "estoy llamando por encargo", "por encargo de",
+    "llamo por encargo", "me comunico con usted", "se encuentra el senor",
+    "se encuentra la senora", "hablo con el senor", "hablo con la senora",
+    "esta llamada esta siendo grabada", "la llamada es grabada",
+)
+SENALES_CLIENTE_DECISIVAS_V3 = (
+    "si soy yo", "soy yo", "con el habla", "con ella habla", "el habla",
+    "ella habla", "si con ella", "si con el", "quien habla",
+    "de parte de quien", "con quien hablo",
+)
+
+# FUERTES: propias del rol pero no exclusivas. Varias juntas convencen.
+SENALES_AGENTE_FUERTES_V3 = (
+    "por encargo", "le comento", "le explico", "le informo", "le recuerdo",
+    "puede acercarse", "puede realizar el pago", "le puedo ofrecer",
+    "le ofrezco", "vamos a programar", "queda registrado", "le envio",
+    "constancia", "voucher", "fraccionamiento", "beneficio", "descuento",
+    "campana", "que dia podria", "cuanto podria", "me confirma",
+)
+SENALES_CLIENTE_FUERTES_V3 = (
+    "no puedo", "no tengo", "no cuento", "no me encuentro", "estoy pagando",
+    "tengo problemas", "no se ha podido", "no se puede", "mi trabajo",
+    "mi esposo", "mi esposa", "mi hijo", "estoy enfermo", "estoy enferma",
+    "me operaron", "la cosecha", "voy a ver", "dejeme ver", "llameme",
+    "me puede llamar", "otro banco", "mis bancos", "no uso whatsapp",
+)
+
+# DEBILES: vocabulario de cobranza. Lo usan los dos. Por si solas no deciden
+# nada; solo desempatan cuando ya hay senales de mas peso.
+SENALES_AGENTE_DEBILES_V3 = (
+    "deuda", "credito", "prestamo", "cuota", "cuotas", "saldo", "capital",
+    "mora", "acuerdo", "compromiso", "programar", "cancelar", "abonar",
+)
+SENALES_CLIENTE_DEBILES_V3 = (
+    "debo", "debiendo", "plazo", "reprogramar", "abono", "parte",
+    "la semana", "manana", "duda", "cuanto es",
+)
+
+PESO_SENAL_DECISIVA_V3 = 10
+PESO_SENAL_FUERTE_V3 = 3
+PESO_SENAL_DEBIL_V3 = 1
+
+# Diferencia minima de puntaje para decidir un rol sin senal decisiva.
+MARGEN_MINIMO_ROL_V3 = 3
+
+
+def descartar_senales_contenidas_v3(senales: List[str]) -> List[str]:
+    """Evita contar dos veces la misma frase.
+
+    "si soy yo" y "soy yo" son la misma evidencia: si ambas aparecen en la
+    lista de coincidencias, la mas corta esta dentro de la mas larga y sumarlas
+    inflaria el puntaje del rol.
+    """
+    claves = {senal: limpiar_key_texto(senal) for senal in senales}
+    salida = []
+    for senal in senales:
+        clave = claves[senal]
+        if not clave:
+            continue
+        if any(clave != otra and clave in otra for otra in claves.values()):
+            continue
+        salida.append(senal)
+    return salida
+
+
 def puntuar_speaker_roles_operativo_v3(segmentos: List[Dict]) -> Dict[str, object]:
-    texto = limpiar_key_texto(" ".join(
-        str(item.get("texto") or item.get("texto_original") or item.get("transcripcion") or item.get("frase") or "")
-        for item in muestra_distribuida_speaker_v3(segmentos)
-    ))
-    senales_agente = [
-        "le habla", "te saluda", "le saluda", "mi nombre", "soy",
-        "se comunica", "mi banco", "mibanco",
-        "banco", "entidad", "por encargo", "cuenta", "deuda", "credito",
-        "prestamo", "cuotas", "cuota", "campana", "descuento", "beneficio",
-        "puedes", "puede", "podria", "podria", "abonar", "cancelar", "pagar",
-        "cuanto", "fecha", "cuando", "capacidad", "ha podido recaudar",
-        "pago total", "acuerdo", "programar", "compromiso", "voucher",
-        "constancia", "fraccionamiento",
-    ]
-    senales_cliente = [
-        "no puedo", "no me encuentro", "no tengo", "no cuento", "estoy pagando",
-        "tengo problemas", "problemas", "trabajo", "ingreso", "cosecha",
-        "agricultura", "enfermedad", "operar", "esposo", "familia",
-        "bancos", "otro banco", "mis bancos", "debo", "debiendo",
-        "puedo pagar", "podria pagar", "voy a cancelar", "me interesa",
-        "no se ha podido", "no se puede", "para el", "la semana",
-        "el miercoles", "manana", "plazo", "reprogramar", "parte",
-        "abono", "duda", "cuanto es", "si con ella", "sí con ella",
-        "con ella", "digame", "dígame", "no uso whatsapp",
-    ]
-    hallazgos_agente = senales_presentes_operativas_v3(texto, senales_agente)
-    hallazgos_cliente = senales_presentes_operativas_v3(texto, senales_cliente)
+    """Puntua a que rol corresponde un speaker, pesando las senales por fuerza.
+
+    Las senales decisivas se buscan sobre TODOS los segmentos, no sobre una
+    muestra: la autoidentificacion del agente ocurre una sola vez, al inicio, y
+    perderla por muestreo es perder la unica evidencia concluyente.
+    """
+    def unir(items):
+        return limpiar_key_texto(" ".join(
+            str(item.get("texto") or item.get("texto_original") or item.get("transcripcion") or item.get("frase") or "")
+            for item in items
+        ))
+
+    texto_completo = unir(segmentos)
+    texto_muestra = unir(muestra_distribuida_speaker_v3(segmentos))
+
+    decisivas_agente = descartar_senales_contenidas_v3(
+        senales_presentes_operativas_v3(texto_completo, list(SENALES_AGENTE_DECISIVAS_V3))
+    )
+    decisivas_cliente = descartar_senales_contenidas_v3(
+        senales_presentes_operativas_v3(texto_completo, list(SENALES_CLIENTE_DECISIVAS_V3))
+    )
+    fuertes_agente = senales_presentes_operativas_v3(texto_muestra, list(SENALES_AGENTE_FUERTES_V3))
+    fuertes_cliente = senales_presentes_operativas_v3(texto_muestra, list(SENALES_CLIENTE_FUERTES_V3))
+    debiles_agente = senales_presentes_operativas_v3(texto_muestra, list(SENALES_AGENTE_DEBILES_V3))
+    debiles_cliente = senales_presentes_operativas_v3(texto_muestra, list(SENALES_CLIENTE_DEBILES_V3))
+
+    score_agente = (
+        len(decisivas_agente) * PESO_SENAL_DECISIVA_V3
+        + len(fuertes_agente) * PESO_SENAL_FUERTE_V3
+        + len(debiles_agente) * PESO_SENAL_DEBIL_V3
+    )
+    score_cliente = (
+        len(decisivas_cliente) * PESO_SENAL_DECISIVA_V3
+        + len(fuertes_cliente) * PESO_SENAL_FUERTE_V3
+        + len(debiles_cliente) * PESO_SENAL_DEBIL_V3
+    )
+
     return {
-        "score_agente": len(hallazgos_agente),
-        "score_cliente": len(hallazgos_cliente),
-        "senales_agente": hallazgos_agente[:12],
-        "senales_cliente": hallazgos_cliente[:12],
+        "score_agente": score_agente,
+        "score_cliente": score_cliente,
+        "decisivas_agente": decisivas_agente,
+        "decisivas_cliente": decisivas_cliente,
+        "sustantivas_agente": decisivas_agente + fuertes_agente,
+        "sustantivas_cliente": decisivas_cliente + fuertes_cliente,
+        "senales_agente": (decisivas_agente + fuertes_agente + debiles_agente)[:12],
+        "senales_cliente": (decisivas_cliente + fuertes_cliente + debiles_cliente)[:12],
     }
 
 
@@ -1419,7 +1555,10 @@ def es_speaker_confirmacion_cliente_v3(segmentos: List[Dict], puntaje: Optional[
     if not segmentos or len(segmentos) > 8:
         return False
     puntaje = puntaje or puntuar_speaker_roles_operativo_v3(segmentos)
-    if int(puntaje.get("score_agente") or 0) >= 2:
+    # El umbral se expresa en la escala nueva: descarta este speaker como simple
+    # confirmacion del cliente solo si dijo algo propio de un asesor, no por
+    # haber usado un par de palabras de cobranza que usan los dos.
+    if puntaje.get("sustantivas_agente"):
         return False
     texto = limpiar_key_texto(" ".join(
         str(item.get("texto") or item.get("texto_original") or "")
@@ -1434,14 +1573,33 @@ def es_speaker_confirmacion_cliente_v3(segmentos: List[Dict], puntaje: Optional[
 
 
 def inferir_rol_speaker_operativo_v3(segmentos: List[Dict]) -> tuple[str, str, str]:
+    """Decide el rol de un speaker y con cuanta confianza.
+
+    Preferimos NO_DETERMINADO antes que un rol adivinado: un rol equivocado
+    manda la evaluacion entera a evaluar al interlocutor incorrecto, y eso no
+    se nota leyendo la ficha.
+    """
     puntaje = puntuar_speaker_roles_operativo_v3(segmentos)
     score_agente = int(puntaje["score_agente"])
     score_cliente = int(puntaje["score_cliente"])
-    if score_agente > score_cliente:
-        return "AGENTE", "MEDIA", f"Fallback por señales globales de gestión del speaker: {', '.join(puntaje['senales_agente'][:5])}."
-    if score_cliente > score_agente:
-        return "CLIENTE", "MEDIA", f"Fallback por señales globales de respuesta/objeción del speaker: {', '.join(puntaje['senales_cliente'][:5])}."
-    return "NO_DETERMINADO", "BAJA", "Fallback sin señales suficientes por speaker."
+    decisivas_agente = puntaje["decisivas_agente"]
+    decisivas_cliente = puntaje["decisivas_cliente"]
+
+    # El speaker se identifico a si mismo y el otro lado no: no hay duda.
+    if decisivas_agente and not decisivas_cliente:
+        return "AGENTE", "ALTA", f"El hablante se identifica como asesor: {', '.join(decisivas_agente[:3])}."
+    if decisivas_cliente and not decisivas_agente:
+        return "CLIENTE", "ALTA", f"El hablante confirma ser el contactado: {', '.join(decisivas_cliente[:3])}."
+
+    # Sin autoidentificacion limpia se exige margen Y al menos una senal que no
+    # sea vocabulario de cobranza, que lo usan ambos por igual.
+    diferencia = score_agente - score_cliente
+    if diferencia >= MARGEN_MINIMO_ROL_V3 and puntaje["sustantivas_agente"]:
+        return "AGENTE", "MEDIA", f"Señales de gestión propias del asesor: {', '.join(puntaje['sustantivas_agente'][:3])}."
+    if -diferencia >= MARGEN_MINIMO_ROL_V3 and puntaje["sustantivas_cliente"]:
+        return "CLIENTE", "MEDIA", f"Señales de respuesta u objeción propias del cliente: {', '.join(puntaje['sustantivas_cliente'][:3])}."
+
+    return "NO_DETERMINADO", "BAJA", "No hay señales suficientes para atribuir el rol de este hablante."
 
 
 def senales_presentes_operativas_v3(texto: str, senales: List[str]) -> List[str]:
@@ -1637,7 +1795,9 @@ def evaluar_calidad_transcripcion_v3(segmentos: List[Dict]) -> Dict:
     }
 
 
-def construir_texto_con_timestamps(segments) -> Optional[str]:
+def construir_texto_con_timestamps(segments, offset_segundos: float = 0.0) -> Optional[str]:
+    # FIX: mismo desplazamiento que en la ruta diarizada, para la transcripcion
+    # de respaldo.
     if not isinstance(segments, list) or not segments:
         return None
 
@@ -1648,7 +1808,7 @@ def construir_texto_con_timestamps(segments) -> Optional[str]:
         texto = str(segment.get("text") or "").strip()
         if not texto:
             continue
-        inicio = segment.get("start")
+        inicio = desplazar_segundos_v3(segment.get("start"), offset_segundos)
         lineas.append(f"[{formatear_timestamp(inicio)}] {texto}")
     return "\n".join(lineas).strip() or None
 
@@ -1694,15 +1854,21 @@ def analizar_transcripcion_pipeline_v3(
     criterios = evaluar_criterios_desde_hechos(client, segmentos, hechos, pauta=pauta)
     criterios = normalizar_criterios_pipeline_v3(criterios, segmentos, pauta=pauta)
     criterios = aplicar_anulantes_bloque(criterios)
-    criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios)
+    criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios, cartera)
     score_antes = score_desde_criterios_pipeline_v3(criterios)
     auditoria = auditar_evaluacion(client, segmentos, hechos, criterios)
     criterios, criterios_corregidos = corregir_criterios_inconsistentes(client, segmentos, hechos, criterios, auditoria, pauta=pauta)
     criterios = normalizar_criterios_pipeline_v3(criterios, segmentos, pauta=pauta)
     criterios = aplicar_anulantes_bloque(criterios)
-    criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios)
+    criterios = aplicar_guardas_deterministicas_criterios(segmentos, criterios, cartera)
     score_despues = score_desde_criterios_pipeline_v3(criterios)
-    feedback = generar_feedback_desde_evaluacion(client, segmentos, hechos, criterios, score_despues)
+    roles_confiables = cobertura_roles_suficiente_v3(segmentos)
+    # El estado de cada criterio ya esta decidido. Esta pasada solo reescribe el
+    # motivo para que cuente lo que paso en ESTA llamada.
+    criterios = explicar_criterios_finales(client, segmentos, criterios, roles_confiables)
+    feedback = generar_feedback_desde_evaluacion(
+        client, segmentos, hechos, criterios, score_despues, roles_confiables=roles_confiables
+    )
     data = construir_respuesta_pipeline_v3(
         segmentos=segmentos,
         hechos=hechos,
@@ -1813,13 +1979,44 @@ def diarizacion_tiene_roles_operativos_v3(segmentos: List[Dict]) -> bool:
     return False
 
 
+# Participacion minima que debe tener el rol menos presente para creer en la
+# separacion de interlocutores.
+PARTICIPACION_MINIMA_ROL_V3 = 0.15
+
+# Por debajo de esta cantidad de segmentos con rol, el balance no es una senal
+# confiable: una llamada de 4 turnos puede ser legitimamente desbalanceada.
+SEGMENTOS_MINIMOS_PARA_BALANCE_V3 = 10
+
+
 def cobertura_roles_suficiente_v3(segmentos: List[Dict]) -> bool:
+    """
+    Decide si se puede confiar en quien dijo cada frase.
+
+    No basta con que existan ambos roles. Una llamada donde el cliente aparece con
+    un unico "Alo" y todo lo demas quedo como AGENTE cumple la condicion de
+    presencia y aun asi es inservible: las objeciones del cliente, sus preguntas y
+    su disposicion quedan atribuidas al agente. La evaluacion sale con evidencias
+    del interlocutor equivocado y nadie lo nota, porque la transcripcion se ve bien.
+    """
     if not segmentos:
         return False
     total = len(segmentos)
     agente = sum(1 for item in segmentos if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "AGENTE")
     cliente = sum(1 for item in segmentos if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "CLIENTE")
-    return agente > 0 and cliente > 0 and ((agente + cliente) / total) >= 0.7
+    determinados = agente + cliente
+
+    if agente <= 0 or cliente <= 0:
+        return False
+    if determinados / total < 0.7:
+        return False
+
+    # Ambos roles presentes no alcanza: el rol minoritario debe tener una
+    # participacion real, no un unico "Alo" suelto.
+    if determinados >= SEGMENTOS_MINIMOS_PARA_BALANCE_V3:
+        participacion_menor = min(agente, cliente) / determinados
+        if participacion_menor < PARTICIPACION_MINIMA_ROL_V3:
+            return False
+    return True
 
 
 def identificar_interlocutores_ia(client, segmentos: List[Dict]) -> List[Dict]:
@@ -2199,11 +2396,162 @@ Devuelve JSON:
     return salida, codigos
 
 
-def generar_feedback_desde_evaluacion(client, segmentos: List[Dict], hechos: Dict, criterios: List[Dict], score: Dict) -> Dict:
+def explicar_criterios_finales(client, segmentos: List[Dict], criterios: List[Dict], roles_confiables: bool) -> List[Dict]:
+    """
+    Reescribe el motivo de cada criterio para que describa ESTA llamada.
+
+    Por que existe esta pasada: el estado de cada criterio lo deciden las guardas
+    deterministas y el modelo, y esa parte funciona. El problema era el texto: las
+    guardas escriben cadenas fijas ("La gestion presenta una propuesta, pero no
+    desarrolla una negociacion escalonada...") que son la definicion del criterio
+    en negativo, iguales en todas las llamadas. Quien lee la ficha no entiende que
+    hizo el agente.
+
+    Aqui el estado YA esta decidido y no se toca. Solo se pide una explicacion de
+    lo ocurrido, coherente con ese estado y apoyada en los segmentos citados.
+    """
+    if not criterios:
+        return criterios
+
+    resumen_criterios = [
+        {
+            "codigo": item.get("codigo") or item.get("codigo_criterio"),
+            "nombre": item.get("nombre"),
+            "estado_final": item.get("estado"),
+            "regla_evaluacion": item.get("regla_evaluacion"),
+            "segmentos_evidencia": item.get("segmentos_evidencia"),
+            "segmentos_contexto": item.get("segmentos_contexto"),
+            "tipo_evidencia": item.get("tipo_evidencia"),
+        }
+        for item in criterios
+        if isinstance(item, dict)
+    ]
+
+    regla_roles = (
+        "Puedes atribuir cada frase a AGENTE o CLIENTE."
+        if roles_confiables
+        else "La separacion de interlocutores NO es confiable: no atribuyas acciones a ninguno de los dos y dilo en la explicacion."
+    )
+
     prompt = f"""
-Genera feedback y coaching solo desde la evaluacion final validada.
+Explica el resultado de cada criterio de una evaluacion YA DECIDIDA.
+
+NO cambies ningun estado. El estado_final es definitivo y tu explicacion debe ser
+coherente con el, aunque no lo compartas.
+
+Cada explicacion tiene 1 o 2 frases y cuenta QUE PASO EN ESTA LLAMADA.
+NO repitas la definicion del criterio ni la regla de evaluacion: eso ya se sabe.
+
+Mal (es la definicion del criterio, sirve para cualquier llamada):
+  "La gestion presenta una propuesta, pero no desarrolla una negociacion escalonada
+   conectada con la causa, capacidad, monto o fecha expuestos por el cliente."
+Bien (cuenta lo ocurrido, solo sirve para esta llamada):
+  "El cliente ofrecio pagar 179 o 290 soles. El agente no respondio sobre esos montos
+   ni propuso una alternativa con fecha; siguio insistiendo en el monto original."
+
+REGLAS
+1. Solo hechos presentes en los segmentos. No inventes frases, montos ni fechas.
+2. Si el estado se concluyo por AUSENCIA de una conducta, explica que se busco y no
+   aparecio ("El cliente no planteo objeciones ni restricciones en toda la llamada").
+   No cites una frase cualquiera para rellenar.
+3. Si el estado es NO_EVALUABLE o NO_APLICA, explica por que no se pudo o no
+   correspondia evaluar.
+4. En segmentos_contexto agrega los segmento_id que hacen entendible la cita: lo que
+   dijo el cliente antes y lo que respondio el agente despues. Es lo que convierte
+   una frase suelta en un intercambio legible.
+5. {regla_roles}
+
+Segmentos:
+{json.dumps(segmentos, ensure_ascii=False)}
+
+Criterios ya decididos:
+{json.dumps(resumen_criterios, ensure_ascii=False)}
+
+Devuelve JSON:
+{{"explicaciones": [{{"codigo": "", "explicacion": "", "segmentos_contexto": []}}]}}
+""".strip()
+
+    try:
+        data = llamar_json_modelo_pipeline_v3(
+            client,
+            prompt,
+            "Explica resultados ya decididos. No cambies estados ni inventes hechos.",
+        )
+    except Exception:
+        # Esta pasada mejora la lectura, no decide nada: si falla, la evaluacion
+        # sigue valida con los textos que ya traia.
+        return criterios
+
+    explicaciones = data.get("explicaciones") if isinstance(data.get("explicaciones"), list) else []
+    por_codigo = {
+        str(item.get("codigo") or "").strip().upper(): item
+        for item in explicaciones
+        if isinstance(item, dict)
+    }
+    segmentos_validos = {
+        int(item.get("segmento_id"))
+        for item in segmentos
+        if isinstance(item, dict) and item.get("segmento_id") is not None
+    }
+
+    for criterio in criterios:
+        if not isinstance(criterio, dict):
+            continue
+        codigo = str(criterio.get("codigo") or criterio.get("codigo_criterio") or "").strip().upper()
+        item = por_codigo.get(codigo)
+        if not item:
+            continue
+        texto = str(item.get("explicacion") or "").strip()
+        if texto:
+            criterio["hallazgo"] = texto
+            criterio["conducta_observada"] = texto
+            criterio["lectura_ia"] = texto
+            # Marca para que las guardas no vuelvan a pisar esta explicacion
+            # cuando la ficha se lea de nuevo.
+            criterio["motivo_explicado"] = True
+
+        contexto = [
+            int(valor)
+            for valor in (item.get("segmentos_contexto") or [])
+            if str(valor).lstrip("-").isdigit() and int(valor) in segmentos_validos
+        ]
+        if not contexto:
+            continue
+        previos = criterio.get("segmentos_contexto") or []
+        criterio["segmentos_contexto"] = sorted(set([*previos, *contexto]))
+
+    return criterios
+
+
+def generar_feedback_desde_evaluacion(client, segmentos: List[Dict], hechos: Dict, criterios: List[Dict], score: Dict, roles_confiables: bool = True) -> Dict:
+    regla_roles = (
+        "Los interlocutores estan correctamente separados: puedes atribuir cada frase a AGENTE o CLIENTE."
+        if roles_confiables
+        else "ATENCION: la separacion de interlocutores NO es confiable en esta llamada. NO atribuyas acciones al agente ni al cliente. Describe lo que se trato en la llamada sin decir quien dijo que, e indicalo explicitamente en el relato."
+    )
+    prompt = f"""
+Genera el relato de la gestion, feedback y coaching desde la evaluacion final validada.
 No cambies score ni criterios. No reinterpretes la llamada desde cero.
 El feedback debe reconocer fortalezas observables y priorizar la brecha de mayor impacto.
+
+RELATO DE LA GESTION (campo relato_gestion y resumen_ejecutivo.texto)
+Escribe de 2 a 4 frases contando lo que ocurrio, en orden cronologico y en pasado.
+Debe responder: con quien se hablo, que ofrecio o informo el agente, como reacciono el
+cliente, y en que quedaron. Ejemplos del nivel de detalle esperado:
+  "El agente ofrecio cancelar la deuda en partes dentro del mes, pero el cliente se
+   mostro renuente y pidio que le devolvieran la llamada el proximo viernes."
+  "El cliente confirmo su identidad y escucho la propuesta. Se le ofrecio un plan en
+   cuotas que acepto, con un pago inicial de 200 soles para el 15 de agosto."
+
+REGLAS DEL RELATO -se cumplen sin excepcion-:
+1. Solo hechos presentes en los segmentos. Nada de suposiciones ni de relleno narrativo.
+2. Todo monto, fecha, plazo o canal que menciones debe aparecer LITERALMENTE en algun
+   segmento. Si no lo encuentras, no lo escribas: es preferible un relato mas corto.
+3. Registra en segmentos_relato los segmento_id que sustentan el relato.
+4. Si no hubo acuerdo, dilo. Si la llamada se corto o no se ubico al titular, dilo.
+5. No uses lenguaje evaluativo ("buena gestion", "areas de mejora"): eso va en el
+   coaching. El relato cuenta, no califica.
+6. {regla_roles}
 
 Segmentos:
 {json.dumps(segmentos, ensure_ascii=False)}
@@ -2218,7 +2566,7 @@ Score Python:
 {json.dumps(score, ensure_ascii=False)}
 
 Devuelve JSON:
-{{"resumen_ejecutivo": {{"texto": "", "fortaleza_principal": "", "debilidad_principal": "", "riesgo_principal": "", "oportunidad_principal": "", "conclusion": ""}}, "resultado_gestion": {{"tipo_contacto": "", "resultado_principal": "", "tipo_cierre": "", "monto_acordado": null, "fecha_acordada": null, "canal_acordado": null, "confirmacion_cliente": false, "resumen": ""}}, "tipificaciones_sugeridas": [], "coaching": {{"feedback_supervisor": {{"resumen_tecnico": "", "fortalezas": [], "brechas_principales": [], "conducta_prioritaria": "", "accion_entrenable": "", "objetivo_siguiente_llamada": ""}}, "feedback_asesor": {{"mensaje": "", "lo_que_hiciste_bien": "", "mejora_prioritaria": "", "frase_a_evitar": "", "frase_recomendada": "", "ejemplo_mejorado": "", "compromiso_sugerido": ""}}}}}}
+{{"relato_gestion": "", "segmentos_relato": [], "resumen_ejecutivo": {{"texto": "", "fortaleza_principal": "", "debilidad_principal": "", "riesgo_principal": "", "oportunidad_principal": "", "conclusion": ""}}, "resultado_gestion": {{"tipo_contacto": "", "resultado_principal": "", "tipo_cierre": "", "monto_acordado": null, "fecha_acordada": null, "canal_acordado": null, "confirmacion_cliente": false, "segmentos_acuerdo": [], "resumen": ""}}, "tipificaciones_sugeridas": [], "coaching": {{"feedback_supervisor": {{"resumen_tecnico": "", "fortalezas": [], "brechas_principales": [], "conducta_prioritaria": "", "accion_entrenable": "", "objetivo_siguiente_llamada": ""}}, "feedback_asesor": {{"mensaje": "", "lo_que_hiciste_bien": "", "mejora_prioritaria": "", "frase_a_evitar": "", "frase_recomendada": "", "ejemplo_mejorado": "", "compromiso_sugerido": ""}}}}}}
 """.strip()
     return llamar_json_modelo_pipeline_v3(client, prompt, "Genera feedback final desde matriz validada.")
 
@@ -2410,10 +2758,25 @@ def normalizar_criterios_pipeline_v3(
         evidencia_ids = normalizar_ids_segmentos_pipeline_v3(raw.get("segmentos_evidencia"), segmentos_por_id)
         contexto_ids = normalizar_ids_segmentos_pipeline_v3(raw.get("segmentos_contexto"), segmentos_por_id)
         evidencia_textual = [segmentos_por_id[item]["texto"] for item in evidencia_ids if item in segmentos_por_id]
+        conducta_txt = str(raw.get("conducta_observada") or "").strip()
+        hallazgo_txt = str(raw.get("hallazgo") or "").strip()
         if pauta:
+            estado_previo = estado
             estado = normalizar_estado_mibanco_pipeline_v3(estado)
             estado = aplicar_reglas_fuente_mibanco_v3(estado, meta, evidencia_ids, contexto_ids, segmentos_por_id)
             nota = puntaje_mibanco_pipeline_v3(estado, peso)
+            # Si el criterio quedo NO_EVALUABLE porque su fuente no es el audio,
+            # el motivo que escribio el modelo ya no corresponde y la evidencia
+            # citada tampoco: se dice por que no se pudo evaluar y se limpia.
+            if estado == "NO_EVALUABLE" and estado_previo != "NO_EVALUABLE":
+                fuente_txt = str(meta.get("fuente_evidencia") or "una fuente externa").strip().upper()
+                hallazgo_txt = (
+                    f"El criterio se evalua con fuente {fuente_txt}, no disponible "
+                    "en el audio ni en la transcripcion de esta llamada."
+                )
+                conducta_txt = hallazgo_txt
+                evidencia_ids = []
+                evidencia_textual = []
         else:
             nota = puntaje_pipeline_v3(raw.get("puntaje_obtenido"), estado, peso)
         salida.append({
@@ -2436,8 +2799,8 @@ def normalizar_criterios_pipeline_v3(
             "segmentos_evidencia": evidencia_ids,
             "segmentos_contexto": contexto_ids,
             "tipo_evidencia": normalizar_tipo_evidencia_pipeline_v3(raw.get("tipo_evidencia")),
-            "conducta_observada": str(raw.get("conducta_observada") or "").strip(),
-            "hallazgo": str(raw.get("hallazgo") or "").strip(),
+            "conducta_observada": conducta_txt,
+            "hallazgo": hallazgo_txt,
             "impacto_negocio": str(raw.get("impacto_negocio") or "").strip(),
             "impacto_cliente": str(raw.get("impacto_cliente") or "").strip(),
             "recomendacion_entrenable": str(raw.get("recomendacion_entrenable") or "").strip(),
@@ -2549,7 +2912,61 @@ def puntaje_pipeline_v3(value, estado: str, peso: float) -> float:
     return 0.0
 
 
-def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: List[Dict]) -> List[Dict]:
+def tokens_entidad_cartera_v3(cartera) -> set:
+    """Tokens con los que el agente podria nombrar a la entidad de esta cartera."""
+    base = {"mibanco", "mi banco"}
+    descartar = {"castigo", "vigente", "individual", "grupal", "banco", "financiera", "propia"}
+    for palabra in limpiar_key_texto(str(cartera or "")).split():
+        if len(palabra) > 4 and not palabra.isdigit() and palabra not in descartar:
+            base.add(palabra)
+    return base
+
+
+def etiqueta_entidad_cartera_v3(cartera) -> str:
+    texto = str(cartera or "").strip()
+    if " - " in texto:
+        texto = texto.split(" - ", 1)[1].strip()
+    if texto:
+        return texto.title()
+    return "la entidad"
+
+
+def abstener_guardas_por_roles_v3(criterios: List[Dict]) -> List[Dict]:
+    """
+    Deja en revision humana los criterios que dependen de atribuir frases al agente.
+
+    No se usa NO_EVALUABLE porque la fuente si estaba disponible: el audio existe y
+    la conducta ocurrio. Lo que falta es poder atribuirla con certeza, y eso es
+    exactamente lo que decide una persona.
+    """
+    motivo = (
+        "La separacion de interlocutores no es confiable en esta llamada, de modo "
+        "que la conducta del agente no puede atribuirse con certeza."
+    )
+    for criterio in criterios:
+        if not isinstance(criterio, dict):
+            continue
+        fuente = str(criterio.get("fuente_evidencia") or "").strip().upper()
+        # Un criterio que se observa desde otra fuente no depende de la
+        # separacion de hablantes: no se toca.
+        if fuente and not fuente_observable_en_audio(fuente):
+            continue
+        if str(criterio.get("estado") or "").upper() == "NO_APLICA":
+            continue
+        aplicar_resultado_guardado_v3(
+            criterio,
+            "REQUIERE_REVISION",
+            [],
+            motivo,
+            "Verificar la grabacion y confirmar que intervenciones corresponden al agente antes de calificar.",
+        )
+        criterio["confianza"] = "BAJA"
+        criterio["posible_descalificacion"] = False
+        criterio["justificacion_descalificacion"] = None
+    return criterios
+
+
+def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: List[Dict], cartera: Optional[str] = None) -> List[Dict]:
     """
     Corrige contradicciones evidentes entre segmentos canónicos y criterios.
 
@@ -2567,6 +2984,14 @@ def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: 
             item.get("segmento_id") or 0,
         ),
     )
+
+    # Toda guarda de aqui en adelante afirma algo sobre lo que hizo EL AGENTE.
+    # Si no se puede confiar en quien dijo cada frase, esas afirmaciones no se
+    # sostienen: se devuelve todo a revision humana en vez de inventar un
+    # resultado.
+    if not cobertura_roles_suficiente_v3(segmentos_ordenados):
+        return abstener_guardas_por_roles_v3(salida)
+
     texto_agente = limpiar_key_texto(" ".join(
         str(item.get("texto") or item.get("texto_original") or "")
         for item in segmentos_ordenados
@@ -2674,11 +3099,11 @@ def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: 
             "Mantener trato respetuoso y lenguaje profesional.",
         )
 
-    aplicar_guardas_mibanco_v3(segmentos_ordenados, por_codigo)
+    aplicar_guardas_mibanco_v3(segmentos_ordenados, por_codigo, cartera)
     return salida
 
 
-def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict]) -> None:
+def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict], cartera: Optional[str] = None) -> None:
     """
     Reglas determinísticas para la pauta Mibanco vigente.
 
@@ -2964,24 +3389,48 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
     # PENC.1: Saludo de bienvenida.
     if por_codigo.get("PENC.1"):
         saludo = buscar_segmentos_por_tokens_v3(segmentos[:8], "AGENTE", {"hola", "aló", "alo", "buen dia", "buen día", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "le saluda", "te saluda", "saludo", "habla"})
-        entidad = buscar_segmentos_por_tokens_v3(segmentos[:12], "AGENTE", {"mibanco", "mi banco"})
-        estado_saludo = "CUMPLE" if saludo and entidad else ("NO_CUMPLE" if segmentos_agente else "NO_APLICA")
+        # La entidad sale de la cartera: esta pauta es general, no de un banco.
+        tokens_entidad = tokens_entidad_cartera_v3(cartera)
+        etiqueta_entidad = etiqueta_entidad_cartera_v3(cartera)
+        entidad = buscar_segmentos_por_tokens_v3(segmentos[:12], "AGENTE", tokens_entidad)
+        if saludo and entidad:
+            estado_saludo = "CUMPLE"
+        elif not segmentos_agente:
+            estado_saludo = "NO_APLICA"
+        elif saludo:
+            # Saludó pero no se reconoce el nombre de la entidad. Puede ser una
+            # deformación de la transcripción, no necesariamente un incumplimiento:
+            # lo decide una persona, no se castiga automáticamente.
+            estado_saludo = "REQUIERE_REVISION"
+        else:
+            estado_saludo = "NO_CUMPLE"
         aplicar_resultado_guardado_v3(
             por_codigo["PENC.1"],
             estado_saludo,
             (saludo[:1] + entidad[:1]) or evidencia_neutra,
-            "El agente saluda e identifica representación de Mibanco." if saludo and entidad else ("La llamada se interrumpe antes de una apertura atribuible al agente." if not segmentos_agente else "La apertura no incluye saludo e identificación completa en representación de Mibanco."),
-            "Saludar indicando nombre/apellidos y representación de Mibanco.",
+            f"El agente saluda e identifica representación de {etiqueta_entidad}."
+            if saludo and entidad
+            else (
+                "La llamada se interrumpe antes de una apertura atribuible al agente."
+                if not segmentos_agente
+                else (
+                    f"Hay saludo, pero no se reconoce la mención de {etiqueta_entidad} en la apertura; la transcripción pudo deformar el nombre."
+                    if saludo
+                    else f"La apertura no incluye saludo e identificación en representación de {etiqueta_entidad}."
+                )
+            ),
+            f"Saludar indicando nombre/apellidos y representación de {etiqueta_entidad}.",
         )
 
-    # PENC.2: Tono de voz. Sin análisis acústico avanzado, no castigar desde texto.
-    if por_codigo.get("PENC.2") and estado_sgc_normalizado(por_codigo["PENC.2"]) == "REQUIERE_REVISION":
+    # PENC.2: Tono de voz. El módulo no tiene análisis acústico, así que no se
+    # mide: no se castiga desde el texto, pero tampoco se regala el punto.
+    if por_codigo.get("PENC.2"):
         aplicar_resultado_guardado_v3(
             por_codigo["PENC.2"],
-            "CUMPLE",
-            evidencia_neutra,
-            "No se identifica evidencia textual suficiente de tono inadecuado en la transcripción disponible.",
-            "Mantener tono, velocidad y dicción adecuados.",
+            "NO_EVALUABLE",
+            [],
+            "El tono de voz requiere análisis acústico del audio, no disponible en el módulo. No se evalúa desde la transcripción.",
+            "Evaluar el tono escuchando la grabación hasta que exista análisis acústico.",
         )
 
     # PENC.4: Despedida adecuada.
@@ -3579,10 +4028,25 @@ def aplicar_resultado_guardado_v3(
         for item in segmentos
         if str(item.get("texto") or item.get("texto_original") or "").strip()
     ]
-    criterio["tipo_evidencia"] = "DIRECTA" if criterio["segmentos_evidencia"] else "CONTEXTUAL"
-    criterio["hallazgo"] = hallazgo
-    criterio["conducta_observada"] = hallazgo
-    criterio["recomendacion_entrenable"] = recomendacion
+    if criterio["segmentos_evidencia"]:
+        criterio["tipo_evidencia"] = "DIRECTA"
+    else:
+        # Sin evidencia no se rellena con un segmento cualquiera: se declara que
+        # la conducta NO APARECE en la secuencia, que es lo que realmente se
+        # observo. Y una conclusion por ausencia no puede tener confianza ALTA.
+        criterio["tipo_evidencia"] = "AUSENCIA_EN_SECUENCIA"
+        criterio["evidencia"] = "-"
+        if str(criterio.get("confianza") or "").strip().upper() == "ALTA":
+            criterio["confianza"] = "MEDIA"
+
+    if criterio.get("motivo_explicado"):
+        # La explicacion de esta llamada ya fue escrita: las guardas no la pisan
+        # con su texto de plantilla.
+        criterio.setdefault("recomendacion_entrenable", recomendacion)
+    else:
+        criterio["hallazgo"] = hallazgo
+        criterio["conducta_observada"] = hallazgo
+        criterio["recomendacion_entrenable"] = recomendacion
     if estado == "CUMPLE":
         criterio["impacto_negocio"] = ""
         criterio["impacto_cliente"] = ""
@@ -3698,6 +4162,16 @@ def construir_respuesta_pipeline_v3(
             nota = sum(float(item.get("puntaje_obtenido") or 0) for item in criterios_segmento)
             dimensiones.append({"codigo": segmento, "nombre": segmento, "puntaje_maximo": peso, "puntaje_obtenido": round(nota, 2), "criterios": criterios_segmento})
     resumen = feedback.get("resumen_ejecutivo") if isinstance(feedback.get("resumen_ejecutivo"), dict) else {}
+    # El relato de la gestion es lo que el usuario lee primero: reemplaza al
+    # resumen ejecutivo generico ("el agente mantiene tono correcto...").
+    relato = str(feedback.get("relato_gestion") or "").strip()
+    if relato:
+        resumen = {
+            **resumen,
+            "texto": relato,
+            "relato_gestion": relato,
+            "segmentos_relato": feedback.get("segmentos_relato") or [],
+        }
     gestion = feedback.get("resultado_gestion") if isinstance(feedback.get("resultado_gestion"), dict) else {}
     coaching = feedback.get("coaching") if isinstance(feedback.get("coaching"), dict) else {}
     requiere_revision = any(item.get("estado") == "REQUIERE_REVISION" for item in criterios)
