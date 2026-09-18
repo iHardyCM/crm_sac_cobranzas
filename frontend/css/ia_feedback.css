@@ -7122,46 +7122,401 @@ body.crm-shell .pauta-analisis-cell p { color: #48627c; }
     body.crm-shell .pauta-criterios-table .pauta-analisis-cell { min-width: 270px; }
 }
 
-/* ---------------------------------------------------------------
-   Calibración por criterio
-   --------------------------------------------------------------- */
-.calibration-progress { margin: 12px 0 16px; }
-.calibration-progress-bar { height: 6px; border-radius: 4px; background: #e6eaf0; overflow: hidden; }
-.calibration-progress-bar i { display: block; height: 100%; background: #2f6fd0; }
-.calibration-progress small { display: block; margin-top: 6px; color: #64748b; font-size: 12px; }
+/* ===== Reanalizar: confirmación y progreso ===================================
+   Reutiliza .modal-overlay y .prompt-modal para que se vea igual que el resto
+   de los diálogos del módulo. */
 
-.calibration-empty { color: #64748b; font-size: 13px; padding: 10px 0; }
+.confirm-modal {
+    width: min(520px, 100%);
+}
 
-.calibration-criteria { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.confirm-modal-body {
+    padding: 18px 20px 4px;
+}
 
-.cal-criterio { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; background: #fff; }
-.cal-criterio.calibrado { border-left: 3px solid #2f6fd0; }
-.cal-criterio header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
-.cal-criterio header strong { font-size: 13px; }
-.cal-criterio header span { color: #475569; font-size: 13px; margin-left: 6px; }
-.cal-criterio-estado { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.confirm-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 8px;
+    color: var(--ia-muted);
+    line-height: 1.45;
+}
 
-.cal-resultado { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #334155; }
-.cal-resultado.cumple { background: #e7f6ec; color: #1b7f3b; }
-.cal-resultado.no_cumple { background: #fdeaea; color: #b42318; }
-.cal-resultado.requiere_revision { background: #fdf3e2; color: #a86412; }
+.confirm-list li strong {
+    color: inherit;
+}
 
-.cal-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #475569; }
-.cal-chip.confirmado { background: #e7f6ec; color: #1b7f3b; }
-.cal-chip.corregido { background: #fdf3e2; color: #a86412; }
+.confirm-warning {
+    margin: 16px 0 0;
+    padding: 11px 13px;
+    border: 1px solid #f0d08a;
+    border-left: 3px solid #d79b1d;
+    border-radius: 7px;
+    background: #fdf7e8;
+    color: #7a5606;
+    line-height: 1.45;
+}
 
-.cal-motivo { margin: 8px 0; font-size: 13px; color: #1f2937; }
-.cal-criterio blockquote { margin: 0; padding: 8px 10px; border-left: 2px solid #cbd5e1; background: #f8fafc; font-size: 12px; color: #334155; }
-.cal-criterio blockquote span { color: #64748b; }
-.cal-sin-cita { font-size: 12px; color: #64748b; font-style: italic; margin: 0; }
+.confirm-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 18px 20px 20px;
+}
 
-.cal-criterio footer { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
-.cal-confianza { margin-left: auto; font-size: 11px; color: #64748b; }
+/* --- Progreso ------------------------------------------------------------ */
 
-.cal-form { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0; display: grid; gap: 10px; }
-.cal-form label { display: grid; gap: 4px; font-size: 12px; color: #475569; }
-.cal-form select, .cal-form textarea { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; font-size: 13px; font-family: inherit; }
-.cal-prueba { margin: 0; font-size: 12px; color: #2f6fd0; min-height: 16px; }
-.cal-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.proceso-overlay {
+    z-index: 1200;
+    background: rgba(6, 27, 53, .55);
+}
 
-.score-nota-referencial { display: block; margin-top: 4px; font-size: 10px; color: #a86412; line-height: 1.3; }
+.proceso-card {
+    display: grid;
+    justify-items: center;
+    gap: 9px;
+    width: min(380px, 100%);
+    padding: 30px 28px;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 24px 70px rgba(6, 27, 53, .3);
+    text-align: center;
+}
+
+.proceso-card strong {
+    font-size: 16px;
+}
+
+.proceso-card span {
+    color: var(--ia-muted);
+    line-height: 1.45;
+}
+
+.proceso-nota {
+    margin-top: 5px;
+    color: #90a4b8;
+}
+
+.proceso-spinner {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 5px;
+    border: 3px solid #dbe6f2;
+    border-top-color: var(--ia-blue);
+    border-radius: 50%;
+    animation: proceso-giro .85s linear infinite;
+}
+
+@keyframes proceso-giro {
+    to { transform: rotate(360deg); }
+}
+
+/* Respeta a quien pidió menos animación en su sistema. */
+@media (prefers-reduced-motion: reduce) {
+    .proceso-spinner {
+        animation-duration: 2.5s;
+    }
+}
+
+/* ===== Ficha: los cinco estados se leen distinto ============================
+   Cumple en verde, no cumple en rojo, revisión en ámbar, y "fuera de medición"
+   -no aplica / no evaluable- en gris con borde punteado, para que nunca se
+   confundan con una falta del asesor. */
+
+.audit-sgc-badge.cumple {
+    border-color: #a7d6b4;
+    background: #f1faf4;
+    color: #17633a;
+}
+
+.audit-sgc-badge.revision {
+    border-color: #f0d08a;
+    background: #fdf7e8;
+    color: #8a570b;
+}
+
+.audit-sgc-badge.excluido {
+    border-style: dashed;
+    border-color: #c3cdd8;
+    background: #f7f9fb;
+    color: #6b7c8f;
+}
+
+.audit-sgc-fuera {
+    display: block;
+    margin-top: 3px;
+    color: #94a5b6;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+
+.audit-sgc-table tr.is-excluded {
+    opacity: .72;
+}
+
+.audit-sgc-table tr.is-excluded td {
+    background: #fbfcfd;
+}
+
+/* --- Jerarquía por peso -------------------------------------------------- */
+
+.peso-criterio {
+    font-variant-numeric: tabular-nums;
+}
+
+.peso-criterio.peso-alto {
+    font-weight: 900;
+    color: #14324f;
+}
+
+.peso-criterio.peso-medio {
+    font-weight: 700;
+    color: #3d5a75;
+}
+
+.peso-criterio.peso-bajo {
+    font-weight: 500;
+    color: #8496a8;
+}
+
+/* --- Leyenda de estados -------------------------------------------------- */
+
+.leyenda-estados-ia {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid #e2ebf3;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.leyenda-estados-ia summary {
+    cursor: pointer;
+    color: var(--ia-blue);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.leyenda-estados-ia ul {
+    margin: 12px 0 2px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 9px;
+}
+
+.leyenda-estados-ia li {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    align-items: center;
+    gap: 12px;
+}
+
+.leyenda-estados-ia small {
+    color: var(--ia-muted);
+    line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+    .leyenda-estados-ia li {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}
+
+/* ===========================================================================
+   Ficha de criterios: legibilidad del bloque (v20260916-bloques)
+   Tres problemas reportados sobre la version anterior:
+   1. En "No cumple" la marca roja se pintaba como border-left en CADA celda,
+      de modo que se veia como barras sueltas partidas por cada columna.
+      Ahora es UNA sola franja continua en el borde izquierdo de la fila.
+   2. El bloque mostraba solo el codigo (PECC, PECUF...) sin decir que mide.
+      El codigo se mantiene y se acompana del nombre que define la pauta.
+   3. Cabecera, encabezado de tabla y cuerpo eran casi del mismo blanco y no
+      alineaban por la izquierda: la cabecera llevaba un borde de 4px que
+      desplazaba su contenido respecto de la primera columna.
+   =========================================================================== */
+
+body.crm-shell .audit-sgc-group.pauta-criterios-group {
+    border: 1px solid #ccdcec;
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(15, 35, 60, .07);
+}
+
+/* --- Cabecera del bloque: misma sangria que la primera columna ------------ */
+
+body.crm-shell .pauta-criterios-group .audit-sgc-header {
+    align-items: flex-start;
+    gap: 16px;
+    padding: 12px 14px 12px 15px;   /* 15 = 12 de la celda + los 3 de la franja */
+    border-left: 0;
+    border-bottom: 1px solid #d5e2f0;
+    background: linear-gradient(180deg, #eef4fb 0%, #e7eff8 100%);
+    color: #14324f;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+body.crm-shell .pauta-criterios-group .bloque-titulo-ia {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+body.crm-shell .pauta-criterios-group .bloque-titulo-ia strong {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    color: #0f2c47;
+}
+
+body.crm-shell .pauta-criterios-group .bloque-titulo-ia em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #44607d;
+}
+
+body.crm-shell .pauta-criterios-group .audit-sgc-header small {
+    flex: 0 0 auto;
+    align-self: center;
+    border-color: #c2d4e6;
+    background: #ffffff;
+    color: #2f4f6e;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* --- Encabezado de columnas: banda intermedia, no otro blanco ------------- */
+
+body.crm-shell .pauta-criterios-table thead th {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    background: #f6f9fd;
+    border-bottom: 2px solid #d5e2f0;
+    color: #4a6480;
+    letter-spacing: .05em;
+}
+
+body.crm-shell .pauta-criterios-table thead th:first-child {
+    padding-left: 15px;
+}
+
+/* --- Filas: una sola franja continua, no una por celda -------------------- */
+
+body.crm-shell .pauta-criterios-table tbody tr td {
+    border-left: 0;
+}
+
+body.crm-shell .pauta-criterios-table tbody tr td:first-child {
+    padding-left: 15px;
+    border-left: 3px solid transparent;
+}
+
+body.crm-shell .pauta-criterios-table tbody tr.is-error td:first-child {
+    border-left-color: #d0454f;
+}
+
+body.crm-shell .pauta-criterios-table tbody tr.is-partial td:first-child {
+    border-left-color: #d99724;
+}
+
+body.crm-shell .pauta-criterios-table tbody tr.is-ok td:first-child {
+    border-left-color: #59b37c;
+}
+
+body.crm-shell .pauta-criterios-table tbody tr.is-excluded td:first-child {
+    border-left-color: #cbd5e0;
+}
+
+/* El fondo de la fila se mantiene sobrio: el color fuerte es la franja. */
+body.crm-shell .pauta-criterios-table tbody tr.is-error td { background: #fff8f8; }
+body.crm-shell .pauta-criterios-table tbody tr.is-partial td { background: #fffdf6; }
+body.crm-shell .pauta-criterios-table tbody tr:last-child td { border-bottom: 0; }
+body.crm-shell .pauta-criterios-table tbody tr:hover td { background: #f4f9ff; }
+body.crm-shell .pauta-criterios-table tbody tr.is-error:hover td { background: #fff3f3; }
+
+@media (max-width: 720px) {
+    body.crm-shell .pauta-criterios-group .audit-sgc-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    body.crm-shell .pauta-criterios-group .audit-sgc-header small {
+        align-self: flex-start;
+    }
+}
+
+/* ===========================================================================
+   Hallazgos por ausencia y tarjetas de bloque (v20260916-hallazgos)
+   =========================================================================== */
+
+/* Cuando la conclusion es por ausencia no hay frase que citar. Se dice, en vez
+   de dejar la celda vacia o rellenarla con una frase que no prueba nada. */
+body.crm-shell .finding-ausencia {
+    margin: 0;
+    padding: 6px 9px;
+    border-left: 2px solid #c3cdd8;
+    background: #f7f9fb;
+    color: #5f7285;
+    font-style: italic;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* --- Score por dimension: el bloque se identifica y el % es explicito ----- */
+
+body.crm-shell .dimension-bloque-ia span {
+    display: grid;
+    gap: 2px;
+}
+
+body.crm-shell .dimension-bloque-ia span b {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    color: #14324f;
+}
+
+body.crm-shell .dimension-bloque-ia span i {
+    font-style: normal;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: #6d8399;
+}
+
+body.crm-shell .dimension-bloque-ia .dimension-pct-ia {
+    display: block;
+    margin-top: 1px;
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    color: #48627c;
+    font-variant-numeric: tabular-nums;
+}
+
+body.crm-shell .dimension-bloque-ia small {
+    line-height: 1.35;
+}
+
+/* Aviso único cuando una tarjeta lateral no tiene ningún dato registrado.
+   Sustituye a tres o cuatro filas con "Sin información", que ocupaban el
+   mismo espacio sin informar y restaban credibilidad a los campos que sí
+   tenían dato. */
+body.crm-shell .tarjeta-sin-datos-ia {
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px dashed #d5e0ec;
+    border-radius: 8px;
+    background: #fafcfe;
+    color: #7a8ea3;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+body.crm-shell .sgc-side-list p[hidden] {
+    display: none !important;
+}

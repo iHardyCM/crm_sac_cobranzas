@@ -38,7 +38,7 @@ async function buscar() {
             return;
         }
 
-        renderCliente(data.data);
+        renderCliente(data);
     } catch (e) {
         console.error("Error consultando cliente:", e);
         mostrarMensajeCliente(`No se pudo completar la consulta. ${e.message || ""}`, "error");

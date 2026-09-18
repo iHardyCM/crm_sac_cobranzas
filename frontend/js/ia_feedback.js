@@ -615,6 +615,14 @@ function pintarAudioYTranscripcionFichaIa(data = {}) {
     mostrarTranscripcionIa("limpia");
 }
 
+// Una tarjeta que dice "Contexto no disponible" ocupa el mismo espacio que
+// una con dato y no aporta nada: si no hay valor, la fila no se dibuja.
+function filaOpcionalFichaIa(etiqueta, valor) {
+    const texto = String(valor ?? "").trim();
+    if (!texto || texto === "-" || /^(sin informaci[oó]n|no disponible|contexto no disponible)\.?$/i.test(texto)) return "";
+    return `<div><span>${escapeHtml(etiqueta)}</span><strong>${escapeHtml(texto)}</strong></div>`;
+}
+
 function pintarClasificacionFichaIa(data = {}) {
     const el = document.getElementById("clasificacionLlamadaIa");
     if (!el) return;
@@ -634,8 +642,8 @@ function pintarClasificacionFichaIa(data = {}) {
             </select>
         </div>
         <div><span>Confianza de clasificación</span><strong>${escapeHtml(confianzaBaja ? "BAJA" : confianza)}</strong></div>
-        <div><span>Resultado de llamada</span><strong>${escapeHtml(textoHumanoIa(data.resultado_gestion) || "Sin información")}</strong></div>
-        <div><span>Contexto previo</span><strong>${escapeHtml(data.contexto_previo || "Contexto no disponible")}</strong></div>
+        ${filaOpcionalFichaIa("Resultado de llamada", textoHumanoIa(data.resultado_gestion))}
+        ${filaOpcionalFichaIa("Contexto previo", data.contexto_previo)}
         ${renderTipificacionesSugeridasIa(data.tipificaciones_sugeridas || data.resumen_sgc?.tipificaciones_sugeridas || [])}
     `;
 
@@ -702,11 +710,16 @@ function pintarDimensionesFichaIa(items = [], data = {}) {
         const bloques = new Map();
         items.map(itemSgcIa).forEach(item => {
             const bloque = bloquePautaItemIa(item, data);
-            const actual = bloques.get(bloque) || { bloque, nota: 0, peso: 0, total: 0, noAplica: 0, revision: 0 };
+            const actual = bloques.get(bloque) || { bloque, criterios: [], nota: 0, peso: 0, pesoExcluido: 0, total: 0, noAplica: 0, revision: 0 };
             const resultado = String(item.resultado || item.calificacion || "").toLowerCase();
+            actual.criterios.push(item);
             actual.total += 1;
             if (resultado.includes("no aplica") || resultado.includes("no evaluable")) {
                 actual.noAplica += 1;
+                // Los puntos que salen del calculo se contabilizan aparte: sin
+                // esto un bloque de 10 puntos con 3 fuera se mostraba "7/7", que
+                // se lee como perfecto cuando en realidad no se midio todo.
+                actual.pesoExcluido += Number(item.peso ?? item.puntaje_maximo ?? 0);
             } else {
                 actual.peso += Number(item.peso ?? item.puntaje_maximo ?? 0);
                 actual.nota += Number(item.nota ?? item.puntaje_obtenido ?? 0);
@@ -716,9 +729,29 @@ function pintarDimensionesFichaIa(items = [], data = {}) {
         });
         const cards = [...bloques.values()].map(item => {
             const score = item.peso ? (item.nota / item.peso) * 100 : null;
-            const estado = !item.total ? "Sin criterios" : item.total === item.noAplica ? "No evaluable" : item.revision ? "Revisión humana" : score >= 85 ? "Cumple" : score >= 60 ? "Parcial" : "No cumple";
-            const clase = estado.includes("Cumple") ? "ok" : estado.includes("Parcial") || estado.includes("Revisión") ? "warn" : estado.includes("No evaluable") ? "info" : "risk";
-            return `<article class="${clase}"><span>${escapeHtml(item.bloque)}</span><strong>${score == null ? estado : `${formatoPeso(item.nota)}/${formatoPeso(item.peso)}`}</strong><div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div><small>${escapeHtml(estado)}</small></article>`;
+            // Un BLOQUE no "cumple" ni "no cumple" -eso es vocabulario de
+            // criterio-. Un bloque tiene un porcentaje y, si acaso, una brecha.
+            // Los umbrales (85 / 60) son los que ya venia usando la ficha.
+            const estado = !item.total
+                ? "Sin criterios"
+                : item.total === item.noAplica ? "Fuera de medición"
+                : item.revision ? "Con revisión pendiente"
+                : score >= 85 ? "Sin brechas"
+                : score >= 60 ? "Brecha moderada"
+                : "Brecha relevante";
+            const clase = estado === "Sin brechas" ? "ok"
+                : (estado === "Brecha moderada" || estado === "Con revisión pendiente") ? "warn"
+                : (estado === "Fuera de medición" || estado === "Sin criterios") ? "info"
+                : "risk";
+            const nombre = nombreBloquePautaIa(item.bloque, item.criterios, data);
+            const excluido = Number(item.pesoExcluido || 0);
+            return `<article class="${clase} dimension-bloque-ia">
+                <span><b>${escapeHtml(item.bloque)}</b>${nombre ? `<i>${escapeHtml(nombre)}</i>` : ""}</span>
+                <strong>${score == null ? escapeHtml(estado) : `${formatoPeso(item.nota)}/${formatoPeso(item.peso)}`}</strong>
+                ${score == null ? "" : `<em class="dimension-pct-ia">${formatoPeso(score)}%</em>`}
+                <div class="summary-progress"><i style="width:${score == null ? 0 : Math.max(3, Math.min(100, score))}%"></i></div>
+                <small>${escapeHtml(estado)}${excluido > 0 ? ` · ${formatoPeso(excluido)} pts fuera de medición` : ""}</small>
+            </article>`;
         }).join("");
         el.innerHTML = `${cards}<article class="dimension-total"><span>Total de la pauta</span><strong>${escapeHtml(formatoScoreSobre100Ia(scoreTecnicoFichaIa(data)))}</strong><small>${escapeHtml(data.pauta || "Pauta aplicada")}${data.pauta_version ? ` · v${escapeHtml(data.pauta_version)}` : ""}${textoPesoEvaluableIa(data)}</small></article>`;
         return;
@@ -884,13 +917,19 @@ function renderHallazgoFichaIa(item = {}, data = {}) {
     const hallazgoTexto = criteriosRelacionados > 1
         ? `${hallazgoBase} · ${criteriosRelacionados} criterios relacionados`
         : hallazgoBase;
+    const porAusencia = esHallazgoPorAusenciaIa(item);
     const evidencia = evidenciaHallazgoFichaIa(item, data);
+    // Con evidencia se cita la frase; sin ella, se dice exactamente eso en vez
+    // de dejar la celda vacía o rellenarla con una frase que no prueba nada.
+    const evidenciaHtml = porAusencia
+        ? `<p class="finding-ausencia">La conducta no aparece en ningún momento de la llamada.</p>`
+        : `<p>${escapeHtml(evidencia)}</p>${momento ? `<small>${escapeHtml(momento)}</small>` : ""}`;
     return `
         <article class="finding-row" data-critical="${esHallazgoCriticoFichaIa(item) ? "1" : "0"}">
             <div><span>Factor</span><strong>${escapeHtml(criterio)}</strong>${criteriosRelacionados > 1 ? `<small>${criteriosRelacionados} criterios relacionados</small>` : ""}</div>
             <div><span>Calificación</span>${badgeCalificacionSgcFichaIa(calificacion)}</div>
             <div><span>Motivo</span><p>${escapeHtml(hallazgoTexto)}</p></div>
-            <div><span>Evidencia</span><p>${escapeHtml(evidencia)}</p>${momento ? `<small>${escapeHtml(momento)}</small>` : ""}</div>
+            <div><span>Evidencia</span>${evidenciaHtml}</div>
             <div class="finding-actions">
                 <button class="btn-light btn-small" type="button" ${evidenciaTemporal ? `onclick="irAEvidenciaAudioIa('${momentoParam}', true)"` : "disabled title=\"Evidencia temporal no disponible\""}>Ver evidencia</button>
                 <button class="btn-light btn-small editable-criteria-action" type="button" onclick="prepararRecalibracionItemIa('${itemParam}', true)" disabled>Editar resultado</button>
@@ -929,18 +968,30 @@ function detallePesoScoreIa(data = {}) {
     const bruto = Number(data.score_bruto);
     const aplicable = Number(data.peso_aplicable);
     if (!Number.isFinite(bruto) || !Number.isFinite(aplicable) || aplicable <= 0) return "";
+    const total = Number(data.peso_total || 0);
     const noAplica = Number(data.peso_no_aplica || 0);
     const noEvaluable = Number(data.peso_no_evaluable || 0);
+    // No hay columna para el peso en revision humana: es lo que queda del
+    // total cuando se descuentan el aplicable, el no aplica y el no evaluable.
+    const revision = Number.isFinite(total) && total > 0
+        ? Math.max(0, Math.round((total - aplicable - noAplica - noEvaluable) * 100) / 100)
+        : 0;
     const extras = [];
     if (noAplica > 0) extras.push(`${formatoPeso(noAplica)} no aplica`);
     if (noEvaluable > 0) extras.push(`${formatoPeso(noEvaluable)} no evaluable`);
+    if (revision > 0) extras.push(`${formatoPeso(revision)} en revisión humana`);
     return ` · ${formatoPeso(bruto)}/${formatoPeso(aplicable)} pts aplicables${extras.length ? ` (${extras.join(", ")})` : ""}`;
 }
 
 function repararHallazgosContextualesFichaIa(items = [], data = {}) {
     return items.map(item => {
         const copia = { ...item };
-        if (esHallazgoAccionableFichaIa(copia) && !evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(copia, data))) {
+        // Un NO_CUMPLE por ausencia NO se degrada a "Requiere revisión": la
+        // ausencia ES el hecho observado, y degradarlo sacaba el criterio del
+        // cálculo y dejaba la ficha sin hallazgos.
+        if (!esHallazgoPorAusenciaIa(copia)
+            && esHallazgoAccionableFichaIa(copia)
+            && !evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(copia, data))) {
             copia.resultado = "Requiere revisión";
             copia.calificacion = "Requiere revisión";
             copia.requiere_revision = true;
@@ -1012,10 +1063,24 @@ function calificacionSgcVisibleFichaIa(resultado = "") {
     return "REVISIÓN HUMANA";
 }
 
+// Un criterio puede fallar de dos maneras y NO son lo mismo:
+//   - por comisión: el agente hizo algo mal. Existe una frase que citar; si no
+//     la hay, la conclusión no está sustentada y no debe mostrarse como hecho.
+//   - por ausencia: el agente nunca ejecutó la conducta -no hubo promesa de
+//     pago, no hubo cierre-. Por definición NO hay frase que citar. Exigirle
+//     una cita es un error de categoría: el hallazgo existe igual.
+// El backend ya distingue ambos casos en tipo_evidencia, y solo las guardas
+// determinísticas marcan AUSENCIA_EN_SECUENCIA. Un NO_CUMPLE del modelo sin
+// cita sigue bajando a revisión humana, que es lo correcto.
+function esHallazgoPorAusenciaIa(item = {}) {
+    return String(item.tipo_evidencia || "").trim().toUpperCase() === "AUSENCIA_EN_SECUENCIA";
+}
+
 function esHallazgoAccionableFichaIa(item = {}) {
     if (criterioHallazgoIa(item) === "Criterio no identificado") return false;
     const factor = normalizarTextoComparacionIa(item.factor_sgc || criterioHallazgoIa(item));
-    const evidenciaValida = evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}));
+    const evidenciaValida = evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}))
+        || esHallazgoPorAusenciaIa(item);
     if (!evidenciaValida && !item.falta_anulante && !item.puede_descalificar) return false;
     if (factor.includes("conducta etica") && !evidenciaValida) return false;
     if (factor.includes("no abuso") && !evidenciaValida) return false;
@@ -1077,6 +1142,9 @@ function esHallazgoGenericoSinEvidenciaIa(item = {}) {
     if (item.falta_anulante || item.puede_descalificar) return false;
     const evidenciaValida = evidenciaEsTextualFichaIa(evidenciaHallazgoFichaIa(item, resultadoActualIa || {}));
     if (evidenciaValida) return false;
+    // Una conclusión por ausencia con motivo concreto no es un hallazgo
+    // genérico: es el resultado esperado cuando la conducta nunca ocurrió.
+    if (esHallazgoPorAusenciaIa(item) && !textoEsGenericoHallazgoIa(item.motivo || item.hallazgo)) return false;
     const textos = [
         item.motivo,
         item.hallazgo,
@@ -1413,9 +1481,11 @@ function textoPesoEvaluableIa(data) {
 }
 
 function formatoScoreSobre100Ia(value) {
-    if (value === null || value === undefined || value === "") return "Sin score";
+    // "Sin score" no es un fallo de formato: significa que no hubo ningun
+    // criterio medible. Es distinto de 0, y asi debe leerse.
+    if (value === null || value === undefined || value === "") return "No evaluable";
     const numero = Number(value);
-    if (Number.isNaN(numero)) return "Sin score";
+    if (Number.isNaN(numero)) return "No evaluable";
     return `${formatoPeso(numero)}/100`;
 }
 
@@ -1461,15 +1531,54 @@ function desviacionGestionFichaIa(data = {}, hallazgo = {}) {
     return "Requiere revisión del supervisor";
 }
 
+// Un campo sin dato no se rellena con "Sin informacion": se oculta la fila
+// completa. Un panel con cuatro "Sin informacion" no informa nada y ademas
+// hace dudar de los campos que SI tienen dato. Si la tarjeta entera queda
+// vacia, se dice una sola vez y con claridad.
+function setTextoOpcionalIa(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    const texto = String(value ?? "").trim();
+    const vacio = !texto
+        || texto === "-"
+        || /^(sin informaci[oó]n|no disponible|sin registro|no identificado|criterio no identificado|sin compromiso registrado)\.?$/i.test(texto);
+    const fila = el.closest("p") || el.parentElement;
+    if (fila) fila.hidden = vacio;
+    el.textContent = vacio ? "" : texto;
+    return !vacio;
+}
+
+function marcarTarjetaVaciaIa(idTarjeta, algunDato, mensaje) {
+    const tarjeta = document.getElementById(idTarjeta);
+    if (!tarjeta) return;
+    let aviso = tarjeta.querySelector(".tarjeta-sin-datos-ia");
+    if (algunDato) {
+        if (aviso) aviso.remove();
+        return;
+    }
+    if (!aviso) {
+        aviso = document.createElement("p");
+        aviso.className = "tarjeta-sin-datos-ia";
+        (tarjeta.querySelector(".sgc-side-list") || tarjeta).appendChild(aviso);
+    }
+    aviso.textContent = mensaje;
+}
+
 function pintarFeedbackObservacionesFichaIa(data = {}) {
-    setText("feedbackUltimoIa", formatoFecha(data.fecha_ultimo_feedback || data.fecha_revision || data.fecha_creacion) || "Sin registro");
-    setText("feedbackResumenIa", valorTextoSeguroIa(data.feedback_supervisor?.resumen_tecnico || data.recomendacion_feedback || data.recomendacion_feedback_supervisor || data.resumen_sgc?.motivo, "Sin información"));
-    setText("feedbackConductaIa", valorTextoSeguroIa(data.feedback_supervisor?.conducta_prioritaria || data.coaching?.feedback_supervisor?.conducta_prioritaria || brechaPrincipalDetalleIa(data), "Sin información"));
-    setText("feedbackAccionIa", valorTextoSeguroIa(data.feedback_supervisor?.accion_entrenable || data.coaching?.feedback_supervisor?.accion_entrenable || data.guion_sugerido, "Sin información"));
-    setText("feedbackObjetivoIa", valorTextoSeguroIa(data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || data.feedback_asesor?.compromiso_sugerido, "Sin información"));
-    setText("gestorActualizacionIa", formatoFecha(data.fecha_observacion_gestor || data.fecha_revision || data.fecha_creacion) || "Sin registro");
-    setText("gestorCompromisoIa", valorTextoSeguroIa(data.compromiso_agente || data.observacion_gestor || data.comentario_agente, "Sin compromiso registrado"));
-    setText("gestorEstadoIa", valorTextoSeguroIa(data.estado_compromiso || data.estado_coaching || data.estado_feedback || data.estado_revision, "Sin información"));
+    const conFeedback = [
+        setTextoOpcionalIa("feedbackUltimoIa", formatoFecha(data.fecha_ultimo_feedback || data.fecha_revision || data.fecha_creacion)),
+        setTextoOpcionalIa("feedbackResumenIa", data.feedback_supervisor?.resumen_tecnico || data.recomendacion_feedback || data.recomendacion_feedback_supervisor || data.resumen_sgc?.motivo),
+        setTextoOpcionalIa("feedbackConductaIa", data.feedback_supervisor?.conducta_prioritaria || data.coaching?.feedback_supervisor?.conducta_prioritaria || brechaPrincipalDetalleIa(data)),
+        setTextoOpcionalIa("feedbackAccionIa", data.feedback_supervisor?.accion_entrenable || data.coaching?.feedback_supervisor?.accion_entrenable || data.guion_sugerido),
+        setTextoOpcionalIa("feedbackObjetivoIa", data.feedback_supervisor?.objetivo_siguiente_llamada || data.coaching?.feedback_supervisor?.objetivo_siguiente_llamada || data.feedback_asesor?.compromiso_sugerido),
+    ].some(Boolean);
+    marcarTarjetaVaciaIa("feedbackCoachingCardIa", conFeedback, "Todavía no se registró feedback para esta llamada.");
+    const conGestor = [
+        setTextoOpcionalIa("gestorActualizacionIa", formatoFecha(data.fecha_observacion_gestor || data.fecha_revision || data.fecha_creacion)),
+        setTextoOpcionalIa("gestorCompromisoIa", data.compromiso_agente || data.observacion_gestor || data.comentario_agente),
+        setTextoOpcionalIa("gestorEstadoIa", data.estado_compromiso || data.estado_coaching || data.estado_feedback || data.estado_revision),
+    ].some(Boolean);
+    marcarTarjetaVaciaIa("observacionesGestorCardIa", conGestor, "El gestor todavía no registró observaciones ni compromiso.");
 }
 
 function formatoDuracionIa(segundos) {
@@ -5170,6 +5279,8 @@ function claseFilaFichaSgcIa(item) {
     const key = String(item.calificacion || "").toLowerCase();
     if (key.includes("no cumple") || key.includes("no evidenciado")) return "is-error";
     if (key.includes("parcial") || key.includes("revision") || key.includes("revisión")) return "is-partial";
+    // No evaluable / no aplica: se atenuan, porque no son resultados del asesor.
+    if (key.includes("no evaluable") || key.includes("no aplica")) return "is-excluded";
     if (key.includes("cumple")) return "is-ok";
     return "is-na";
 }
@@ -5189,11 +5300,31 @@ function itemsFichaAuditoriaSgcIa(items = []) {
     });
 }
 
+// Los cinco estados NO significan lo mismo y no deben verse igual. Antes
+// "No evaluable" y "No aplica" compartian estilo con el resto, de modo que un
+// criterio que el modulo NO MIDE se leia como una falta del asesor. Esa
+// confusion es la que mas dano hace cuando alguien revisa la ficha de prisa.
+const ESTADOS_FICHA_IA = {
+    C:  { clase: "cumple",   texto: "Cumple",           ayuda: "Se observó en la llamada y se cumplió. Suma sus puntos." },
+    NC: { clase: "nocumple", texto: "No cumple",        ayuda: "Se observó en la llamada y no se cumplió. No suma puntos." },
+    P:  { clase: "parcial",  texto: "Parcial",          ayuda: "Cumplimiento parcial." },
+    RH: { clase: "revision", texto: "Requiere revisión", ayuda: "Hay indicio pero no evidencia suficiente. Lo decide una persona." },
+    NA: { clase: "excluido", texto: "No aplica",        ayuda: "La situación que evalúa no ocurrió en esta llamada. Sale del cálculo." },
+    NE: { clase: "excluido", texto: "No evaluable",     ayuda: "El módulo no tiene fuente para verificarlo. Sale del cálculo." },
+};
+
+
 function badgeFichaCalificacionSgcIa(corta, completa) {
     const key = String(corta || "").toUpperCase();
-    const clase = key === "NC" ? "nocumple" : (key === "P" || key === "RH") ? "parcial" : key === "C" ? "cumple" : "noaplica";
-    const textos = { C: "C - Cumple", NC: "NC - No cumple", P: "P - Parcial", RH: "Revisión humana", NA: "NA - No aplica", NE: "No evaluable" };
-    return `<span class="audit-sgc-badge ${clase}" title="${escapeHtml(completa || "-")}">${escapeHtml(textos[key] || "-")}</span>`;
+    const estado = ESTADOS_FICHA_IA[key];
+    if (!estado) {
+        return `<span class="audit-sgc-badge" title="${escapeHtml(completa || "-")}">-</span>`;
+    }
+    // "Fuera de medición" se marca aparte para que se lea como exclusión y no
+    // como incumplimiento.
+    const fuera = key === "NA" || key === "NE";
+    return `<span class="audit-sgc-badge ${estado.clase}" title="${escapeHtml(estado.ayuda)}">${escapeHtml(estado.texto)}</span>`
+        + (fuera ? `<small class="audit-sgc-fuera">fuera de medición</small>` : "");
 }
 
 function prioridadFichaSgcIa(item = {}) {
@@ -5301,6 +5432,26 @@ function seleccionarFeedbackAlarmanteSgcIa(items = [], data = {}) {
     return `${accion}: ${brecha.factor_auditoria_sgc || "factor SGC/PEC"} - ${brecha.motivo || brecha.hallazgo || "hallazgo crítico sin detalle"}.`;
 }
 
+function clasePesoCriterioIa(peso) {
+    // Un criterio de 20 puntos y uno de 2 no pueden verse igual: quien lee la
+    // ficha necesita saber de un vistazo donde esta lo que mueve la nota.
+    const valor = Number(peso) || 0;
+    if (valor >= 10) return "peso-criterio peso-alto";
+    if (valor >= 5) return "peso-criterio peso-medio";
+    return "peso-criterio peso-bajo";
+}
+
+
+function leyendaEstadosFichaIa() {
+    const orden = ["C", "NC", "RH", "NA", "NE"];
+    const items = orden.map(key => {
+        const estado = ESTADOS_FICHA_IA[key];
+        return `<li><span class="audit-sgc-badge ${estado.clase}">${escapeHtml(estado.texto)}</span><small>${escapeHtml(estado.ayuda)}</small></li>`;
+    }).join("");
+    return `<details class="leyenda-estados-ia"><summary>Qué significa cada resultado</summary><ul>${items}</ul></details>`;
+}
+
+
 function codigoPautaItemIa(item = {}) {
     return String(item.codigo_criterio || item.codigo || item.item || "").trim().toUpperCase();
 }
@@ -5310,6 +5461,35 @@ function bloquePautaItemIa(item = {}, data = {}) {
     const snapshot = Array.isArray(data.pauta_snapshot) ? data.pauta_snapshot : [];
     const definido = snapshot.find(criterio => codigoPautaItemIa(criterio) === codigo) || {};
     return String(item.bloque || definido.bloque || item.subcategoria || "Otros criterios").trim() || "Otros criterios";
+}
+
+// Respaldo SOLO para cuando la evaluacion no trae el nombre del bloque. Los
+// textos son los que ya usa la pauta base (subcategoria en mibanco_quality_pauta),
+// no nombres inventados aqui. Si la pauta publicada define otro nombre, ese manda.
+const NOMBRES_BLOQUE_PAUTA_IA = {
+    PECUF: "Precisión de Error Crítico Usuario Final",
+    PECN: "Precisión de Error Crítico del Negocio",
+    PECC: "Precisión de Error Crítico de Cumplimiento",
+    PENC: "Precisión de Error No Crítico · Protocolos de Atención",
+};
+
+// "PECC" a secas no le dice nada a quien lee la ficha. El codigo se conserva
+// -es el lenguaje de la pauta- pero acompanado del nombre que le dio la pauta.
+function nombreBloquePautaIa(codigo, criterios = [], data = {}) {
+    const clave = String(codigo || "").trim().toUpperCase();
+    const util = texto => {
+        const limpio = String(texto || "").trim();
+        return limpio && limpio.toUpperCase() !== clave ? limpio : "";
+    };
+    const desdeItems = criterios.map(item => util(item.bloque_nombre || item.subcategoria)).find(Boolean);
+    if (desdeItems) return desdeItems;
+    const snapshot = Array.isArray(data.pauta_snapshot) ? data.pauta_snapshot : [];
+    const desdeSnapshot = snapshot
+        .filter(criterio => String(criterio.bloque || "").trim().toUpperCase() === clave)
+        .map(criterio => util(criterio.bloque_nombre || criterio.subcategoria || criterio.nombre_bloque))
+        .find(Boolean);
+    if (desdeSnapshot) return desdeSnapshot;
+    return NOMBRES_BLOQUE_PAUTA_IA[clave] || "";
 }
 
 function pintarFichaPautaIa(items, data = {}) {
@@ -5326,20 +5506,27 @@ function pintarFichaPautaIa(items, data = {}) {
         el.innerHTML = `<div class="empty-report-state"><strong>Sin criterios de pauta disponibles.</strong><small>La evaluación no contiene ítems suficientes para construir la ficha.</small></div>`;
         return;
     }
-    el.innerHTML = [...grupos.entries()].map(([bloque, criterios]) => {
+    const bloquesHtml = [...grupos.entries()].map(([bloque, criterios]) => {
         const peso = criterios.reduce((total, item) => total + Number(item.peso ?? item.puntaje_maximo ?? 0), 0);
         const nota = criterios.reduce((total, item) => total + Number(item.nota ?? item.puntaje_obtenido ?? 0), 0);
         const brechas = criterios.filter(item => ["NC", "P", "RH"].includes(calificacionCortaSgcIa(item.calificacion))).length;
+        const nombreBloque = nombreBloquePautaIa(bloque, criterios, data);
         return `
             <section class="audit-sgc-group pauta-criterios-group">
-                <header class="audit-sgc-header"><span>${escapeHtml(bloque)}</span><small>${formatoPeso(nota)} / ${formatoPeso(peso)} pts · ${formatoNumero(brechas)} brecha(s)</small></header>
+                <header class="audit-sgc-header">
+                    <span class="bloque-titulo-ia">
+                        <strong>${escapeHtml(bloque)}</strong>
+                        ${nombreBloque ? `<em>${escapeHtml(nombreBloque)}</em>` : ""}
+                    </span>
+                    <small>${formatoPeso(nota)} / ${formatoPeso(peso)} pts · ${formatoNumero(brechas)} brecha(s)</small>
+                </header>
                 <div class="audit-sgc-table-wrap">
                     <table class="audit-sgc-table pauta-criterios-table">
                         <thead><tr><th>Criterio</th><th>Peso</th><th>Nota</th><th>Resultado</th><th>Evidencia</th><th>Análisis y siguiente paso</th></tr></thead>
                         <tbody>${criterios.map(item => `
                             <tr class="${claseFilaFichaSgcIa({ ...item, calificacion: item.calificacion })}">
                                 <td><strong>${escapeHtml(itemCopcVisibleIa(item))}</strong></td>
-                                <td>${formatoPeso(item.peso ?? item.puntaje_maximo ?? 0)}</td>
+                                <td class="${clasePesoCriterioIa(item.peso ?? item.puntaje_maximo ?? 0)}">${formatoPeso(item.peso ?? item.puntaje_maximo ?? 0)}</td>
                                 <td><strong>${formatoPeso(item.nota ?? item.puntaje_obtenido ?? 0)}</strong></td>
                                 <td>${badgeFichaCalificacionSgcIa(calificacionCortaSgcIa(item.calificacion), item.calificacion)}</td>
                                 <td>${escapeHtml(item.evidencia || "-")}</td>
@@ -5354,6 +5541,7 @@ function pintarFichaPautaIa(items, data = {}) {
             </section>
         `;
     }).join("");
+    el.innerHTML = bloquesHtml + leyendaEstadosFichaIa();
 }
 
 function pintarFichaAuditoriaSgcIa(items, data = {}) {
@@ -7883,6 +8071,124 @@ let criterioCalibracionAbiertoIa = null;
 function idFeedbackActualIa() {
     return resultadoActualIa?.id_feedback || null;
 }
+
+let resolverModalReanalizarIa = null;
+
+
+function abrirModalReanalizarIa(puntos, aviso) {
+    // Devuelve una promesa que resuelve true/false segun lo que elija el usuario.
+    const lista = document.getElementById("detalleModalReanalizarIa");
+    if (lista) {
+        lista.textContent = "";
+        puntos.forEach(punto => {
+            const item = document.createElement("li");
+            item.textContent = punto;
+            lista.appendChild(item);
+        });
+    }
+    const avisoEl = document.getElementById("avisoModalReanalizarIa");
+    if (avisoEl) {
+        avisoEl.textContent = aviso || "";
+        avisoEl.classList.toggle("oculto", !aviso);
+    }
+    document.getElementById("modalReanalizarIa")?.classList.remove("oculto");
+    return new Promise(resolve => {
+        resolverModalReanalizarIa = resolve;
+    });
+}
+
+
+function cerrarModalReanalizarIa(confirmado) {
+    document.getElementById("modalReanalizarIa")?.classList.add("oculto");
+    if (resolverModalReanalizarIa) {
+        const resolver = resolverModalReanalizarIa;
+        resolverModalReanalizarIa = null;
+        resolver(Boolean(confirmado));
+    }
+}
+
+
+function mostrarProcesoIa(titulo, texto) {
+    const tituloEl = document.getElementById("overlayProcesoTituloIa");
+    const textoEl = document.getElementById("overlayProcesoTextoIa");
+    if (tituloEl) tituloEl.textContent = titulo;
+    if (textoEl) textoEl.textContent = texto;
+    document.getElementById("overlayProcesoIa")?.classList.remove("oculto");
+}
+
+
+function ocultarProcesoIa() {
+    document.getElementById("overlayProcesoIa")?.classList.add("oculto");
+}
+
+
+async function reanalizarEvaluacionIa(forzarTranscripcion = false) {
+    // Vuelve a evaluar una llamada YA cargada, sin volver a subir el audio.
+    //
+    // Por defecto reutiliza la transcripcion guardada. Eso importa para poder
+    // comparar: si se transcribe de nuevo, el texto cambia un poco en cada
+    // pasada y no se sabe si un resultado distinto viene del cambio de reglas
+    // o de que la transcripcion salio diferente. Reutilizandola, lo unico que
+    // cambia son las reglas.
+    //
+    // Para forzar una transcripcion nueva -por ejemplo si la separacion de
+    // hablantes salio mal- se llama reanalizarEvaluacionIa(true).
+    const idFeedback = idFeedbackActualIa();
+    if (!idFeedback) {
+        mostrarMensajeIa("No hay una evaluación abierta para reanalizar.", "error");
+        return;
+    }
+
+    const puntos = forzarTranscripcion
+        ? [
+            "Se transcribe el audio otra vez, así que el texto puede salir distinto al actual.",
+            "La evaluación actual de la IA se reemplaza.",
+        ]
+        : [
+            "Se reutiliza la transcripción ya guardada: el texto no cambia.",
+            "Se aplican las reglas y la pauta vigentes al día de hoy.",
+            "La evaluación actual de la IA se reemplaza.",
+        ];
+
+    const estadoRevision = String(resultadoActualIa?.estado_revision || "PENDIENTE").toUpperCase();
+    // Reanalizar recalcula la nota desde cero. Las calibraciones registradas no
+    // se borran, pero la revision hecha por Calidad puede quedar desalineada.
+    const aviso = estadoRevision && estadoRevision !== "PENDIENTE"
+        ? `Esta llamada ya está en estado ${estadoRevision}. La revisión hecha por Calidad puede quedar desalineada con el nuevo resultado.`
+        : "";
+
+    if (!await abrirModalReanalizarIa(puntos, aviso)) return;
+
+    const boton = document.getElementById("btnReanalizarDetalleIa");
+    if (boton) boton.disabled = true;
+    mostrarProcesoIa(
+        "Reanalizando la llamada",
+        forzarTranscripcion
+            ? "Transcribiendo el audio y aplicando la pauta vigente."
+            : "Aplicando la pauta vigente sobre la transcripción guardada.",
+    );
+    try {
+        const url = `${IA_FEEDBACK_BASE}/${idFeedback}/analizar${forzarTranscripcion ? "?forzar_transcripcion=true" : ""}`;
+        const respuesta = await fetchIa(url, { method: "POST" }, 900000);
+        const data = await leerJsonSeguro(respuesta);
+        if (!respuesta.ok) {
+            throw new Error(data.detail || data.error || "No se pudo reanalizar la llamada.");
+        }
+        renderResultadoIa(data);
+        mostrarMensajeIa(
+            forzarTranscripcion
+                ? "Evaluación regenerada con una transcripción nueva."
+                : "Evaluación regenerada sobre la misma transcripción.",
+            "ok",
+        );
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo reanalizar la llamada.", "error");
+    } finally {
+        ocultarProcesoIa();
+        if (boton) boton.disabled = false;
+    }
+}
+
 
 function usuarioActualIa() {
     try {

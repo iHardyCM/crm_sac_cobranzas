@@ -567,15 +567,25 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
     detalle = []
     total_ceros = 0
 
+    # Una llamada sin score NO se pudo medir. Antes caia en float(... or 0) y
+    # entraba a los promedios como un cero, hundiendo la media del asesor, de
+    # la cartera y de la semana con una nota que nadie calculo. Ahora queda
+    # fuera de los agregados y se cuenta aparte, para que el reporte pueda
+    # decir sobre cuantas llamadas se calculo realmente el promedio.
+    no_evaluables = 0
     for row in rows:
-        score = float(row.get("score_final") if row.get("score_final") is not None else row.get("score_calidad") or 0)
+        score_crudo = row.get("score_final") if row.get("score_final") is not None else row.get("score_calidad")
+        score = float(score_crudo) if score_crudo is not None else None
         cartera = str(row.get("cartera") or "Sin cartera")
         agente = str(row.get("agente") or "Sin agente asociado")
         supervisor_row = str(row.get("supervisor") or "Sin supervisor")
         semana = clave_semana(row.get("fecha_creacion"))
-        acumular_score(carteras, cartera, "cartera", score)
-        acumular_score(agentes, agente, "agente", score)
-        acumular_score(semanas, semana, "semana", score)
+        if score is None:
+            no_evaluables += 1
+        else:
+            acumular_score(carteras, cartera, "cartera", score)
+            acumular_score(agentes, agente, "agente", score)
+            acumular_score(semanas, semana, "semana", score)
         row_data = serializar(dict(row))
         evaluacion = cargar_json_lista(row.get("evaluacion_calidad"))
         row_data["evaluacion_calidad_lista"] = evaluacion
@@ -612,10 +622,11 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             "evaluacion_calidad_lista": evaluacion,
             "resumen_sgc": resumen_sgc,
             "score_calidad": score,
-            "score_calidad_ia": float(row.get("score_calidad_ia") or score),
+            "score_calidad_ia": float(row["score_calidad_ia"]) if row.get("score_calidad_ia") is not None else score,
             "score_supervisor": float(row.get("score_supervisor")) if row.get("score_supervisor") is not None else None,
             "score_final": score,
-            "score_normalizado": float(row.get("score_normalizado") or score),
+            "score_normalizado": float(row["score_normalizado"]) if row.get("score_normalizado") is not None else score,
+            "evaluable": score is not None,
             "nivel_riesgo": row.get("nivel_riesgo") or row.get("nivel_oportunidad_mejora"),
             "tipo_llamada": row.get("tipo_llamada"),
             "requiere_revision_humana": bool(row.get("requiere_revision_humana")),
@@ -633,6 +644,16 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             "requiere_coaching": bool(row_data.get("requiere_coaching")),
             "fecha_coaching": serializar({"fecha": row.get("fecha_coaching")}).get("fecha"),
         })
+
+        # La llamada aparece en el detalle -es real y hay que poder verla- pero
+        # NO alimenta las estadisticas agregadas. En una llamada no evaluable
+        # todos los criterios tienen nota 0 porque no se midieron, no porque
+        # fallaran: contarlos como "items en cero" inflaria las brechas por
+        # segmento y por item con incumplimientos que nunca se observaron.
+        # (Ademas, sus cubos de cartera/agente/semana no existen, porque
+        # acumular_score solo se llama para las medibles.)
+        if score is None:
+            continue
 
         for item in evaluacion:
             if not isinstance(item, dict):
@@ -693,6 +714,10 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
     return {
         "total_audios": total,
         "score_promedio": round(sum(scores) / len(scores), 2) if scores else None,
+        # Sobre cuantas llamadas se calculo realmente el promedio. Un promedio
+        # sin este dato no dice si se midio el 100% o el 60% de lo evaluado.
+        "audios_con_score": len(scores),
+        "audios_sin_score": no_evaluables,
         "items_nota_cero": total_ceros,
         "segmentos": segmentos_lista,
         "brechas": brechas_lista[:12],
@@ -952,6 +977,17 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
             "requiere_coaching": 1 if resumen_sgc.get("requiere_coaching") else 0,
             "estado_feedback": "PENDIENTE" if resumen_sgc.get("requiere_feedback") else "NO_REQUIERE",
         })
+    # La evaluacion por criterio se persiste aqui, al cerrar el analisis. Si la
+    # llamada ya tenia sus criterios escritos, esto NO los pisa (inmutabilidad).
+    # Un fallo aqui no puede tumbar el analisis, que ya quedo guardado arriba:
+    # se registra y se sigue.
+    try:
+        escritas = persistir_evaluacion_criterios(id_feedback, analisis)
+        if escritas:
+            logger.info("[CRITERIOS] feedback=%s filas=%s", id_feedback, escritas)
+    except Exception:
+        logger.exception("[CRITERIOS] no se pudo persistir la evaluacion por criterio (feedback=%s)", id_feedback)
+
     registrar_historial_feedback(
         id_feedback,
         "ANALISIS_IA",
@@ -962,6 +998,219 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
             "nivel_riesgo": analisis.get("nivel_riesgo") or analisis.get("nivel_oportunidad_mejora"),
         }, ensure_ascii=False),
     )
+
+
+RESULTADOS_IA_VALIDOS = {"CUMPLE", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
+
+
+def _resultado_ia_normalizado(item: Dict) -> str:
+    """Devuelve el estado tecnico del criterio, no el texto de pantalla."""
+    estado = str(item.get("estado") or item.get("estado_tecnico") or "").strip().upper().replace(" ", "_")
+    if estado in RESULTADOS_IA_VALIDOS:
+        return estado
+    texto = str(item.get("resultado") or item.get("calificacion") or "").strip().lower()
+    if "no evaluable" in texto:
+        return "NO_EVALUABLE"
+    if "no aplica" in texto:
+        return "NO_APLICA"
+    if "revisi" in texto:
+        return "REQUIERE_REVISION"
+    if "no cumple" in texto or "no evidenciado" in texto:
+        return "NO_CUMPLE"
+    if "cumple" in texto:
+        return "CUMPLE"
+    return "REQUIERE_REVISION"
+
+
+def _hablante_evidencia(item: Dict) -> Optional[str]:
+    """Solo se declara el hablante cuando la evidencia viene de un segmento."""
+    valor = str(item.get("evidencia_hablante") or item.get("hablante") or "").strip().upper()
+    if valor in {"AGENTE", "CLIENTE"}:
+        return valor
+    if not item.get("segmentos_evidencia"):
+        return None
+    return "INDETERMINADO"
+
+
+def _texto_evidencia(item: Dict) -> Optional[str]:
+    """Une las citas del criterio con el mismo separador que usa la ficha.
+
+    Un criterio puede sustentarse en mas de un segmento. Guardar solo el
+    primero perderia parte del sustento justo en la tabla con la que despues
+    se mide la precision, asi que se guardan todas. Cuando la conclusion es
+    por ausencia no hay nada que citar y la columna queda NULL, que es lo
+    correcto: NULL significa "no hay cita", no "no se reviso".
+    """
+    textual = item.get("evidencia_textual")
+    if isinstance(textual, list) and textual:
+        partes = [str(x).strip() for x in textual if str(x or "").strip()]
+        if partes:
+            return " | ".join(partes)
+    evidencia = str(item.get("evidencia") or "").strip()
+    return evidencia if evidencia and evidencia != "-" else None
+
+
+def _numero_o_none(value):
+    try:
+        return float(value) if value is not None and str(value).strip() != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _entero_o_none(value):
+    """int() directo revienta con "2.0", que es como quedo guardada la version
+    en varias evaluaciones. Se pasa por float para no perder el dato en silencio."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolver_id_pauta(conn, nombre, version) -> Optional[int]:
+    """Busca la pauta real por (nombre, version), que es UNIQUE en CRM_IA_PAUTA.
+
+    POR QUE HACE FALTA
+    "pauta" y "pauta_version" tambien se llenan con los valores de respaldo de
+    las matrices fijas -COPC_SGC v2.0, MIBANCO v1.0-, que NO son pautas de la
+    tabla. Si esas versiones se guardaran como pauta_version, el reporte de
+    precision agruparia la matriz fija COPC v2.0 junto a la pauta publicada v2,
+    que son cosas distintas.
+
+    Por eso la unica fuente valida es la tabla: si (nombre, version) existe,
+    hay pauta; si no existe, no hay pauta y no se inventa ninguna.
+    """
+    nombre_limpio = str(nombre or "").strip()
+    version_num = _entero_o_none(version)
+    if not nombre_limpio or version_num is None:
+        return None
+    fila = conn.execute(text("""
+        SELECT id_pauta
+        FROM CobAuto.dbo.CRM_IA_PAUTA
+        WHERE nombre = :nombre AND version = :version
+    """), {"nombre": nombre_limpio, "version": version_num}).scalar()
+    return int(fila) if fila is not None else None
+
+
+def persistir_evaluacion_criterios(id_feedback: int, analisis: Dict, rehacer: bool = False) -> int:
+    """Escribe el resultado de la IA por criterio en CRM_IA_EVALUACION_CRITERIO.
+
+    POR QUE EXISTE
+    Esa tabla es contra la que se mide la precision de la IA: una fila por
+    (id_feedback, codigo_criterio), con la definicion del criterio congelada al
+    momento del analisis. calibracion_service la lee en cinco consultas.
+
+    REGLA DE INMUTABILIDAD
+    El DDL la declara INMUTABLE y esa regla se respeta: si la evaluacion ya
+    tiene filas, NO se reescriben. Medir precision contra un resultado que
+    cambia despues de que el supervisor lo califico no mide nada.
+
+    La unica excepcion es rehacer=True, pensada para iterar durante el
+    desarrollo, y ni siquiera esa toca una evaluacion que ya tenga
+    calibraciones humanas: en ese caso se rechaza y no se escribe nada.
+
+    Devuelve la cantidad de filas escritas (0 si ya existian y no se rehace).
+    """
+    criterios = analisis.get("evaluacion_calidad") or []
+    if not isinstance(criterios, list) or not criterios:
+        return 0
+
+    filas = []
+    vistos = set()
+    for item in criterios:
+        if not isinstance(item, dict):
+            continue
+        codigo = str(item.get("codigo_criterio") or item.get("codigo") or "").strip()
+        if not codigo or codigo in vistos:
+            # La tabla tiene UNIQUE (id_feedback, codigo_criterio): un duplicado
+            # reventaria el INSERT completo. Se queda la primera aparicion.
+            continue
+        vistos.add(codigo)
+        filas.append({
+            "id_feedback": id_feedback,
+            "id_pauta": None,   # se resuelve abajo, con conexion
+            "pauta_version": None,
+            "codigo_bloque": limpiar_texto(item.get("bloque")),
+            "nombre_bloque": limpiar_texto(item.get("bloque_nombre") or item.get("subcategoria")),
+            "codigo_criterio": codigo[:80],
+            "nombre_criterio": limpiar_texto(item.get("nombre") or item.get("item")),
+            "tipo_criterio": limpiar_texto(item.get("tipo_criterio") or "PUNTUABLE"),
+            "peso": _numero_o_none(item.get("peso")),
+            "fuente_evidencia": limpiar_texto(item.get("fuente_evidencia")),
+            "resultado_ia": _resultado_ia_normalizado(item),
+            "puntaje_obtenido": _numero_o_none(item.get("nota") if item.get("nota") is not None else item.get("puntaje_obtenido")),
+            "bloque_anulado": 1 if item.get("bloque_anulado") else 0,
+            "confianza_ia": limpiar_texto(item.get("confianza")),
+            "motivo_ia": limpiar_texto(item.get("motivo") or item.get("hallazgo")),
+            "recomendacion_ia": limpiar_texto(item.get("recomendacion") or item.get("recomendacion_entrenable")),
+            "evidencia_texto": _texto_evidencia(item),
+            "evidencia_hablante": _hablante_evidencia(item),
+            "momento_llamada": limpiar_texto(item.get("momento")),
+        })
+
+    if not filas:
+        return 0
+
+    with engine_siscob.begin() as conn:
+        # id_pauta manda: si el analisis no lo trae -las evaluaciones viejas no
+        # lo guardaban-, se resuelve por (nombre, version) contra CRM_IA_PAUTA.
+        # Y si no hay pauta identificable, la VERSION tampoco se guarda: un
+        # numero de version sin pauta no es agrupable y solo confundiria el
+        # reporte de precision.
+        id_pauta = _entero_o_none(analisis.get("id_pauta"))
+        if id_pauta is None:
+            id_pauta = _resolver_id_pauta(conn, analisis.get("pauta"), analisis.get("pauta_version"))
+        pauta_version = _entero_o_none(analisis.get("pauta_version")) if id_pauta is not None else None
+        for fila in filas:
+            fila["id_pauta"] = id_pauta
+            fila["pauta_version"] = pauta_version
+
+        existentes = int(conn.execute(text("""
+            SELECT COUNT(1)
+            FROM CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO
+            WHERE id_feedback = :id_feedback
+        """), {"id_feedback": id_feedback}).scalar() or 0)
+
+        if existentes and not rehacer:
+            return 0
+
+        if existentes:
+            calibradas = int(conn.execute(text("""
+                SELECT COUNT(1)
+                FROM CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
+                WHERE id_feedback = :id_feedback
+            """), {"id_feedback": id_feedback}).scalar() or 0)
+            if calibradas:
+                raise ValueError(
+                    f"La evaluacion {id_feedback} ya tiene {calibradas} calibracion(es) humana(s): "
+                    "su evaluacion IA no se puede rehacer sin invalidar esa medicion."
+                )
+            conn.execute(text("""
+                DELETE FROM CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO
+                WHERE id_feedback = :id_feedback
+            """), {"id_feedback": id_feedback})
+
+        conn.execute(text("""
+            INSERT INTO CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO
+                (id_feedback, id_pauta, pauta_version, codigo_bloque, nombre_bloque,
+                 codigo_criterio, nombre_criterio, tipo_criterio, peso, fuente_evidencia,
+                 resultado_ia, puntaje_obtenido, bloque_anulado, confianza_ia,
+                 motivo_ia, recomendacion_ia,
+                 evidencia_texto, evidencia_hablante, momento_llamada)
+            VALUES
+                (:id_feedback, :id_pauta, :pauta_version, :codigo_bloque, :nombre_bloque,
+                 :codigo_criterio, :nombre_criterio, :tipo_criterio, :peso, :fuente_evidencia,
+                 :resultado_ia, :puntaje_obtenido, :bloque_anulado, :confianza_ia,
+                 :motivo_ia, :recomendacion_ia,
+                 :evidencia_texto, :evidencia_hablante, :momento_llamada)
+        """), filas)
+
+    return len(filas)
 
 
 def guardar_revision_feedback(
@@ -1390,7 +1639,17 @@ def enriquecer_sgc_registro(data: Dict) -> Dict:
             data.get("evaluacion_calidad_lista") or [],
             segmentos_actuales,
         )
-        evaluacion = aplicar_guardas_deterministicas_criterios(segmentos_actuales, data.get("evaluacion_calidad_lista") or [])
+        # La cartera decide contra que entidad se verifican PENC.1 y PECC.1, y
+        # la fila SI la tiene. No pasarla aqui hacia que cada relectura de la
+        # ficha ejecutara las guardas con cartera=None: sin tokens de entidad,
+        # PENC.1 se abstenia y PECC.1 no podia nombrar a la entidad correcta,
+        # pese a que el analisis original si la habia usado. Ese era el
+        # cartera=None que veniamos arrastrando en los logs.
+        evaluacion = aplicar_guardas_deterministicas_criterios(
+            segmentos_actuales,
+            data.get("evaluacion_calidad_lista") or [],
+            data.get("cartera"),
+        )
         evaluacion = enriquecer_evaluacion_sgc(
             evaluacion,
             score_final=score_final_num,

@@ -2912,23 +2912,92 @@ def puntaje_pipeline_v3(value, estado: str, peso: float) -> float:
     return 0.0
 
 
+# --- Entidad frente a campania interna ---------------------------------------
+#
+# El nombre de la cartera mezcla dos cosas distintas:
+#   ENTIDAD  -> la institucion que el asesor nombra en la llamada
+#   CAMPANIA -> la segmentacion interna de Biznescob (castigo, vigente,
+#               individual, grupal, CCM, CSM, propia, cedida)
+#
+# El cliente nunca escucha la campania interna. Un asesor de la cartera
+# "124 - COMPARTAMOS CASTIGO INDIVIDUAL" dice "Compartamos Banco", y decirle
+# que debe identificarse como "Compartamos Castigo Individual" seria una
+# recomendacion equivocada.
+#
+# Por eso la entidad se resuelve con un mapa explicito y no deduciendo palabras
+# del nombre de la cartera. Deducir fallaba en casos reales: en
+# "132 - FINANCIERA OH" las unicas palabras eran "financiera" (descartada por
+# generica) y "oh" (demasiado corta), de modo que la cartera se quedaba sin
+# ningun token de entidad.
+ENTIDADES_CARTERA_V3 = (
+    {
+        "etiqueta": "Compartamos Banco",
+        "coincide": ("compartamos",),
+        "tokens": ("compartamos", "compartamos banco"),
+    },
+    {
+        "etiqueta": "Interbank",
+        "coincide": ("interbank",),
+        "tokens": ("interbank", "inter bank"),
+    },
+    {
+        "etiqueta": "Financiera Oh",
+        # "sip" es el nombre interno del servicio de esta entidad.
+        "coincide": ("financiera oh", "financiera", "sip"),
+        # No se incluye "oh" suelto a proposito: es una interjeccion comun y
+        # daria por identificada la entidad en cualquier "oh, ya veo".
+        "tokens": ("financiera oh", "financiera", "tarjeta oh", "tiendas oh", "sip"),
+    },
+    {
+        "etiqueta": "Mibanco",
+        "coincide": ("mibanco", "mi banco"),
+        "tokens": ("mibanco", "mi banco"),
+    },
+)
+
+# Palabras del nombre de la cartera que son campania interna, nunca entidad.
+PALABRAS_CAMPANIA_INTERNA_V3 = {
+    "castigo", "vigente", "individual", "grupal", "propia", "cedida",
+    "ccm", "csm", "banco", "financiera", "cartera", "campana",
+}
+
+
+def entidad_de_cartera_v3(cartera) -> Optional[Dict]:
+    """Ubica la entidad real a la que pertenece una cartera."""
+    key = limpiar_key_texto(str(cartera or ""))
+    if not key:
+        return None
+    for entidad in ENTIDADES_CARTERA_V3:
+        if any(limpiar_key_texto(pista) in key for pista in entidad["coincide"]):
+            return entidad
+    return None
+
+
 def tokens_entidad_cartera_v3(cartera) -> set:
-    """Tokens con los que el agente podria nombrar a la entidad de esta cartera."""
-    base = {"mibanco", "mi banco"}
-    descartar = {"castigo", "vigente", "individual", "grupal", "banco", "financiera", "propia"}
+    """Nombres con los que el asesor podria nombrar a la entidad de la cartera."""
+    entidad = entidad_de_cartera_v3(cartera)
+    if entidad:
+        return {limpiar_key_texto(token) for token in entidad["tokens"] if limpiar_key_texto(token)}
+
+    # Cartera nueva o con un nombre que todavia no esta en el mapa: se cae al
+    # comportamiento anterior para no dejar el criterio sin ninguna referencia.
+    base = set()
     for palabra in limpiar_key_texto(str(cartera or "")).split():
-        if len(palabra) > 4 and not palabra.isdigit() and palabra not in descartar:
+        if len(palabra) > 4 and not palabra.isdigit() and palabra not in PALABRAS_CAMPANIA_INTERNA_V3:
             base.add(palabra)
     return base
 
 
 def etiqueta_entidad_cartera_v3(cartera) -> str:
+    """Como debe nombrarse la entidad frente al cliente."""
+    entidad = entidad_de_cartera_v3(cartera)
+    if entidad:
+        return entidad["etiqueta"]
+
     texto = str(cartera or "").strip()
     if " - " in texto:
         texto = texto.split(" - ", 1)[1].strip()
-    if texto:
-        return texto.title()
-    return "la entidad"
+    return texto.title() if texto else "la entidad"
 
 
 def abstener_guardas_por_roles_v3(criterios: List[Dict]) -> List[Dict]:
@@ -2966,6 +3035,159 @@ def abstener_guardas_por_roles_v3(criterios: List[Dict]) -> List[Dict]:
     return criterios
 
 
+# --- PECUF.3: declaracion escalonada de montos -------------------------------
+#
+# REGLA DE NEGOCIO (acordada el 16/09/2026)
+# El asesor esta obligado a declarar el monto de la deuda total en la llamada.
+# Solo si el cliente RECHAZA de forma explicita debe bajar al siguiente nivel,
+# y en orden estricto:
+#
+#     deuda total  --rechazo-->  capital  --rechazo-->  campania
+#
+# Si el cliente acepta negociar sobre la deuda total, no hace falta que mencione
+# capital ni campania: la escalera se detiene donde hubo acuerdo.
+#
+# QUE SE MIDE Y QUE NO
+# Se mide el FRASEO: que el asesor haya dicho el concepto con su monto. NO se
+# verifica que la cifra sea correcta: ya no hay base de deudas contra la cual
+# contrastar. Un monto equivocado pero declarado cumple este criterio; lo que
+# no cumple es no declararlo.
+
+NIVELES_ESCALERA_V3 = ("DEUDA_TOTAL", "CAPITAL", "CAMPANIA")
+
+# Se mide el CONCEPTO comunicado, no una frase textual. El asesor no esta
+# obligado a decir "su deuda total es de"; puede decir "el importe total
+# pendiente", "lo que debe en total" o "el monto pendiente". Exigir la frase
+# literal marcaria como incumplimiento gestiones correctas: medido sobre la
+# llamada #34, la asesora comunico los 2.690 soles diciendo "el importe total
+# pendiente" y la version anterior de esta lista no lo reconocia.
+TOKENS_NIVEL_ESCALERA_V3 = {
+    "DEUDA_TOTAL": (
+        "deuda total", "total de la deuda", "total de su deuda", "su deuda",
+        "la deuda es", "deuda pendiente", "deuda completa", "deuda vencida",
+        "importe total", "monto total", "saldo total", "total pendiente",
+        "total adeudado", "monto pendiente", "importe pendiente",
+        "saldo pendiente", "debe en total", "adeuda en total", "por la totalidad",
+        "monto de la deuda", "importe de la deuda", "total a cancelar",
+        "total a pagar",
+    ),
+    "CAPITAL": (
+        "capital", "su capital", "el capital", "saldo capital",
+        "capital pendiente", "capital insoluto", "solo el capital",
+        "reducir el capital", "monto de capital", "importe de capital",
+    ),
+    "CAMPANIA": (
+        "campana", "campania", "su campana", "monto de campana",
+        "descuento de campana", "oferta de campana", "beneficio de campana",
+        "descuento", "promocion", "rebaja", "condonacion", "oferta especial",
+        "beneficio especial", "monto promocional",
+    ),
+}
+
+# Rechazo = negativa o imposibilidad explicita. Evadir o cambiar de tema NO es
+# rechazo: si el cliente no se niega, no se le exige al asesor bajar de nivel.
+TOKENS_RECHAZO_CLIENTE_V3 = (
+    "no puedo", "no tengo", "no cuento", "no me alcanza", "no dispongo",
+    "imposible", "es mucho", "es demasiado", "esta muy alto", "muy elevado",
+    "no voy a poder", "no podria", "no estoy en condiciones", "no hay forma",
+    "no tengo dinero", "no tengo plata", "no me es posible",
+)
+
+# Aceptacion = compromiso o disposicion concreta sobre el monto ofrecido.
+TOKENS_ACEPTACION_CLIENTE_V3 = (
+    "si puedo", "lo voy a pagar", "voy a pagar", "lo pago", "acepto",
+    "de acuerdo", "esta bien", "me parece bien", "si acepto", "lo cancelo",
+    "voy a cancelar", "hago el pago", "lo deposito", "si lo tomo",
+)
+
+
+def montos_en_texto_v3(texto: str) -> bool:
+    """Decide si una frase contiene una cifra de dinero.
+
+    Acepta el numero escrito en digitos y tambien en palabras: el transcriptor
+    devuelve "ciento setenta y nueve" tan seguido como "179", y exigir solo
+    digitos produciria incumplimientos falsos por un problema de transcripcion,
+    no de gestion.
+    """
+    key = limpiar_key_texto(texto)
+    if re.search(r"(?<!\w)\d{2,}(?!\w)", key):
+        return True
+    palabras_numero = (
+        "cien", "ciento", "doscientos", "trescientos", "cuatrocientos",
+        "quinientos", "seiscientos", "setecientos", "ochocientos",
+        "novecientos", "mil", "millon", "millones",
+        "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta",
+        "ochenta", "noventa",
+    )
+    return any(re.search(rf"(?<!\w){palabra}(?!\w)", key) for palabra in palabras_numero)
+
+
+def analizar_escalera_montos_v3(segmentos: List[Dict]) -> Dict:
+    """Recorre la llamada y reconstruye la escalera de montos.
+
+    Devuelve, por nivel: si el asesor lo declaro, si declaro un monto junto al
+    concepto, y si despues de esa declaracion el cliente acepto o rechazo.
+    No decide el estado del criterio: eso lo hace la guarda, que necesita ver
+    los tres niveles juntos.
+    """
+    declaraciones = {
+        nivel: {"declarado": False, "con_monto": False, "segmento": None, "indice": None}
+        for nivel in NIVELES_ESCALERA_V3
+    }
+
+    for indice, segmento in enumerate(segmentos):
+        if normalizar_hablante_v2(segmento.get("hablante") or segmento.get("rol")) != "AGENTE":
+            continue
+        texto = str(segmento.get("texto") or segmento.get("texto_original") or "")
+        key = limpiar_key_texto(texto)
+        for nivel in NIVELES_ESCALERA_V3:
+            if declaraciones[nivel]["declarado"]:
+                continue
+            tokens = {limpiar_key_texto(t) for t in TOKENS_NIVEL_ESCALERA_V3[nivel]}
+            if not any(token and token in key for token in tokens):
+                continue
+            declaraciones[nivel].update({
+                "declarado": True,
+                "con_monto": montos_en_texto_v3(texto),
+                "segmento": segmento,
+                "indice": indice,
+            })
+
+    def reaccion_cliente(desde_indice, hasta_indice):
+        """Que dijo el cliente entre esta declaracion y la siguiente.
+
+        La ventana se cierra en la declaracion del nivel siguiente a proposito.
+        Si se mirara hasta el final de la llamada, un "no puedo" dicho mucho
+        despues -por ejemplo rechazando una oferta posterior- se leeria como
+        rechazo de ESTE monto, y el criterio exigiria un nivel adicional que en
+        realidad ya no correspondia. Medido sobre la llamada #34, ese error
+        convertia un CUMPLE en NO_CUMPLE.
+        """
+        if desde_indice is None:
+            return "SIN_DECLARACION"
+        rechazo = {limpiar_key_texto(t) for t in TOKENS_RECHAZO_CLIENTE_V3}
+        acepta = {limpiar_key_texto(t) for t in TOKENS_ACEPTACION_CLIENTE_V3}
+        tramo = segmentos[desde_indice + 1 : hasta_indice] if hasta_indice else segmentos[desde_indice + 1 :]
+        for segmento in tramo:
+            if normalizar_hablante_v2(segmento.get("hablante") or segmento.get("rol")) != "CLIENTE":
+                continue
+            key = limpiar_key_texto(segmento.get("texto") or segmento.get("texto_original") or "")
+            if any(token and token in key for token in acepta):
+                return "ACEPTA"
+            if any(token and token in key for token in rechazo):
+                return "RECHAZA"
+        return "SIN_RESPUESTA_CLARA"
+
+    # Indice de la siguiente declaracion, que cierra la ventana de reaccion.
+    indices = [declaraciones[nivel]["indice"] for nivel in NIVELES_ESCALERA_V3]
+    for posicion, nivel in enumerate(NIVELES_ESCALERA_V3):
+        propio = declaraciones[nivel]["indice"]
+        posteriores = [i for i in indices if i is not None and propio is not None and i > propio]
+        declaraciones[nivel]["reaccion"] = reaccion_cliente(propio, min(posteriores) if posteriores else None)
+
+    return declaraciones
+
+
 def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: List[Dict], cartera: Optional[str] = None) -> List[Dict]:
     """
     Corrige contradicciones evidentes entre segmentos canónicos y criterios.
@@ -2989,7 +3211,13 @@ def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: 
     # Si no se puede confiar en quien dijo cada frase, esas afirmaciones no se
     # sostienen: se devuelve todo a revision humana en vez de inventar un
     # resultado.
+    logger.info(
+        "[GUARDAS] cartera=%r segmentos=%s criterios=%s",
+        cartera, len(segmentos_ordenados), len(salida),
+    )
+
     if not cobertura_roles_suficiente_v3(segmentos_ordenados):
+        logger.info("[GUARDAS] cobertura de roles insuficiente: todo a REQUIERE_REVISION")
         return abstener_guardas_por_roles_v3(salida)
 
     texto_agente = limpiar_key_texto(" ".join(
@@ -3128,7 +3356,16 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
         item for item in segmentos
         if normalizar_hablante_v2(item.get("hablante") or item.get("rol")) == "CLIENTE"
     ]
-    evidencia_neutra = segmentos_agente[:1]
+    # Sin evidencia real NO se cita nada. Antes esto era segmentos_agente[:1],
+    # es decir la primera frase del asesor, que se usaba como relleno en once
+    # guardas distintas: por eso "Respeto por la entidad" mostraba como prueba
+    # "Alo, buenos dias.". Una frase que no sostiene la conclusion no es
+    # evidencia, es ruido, y le quita credibilidad a toda la ficha.
+    #
+    # Con la lista vacia, aplicar_resultado_guardado_v3 marca el criterio como
+    # AUSENCIA_EN_SECUENCIA y muestra "-": queda explicito que la conclusion es
+    # por ausencia de la conducta, no por una frase concreta.
+    evidencia_neutra: List[Dict] = []
     dificultades_cliente = buscar_segmentos_dificultad_cliente_v3(segmentos)
     objeciones_cliente = buscar_segmentos_objecion_cliente_v3(segmentos)
     respuestas_gestion = buscar_segmentos_respuesta_gestion_agente_v3(segmentos)
@@ -3191,19 +3428,128 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
 
     # PECUF.3: Precisión de la información de la deuda.
     if por_codigo.get("PECUF.3"):
-        comunica_deuda = buscar_segmentos_por_tokens_v3(
-            segmentos,
-            "AGENTE",
-            {"deuda", "cuota", "mora", "saldo", "capital", "interes", "interés", "monto", "pagar"},
-        )
-        if not comunica_deuda:
+        criterio_montos = por_codigo["PECUF.3"]
+        fuente_montos = str(criterio_montos.get("fuente_evidencia") or "").strip().upper()
+        # La escalera solo se evalua si la pauta declara que este criterio se
+        # observa desde el audio o la transcripcion. Mientras la pauta vigente
+        # lo tenga como MULTIFUENTE se respeta su NO_EVALUABLE: no se mide algo
+        # que la propia pauta declara no observable.
+        if fuente_montos and not fuente_observable_en_audio(fuente_montos):
+            pass
+        elif not segmentos_agente:
             aplicar_resultado_guardado_v3(
-                por_codigo["PECUF.3"],
+                criterio_montos,
                 "NO_APLICA",
                 [],
-                "No se identifica comunicación de deuda, mora, cuota o monto financiero evaluable.",
-                "Comunicar información financiera solo cuando corresponda y con datos verificables.",
+                "La llamada no registra intervenciones atribuibles al asesor, de modo que no hubo oportunidad de declarar montos.",
+                "Declarar la deuda total con su monto apenas se valida al titular.",
             )
+        else:
+            escalera = analizar_escalera_montos_v3(segmentos)
+            # Deja rastro de lo que vio la escalera: sin esto, cuando el
+            # resultado no cuadra no hay forma de saber si fallo la deteccion
+            # de los conceptos o la logica de la secuencia.
+            logger.info(
+                "[PECUF.3] escalera detectada: %s",
+                {
+                    nivel: {
+                        "declarado": escalera[nivel]["declarado"],
+                        "con_monto": escalera[nivel]["con_monto"],
+                        "reaccion": escalera[nivel]["reaccion"],
+                    }
+                    for nivel in escalera
+                },
+            )
+            n1 = escalera["DEUDA_TOTAL"]
+            n2 = escalera["CAPITAL"]
+            n3 = escalera["CAMPANIA"]
+            evidencia_n1 = [n1["segmento"]] if n1["segmento"] else []
+            evidencia_n2 = [n2["segmento"]] if n2["segmento"] else []
+            evidencia_n3 = [n3["segmento"]] if n3["segmento"] else []
+
+            if not n1["declarado"]:
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "NO_CUMPLE",
+                    [],
+                    "El asesor no declaró la deuda total durante la llamada. Es una obligación que no depende de la reacción del cliente.",
+                    "Decir el monto de la deuda total, por ejemplo: \"su deuda total es de S/ 1,250\".",
+                )
+            elif not n1["con_monto"]:
+                # Menciona el concepto pero no se reconoce cifra: puede ser un
+                # problema de transcripcion del numero, no de gestion.
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "REQUIERE_REVISION",
+                    evidencia_n1,
+                    "El asesor menciona la deuda total pero no se reconoce un monto en la frase; puede ser una falla de transcripción de la cifra.",
+                    "Escuchar la grabación y confirmar si dijo el importe de la deuda total.",
+                )
+            elif n1["reaccion"] != "RECHAZA":
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "CUMPLE",
+                    evidencia_n1,
+                    "El asesor declaró la deuda total con su monto y el cliente no la rechazó de forma explícita, de modo que no correspondía bajar a capital ni campaña.",
+                    "Mantener la declaración del monto total al inicio de la negociación.",
+                )
+            elif not n2["declarado"]:
+                if n3["declarado"]:
+                    aplicar_resultado_guardado_v3(
+                        criterio_montos,
+                        "NO_CUMPLE",
+                        evidencia_n1 + evidencia_n3,
+                        "Tras el rechazo de la deuda total el asesor pasó directo a la campaña, sin ofrecer antes el capital. El orden de la escalera es deuda total, capital y recién campaña.",
+                        "Ofrecer el capital con su monto antes de mencionar la campaña.",
+                    )
+                else:
+                    aplicar_resultado_guardado_v3(
+                        criterio_montos,
+                        "NO_CUMPLE",
+                        evidencia_n1,
+                        "El cliente rechazó la deuda total y el asesor no ofreció el capital como siguiente alternativa.",
+                        "Ante un rechazo del monto total, declarar el capital con su importe.",
+                    )
+            elif not n2["con_monto"]:
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "REQUIERE_REVISION",
+                    evidencia_n2,
+                    "El asesor menciona el capital pero no se reconoce un monto en la frase; puede ser una falla de transcripción de la cifra.",
+                    "Escuchar la grabación y confirmar si dijo el importe del capital.",
+                )
+            elif n2["reaccion"] != "RECHAZA":
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "CUMPLE",
+                    evidencia_n1 + evidencia_n2,
+                    "Ante el rechazo de la deuda total el asesor ofreció el capital con su monto, y el cliente no lo rechazó de forma explícita.",
+                    "Mantener el escalonamiento de montos según la reacción del cliente.",
+                )
+            elif not n3["declarado"]:
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "NO_CUMPLE",
+                    evidencia_n1 + evidencia_n2,
+                    "El cliente rechazó la deuda total y también el capital, y el asesor no llegó a ofrecer el monto de campaña.",
+                    "Agotar la escalera: tras el rechazo del capital, declarar el monto de campaña.",
+                )
+            elif not n3["con_monto"]:
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "REQUIERE_REVISION",
+                    evidencia_n3,
+                    "El asesor menciona la campaña pero no se reconoce un monto en la frase; puede ser una falla de transcripción de la cifra.",
+                    "Escuchar la grabación y confirmar si dijo el importe de la campaña.",
+                )
+            else:
+                aplicar_resultado_guardado_v3(
+                    criterio_montos,
+                    "CUMPLE",
+                    evidencia_n1 + evidencia_n2 + evidencia_n3,
+                    "El asesor recorrió la escalera completa: declaró deuda total, capital y campaña con sus montos frente a los rechazos del cliente.",
+                    "Mantener el recorrido completo de alternativas cuando el cliente rechaza cada nivel.",
+                )
 
     # PECUF.4 / PENC.3: Claridad de la información/lenguaje.
     for codigo_claridad in ("PECUF.4", "PENC.3"):
@@ -3230,7 +3576,13 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.1"],
                 "NO_CUMPLE",
-                [(preguntas_capacidad or respuestas_capacidad or preguntas_causa or causas_cliente or evidencia_neutra)[0]],
+                # [0] sobre la cadena reventaba con IndexError cuando las cuatro
+                # listas venian vacias: antes no pasaba porque evidencia_neutra
+                # siempre traia una frase de relleno, y al vaciarla quedo
+                # `[][0]`. Con [:1] no hay indice que falle y, si no hay nada
+                # que citar, la lista vacia declara AUSENCIA_EN_SECUENCIA, que
+                # es exactamente lo que ocurre: el diagnostico no aparece.
+                (preguntas_capacidad or respuestas_capacidad or preguntas_causa or causas_cliente)[:1],
                 "El diagnóstico no cubre de forma suficiente la causa del atraso y la capacidad actual de pago.",
                 "Completar el diagnóstico con causa, capacidad, monto disponible y fecha.",
             )
@@ -3331,8 +3683,12 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.4"],
                 "NO_CUMPLE",
-                evidencia_ausencia_cierre_mibanco_v3(segmentos, oportunidad, respuestas_gestion) or evidencia_neutra,
-                "No se identifica promesa de pago ni siguiente acción verificable acordada con el cliente.",
+                # No se cita el final de la llamada como "evidencia" del no
+                # cierre: mostrar "¿correcto? | Perfecto, gracias." hacia
+                # parecer que esa despedida era la falta. La conclusion es por
+                # ausencia y asi se declara.
+                [],
+                "En toda la llamada no se identifica una promesa de pago ni una siguiente acción verificable acordada con el cliente.",
                 "Inducir a promesa de pago cuando la conversación permita concretar un compromiso.",
             )
         else:
@@ -3344,15 +3700,18 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Cerrar con promesa o siguiente acción verificable cuando exista disposición de gestión.",
             )
 
-    # PECC.1: Filosofía Biznescob / imagen de Mibanco.
+    # PECC.1: respeto por la entidad y sus canales.
     if por_codigo.get("PECC.1"):
         if not contiene_descredito_mibanco_v3(texto_agente):
+            # La entidad sale de la cartera: esta pauta es general. Antes decia
+            # "Mibanco" en toda llamada, incluso en carteras de otra entidad.
+            entidad_pecc = etiqueta_entidad_cartera_v3(cartera)
             aplicar_resultado_guardado_v3(
                 por_codigo["PECC.1"],
                 "CUMPLE",
                 evidencia_neutra,
-                "No se evidencia descrédito a Mibanco, sus colaboradores, áreas, procesos o canales.",
-                "Proteger la imagen de Mibanco y explicar procesos sin responsabilizar a terceros.",
+                f"No se evidencia descrédito a {entidad_pecc}, sus colaboradores, áreas, procesos o canales.",
+                f"Proteger la imagen de {entidad_pecc} y explicar procesos sin responsabilizar a terceros.",
             )
 
     # PECC.2: Confirmación del acuerdo.
@@ -3392,8 +3751,43 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
         # La entidad sale de la cartera: esta pauta es general, no de un banco.
         tokens_entidad = tokens_entidad_cartera_v3(cartera)
         etiqueta_entidad = etiqueta_entidad_cartera_v3(cartera)
-        entidad = buscar_segmentos_por_tokens_v3(segmentos[:12], "AGENTE", tokens_entidad)
-        if saludo and entidad:
+        # Ventana amplia a proposito: el asesor suele identificar a la entidad
+        # despues de pedir por el titular, no en la primera frase. Con 12
+        # segmentos la apertura real quedaba fuera en llamadas muy fragmentadas
+        # y el criterio salia a revision sin motivo.
+        entidad = buscar_segmentos_por_tokens_v3(segmentos[:25], "AGENTE", tokens_entidad)
+        # Sin tokens de entidad no hay con que verificar la identificacion. Eso
+        # pasa cuando la cartera no llega hasta aca -por ejemplo al releer la
+        # ficha-. En ese caso la guarda SE ABSTIENE: deja el criterio como
+        # estaba en vez de mandarlo a revision. Pisar un resultado ya decidido
+        # por falta de un dato de contexto es peor que no opinar: producia un
+        # REQUIERE_REVISION que contradecia la evidencia mostrada en la ficha.
+        if not tokens_entidad:
+            logger.info(
+                "[PENC.1] sin tokens de entidad (cartera=%r): la guarda se abstiene",
+                cartera,
+            )
+            puede_evaluar_entidad = False
+        else:
+            puede_evaluar_entidad = True
+
+        logger.info(
+            "[PENC.1] cartera=%r tokens=%s saludo=%s entidad=%s | agente=%s de %s segmentos | primeros=%s",
+            cartera,
+            sorted(tokens_entidad),
+            bool(saludo),
+            bool(entidad),
+            len(segmentos_agente),
+            len(segmentos),
+            [
+                (normalizar_hablante_v2(x.get("hablante") or x.get("rol")),
+                 str(x.get("texto") or x.get("texto_original") or "")[:45])
+                for x in segmentos[:8]
+            ],
+        )
+        if not puede_evaluar_entidad:
+            estado_saludo = None
+        elif saludo and entidad:
             estado_saludo = "CUMPLE"
         elif not segmentos_agente:
             estado_saludo = "NO_APLICA"
@@ -3404,23 +3798,25 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
             estado_saludo = "REQUIERE_REVISION"
         else:
             estado_saludo = "NO_CUMPLE"
-        aplicar_resultado_guardado_v3(
-            por_codigo["PENC.1"],
-            estado_saludo,
-            (saludo[:1] + entidad[:1]) or evidencia_neutra,
-            f"El agente saluda e identifica representación de {etiqueta_entidad}."
-            if saludo and entidad
-            else (
-                "La llamada se interrumpe antes de una apertura atribuible al agente."
-                if not segmentos_agente
+
+        if estado_saludo:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PENC.1"],
+                estado_saludo,
+                (saludo[:1] + entidad[:1]) or evidencia_neutra,
+                f"El agente saluda e identifica representación de {etiqueta_entidad}."
+                if saludo and entidad
                 else (
-                    f"Hay saludo, pero no se reconoce la mención de {etiqueta_entidad} en la apertura; la transcripción pudo deformar el nombre."
-                    if saludo
-                    else f"La apertura no incluye saludo e identificación en representación de {etiqueta_entidad}."
-                )
-            ),
-            f"Saludar indicando nombre/apellidos y representación de {etiqueta_entidad}.",
-        )
+                    "La llamada se interrumpe antes de una apertura atribuible al agente."
+                    if not segmentos_agente
+                    else (
+                        f"Hay saludo, pero no se reconoce la mención de {etiqueta_entidad} en la apertura; la transcripción pudo deformar el nombre."
+                        if saludo
+                        else f"La apertura no incluye saludo e identificación en representación de {etiqueta_entidad}."
+                    )
+                ),
+                f"Saludar indicando nombre/apellidos y representación de {etiqueta_entidad}.",
+            )
 
     # PENC.2: Tono de voz. El módulo no tiene análisis acústico, así que no se
     # mide: no se castiga desde el texto, pero tampoco se regala el punto.
@@ -4028,8 +4424,26 @@ def aplicar_resultado_guardado_v3(
         for item in segmentos
         if str(item.get("texto") or item.get("texto_original") or "").strip()
     ]
+    # "evidencias" es la lista que arma criterio_pipeline_a_v2 con lo que cito
+    # el modelo. Si la guarda decide el resultado y solo limpia evidencia_textual,
+    # esa lista vieja SOBREVIVE, y enriquecer_sgc_registro la reusa como
+    # respaldo (`evidencia_textual or evidencias`). Ese es el camino por el que
+    # volvia a aparecer "¿correcto? | Perfecto, gracias." como prueba del no
+    # cierre, pese a que la guarda ya habia declarado ausencia de evidencia.
+    # La guarda es la que decide: su evidencia es la unica que queda.
+    criterio["evidencias"] = [
+        {
+            "segmento_id": item.get("segmento_id"),
+            "texto": str(item.get("texto") or item.get("texto_original") or "").strip(),
+            "timestamp": item.get("timestamp") or item.get("momento"),
+            "tipo": "DIRECTA",
+        }
+        for item in segmentos
+        if str(item.get("texto") or item.get("texto_original") or "").strip()
+    ]
     if criterio["segmentos_evidencia"]:
         criterio["tipo_evidencia"] = "DIRECTA"
+        criterio["evidencia"] = " | ".join(criterio["evidencia_textual"]) or "-"
     else:
         # Sin evidencia no se rellena con un segmento cualquiera: se declara que
         # la conducta NO APARECE en la secuencia, que es lo que realmente se
@@ -4052,12 +4466,21 @@ def aplicar_resultado_guardado_v3(
         criterio["impacto_cliente"] = ""
 
 
+# Estados en los que el modulo declara que NO tiene una respuesta. Los tres
+# salen del denominador: puntuarlos como cero convierte "no lo se" en "fallo".
+# REQUIERE_REVISION estaba dentro, y por eso una llamada donde el modulo se
+# abstuvo en todos los criterios se reportaba como 0/100, identica a un asesor
+# que lo hizo todo mal.
+ESTADOS_FUERA_DEL_DENOMINADOR_V3 = {"NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
+
+
 def score_desde_criterios_pipeline_v3(criterios: List[Dict]) -> Dict:
     bruto = 0.0
     peso_aplicable = 0.0
     peso_total = 0.0
     peso_no_aplica = 0.0
     peso_no_evaluable = 0.0
+    peso_requiere_revision = 0.0
     for item in criterios:
         peso_item = float(item.get("peso") or 0)
         estado = str(item.get("estado") or "")
@@ -4068,22 +4491,30 @@ def score_desde_criterios_pipeline_v3(criterios: List[Dict]) -> Dict:
         if estado == "NO_EVALUABLE":
             peso_no_evaluable += peso_item
             continue
+        if estado == "REQUIERE_REVISION":
+            peso_requiere_revision += peso_item
+            continue
         bruto += float(item.get("puntaje_obtenido") or 0)
         peso_aplicable += peso_item
-    score = round((bruto / peso_aplicable) * 100, 2) if peso_aplicable else 0.0
+    # Sin peso aplicable no hay nada medido, y un score de 0 seria una
+    # afirmacion falsa sobre el asesor. Se devuelve None: "no se pudo
+    # determinar", que es lo unico cierto.
+    score = round((bruto / peso_aplicable) * 100, 2) if peso_aplicable else None
     return {
         "score_bruto": round(bruto, 2),
         "peso_total": round(peso_total, 2),
         "peso_aplicable": round(peso_aplicable, 2),
         "peso_no_aplica": round(peso_no_aplica, 2),
         "peso_no_evaluable": round(peso_no_evaluable, 2),
+        "peso_requiere_revision": round(peso_requiere_revision, 2),
+        "evaluable": peso_aplicable > 0,
         "score_tecnico": score,
     }
 
 
 def metadatos_pauta_pipeline_v3(pauta: Optional[List[Dict]]) -> Dict:
     if not pauta:
-        return {"nombre": "COPC_SGC", "version": "2.0", "pesos": None, "snapshot": None}
+        return {"nombre": "COPC_SGC", "version": "2.0", "id_pauta": None, "pesos": None, "snapshot": None}
     bloques: Dict[str, float] = {}
     for criterio in pauta:
         bloque = str(criterio.get("bloque") or criterio.get("subcategoria") or "Sin bloque")
@@ -4097,6 +4528,9 @@ def metadatos_pauta_pipeline_v3(pauta: Optional[List[Dict]]) -> Dict:
     snapshot = [{
         "codigo_criterio": item.get("codigo_criterio") or item.get("codigo"),
         "bloque": item.get("bloque"),
+        # El codigo del bloque solo ("PECC") no dice que mide. El nombre viaja
+        # junto para que la ficha y CRM_IA_EVALUACION_CRITERIO lo conserven.
+        "bloque_nombre": item.get("bloque_nombre") or item.get("subcategoria"),
         "nombre": item.get("nombre"),
         "peso": item.get("peso"),
         "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
@@ -4106,6 +4540,9 @@ def metadatos_pauta_pipeline_v3(pauta: Optional[List[Dict]]) -> Dict:
     return {
         "nombre": nombre,
         "version": version,
+        # Sin el id de la pauta no se puede trazar contra que version se evaluo
+        # un criterio: CRM_IA_EVALUACION_CRITERIO lo necesita por fila.
+        "id_pauta": primero.get("pauta_id") or primero.get("id_pauta"),
         "pesos": {**bloques, "TOTAL": round(sum(bloques.values()), 2)},
         "snapshot": snapshot,
     }
@@ -4180,7 +4617,9 @@ def construir_respuesta_pipeline_v3(
         motivos_revision = ["Revisión humana requerida por cobertura o confianza insuficiente del análisis."]
     else:
         motivos_revision = codigos_revision
-    score = score_despues.get("score_tecnico", 0)
+    # Puede ser None si ningun criterio quedo dentro del denominador.
+    score = score_despues.get("score_tecnico")
+    score_evaluable = score is not None
     cobertura = hechos.get("cobertura") if isinstance(hechos.get("cobertura"), dict) else {}
     metricas_roles = metricas_cobertura_roles_v3(segmentos)
     calidad_transcripcion = evaluar_calidad_transcripcion_v3(segmentos)
@@ -4210,14 +4649,22 @@ def construir_respuesta_pipeline_v3(
         "motor_evaluacion": "PIPELINE_MULTIPASO_V3",
         "pauta": metadatos_pauta["nombre"],
         "pauta_version": metadatos_pauta["version"],
+        "id_pauta": metadatos_pauta.get("id_pauta"),
         "pauta_pesos": metadatos_pauta["pesos"],
         "pauta_snapshot": metadatos_pauta["snapshot"],
         "resultado_evaluacion": {
             "score_tecnico": score,
             "score_maximo": 100,
             "nota_minima_aprobatoria": 85,
-            "estado_tecnico": "DESCALIFICADO" if descalificacion.get("descalificada") else ("APROBADA" if score >= 85 else "NO_APROBADA"),
-            "estado_calidad": "PENDIENTE_REVISION" if requiere_revision else ("APROBADA" if score >= 85 else "NO_APROBADA"),
+            "estado_tecnico": (
+                "DESCALIFICADO" if descalificacion.get("descalificada")
+                else "NO_EVALUABLE" if not score_evaluable
+                else ("APROBADA" if score >= 85 else "NO_APROBADA")
+            ),
+            "estado_calidad": (
+                "PENDIENTE_REVISION" if requiere_revision or not score_evaluable
+                else ("APROBADA" if score >= 85 else "NO_APROBADA")
+            ),
             "descalificada": bool(descalificacion.get("descalificada")),
             "motivo_descalificacion": descalificacion.get("motivo"),
             "evidencia_descalificacion": descalificacion.get("evidencia"),
@@ -4266,10 +4713,11 @@ def construir_respuesta_pipeline_v3(
             "cartera": cartera,
             "pauta": metadatos_pauta["nombre"],
             "pauta_version": metadatos_pauta["version"],
+            "id_pauta": metadatos_pauta.get("id_pauta"),
         },
         "validaciones": {
             "suma_dimensiones_correcta": True,
-            "score_dentro_de_rango": 0 <= score <= 100,
+            "score_dentro_de_rango": score is None or 0 <= score <= 100,
             "cobertura_completa": cobertura.get("cantidad_segmentos_considerados") == len(segmentos),
             "observaciones": [],
         },
@@ -4491,7 +4939,10 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         evaluacion = reparar_evaluacion_contextual_v2(evaluacion, data, transcripcion)
     evaluacion = completar_evidencias_desde_segmentos_v3(evaluacion, interlocutores.get("segmentos", []))
     score_bruto, peso_aplicable, score_tecnico = calcular_score_normalizado(evaluacion)
-    score_tecnico = round(min(score_tecnico, 100), 2)
+    # score_tecnico puede ser None: la llamada no tuvo ningun criterio medible.
+    # A partir de aqui NADA puede asumir que hay numero.
+    evaluable = score_tecnico is not None
+    score_tecnico = round(min(score_tecnico, 100), 2) if evaluable else None
     pesos_detalle = calcular_pesos_detalle_evaluacion(evaluacion)
 
     descalificada_ia = bool(resultado.get("descalificada"))
@@ -4509,7 +4960,7 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         descalificada = bool(frase_anulante and frase_anulante != "No aplica")
     else:
         descalificada = (descalificada_ia or any(item.get("automatico") for item in errores_criticos)) and cita_anulante_valida_v2(frase_anulante)
-    estado_tecnico = "APROBADA" if score_tecnico >= 85 else "NO_APROBADA"
+    estado_tecnico = ("APROBADA" if score_tecnico >= 85 else "NO_APROBADA") if evaluable else "NO_EVALUABLE"
     if any(item.get("requiere_revision") for item in evaluacion):
         estado_tecnico = "PROVISIONAL" if estado_tecnico == "APROBADA" else estado_tecnico
 
@@ -4517,6 +4968,10 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
     if estado_calidad not in {"APROBADA", "APROBADA_CON_MEJORAS", "NO_APROBADA", "DESCALIFICADA", "PENDIENTE_REVISION"}:
         if descalificada:
             estado_calidad = "DESCALIFICADA"
+        elif not evaluable:
+            # No se midio ningun criterio: no es aprobada ni reprobada, es una
+            # llamada que alguien tiene que mirar.
+            estado_calidad = "PENDIENTE_REVISION"
         elif resultado.get("requiere_revision_humana") or calidad_transcripcion.get("requiere_revision_humana") or any(item.get("requiere_revision") for item in evaluacion):
             estado_calidad = "PENDIENTE_REVISION"
         elif score_tecnico >= 85:
@@ -4526,7 +4981,12 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         else:
             estado_calidad = "NO_APROBADA"
 
-    nivel_riesgo = "ALTO" if estado_calidad in {"DESCALIFICADA", "PENDIENTE_REVISION"} or score_tecnico < 70 else "MEDIO" if score_tecnico < 85 else "BAJO"
+    if estado_calidad in {"DESCALIFICADA", "PENDIENTE_REVISION"}:
+        nivel_riesgo = "ALTO"
+    elif not evaluable:
+        nivel_riesgo = "ALTO"
+    else:
+        nivel_riesgo = "ALTO" if score_tecnico < 70 else "MEDIO" if score_tecnico < 85 else "BAJO"
     evaluacion = enriquecer_evaluacion_sgc(
         evaluacion,
         score_final=score_tecnico,
@@ -4575,6 +5035,7 @@ def normalizar_analisis_copc_v2(data: Dict, transcripcion: str = "") -> Dict:
         "version_evaluacion": data.get("version_evaluacion") or "2.0",
         "pauta": data.get("pauta") or "COPC_SGC",
         "pauta_version": data.get("pauta_version"),
+        "id_pauta": data.get("id_pauta"),
         "pauta_pesos": data.get("pauta_pesos"),
         "pauta_snapshot": data.get("pauta_snapshot") if isinstance(data.get("pauta_snapshot"), list) else [],
         "json_copc_v2": data,
@@ -5009,6 +5470,7 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
         "segmento": segmento_canon or formatear_segmento_v2(segmento),
         "item": item_canon or nombre_item or "Criterio sin nombre",
         "bloque": criterio.get("bloque") or catalogo_sgc.get("bloque"),
+        "bloque_nombre": criterio.get("bloque_nombre") or criterio.get("subcategoria"),
         "categoria": criterio.get("categoria"),
         "subcategoria": criterio.get("subcategoria"),
         "detalle": criterio.get("detalle"),
@@ -5434,6 +5896,10 @@ def normalizar_errores_criticos_v2(value, evaluacion: List[Dict]) -> List[Dict]:
                 "codigo_criterio": item.get("codigo_criterio"),
                 "criterios_relacionados": [item.get("codigo_criterio")] if item.get("codigo_criterio") else [],
                 "error_sgc_confirmado": bool(item.get("error_sgc_confirmado")),
+                # Sin este dato el front no puede distinguir un incumplimiento
+                # POR AUSENCIA -no hay frase que citar porque la conducta nunca
+                # ocurrio- de uno sin sustento, y terminaba descartando los dos.
+                "tipo_evidencia": item.get("tipo_evidencia") or "",
             })
     return rows
 
@@ -5536,6 +6002,30 @@ def evidencia_util_sgc(value: str) -> bool:
         "evidencia textual no validada automaticamente",
     }
     return key not in invalidos and texto != "-"
+
+
+def resumen_errores_legible_v3(conteos: Dict) -> str:
+    """Resumen en lenguaje de negocio: cuenta lo que realmente se encontro.
+
+    No inventa: solo describe los conteos ya calculados. Si no hay errores lo
+    dice, en vez de rellenar con una frase tecnica que no informa nada.
+    """
+    etiquetas = (
+        ("errores_criticos_cumplimiento", "crítico de cumplimiento", "críticos de cumplimiento"),
+        ("errores_criticos_usuario_final", "crítico de usuario final", "críticos de usuario final"),
+        ("errores_criticos_negocio", "crítico del negocio", "críticos del negocio"),
+        ("errores_no_criticos", "no crítico", "no críticos"),
+    )
+    partes = []
+    for clave, singular, plural in etiquetas:
+        cantidad = int(conteos.get(clave) or 0)
+        if cantidad > 0:
+            partes.append(f"{cantidad} {singular if cantidad == 1 else plural}")
+    if not partes:
+        return "No se registraron errores en los criterios evaluados de esta llamada."
+    if len(partes) == 1:
+        return f"Se registró {partes[0]}."
+    return f"Se registraron {', '.join(partes[:-1])} y {partes[-1]}."
 
 
 def hallazgo_sgc_operativo(hallazgo, evidencia=None) -> bool:
@@ -6145,7 +6635,10 @@ def construir_resumen_sgc(
         or (score_final is not None and score_final < 70)
         or str(nivel_riesgo or "").upper() == "ALTO"
     )
-    motivo = resumen.get("motivo") or "Clasificación SGC/PEC generada desde la matriz COPC."
+    # "Clasificacion SGC/PEC generada desde la matriz COPC" es jerga interna:
+    # no le dice nada al supervisor que abre la ficha y ademas no informa nada
+    # de ESTA llamada. Se reemplaza por el conteo real de errores encontrados.
+    motivo = resumen.get("motivo") or resumen_errores_legible_v3(conteos)
     return {
         **conteos,
         "requiere_feedback": bool(resumen.get("requiere_feedback", requiere_feedback)),
@@ -6255,6 +6748,7 @@ def normalizar_analisis(data: Dict, transcripcion: str = "") -> Dict:
         "version_evaluacion": data.get("version_evaluacion"),
         "pauta": data.get("pauta"),
         "pauta_version": data.get("pauta_version"),
+        "id_pauta": data.get("id_pauta"),
         "pauta_pesos": data.get("pauta_pesos"),
         "pauta_snapshot": data.get("pauta_snapshot") if isinstance(data.get("pauta_snapshot"), list) else [],
         "json_copc_v2": data.get("json_copc_v2"),
@@ -6441,7 +6935,9 @@ def calcular_score_normalizado(evaluacion: List[Dict]) -> tuple[float, float, fl
         motivo_no_aplica = str(item.get("motivo_no_aplica") or "").strip().lower()
         no_puntua = (
             resultado in {"no aplica", "no evaluable", "no aplicable"}
-            or item.get("estado") in {"NO_APLICA", "NO_EVALUABLE"}
+            or "requiere revision" in resultado
+            or "requiere_revision" in resultado
+            or item.get("estado") in ESTADOS_FUERA_DEL_DENOMINADOR_V3
             or (item.get("aplica") is False and ("no aplica" in resultado or "no evaluable" in resultado or "no_evaluable" in motivo_no_aplica))
         )
         if no_puntua:
@@ -6450,7 +6946,9 @@ def calcular_score_normalizado(evaluacion: List[Dict]) -> tuple[float, float, fl
         peso_aplicable += float(item.get("peso") or 0)
     score_bruto = round(score_bruto, 2)
     peso_aplicable = round(peso_aplicable, 2)
-    score_normalizado = round((score_bruto / peso_aplicable) * 100, 2) if peso_aplicable else 0.0
+    # None, no 0: sin peso aplicable no se midio nada. Ver
+    # ESTADOS_FUERA_DEL_DENOMINADOR_V3 para el porque.
+    score_normalizado = round((score_bruto / peso_aplicable) * 100, 2) if peso_aplicable else None
     return score_bruto, peso_aplicable, score_normalizado
 
 
@@ -6471,9 +6969,11 @@ def calcular_pesos_detalle_evaluacion(evaluacion: List[Dict]) -> Dict[str, float
     return {key: round(value, 2) for key, value in detalle.items()}
 
 
-def clasificar_estado_calidad(score: float, falta_anulante: bool = False) -> str:
+def clasificar_estado_calidad(score, falta_anulante: bool = False) -> str:
     if falta_anulante:
         return "No aprobado"
+    if score is None:
+        return "No evaluable"
     if score >= 85:
         return "Excelente"
     if score >= 75:
@@ -6483,7 +6983,10 @@ def clasificar_estado_calidad(score: float, falta_anulante: bool = False) -> str
     return "No aprobado"
 
 
-def calcular_nivel_riesgo(score: float, error_critico: bool = False) -> str:
+def calcular_nivel_riesgo(score, error_critico: bool = False) -> str:
+    if score is None:
+        # Sin medicion no se puede afirmar riesgo bajo; queda para revision.
+        return "ALTO"
     if error_critico or score < 60:
         return "ALTO"
     if score < 80:

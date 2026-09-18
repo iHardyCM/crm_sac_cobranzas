@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260830-evaluation-readability">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260916-evaluable">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
@@ -217,6 +217,7 @@
                     <div class="result-actions">
                         <span id="resultadoNivelIa" class="level-badge">-</span>
                         <button class="btn-light btn-small" type="button" onclick="mostrarVistaEvaluacionesIa()">Volver</button>
+                        <button id="btnReanalizarDetalleIa" class="btn-light btn-small" type="button" onclick="reanalizarEvaluacionIa()" title="Vuelve a evaluar esta llamada reutilizando la transcripción guardada">Reanalizar</button>
                         <button id="btnGuardarBorradorDetalleIa" class="btn-light btn-small" type="button" onclick="guardarBorradorRevisionIa()">Guardar borrador</button>
                         <button id="btnValidarDetalleIa" class="btn-primary btn-small btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
                     </div>
@@ -1078,6 +1079,35 @@
             </section>
         </section>
 
+        <div id="modalReanalizarIa" class="modal-overlay oculto">
+            <div class="prompt-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tituloModalReanalizarIa">
+                <div class="modal-head">
+                    <div>
+                        <h3 id="tituloModalReanalizarIa">Reanalizar evaluación</h3>
+                        <p>Se vuelve a evaluar esta llamada con las reglas vigentes.</p>
+                    </div>
+                    <button class="modal-close" type="button" onclick="cerrarModalReanalizarIa(false)">X</button>
+                </div>
+                <div class="confirm-modal-body">
+                    <ul id="detalleModalReanalizarIa" class="confirm-list"></ul>
+                    <p id="avisoModalReanalizarIa" class="confirm-warning oculto"></p>
+                </div>
+                <div class="confirm-modal-actions">
+                    <button class="btn-light" type="button" onclick="cerrarModalReanalizarIa(false)">Cancelar</button>
+                    <button class="btn-primary" type="button" onclick="cerrarModalReanalizarIa(true)">Reanalizar</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="overlayProcesoIa" class="modal-overlay proceso-overlay oculto">
+            <div class="proceso-card" role="status" aria-live="polite">
+                <div class="proceso-spinner" aria-hidden="true"></div>
+                <strong id="overlayProcesoTituloIa">Reanalizando la llamada</strong>
+                <span id="overlayProcesoTextoIa">Aplicando la pauta vigente sobre la transcripción guardada.</span>
+                <small class="proceso-nota">Puede tomar un par de minutos. No cierres esta pestaña.</small>
+            </div>
+        </div>
+
         <div id="modalPromptIa" class="modal-overlay oculto">
             <div class="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="tituloModalPromptIa">
                 <div class="modal-head">
@@ -1223,6 +1253,6 @@
 
     <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260915-supervisor-importacion1"></script>
-    <script src="../js/ia_feedback.js?v=20260830-evidencia-prioritaria"></script>
+    <script src="../js/ia_feedback.js?v=20260916-evaluable"></script>
 </body>
 </html>

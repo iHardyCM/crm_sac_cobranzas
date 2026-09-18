@@ -1,4 +1,9 @@
 # main.py
+import logging
+import os
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +26,41 @@ from app.api.routes_score_telefonico import router as score_telefonico_router
 from app.api.routes_ia_feedback import router as ia_feedback_router
 from app.api.routes_susurro_ia import router as susurro_ia_router
 from app.api.routes_telefonos import router as telefonos_router
+
+def configurar_logging():
+    """Escribe el log de la aplicacion en logs/app.log.
+
+    Sin esto, todo lo que registra el codigo con logger.info() se pierde: el
+    logger de la app propaga al root, que sin handler descarta por debajo de
+    WARNING. Es decir, la aplicacion no dejaba ningun rastro de lo que hacia.
+
+    Rota a los 5 MB y conserva 5 archivos, para que no crezca sin control.
+    El nivel se puede bajar con la variable de entorno CRM_LOG_LEVEL.
+    """
+    raiz = Path(__file__).resolve().parents[1]
+    carpeta = raiz / "logs"
+    carpeta.mkdir(exist_ok=True)
+
+    nivel = getattr(logging, os.getenv("CRM_LOG_LEVEL", "INFO").upper(), logging.INFO)
+    formato = logging.Formatter(
+        "%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    archivo = RotatingFileHandler(
+        carpeta / "app.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    archivo.setFormatter(formato)
+
+    root = logging.getLogger()
+    root.setLevel(nivel)
+    # Evita duplicar handlers si el modulo se recarga (uvicorn --reload).
+    if not any(isinstance(h, RotatingFileHandler) for h in root.handlers):
+        root.addHandler(archivo)
+    logging.getLogger("app").setLevel(nivel)
+
+
+configurar_logging()
 
 app = FastAPI(title="CRM COBRANZAS")
 
