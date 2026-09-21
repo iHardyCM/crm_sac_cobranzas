@@ -5236,6 +5236,31 @@ function pintarTablaSgcDetalleIa(items) {
     `).join("");
 }
 
+// "82 / 100" sin mas deja al lector calculando a mano donde fueron los otros
+// 18, y peor: si suma los NO APLICA y NO EVALUABLE que ve en la ficha, no le
+// cuadra, porque los criterios en REVISION HUMANA tambien salen del
+// denominador y no estan en ninguna de esas dos columnas. Aqui se nombran los
+// tres motivos, y el que no aparece es que vale cero.
+function desglosePesoExcluidoIa(data = {}) {
+    const total = Number(data.peso_total ?? 0);
+    const aplicable = Number(data.peso_aplicable ?? 0);
+    if (!Number.isFinite(total) || !Number.isFinite(aplicable) || total <= 0) return "";
+    if (aplicable >= total) return "";
+    const noAplica = Number(data.peso_no_aplica || 0);
+    const noEvaluable = Number(data.peso_no_evaluable || 0);
+    // El peso en revision humana no tiene columna propia: es lo que queda del
+    // total al descontar los otros tres.
+    const revision = Math.max(0, Math.round((total - aplicable - noAplica - noEvaluable) * 100) / 100);
+    const partes = [];
+    if (noAplica > 0) partes.push(`${formatoPeso(noAplica)} no aplica`);
+    if (noEvaluable > 0) partes.push(`${formatoPeso(noEvaluable)} no evaluable`);
+    if (revision > 0) partes.push(`${formatoPeso(revision)} en revisión humana`);
+    if (!partes.length) return "";
+    const excluido = Math.round((total - aplicable) * 100) / 100;
+    return `<small class="desglose-peso-ia" title="Estos puntos no se miden y salen del denominador del score.">`
+        + `${formatoPeso(excluido)} fuera de medición: ${escapeHtml(partes.join(" · "))}</small>`;
+}
+
 function pintarCabeceraFichaSgcIa(data = {}) {
     const el = document.getElementById("cabeceraFichaSgcIa");
     if (!el) return;
@@ -5243,7 +5268,7 @@ function pintarCabeceraFichaSgcIa(data = {}) {
     const esPauta = tienePautaAplicadaIa(data);
     const metricaPauta = esPauta
         ? `<article><span>Pauta aplicada</span><strong>${escapeHtml(data.pauta || "Pauta sin nombre")}${data.pauta_version ? ` v${escapeHtml(data.pauta_version)}` : ""}</strong></article>
-           <article><span>Puntos aplicables</span><strong>${formatoPeso(data.peso_aplicable ?? 0)} / ${formatoPeso(data.peso_total ?? 100)}</strong></article>`
+           <article><span>Puntos aplicables</span><strong>${formatoPeso(data.peso_aplicable ?? 0)} / ${formatoPeso(data.peso_total ?? 100)}</strong>${desglosePesoExcluidoIa(data)}</article>`
         : `<article><span>Riesgo</span><strong>${escapeHtml(formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora || data.nivel_riesgo))}</strong></article>`;
     el.innerHTML = `
         <article><span>Evaluación</span><strong>${escapeHtml(data.id_feedback || "-")}</strong></article>

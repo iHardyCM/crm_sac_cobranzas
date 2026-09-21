@@ -185,6 +185,15 @@ DOCUMENT_TYPES = {
         "document_kind": "sip_constancia",
         "sin_correo": True,
     },
+    "sip_constancia_atencion": {
+        "id": "sip_constancia_atencion",
+        "nombre": "Constancia de Atención - Tarjeta SIP",
+        "descripcion": "Constancia SIP de atención con datos del cliente y tarjeta obtenidos de la asignación.",
+        "cartera_id": 132,
+        "cartera_nombre": "Financiera OH - SIP",
+        "document_kind": "sip_atencion",
+        "sin_correo": True,
+    },
 }
 
 DOCUMENT_QUERY_SCOPES = {
@@ -1259,6 +1268,8 @@ def consultar_datos_documento_sip(dni=None, operacion=None, nombre_cliente=None,
                 END AS TipoDocumento,
                 F.DNI AS NumDocumento,
                 F.NOMBRE_COMPLETO AS NomCliente,
+                F.NOMBRE AS Nombres,
+                LTRIM(RTRIM(CONCAT(ISNULL(F.APELLIDO_PATERNO, ''), ' ', ISNULL(F.APELLIDO_MATERNO, '')))) AS Apellidos,
                 F.NUM_CUENTA_ORI AS Operacion,
                 F.NUM_CUENTA_ORI AS CtaCliente,
                 F.SLD_TOTAL_ASIG AS DeudaTotal,
@@ -2534,6 +2545,127 @@ def document_sip_constancia_xml(context):
     )
 
 
+def sip_atencion_header_xml():
+    def header_cell(content, width, align="left"):
+        return (
+            "<w:tc><w:tcPr>"
+            f'<w:tcW w:w="{width}" w:type="dxa"/>'
+            '<w:shd w:val="clear" w:color="auto" w:fill="00B4FF"/>'
+            '<w:vAlign w:val="center"/>'
+            '<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="300" w:type="dxa"/>'
+            '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="300" w:type="dxa"/></w:tcMar>'
+            "</w:tcPr>"
+            f"{content if content.startswith('<w:p>') else paragraph_runs_xml([{'text': content, 'bold': True, 'color': 'FFFFFF'}], align=align, after=0, size=18)}"
+            "</w:tc>"
+        )
+
+    logo = image_xml(rel_id="rIdLogoSip", doc_id=42, cx=1280000, cy=820000, align="left")
+    return (
+        "<w:tbl><w:tblPr>"
+        '<w:tblW w:w="10800" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:jc w:val="center"/>'
+        "</w:tblPr>"
+        '<w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="8300"/></w:tblGrid>'
+        '<w:tr><w:trPr><w:trHeight w:val="1100" w:hRule="exact"/></w:trPr>'
+        f'{header_cell(logo, 2500)}{header_cell("www.sip.pe", 8300, align="right")}</w:tr></w:tbl>'
+    )
+
+
+def sip_atencion_table_xml(section_title, rows, col_widths=(4700, 4700)):
+    """Tabla de constancia SIP con cabecera azul y filas de campos."""
+    total_width = sum(col_widths)
+    borders = (
+        "<w:tblBorders>"
+        '<w:top w:val="single" w:sz="7" w:color="666666"/>'
+        '<w:left w:val="single" w:sz="7" w:color="666666"/>'
+        '<w:bottom w:val="single" w:sz="7" w:color="666666"/>'
+        '<w:right w:val="single" w:sz="7" w:color="666666"/>'
+        '<w:insideH w:val="single" w:sz="7" w:color="666666"/>'
+        '<w:insideV w:val="single" w:sz="7" w:color="666666"/>'
+        "</w:tblBorders>"
+    )
+
+    def field_cell(label, value, width, span=1):
+        span_xml = f'<w:gridSpan w:val="{span}"/>' if span > 1 else ""
+        return (
+            "<w:tc><w:tcPr>"
+            f'<w:tcW w:w="{width}" w:type="dxa"/>{span_xml}'
+            '<w:vAlign w:val="center"/>'
+            '<w:tcMar><w:top w:w="125" w:type="dxa"/><w:left w:w="115" w:type="dxa"/>'
+            '<w:bottom w:w="125" w:type="dxa"/><w:right w:w="115" w:type="dxa"/></w:tcMar>'
+            "</w:tcPr>"
+            f"{paragraph_runs_xml([{'text': f'{label}:  ', 'bold': True}, {'text': value, 'bold': True}], align='left', after=0, size=15)}"
+            "</w:tc>"
+        )
+
+    section_cell = (
+        "<w:tc><w:tcPr>"
+        f'<w:tcW w:w="{total_width}" w:type="dxa"/><w:gridSpan w:val="2"/>'
+        '<w:shd w:val="clear" w:color="auto" w:fill="00B4FF"/>'
+        '<w:tcMar><w:top w:w="95" w:type="dxa"/><w:left w:w="115" w:type="dxa"/>'
+        '<w:bottom w:w="95" w:type="dxa"/><w:right w:w="115" w:type="dxa"/></w:tcMar>'
+        "</w:tcPr>"
+        f"{paragraph_runs_xml([{'text': section_title, 'bold': True, 'color': '003A55'}], align='left', after=0, size=15)}"
+        "</w:tc>"
+    )
+    body_rows = []
+    for row in rows:
+        if len(row) == 1:
+            label, value = row[0]
+            body_rows.append(f"<w:tr>{field_cell(label, value, total_width, span=2)}</w:tr>")
+        else:
+            body_rows.append(
+                "<w:tr>"
+                + "".join(field_cell(label, value, col_widths[index]) for index, (label, value) in enumerate(row))
+                + "</w:tr>"
+            )
+    return (
+        "<w:tbl><w:tblPr>"
+        f'<w:tblW w:w="{total_width}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:jc w:val="center"/>{borders}'
+        "</w:tblPr>"
+        f'<w:tblGrid><w:gridCol w:w="{col_widths[0]}"/><w:gridCol w:w="{col_widths[1]}"/></w:tblGrid>'
+        f"<w:tr>{section_cell}</w:tr>{''.join(body_rows)}</w:tbl>"
+    )
+
+
+def document_sip_atencion_xml(context):
+    paragraphs = [
+        sip_atencion_header_xml(),
+        paragraph_xml("", after=260, size=1),
+        title_xml("Constancia de Atención"),
+        sip_atencion_table_xml("DATOS DEL CLIENTE", [
+            [("Tipo Documento", context["tipo_documento"]), ("Nro. Documento", context["dni"])],
+            [("Nombres", context["nombres"]), ("Apellidos", context["apellidos"])],
+        ]),
+        paragraph_xml("", after=80, size=1),
+        sip_atencion_table_xml("DATOS DE LA SOLICITUD", [
+            [("Fecha solicitud", context["fecha_solicitud"]), ("Canal", context["canal"])],
+            [("Nro. Tarjeta", context["tarjeta"])],
+        ]),
+        paragraph_xml("", after=80, size=1),
+        sip_atencion_table_xml("DATOS DE LA CUENTA Y TARJETA", [
+            [("Número de tarjeta del titular", context["tarjeta_titular"])],
+        ]),
+        paragraph_xml(
+            "Mediante el envío del presente documento, el cliente declara que los datos consignados son correctos, "
+            "y han sido proporcionados de forma voluntaria. Asimismo, autoriza a registrar y utilizar esta información "
+            "conforme a la normativa vigente sobre protección de datos personales.",
+            align="both",
+            before=180,
+            after=0,
+            size=14,
+        ),
+    ]
+    body = "".join(paragraphs)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f'<w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="380" w:right="720" w:bottom="720" w:left="720" w:header="240" w:footer="360" w:gutter="0"/>'
+        "</w:sectPr></w:body></w:document>"
+    )
+
+
 def styles_xml():
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -2548,7 +2680,7 @@ def styles_xml():
 def generar_docx_limpio(output_path, context, document_kind="transaccion_cancelacion"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     es_mibanco = document_kind in ("mibanco_contado", "mibanco_cuotas")
-    es_sip = document_kind in ("sip_convenio", "sip_constancia")
+    es_sip = document_kind in ("sip_convenio", "sip_constancia", "sip_atencion")
     if document_kind == "cancelacion_grupal":
         document_body = document_grupal_xml(context)
     elif document_kind == "compromiso_cuota_grupal":
@@ -2561,6 +2693,8 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         document_body = document_sip_xml(context)
     elif document_kind == "sip_constancia":
         document_body = document_sip_constancia_xml(context)
+    elif document_kind == "sip_atencion":
+        document_body = document_sip_atencion_xml(context)
     else:
         document_body = document_xml(context)
     document_relationships = (
@@ -2570,7 +2704,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         + ('' if es_mibanco or es_sip else '<Relationship Id="rIdFirmaLuis" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/firma_luis_portuguez.png"/>')
         + ('<Relationship Id="rIdLogoMibanco" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_mibanco.png"/>' if es_mibanco else '')
-        + ('<Relationship Id="rIdLogoSip" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_sip.png"/>' if document_kind == "sip_constancia" else '')
+        + ('<Relationship Id="rIdLogoSip" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo_sip.png"/>' if document_kind in ("sip_constancia", "sip_atencion") else '')
         + '</Relationships>'
     )
     parts = {
@@ -2609,7 +2743,7 @@ def generar_docx_limpio(output_path, context, document_kind="transaccion_cancela
             zout.write(FIRMA_LUIS_PATH, "word/media/firma_luis_portuguez.png")
         if es_mibanco and LOGO_MIBANCO_PATH.exists():
             zout.write(LOGO_MIBANCO_PATH, "word/media/logo_mibanco.png")
-        if document_kind == "sip_constancia" and LOGO_SIP_PATH.exists():
+        if document_kind in ("sip_constancia", "sip_atencion") and LOGO_SIP_PATH.exists():
             zout.write(LOGO_SIP_PATH, "word/media/logo_sip.png")
 
 
@@ -2921,6 +3055,121 @@ def generar_pdf_sip_constancia(output_path, context):
         p("Cordialmente,", recipient),
         Spacer(1, 35),
         Paragraph("Financiera Sip<br/>Área de Cobranzas", recipient),
+    ])
+    doc.build(story)
+
+
+def generar_pdf_sip_atencion(output_path, context):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise ValueError("Para descargar en PDF instala la dependencia reportlab y reinicia el servidor.") from exc
+
+    font = "Calibri" if Path("C:/Windows/Fonts/calibri.ttf").exists() else "Helvetica"
+    bold = "Calibri-Bold" if Path("C:/Windows/Fonts/calibrib.ttf").exists() else "Helvetica-Bold"
+    if font == "Calibri":
+        pdfmetrics.registerFont(TTFont(font, "C:/Windows/Fonts/calibri.ttf"))
+    if bold == "Calibri-Bold":
+        pdfmetrics.registerFont(TTFont(bold, "C:/Windows/Fonts/calibrib.ttf"))
+
+    sip_blue = colors.HexColor("#00B4FF")
+    line_color = colors.HexColor("#606060")
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("sip_atencion_body", parent=styles["Normal"], fontName=font, fontSize=7.4, leading=9.1, textColor=colors.black)
+    title = ParagraphStyle("sip_atencion_title", parent=body, fontName=bold, fontSize=17, leading=21, alignment=TA_CENTER)
+    website = ParagraphStyle("sip_atencion_web", parent=body, fontName=bold, fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.white)
+    section_style = ParagraphStyle("sip_atencion_section", parent=body, fontName=bold, fontSize=7.3, leading=9, alignment=TA_LEFT, textColor=colors.HexColor("#003A55"))
+    field_style = ParagraphStyle("sip_atencion_field", parent=body, fontSize=7.2, leading=9, alignment=TA_LEFT)
+    legal_style = ParagraphStyle("sip_atencion_legal", parent=body, fontSize=6.4, leading=7.5, alignment=TA_JUSTIFY)
+
+    def p(value, style=body):
+        return Paragraph(xml_text(value), style)
+
+    def field(label, value, value_bold=False):
+        rendered_value = f"<b>{xml_text(value)}</b>" if value_bold else xml_text(value)
+        return Paragraph(f"<b>{xml_text(label)}:</b>&nbsp;&nbsp;&nbsp;{rendered_value}", field_style)
+
+    def section_table(section_title, rows):
+        data = [[p(section_title, section_style), ""]]
+        spans = [("SPAN", (0, 0), (1, 0))]
+        for row_index, row in enumerate(rows, start=1):
+            if len(row) == 1:
+                label, value, value_bold = row[0]
+                data.append([field(label, value, value_bold), ""])
+                spans.append(("SPAN", (0, row_index), (1, row_index)))
+            else:
+                data.append([field(*row[0]), field(*row[1])])
+        table = Table(data, colWidths=[3.25 * inch, 3.25 * inch], rowHeights=[.37 * inch] + [.42 * inch] * len(rows), hAlign="CENTER")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), sip_blue),
+            ("GRID", (0, 0), (-1, -1), .45, line_color),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            *spans,
+        ]))
+        return table
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=letter,
+        leftMargin=.15 * inch,
+        rightMargin=.15 * inch,
+        topMargin=.14 * inch,
+        bottomMargin=.55 * inch,
+    )
+    story = []
+    if LOGO_SIP_PATH.exists():
+        logo = Image(str(LOGO_SIP_PATH), width=.88 * inch, height=.62 * inch)
+        header = Table([[logo, p("www.sip.pe", website)]], colWidths=[1.25 * inch, 6.95 * inch], rowHeights=[.82 * inch], hAlign="CENTER")
+        header.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), sip_blue),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (0, 0), 22),
+            ("RIGHTPADDING", (1, 0), (1, 0), 28),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(header)
+
+    client_table = section_table("DATOS DEL CLIENTE", [
+        [("Tipo Documento", context["tipo_documento"], False), ("Nro. Documento", context["dni"], True)],
+        [("Nombres", context["nombres"], True), ("Apellidos", context["apellidos"], True)],
+    ])
+    request_table = section_table("DATOS DE LA SOLICITUD", [
+        [("Fecha solicitud", context["fecha_solicitud"], False), ("Canal", context["canal"], False)],
+        [("Nro. Tarjeta", context["tarjeta"], False)],
+    ])
+    account_table = section_table("DATOS DE LA CUENTA Y TARJETA", [
+        [("Número de tarjeta del titular", context["tarjeta_titular"], True)],
+    ])
+    legal = p(
+        "Mediante el envío del presente documento, el cliente declara que los datos consignados son correctos, y han sido proporcionados de forma voluntaria. Asimismo, autoriza a registrar y utilizar esta información conforme a la normativa vigente sobre protección de datos personales.",
+        legal_style,
+    )
+    legal_table = Table([[legal]], colWidths=[6.5 * inch], hAlign="CENTER")
+    legal_table.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.extend([
+        Spacer(1, .42 * inch),
+        p("Constancia de Atención", title),
+        Spacer(1, .56 * inch),
+        KeepTogether([client_table, Spacer(1, .16 * inch), request_table, Spacer(1, .16 * inch), account_table]),
+        Spacer(1, .28 * inch),
+        legal_table,
     ])
     doc.build(story)
 
@@ -4006,6 +4255,83 @@ def generar_constancia_pago_sip(config, dni=None, operacion=None, cancelacion=No
     }
 
 
+def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago=None, formato="docx"):
+    rows = consultar_datos_documento_sip(dni=dni, operacion=operacion, limit=2)
+    if not rows:
+        raise ValueError("No se encontró información SIP para generar la constancia de atención.")
+    if len(rows) > 1 and not limpiar_texto(operacion):
+        raise ValueError("La búsqueda SIP devolvió más de una operación. Selecciona una operación antes de generar.")
+
+    registro = rows[0]
+    nombres = limpiar_texto(registro.get("Nombres"))
+    apellidos = limpiar_texto(registro.get("Apellidos"))
+    tipo_documento = limpiar_texto(registro.get("TipoDocumento"))
+    dni_registro = limpiar_texto(registro.get("NumDocumento"))
+    tarjeta = limpiar_texto(registro.get("Operacion"))
+    faltantes = [
+        etiqueta
+        for etiqueta, valor in (
+            ("tipo de documento", tipo_documento),
+            ("número de documento", dni_registro),
+            ("nombres", nombres),
+            ("apellidos", apellidos),
+            ("número de tarjeta", tarjeta),
+        )
+        if not valor
+    ]
+    if faltantes:
+        raise ValueError(
+            "La asignación de Financiera OH no contiene " + ", ".join(faltantes) + " para esta operación."
+        )
+
+    if limpiar_texto(fecha_pago):
+        try:
+            fecha_solicitud = datetime.strptime(limpiar_texto(fecha_pago), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("La fecha de solicitud debe tener el formato AAAA-MM-DD.") from exc
+    else:
+        fecha_solicitud = datetime.now(ZoneInfo("America/Lima")).date()
+    context = {
+        "cliente": limpiar_texto(registro.get("NomCliente")) or f"{nombres} {apellidos}".strip(),
+        "tipo_documento": tipo_documento,
+        "dni": dni_registro,
+        "nombres": nombres,
+        "apellidos": apellidos,
+        "fecha_solicitud": fecha_solicitud.strftime("%d/%m/%Y"),
+        "canal": "CALL CENTER",
+        "tarjeta": tarjeta,
+        "tarjeta_titular": tarjeta,
+    }
+    formato = str(formato or "docx").lower()
+    if formato not in ("docx", "pdf"):
+        raise ValueError("Formato no soportado. Selecciona Word o PDF.")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{safe_filename(config['nombre'])}_{safe_filename(context['cliente'])}.{formato}"
+    output_path = OUTPUT_DIR / filename
+    if formato == "pdf":
+        generar_pdf_sip_atencion(output_path, context)
+    else:
+        generar_docx_limpio(output_path, context, document_kind="sip_atencion")
+    return {
+        "path": output_path,
+        "filename": filename,
+        "formato": formato,
+        "registro": registro,
+        "auditoria_detalle": {
+            "modalidad": "constancia_atencion",
+            "fecha_solicitud": context["fecha_solicitud"],
+            "canal": context["canal"],
+            "tipo_documento_cliente": context["tipo_documento"],
+            "numero_documento_cliente": context["dni"],
+            "nombres": context["nombres"],
+            "apellidos": context["apellidos"],
+            "tarjeta": context["tarjeta"],
+            "tarjeta_titular": context["tarjeta_titular"],
+            "operaciones": [{"operacion": context["tarjeta"]}],
+        },
+    }
+
+
 def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None, permitir_preview=False):
     config = obtener_config_documento(documento_tipo)
     cartera_id = int(config.get("cartera_id") or 133)
@@ -4021,6 +4347,9 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
 
     if config.get("document_kind") == "sip_constancia":
         return generar_constancia_pago_sip(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, permitir_monto_cero=permitir_preview)
+
+    if config.get("document_kind") == "sip_atencion":
+        return generar_constancia_atencion_sip(config, dni=dni, operacion=operacion, fecha_pago=fecha_pago, formato=formato)
 
     if documento_tipo == "cancelacion_grupal":
         return generar_documento_grupal(

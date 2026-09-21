@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -453,7 +454,13 @@ def obtener_transcripcion_para_analisis(registro: Dict, *, forzar_transcripcion:
 
 def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> Dict:
     ensure_tabla_feedback()
+    # Cronometro por fase. Sin esto, "el analisis tarda cinco minutos" no se
+    # puede atacar: no se sabe si el tiempo se va en transcribir, en el modelo
+    # o en guardar, y cualquier optimizacion seria a ciegas.
+    t_inicio = time.perf_counter()
+    tiempos: Dict[str, float] = {}
     registro = obtener_feedback(id_feedback)
+    tiempos["leer_registro"] = time.perf_counter() - t_inicio
 
     try:
         aviso_ia = None
@@ -464,16 +471,21 @@ def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> D
         )
         if not reutiliza_transcripcion:
             actualizar_estado(id_feedback, "TRANSCRIBIENDO")
+        t_fase = time.perf_counter()
         transcripcion, transcripcion_generada = obtener_transcripcion_para_analisis(
             registro,
             forzar_transcripcion=forzar_transcripcion,
         )
+        tiempos["transcripcion"] = time.perf_counter() - t_fase
         if transcripcion_generada:
+            t_fase = time.perf_counter()
             actualizar_transcripcion(id_feedback, transcripcion)
+            tiempos["guardar_transcripcion"] = time.perf_counter() - t_fase
         if not ia_real_configurada():
             aviso_ia = "IA real no configurada, usando analisis simulado"
 
         actualizar_estado(id_feedback, "ANALIZANDO")
+        t_fase = time.perf_counter()
         if ia_real_configurada():
             analisis = analizar_transcripcion_real(
                 transcripcion,
@@ -485,8 +497,23 @@ def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> D
                 transcripcion,
                 comentario_supervisor=registro.get("comentario_supervisor"),
             )
+        tiempos["analisis_ia"] = time.perf_counter() - t_fase
+
+        t_fase = time.perf_counter()
         guardar_analisis(id_feedback, analisis)
+        tiempos["guardar_analisis"] = time.perf_counter() - t_fase
+
+        t_fase = time.perf_counter()
         resultado = obtener_feedback(id_feedback)
+        tiempos["releer_ficha"] = time.perf_counter() - t_fase
+
+        total = time.perf_counter() - t_inicio
+        detalle = " | ".join(f"{nombre}={valor:.1f}s" for nombre, valor in tiempos.items())
+        logger.info(
+            "[TIEMPOS] feedback=%s total=%.1fs | %s | transcripcion_%s",
+            id_feedback, total, detalle,
+            "nueva" if transcripcion_generada else "reutilizada",
+        )
         if aviso_ia:
             resultado["aviso_ia"] = aviso_ia
         return resultado

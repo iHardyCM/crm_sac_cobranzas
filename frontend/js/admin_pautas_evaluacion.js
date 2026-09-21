@@ -141,6 +141,9 @@ function aplicarEstadoEditorPauta() {
     document.getElementById("btnGuardarPauta").disabled = !editable;
     document.getElementById("btnPublicarPauta").disabled = !editable;
     document.getElementById("btnDuplicarPauta").disabled = !pautaActual?.id_pauta;
+    // Una pauta que aun no se ha guardado no tiene id y no hay nada que exportar.
+    const btnExportar = document.getElementById("btnExportarPauta");
+    if (btnExportar) btnExportar.disabled = !pautaActual?.id_pauta;
     document.getElementById("btnArchivarPauta").disabled = !pautaActual?.id_pauta || pautaActual?.estado === "ARCHIVADA";
 }
 
@@ -435,6 +438,46 @@ async function duplicarPautaActual() {
         await cargarPautasEvaluacion();
         mostrarToastPauta("Nueva versión creada como borrador.", "ok");
     } catch (error) { mostrarToastPauta(error.message || "No se pudo duplicar.", "error"); }
+}
+
+// La descarga va por fetch y no por un <a href>, para poder mostrar el error
+// del backend en el toast en vez de dejar al navegador abriendo una pagina de
+// error o un archivo vacio.
+async function exportarPautaExcel() {
+    if (!pautaActual?.id_pauta) {
+        mostrarToastPauta("Selecciona una pauta antes de exportar.", "error");
+        return;
+    }
+    const boton = document.getElementById("btnExportarPauta");
+    const textoOriginal = boton?.textContent;
+    if (boton) { boton.disabled = true; boton.textContent = "Generando…"; }
+    try {
+        const respuesta = await fetch(`${BASE_URL_PAUTAS}/admin-pautas-evaluacion/pautas/${pautaActual.id_pauta}/exportar`);
+        if (!respuesta.ok) {
+            let detalle = "No se pudo exportar la pauta.";
+            try { detalle = (await respuesta.json()).detail || detalle; } catch (_) { /* respuesta sin JSON */ }
+            throw new Error(detalle);
+        }
+        const blob = await respuesta.blob();
+        // El nombre lo decide el backend; si la cabecera no viaja, se usa uno
+        // razonable en vez de dejar que el navegador invente "descarga".
+        const cabecera = respuesta.headers.get("Content-Disposition") || "";
+        const coincidencia = cabecera.match(/filename="?([^"]+)"?/i);
+        const nombre = coincidencia?.[1] || `pauta_v${pautaActual.version || ""}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement("a");
+        enlace.href = url;
+        enlace.download = nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+        mostrarToastPauta(`Pauta exportada: ${nombre}`, "ok");
+    } catch (error) {
+        mostrarToastPauta(error.message || "No se pudo exportar la pauta.", "error");
+    } finally {
+        if (boton) { boton.disabled = false; boton.textContent = textoOriginal || "Exportar a Excel"; }
+    }
 }
 
 async function archivarPautaActual() {

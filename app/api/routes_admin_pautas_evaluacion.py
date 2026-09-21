@@ -2,9 +2,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
+from app.services.pautas_export import construir_excel_pauta, nombre_archivo_pauta
 from app.services.pautas_evaluacion_service import (
     archivar_pauta,
     duplicar_pauta,
@@ -127,3 +128,32 @@ def archivar(id_pauta: int, payload: AccionPayload):
         return archivar_pauta(id_pauta, payload.usuario_actualizacion)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error archivando pauta: {exc}")
+
+
+@router.get("/pautas/{id_pauta}/exportar")
+def exportar_pauta_excel(id_pauta: int):
+    """Descarga la pauta completa en Excel.
+
+    Se genera en memoria y se devuelve directamente: no deja archivos
+    temporales en el servidor ni hay que limpiarlos despues.
+    """
+    try:
+        pauta = obtener_pauta(id_pauta)
+        if not pauta:
+            raise HTTPException(status_code=404, detail="La pauta no existe.")
+        contenido = construir_excel_pauta(pauta, obtener_carteras_pauta())
+        nombre = nombre_archivo_pauta(pauta)
+        return Response(
+            content=contenido,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{nombre}"',
+                # Sin esto el navegador no puede leer el nombre del archivo
+                # cuando la descarga se hace por fetch desde otro puerto.
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error exportando la pauta: {exc}")

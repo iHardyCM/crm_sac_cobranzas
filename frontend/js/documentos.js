@@ -163,6 +163,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
     document.getElementById("fechaPagoMibanco")?.addEventListener("change", () => {
+        if (esDocumentoSipAtencion()) {
+            pintarPreviewDocumento();
+            programarPreviewReal();
+            return;
+        }
         if (esDocumentoSipConstancia()) {
             pintarPreviewDocumento();
             return;
@@ -364,8 +369,13 @@ function esDocumentoSipConstancia() {
 }
 
 
+function esDocumentoSipAtencion() {
+    return document.getElementById("documentoTipo")?.value === "sip_constancia_atencion";
+}
+
+
 function esDocumentoSipCualquiera() {
-    return esDocumentoSip() || esDocumentoSipConstancia();
+    return esDocumentoSip() || esDocumentoSipConstancia() || esDocumentoSipAtencion();
 }
 
 
@@ -385,9 +395,10 @@ function actualizarModoDocumento() {
     const esMibancoCuotas = esDocumentoMibancoCuotas();
     const esSip = esDocumentoSip();
     const esSipConstancia = esDocumentoSipConstancia();
+    const esSipAtencion = esDocumentoSipAtencion();
     const esSipCualquiera = esDocumentoSipCualquiera();
     const usaCronogramaSIP = esMibancoCuotas || esSip;
-    cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal() || (esMibanco && !esMibancoCuotas));
+    cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal() || (esMibanco && !esMibancoCuotas) || esSipAtencion);
     if (cancelacionLabel?.firstChild) {
         let textoMonto = "Cancelacion a ingresar\n";
         if (esDocumentoCorreoPagoDirectoCuota()) textoMonto = "Monto de cuota a ingresar\n";
@@ -426,11 +437,17 @@ function actualizarModoDocumento() {
     const inicialLabel = document.getElementById("inicialCastigoBox");
     if (inicialLabel?.firstChild) inicialLabel.firstChild.textContent = esSip ? "Cuota inicial\n" : "Inicial\n";
     const fechaPagoLabel = document.getElementById("fechaPagoMibancoBox");
-    if (fechaPagoLabel?.firstChild) fechaPagoLabel.firstChild.textContent = esSip ? "Fecha de solicitud / pago\n" : "Fecha del documento y pago\n";
+    if (fechaPagoLabel?.firstChild) {
+        fechaPagoLabel.firstChild.textContent = esSipAtencion
+            ? "Fecha de solicitud\n"
+            : esSip
+                ? "Fecha de solicitud / pago\n"
+                : "Fecha del documento y pago\n";
+    }
     if (usaCronogramaSIP) sincronizarPagosMibanco(false);
     else sincronizarFechasCuotasCastigo(false);
     document.querySelector(".documentos-format-box")?.classList.toggle("hidden", esDocumentoSoloCorreo());
-    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || esSipConstancia || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
+    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || esSipConstancia || esSipAtencion || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
     document.getElementById("btnGenerar")?.classList.toggle("hidden", esDocumentoSoloCorreo());
     document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo() || esDocumentoMibancoCuotas());
     document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera);
@@ -450,6 +467,9 @@ function actualizarModoDocumento() {
     }
     if (regla && esSipConstancia) {
         regla.innerHTML = "Ingresa el <strong>monto pagado</strong> y confirma la fecha de pago. La fecha de emisión de la constancia usa la fecha actual.";
+    }
+    if (regla && esSipAtencion) {
+        regla.innerHTML = "Los datos del cliente y la tarjeta se obtienen de <strong>Desarrollo.dbo.actualizacionfoh</strong>. La fecha de solicitud propone la fecha actual de Lima, pero puede modificarse; el canal es siempre <strong>CALL CENTER</strong>.";
     }
     const tituloPersona = document.getElementById("tituloPersonaGrupal");
     if (tituloPersona) tituloPersona.textContent = esDocumentoCuotaGrupal() ? "Datos del fiador" : "Datos del encargado";
@@ -492,6 +512,10 @@ function setSummaryLabels() {
         summary[0].textContent = "Campaña MEJOR_LTD";
         summary[1].textContent = "Deuda total";
         summary[2].textContent = "Monto pagado";
+    } else if (esDocumentoSipAtencion()) {
+        summary[0].textContent = "Tipo de documento";
+        summary[1].textContent = "Nro. documento";
+        summary[2].textContent = "Nro. tarjeta";
     } else if (esDocumentoCastigoCorreo()) {
         summary[0].textContent = "Monto campaña SQL";
         summary[1].textContent = "Deuda total";
@@ -521,12 +545,13 @@ function pintarFechaDocumentoHoy() {
     if (!target) return;
 
     target.textContent = new Date().toLocaleDateString("es-PE", {
+        timeZone: "America/Lima",
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
     });
     const fechaMibanco = document.getElementById("fechaPagoMibanco");
-    if (fechaMibanco) fechaMibanco.value = fechaInputValue(new Date());
+    if (fechaMibanco) fechaMibanco.value = fechaInputLimaHoy();
 }
 
 
@@ -665,6 +690,17 @@ function seleccionarDocumento(index) {
         const monto = document.getElementById("cancelacion");
         if (monto) monto.value = "";
         actualizarResumenSipConstancia();
+        pintarPreviewDocumento();
+        return;
+    }
+
+    if (esDocumentoSipAtencion()) {
+        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.Nombres)} ${valueOrDash(documentoSeleccionado.Apellidos)} - ${valueOrDash(documentoSeleccionado.TipoDocumento)} ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
+        document.getElementById("operacionSeleccionada").textContent = `Tarjeta ${valueOrDash(documentoSeleccionado.Operacion)}`;
+        document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
+        document.getElementById("montoMinimo").textContent = valueOrDash(documentoSeleccionado.TipoDocumento);
+        document.getElementById("deudaTotal").textContent = valueOrDash(documentoSeleccionado.NumDocumento);
+        document.getElementById("condonacionEstimada").textContent = valueOrDash(documentoSeleccionado.Operacion);
         pintarPreviewDocumento();
         return;
     }
@@ -1099,10 +1135,12 @@ function seleccionarFormato(formato) {
 
 function pintarPreviewDocumento() {
     document.getElementById("panelPreview")?.classList.toggle("mail-only", esDocumentoSoloCorreo());
-    if (!esDocumentoSipConstancia()) {
-        document.getElementById("documentoPreview")?.classList.remove("sip-constancia-page");
+    if (!esDocumentoSipConstancia() && !esDocumentoSipAtencion()) {
+        document.getElementById("documentoPreview")?.classList.remove("sip-constancia-page", "sip-atencion-page");
     }
-    if (esDocumentoSipConstancia()) {
+    if (esDocumentoSipAtencion()) {
+        pintarPreviewSipAtencion();
+    } else if (esDocumentoSipConstancia()) {
         pintarPreviewSipConstancia();
     } else if (esDocumentoSip()) {
         pintarPreviewSip();
@@ -1123,6 +1161,29 @@ function pintarPreviewDocumento() {
     }
     if (!esDocumentoSoloCorreo() && !esDocumentoMibanco()) pintarPreviewCorreo();
     programarPreviewReal();
+}
+
+
+function pintarPreviewSipAtencion() {
+    const panel = document.getElementById("panelPreview");
+    const preview = document.getElementById("documentoPreview");
+    if (!panel || !preview || !documentoSeleccionado) return;
+    panel.classList.remove("hidden", "mibanco-preview");
+    document.querySelector(".documentos-mail-preview")?.classList.add("hidden");
+    const fila = (etiqueta, valor, clase = "") => `<div class="sip-atencion-field ${clase}"><strong>${escapeHtml(etiqueta)}:</strong><span>${escapeHtml(valor || "")}</span></div>`;
+    const seccion = (titulo, contenido) => `<section class="sip-atencion-section"><h2>${escapeHtml(titulo)}</h2><div class="sip-atencion-fields">${contenido}</div></section>`;
+    preview.classList.add("sip-atencion-page");
+    preview.classList.remove("documentos-preview-real", "sip-constancia-page");
+    const fechaSolicitud = document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy();
+    preview.innerHTML = `
+        <div class="sip-atencion-preview">
+            <header><span class="sip-atencion-brand" aria-label="SIP">sip<sup>•</sup></span><strong>www.sip.pe</strong></header>
+            <h1>Constancia de Atención</h1>
+            ${seccion("DATOS DEL CLIENTE", `${fila("Tipo Documento", documentoSeleccionado.TipoDocumento)}${fila("Nro. Documento", documentoSeleccionado.NumDocumento, "valor-fuerte")}${fila("Nombres", documentoSeleccionado.Nombres, "valor-fuerte")}${fila("Apellidos", documentoSeleccionado.Apellidos, "valor-fuerte")}`)}
+            ${seccion("DATOS DE LA SOLICITUD", `${fila("Fecha solicitud", fechaCortaDesdeFecha(parseDateInput(fechaSolicitud)))}${fila("Canal", "CALL CENTER")}${fila("Nro. Tarjeta", documentoSeleccionado.Operacion, "ancho-completo")}`)}
+            ${seccion("DATOS DE LA CUENTA Y TARJETA", `${fila("Número de tarjeta del titular", documentoSeleccionado.Operacion, "ancho-completo valor-fuerte")}`)}
+            <p class="sip-atencion-legal">Mediante el envío del presente documento, el cliente declara que los datos consignados son correctos, y han sido proporcionados de forma voluntaria. Asimismo, autoriza a registrar y utilizar esta información conforme a la normativa vigente sobre protección de datos personales.</p>
+        </div>`;
 }
 
 
@@ -2818,6 +2879,16 @@ function construirPayloadGeneracion(formato, silencioso = false) {
         };
     }
 
+    if (esDocumentoSipAtencion()) {
+        return {
+            documento_tipo: "sip_constancia_atencion",
+            dni: String(documentoSeleccionado.NumDocumento || ""),
+            operacion: String(documentoSeleccionado.Operacion || ""),
+            fecha_pago: document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy(),
+            formato,
+        };
+    }
+
     if (esDocumentoSip()) {
         const pagos = Array.from(document.querySelectorAll(".monto-mibanco")).map((input, index) => ({
             numero: index + 1,
@@ -3209,10 +3280,23 @@ function numeroInputValue(value) {
 
 function fechaCortaHoy() {
     return new Date().toLocaleDateString("es-PE", {
+        timeZone: "America/Lima",
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
     });
+}
+
+
+function fechaInputLimaHoy() {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
 }
 
 

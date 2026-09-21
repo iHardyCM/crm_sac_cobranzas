@@ -185,9 +185,15 @@ async def generar_documento_endpoint(payload: GenerarDocumentoRequest):
                 excepcion=payload.excepcion,
                 detalle_operaciones=result.get("auditoria_detalle") or result.get("auditoria_operaciones"),
             )
-        except Exception:
-            # La descarga no debe fallar si el servidor de auditoria esta temporalmente inaccesible.
+        except Exception as exc:
             logger.exception("No se pudo registrar la auditoria de documentos")
+            if payload.documento_tipo == "sip_constancia_atencion":
+                raise HTTPException(
+                    status_code=503,
+                    detail="No se pudo guardar la traza de auditoría. El documento no fue entregado; inténtalo nuevamente.",
+                ) from exc
+            # Los documentos históricos conservan su comportamiento: la descarga
+            # no falla si el servidor de auditoría está temporalmente inaccesible.
         media_type = "application/pdf" if result["formato"] == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         return FileResponse(
             result["path"],
@@ -196,6 +202,8 @@ async def generar_documento_endpoint(payload: GenerarDocumentoRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error generando documento: {exc}")
 

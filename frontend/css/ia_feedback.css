@@ -7520,3 +7520,16 @@ body.crm-shell .tarjeta-sin-datos-ia {
 body.crm-shell .sgc-side-list p[hidden] {
     display: none !important;
 }
+
+/* Desglose bajo "Puntos aplicables": nombra los tres motivos por los que un
+   punto sale del denominador, para que el lector no tenga que cuadrar la
+   resta a mano ni concluya que faltan puntos. */
+body.crm-shell .desglose-peso-ia {
+    display: block;
+    margin-top: 4px;
+    color: #7a8ea3;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: .01em;
+}
