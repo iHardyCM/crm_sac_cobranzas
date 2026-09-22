@@ -6,12 +6,16 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.services.calibracion_service import (
+    enviar_llamada_a_revision,
     guardar_calibracion,
+    listar_cola_revision,
     listar_motivos,
     obtener_calibracion,
     obtener_precision,
+    perfil_puede_publicar_calibracion,
     recalcular_score_calibrado,
     resolver_calibracion,
+    resolver_llamada,
 )
 from app.services.ia_analysis_service import perfil_puede_ver_historial_global_ia
 
@@ -35,6 +39,11 @@ class ResolucionPayload(BaseModel):
     estado: str = "PUBLICADA"
     usuario: Optional[str] = None
     motivo_rechazo: Optional[str] = None
+    perfil: Optional[str] = None
+
+
+class EnvioPayload(BaseModel):
+    usuario: Optional[str] = None
 
 
 @router.get("/motivos")
@@ -43,6 +52,51 @@ def motivos_calibracion():
         return {"data": listar_motivos()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error listando motivos: {exc}")
+
+
+@router.get("/cola")
+def cola_revision():
+    """Bandeja de Calidad: llamadas con calibraciones esperando decision."""
+    try:
+        return {"data": listar_cola_revision()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error listando la cola de revision: {exc}")
+
+
+@router.get("/permisos")
+def permisos_calibracion(perfil: Optional[str] = Query(default=None)):
+    """La pantalla pregunta que puede hacer el perfil, en vez de decidirlo ella."""
+    return {"puede_publicar": perfil_puede_publicar_calibracion(perfil)}
+
+
+@router.post("/llamada/{id_feedback}/enviar")
+def enviar_llamada(id_feedback: int, payload: EnvioPayload):
+    """El supervisor entrega a Calidad lo que calibro en la llamada."""
+    try:
+        return enviar_llamada_a_revision(id_feedback, payload.usuario)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error enviando a revision: {exc}")
+
+
+@router.post("/llamada/{id_feedback}/resolver")
+def resolver_llamada_completa(id_feedback: int, payload: ResolucionPayload):
+    """Calidad publica o rechaza todo lo que esta en revision en la llamada."""
+    try:
+        return resolver_llamada(
+            id_feedback,
+            estado=payload.estado,
+            usuario=payload.usuario,
+            motivo_rechazo=payload.motivo_rechazo,
+            perfil=payload.perfil,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error resolviendo la llamada: {exc}")
 
 
 @router.get("/{id_feedback}")
@@ -82,7 +136,10 @@ def resolver(id_calibracion: int, payload: ResolucionPayload):
             estado=payload.estado,
             usuario=payload.usuario,
             motivo_rechazo=payload.motivo_rechazo,
+            perfil=payload.perfil,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

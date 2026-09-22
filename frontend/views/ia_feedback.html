@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260919-desglose">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260921-planes">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
@@ -186,6 +186,14 @@
                         </div>
                     </div>
 
+                    <div class="field">
+                        <label for="agenteIa">Agente evaluado (opcional)</label>
+                        <select id="agenteIa" disabled>
+                            <option value="">Primero selecciona una cartera</option>
+                        </select>
+                        <small class="ayuda-agente-ia">Opcional. Si no lo sabes ahora, asígnalo después desde la ficha de la evaluación.</small>
+                    </div>
+
                     <div class="form-row">
                         <div class="field">
                             <label for="dniIa">DNI cliente</label>
@@ -205,6 +213,7 @@
                     <button id="btnAnalizarIa" class="btn-primary" type="submit">Analizar llamada con IA</button>
                 </form>
                 <div id="mensajeIa" class="ia-message oculto"></div>
+                <div id="procesosIa" class="procesos-ia"></div>
             </article>
 
             <article id="panelResultadoIa" class="ia-panel result-panel">
@@ -213,6 +222,16 @@
                         <span id="detalleBreadcrumbIa" class="detail-breadcrumb">Evaluaciones / Evaluación</span>
                         <h3 id="detalleTituloIa">Ficha de evaluación</h3>
                         <p id="detalleSubtituloIa">Revisión y trazabilidad de llamada analizada.</p>
+                        <div id="agenteFichaIa" class="agente-ficha-ia oculto">
+                            <span class="agente-ficha-etiqueta">Agente</span>
+                            <strong id="agenteFichaNombreIa">-</strong>
+                            <button id="btnCambiarAgenteIa" class="btn-link-ia" type="button" onclick="abrirEditorAgenteFichaIa()">Asignar</button>
+                            <span id="agenteFichaEditorIa" class="agente-ficha-editor oculto">
+                                <select id="agenteFichaSelectIa"></select>
+                                <button class="btn-primary btn-small" type="button" onclick="guardarAgenteFichaIa()">Guardar</button>
+                                <button class="btn-light btn-small" type="button" onclick="cerrarEditorAgenteFichaIa()">Cancelar</button>
+                            </span>
+                        </div>
                     </div>
                     <div class="result-actions">
                         <span id="resultadoNivelIa" class="level-badge">-</span>
@@ -311,11 +330,7 @@
                                         </label>
                                         <label class="decision-option">
                                             <input type="radio" name="decisionSupervisorIa" value="modificar">
-                                            <span>Modificar evaluación</span>
-                                        </label>
-                                        <label class="decision-option">
-                                            <input type="radio" name="decisionSupervisorIa" value="recalibrar">
-                                            <span>Solicitar recalibración</span>
+                                            <span>Corregir criterios (va a Calidad)</span>
                                         </label>
                                         <input id="feedbackIdActualIa" type="hidden">
                                         <input id="agenteRevisionIa" type="hidden">
@@ -688,11 +703,15 @@
                             </div>
                             <div class="calibration-actions">
                                 <button id="btnRefrescarCalibracionIa" class="btn-light btn-small" type="button" onclick="cargarCalibracionCriteriosIa(true)">Actualizar</button>
-                                <button id="btnNuevaRecalibracionIa" class="btn-light btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
+                                <!-- Sistema de recalibracion por score, reemplazado por la calibracion por
+                                     criterio de abajo. Se oculta en vez de borrar: no tenia forma de
+                                     resolverse y competia con el flujo nuevo. -->
+                                <button id="btnNuevaRecalibracionIa" class="btn-light btn-small oculto" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
                                 <button id="btnExportarTrazabilidadIa" class="btn-light btn-small" type="button" onclick="exportarTrazabilidadCalibracionIa()">Exportar trazabilidad</button>
                             </div>
                         </div>
                         <div id="calibracionAvanceIa" class="calibration-progress"></div>
+                        <div id="calibracionAccionesIa" class="calibracion-flujo-ia"></div>
                         <div id="calibracionCriteriosIa" class="calibration-criteria"></div>
                         <div id="calibracionResumenIa"></div>
                     </section>
@@ -851,6 +870,9 @@
                     </div>
                 </div>
 
+                <div id="evaluacionesV2Ia" class="v2-root"></div>
+
+                <div class="legacy-v1">
                 <div id="evaluacionesKpisIa" class="evaluations-kpi-grid"></div>
 
                 <div class="evaluations-toolbar">
@@ -898,9 +920,10 @@
                         <button id="evaluacionesNextIa" class="btn-light btn-small" type="button">Siguiente</button>
                     </div>
                 </div>
+                </div>
             </section>
 
-            <section class="report-card stats-cube-card report-only">
+            <section class="report-card stats-cube-card report-only legacy-v1">
                 <div class="section-title-row">
                     <div>
                         <h4>Reporte por cartera</h4>
@@ -913,7 +936,7 @@
                 </div>
             </section>
 
-            <section id="repAgenteSemanaCardIa" class="report-card stats-cube-card agent-week-card report-only">
+            <section id="repAgenteSemanaCardIa" class="report-card stats-cube-card agent-week-card report-only legacy-v1">
                 <div class="section-title-row">
                     <div>
                         <h4>Evaluaciones por agente y semana</h4>
@@ -952,7 +975,7 @@
                 </div>
             </section>
 
-            <section class="report-card report-detail-card report-only">
+            <section class="report-card report-detail-card report-only legacy-v1">
                 <div class="section-title-row">
                     <div>
                         <h4>Detalle de evaluaciones</h4>
@@ -996,8 +1019,8 @@
             <section id="tabReportesSgcIa" class="report-tab-panel reportes-sgc-only oculto">
                 <div class="tab-panel-head">
                     <div>
-                        <h4>Reportería SGC / PEC</h4>
-                        <p>Precisión por asesor, distribución por grupo y evolución semanal para seguimiento gerencial.</p>
+                        <h4>Reportes de calidad</h4>
+                        <p>Cumplimiento por criterio y cartera, brechas, evolución y ranking de agentes del periodo filtrado.</p>
                     </div>
                     <div class="prompt-tab-actions">
                         <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar resumen</button>
@@ -1005,7 +1028,8 @@
                         <button class="btn-light btn-small" type="button" onclick="exportarReporteIa()">Exportar brechas</button>
                     </div>
                 </div>
-                <div class="sgc-report-grid">
+                <div id="reportesV2Ia" class="v2-root"></div>
+                <div class="sgc-report-grid legacy-v1">
                     <article class="report-card inner-tab-card">
                         <h4>Precisión por asesor</h4>
                         <div id="repPrecisionAsesorSgcIa" class="mini-table"></div>
@@ -1024,27 +1048,33 @@
             <section id="tabCoachingIa" class="report-tab-panel coaching-only oculto">
                 <div class="tab-panel-head">
                     <div>
-                        <h4>Coaching operativo</h4>
-                        <p>Seguimiento de evaluaciones y agentes que requieren acompañamiento.</p>
+                        <h4>Planes de mejora por agente</h4>
+                        <p>Quién necesita acompañamiento, en qué criterio y cómo viene evolucionando.</p>
                     </div>
                 </div>
+                <div id="planesV2Ia" class="v2-root"></div>
+                <div class="legacy-v1">
                 <div id="coachingKpisIa" class="tab-kpi-grid"></div>
                 <div id="coachingTablaIa" class="table-wrap tab-table-wrap"></div>
+                </div>
             </section>
 
             <section id="tabCalibracionIa" class="report-tab-panel calibracion-only oculto">
                 <div class="tab-panel-head">
                     <div>
-                        <h4>Calibración y consistencia</h4>
-                        <p>Control de diferencias entre IA, supervisor y solicitudes de recalibración.</p>
+                        <h4>Calibración: IA frente a Calidad</h4>
+                        <p>Bandeja de revisión de Calidad y precisión de la IA medida sobre criterios revisados por una persona.</p>
                     </div>
                 </div>
+                <div id="calibracionV2Ia" class="v2-root"></div>
+                <div class="legacy-v1">
                 <div id="calibracionKpisIa" class="tab-kpi-grid"></div>
                 <div id="calibracionTablaIa" class="table-wrap tab-table-wrap"></div>
                 <section class="report-card inner-tab-card">
-                    <h4>Ítems con mayor discrepancia</h4>
+                    <h4>Precisión de la IA por criterio</h4>
                     <div id="calibracionDiscrepanciasIa" class="mini-table"></div>
                 </section>
+                </div>
             </section>
 
             <section id="tabAlertasIa" class="report-tab-panel alertas-only oculto">
@@ -1253,6 +1283,7 @@
 
     <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260915-supervisor-importacion1"></script>
-    <script src="../js/ia_feedback.js?v=20260919-desglose"></script>
+    <script src="../js/ia_feedback.js?v=20260921-planes"></script>
+    <script src="../js/ia_feedback_vistas.js?v=20260921-planes"></script>
 </body>
 </html>

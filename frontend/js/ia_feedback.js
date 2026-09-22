@@ -53,7 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
     prepararAccionesAgenteSemanaIa();
     cargarConfigIa();
     cargarCarterasIa();
-    cargarHistorialIa();
+    // El historial ya no se carga al abrir la pagina: su panel esta oculto y
+    // la consulta competia con la reporteria por el mismo servidor, haciendo
+    // que alguna de las dos venciera. Se carga al abrir el historial.
+    cargarBandejaIa();
     activarVistaReporteriaIa({ scroll: false });
     cargarReporteriaIa();
     inicializarCabeceraReporteIa();
@@ -71,6 +74,10 @@ function prepararFormularioIa() {
 
     document.getElementById("supervisorIa")?.remove();
     setValue("fechaIa", fechaLocalActualIa());
+    // Los agentes dependen de la cartera: se recargan cada vez que cambia.
+    document.getElementById("carteraIa")?.addEventListener("change", () => {
+        cargarAgentesCargaIa(valorCarteraIa());
+    });
 
     const comentario = document.getElementById("comentarioIa");
     if (comentario) {
@@ -159,6 +166,10 @@ async function subirYAnalizarIa() {
         return;
     }
 
+    // El agente es opcional aqui: el flujo de la operacion es asignarlo despues,
+    // desde la ficha, una vez vista la evaluacion.
+    const agenteElegido = valor("agenteIa");
+
     const btn = document.getElementById("btnAnalizarIa");
     btn.disabled = true;
     btn.textContent = "Procesando...";
@@ -169,6 +180,7 @@ async function subirYAnalizarIa() {
         const formData = new FormData();
         formData.append("archivo", archivo);
         formData.append("cartera", valorCarteraIa());
+        if (agenteElegido) formData.append("agente", agenteElegido);
         formData.append("dni", valor("dniIa"));
         formData.append("telefono", valor("telefonoIa"));
         formData.append("fecha_llamada", valor("fechaIa"));
@@ -182,24 +194,20 @@ async function subirYAnalizarIa() {
         const uploadData = await leerJsonSeguro(upload);
         if (!upload.ok) throw new Error(uploadData.detail || uploadData.error || "No se pudo cargar el audio.");
 
-        cambiarEstadoProceso("TRANSCRIBIENDO");
-        mostrarMensajeIa("Audio registrado. Generando análisis con IA...", "ok");
-
-        const analizar = await fetchIa(`${IA_FEEDBACK_BASE}/${uploadData.id_feedback}/analizar`, {
+        // El analisis corre en segundo plano: tarda ~4 minutos, casi todo en
+        // OpenAI, y antes la pantalla quedaba bloqueada ese tiempo. Ahora se
+        // lanza, el formulario queda libre y el avance se sigue abajo.
+        const iniciar = await fetchIa(`${IA_FEEDBACK_BASE}/${uploadData.id_feedback}/analizar/iniciar`, {
             method: "POST",
-        }, 900000);
-        const data = await leerJsonSeguro(analizar);
-        if (!analizar.ok) throw new Error(data.detail || data.error || "No se pudo analizar la llamada.");
+        }, 30000);
+        const inicio = await leerJsonSeguro(iniciar);
+        if (!iniciar.ok) throw new Error(inicio.detail || "No se pudo iniciar el análisis.");
 
-        cambiarEstadoProceso(data.estado || "FINALIZADO");
-        renderResultadoIa(data);
-        if (data.aviso_ia) {
-            mostrarMensajeIa(`${data.aviso_ia}. Análisis generado correctamente.`, "ok");
-        } else {
-            mostrarMensajeIa("Análisis generado correctamente.", "ok");
-        }
-        limpiarFormularioBasicoIa({ limpiarCartera: true });
-        await cargarHistorialIa();
+        seguirProcesoIa(uploadData.id_feedback);
+        cambiarEstadoProceso("PENDIENTE");
+        // Sin mensaje aparte: la fila en "En proceso" ya lo dice, con su reloj.
+        ocultarMensajeIa();
+        limpiarFormularioBasicoIa({ limpiarCartera: false });
     } catch (error) {
         cambiarEstadoProceso("ERROR");
         mostrarMensajeIa(error.message || "Error analizando llamada.", "error");
@@ -207,6 +215,267 @@ async function subirYAnalizarIa() {
         btn.disabled = false;
         btn.textContent = "Analizar llamada con IA";
     }
+}
+
+// ---------------------------------------------------------------------------
+// Agente evaluado
+// El agente es la unidad de desempeno, planes de mejora y reportes. Hasta
+// ahora el formulario no lo pedia, asi que todas las evaluaciones quedaban sin
+// agente y cada vista "por asesor" juntaba todo en una sola fila falsa.
+// ---------------------------------------------------------------------------
+
+async function obtenerAgentesIa(cartera) {
+    if (!cartera) return [];
+    const response = await fetchIa(`${IA_FEEDBACK_BASE}/agentes?cartera=${encodeURIComponent(cartera)}`, {}, 15000);
+    const data = await leerJsonSeguro(response);
+    if (!response.ok) throw new Error(data.detail || "No se pudieron cargar los agentes.");
+    return Array.isArray(data.data) ? data.data : [];
+}
+
+function opcionesAgentesIa(agentes = [], seleccionado = "") {
+    const base = `<option value="">Seleccionar agente</option>`;
+    const actual = String(seleccionado || "").trim();
+    let encontrado = !actual;
+    const opciones = agentes.map(item => {
+        const etiqueta = String(item.agente || item.usuario || "").trim();
+        if (etiqueta === actual) encontrado = true;
+        return `<option value="${escapeHtml(etiqueta)}" ${etiqueta === actual ? "selected" : ""}>${escapeHtml(etiqueta)}</option>`;
+    }).join("");
+    // Si el agente guardado ya no esta activo en la cartera, se conserva como
+    // opcion para no perderlo al reabrir la ficha.
+    const extra = encontrado ? "" : `<option value="${escapeHtml(actual)}" selected>${escapeHtml(actual)} (no activo en la cartera)</option>`;
+    return base + extra + opciones;
+}
+
+async function cargarAgentesCargaIa(cartera) {
+    const select = document.getElementById("agenteIa");
+    if (!select) return;
+    if (!cartera) {
+        select.innerHTML = `<option value="">Primero selecciona una cartera</option>`;
+        select.disabled = true;
+        return;
+    }
+    select.disabled = true;
+    select.innerHTML = `<option value="">Cargando agentes…</option>`;
+    try {
+        const agentes = await obtenerAgentesIa(cartera);
+        if (!agentes.length) {
+            select.innerHTML = `<option value="">No hay agentes activos en esta cartera</option>`;
+            return;
+        }
+        select.innerHTML = opcionesAgentesIa(agentes);
+        select.disabled = false;
+    } catch (error) {
+        select.innerHTML = `<option value="">No se pudieron cargar los agentes</option>`;
+    }
+}
+
+function pintarAgenteFichaIa(data = {}) {
+    const bloque = document.getElementById("agenteFichaIa");
+    if (!bloque) return;
+    bloque.classList.remove("oculto");
+    const agente = String(data.agente || "").trim();
+    const nombre = document.getElementById("agenteFichaNombreIa");
+    if (nombre) {
+        nombre.textContent = agente || "Sin agente asignado";
+        nombre.classList.toggle("agente-ficha-vacio", !agente);
+    }
+    const boton = document.getElementById("btnCambiarAgenteIa");
+    if (boton) boton.textContent = agente ? "Cambiar" : "Asignar agente";
+    bloque.classList.toggle("sin-agente", !agente);
+    cerrarEditorAgenteFichaIa();
+}
+
+async function abrirEditorAgenteFichaIa() {
+    if (!resultadoActualIa?.id_feedback) return;
+    const editor = document.getElementById("agenteFichaEditorIa");
+    const select = document.getElementById("agenteFichaSelectIa");
+    if (!editor || !select) return;
+    editor.classList.remove("oculto");
+    document.getElementById("btnCambiarAgenteIa")?.classList.add("oculto");
+    select.innerHTML = `<option value="">Cargando agentes…</option>`;
+    try {
+        const agentes = await obtenerAgentesIa(resultadoActualIa.cartera);
+        select.innerHTML = agentes.length
+            ? opcionesAgentesIa(agentes, resultadoActualIa.agente)
+            : `<option value="">No hay agentes activos en esta cartera</option>`;
+    } catch (error) {
+        select.innerHTML = `<option value="">No se pudieron cargar los agentes</option>`;
+    }
+}
+
+function cerrarEditorAgenteFichaIa() {
+    document.getElementById("agenteFichaEditorIa")?.classList.add("oculto");
+    document.getElementById("btnCambiarAgenteIa")?.classList.remove("oculto");
+}
+
+async function guardarAgenteFichaIa() {
+    const idFeedback = resultadoActualIa?.id_feedback;
+    const agente = valor("agenteFichaSelectIa");
+    if (!idFeedback) return;
+    if (!agente) {
+        mostrarMensajeIa("Elige un agente antes de guardar.", "error");
+        return;
+    }
+    try {
+        const formData = new FormData();
+        formData.append("agente", agente);
+        formData.append("usuario", localStorage.getItem("agente") || localStorage.getItem("dni") || "SIN_USUARIO");
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}/agente`, { method: "POST", body: formData }, 20000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo asignar el agente.");
+        resultadoActualIa = { ...resultadoActualIa, ...data };
+        pintarAgenteFichaIa(resultadoActualIa);
+        pintarHistorialDetalleIa?.(data.historial_lista || []);
+        mostrarMensajeIa("Agente asignado. La evaluación ya cuenta para su desempeño.", "ok");
+        cargarBandejaIa();
+        await cargarReporteriaIa();
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo asignar el agente.", "error");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bandeja de trabajo del supervisor
+// Responde "y ahora que hago": todo lo cargado termina aqui hasta que se
+// revisa. La lista sale del servidor, asi que sobrevive a recargar la pagina.
+//   En proceso  -> se esta transcribiendo o evaluando.
+//   Con error   -> el analisis fallo; se reintenta desde aqui.
+//   Por revisar -> lista para el supervisor, la mas antigua primero.
+// ---------------------------------------------------------------------------
+
+let bandejaIa = { en_proceso: [], con_error: [], por_revisar: [], resumen: {} };
+let bandejaTimerIa = null;
+// Hora en que ESTE navegador lanzo cada analisis, solo para mostrar el reloj.
+const inicioProcesoIa = new Map();
+const INTERVALO_BANDEJA_ACTIVA_MS = 5000;
+
+const ETIQUETAS_PROCESO_IA = {
+    PENDIENTE: "Cargada, sin iniciar",
+    EN_COLA: "En cola",
+    TRANSCRIBIENDO: "Transcribiendo audio",
+    ANALIZANDO: "Evaluando con la pauta",
+};
+
+function seguirProcesoIa(idFeedback) {
+    const id = Number(idFeedback);
+    if (id && !inicioProcesoIa.has(id)) inicioProcesoIa.set(id, Date.now());
+    cargarBandejaIa();
+}
+
+async function cargarBandejaIa() {
+    clearTimeout(bandejaTimerIa);
+    const params = new URLSearchParams({
+        supervisor: localStorage.getItem("agente") || localStorage.getItem("dni") || "",
+        perfil: tipoUsuarioIa(),
+    });
+    try {
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}/bandeja?${params}`, {}, 15000);
+        const data = await leerJsonSeguro(response);
+        if (response.ok) bandejaIa = data;
+    } catch { /* se conserva la ultima bandeja conocida */ }
+    pintarBandejaIa();
+    // Mientras haya algo procesandose se consulta seguido; si no, se detiene
+    // y se vuelve a cargar cuando pase algo (carga, validacion, asignacion).
+    if ((bandejaIa.en_proceso || []).length) {
+        bandejaTimerIa = setTimeout(cargarBandejaIa, INTERVALO_BANDEJA_ACTIVA_MS);
+    }
+}
+
+function tiempoTranscurridoIa(inicio) {
+    const s = Math.max(0, Math.round((Date.now() - inicio) / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function senalesBandejaIa(item) {
+    const senales = [];
+    if (item.sin_agente) senales.push(`<span class="senal senal-alerta">Sin agente</span>`);
+    if (item.requiere_revision_humana) senales.push(`<span class="senal">La IA pide revisión</span>`);
+    if (Number(item.cal_borrador) > 0) senales.push(`<span class="senal">Corrección sin enviar</span>`);
+    if (Number(item.cal_en_revision) > 0) senales.push(`<span class="senal senal-calidad">En Calidad</span>`);
+    return senales.join("");
+}
+
+function filaBandejaIa(item, tipo) {
+    const id = Number(item.id_feedback);
+    if (tipo === "proceso") {
+        const estado = String(item.estado || "").toUpperCase();
+        const reloj = inicioProcesoIa.has(id) ? tiempoTranscurridoIa(inicioProcesoIa.get(id)) : "";
+        return `<div class="proceso-ia curso">
+            <div><strong>#${id}</strong><span>${escapeHtml(ETIQUETAS_PROCESO_IA[estado] || estado)}</span></div>
+            <small>${reloj}</small>
+            <div class="proceso-acciones"><span class="proceso-spinner" aria-hidden="true"></span></div>
+        </div>`;
+    }
+    if (tipo === "error") {
+        return `<div class="proceso-ia error">
+            <div><strong>#${id}</strong><span>${escapeHtml(item.cartera || "")}</span></div>
+            <small>${escapeHtml(String(item.mensaje_error || "El análisis falló").slice(0, 90))}</small>
+            <div class="proceso-acciones">
+                <button type="button" class="btn-light btn-small" onclick="reintentarProcesoIa(${id})">Reintentar</button>
+            </div>
+        </div>`;
+    }
+    const nota = item.score_vigente == null ? "No evaluable" : `${formatoPeso(item.score_vigente)} / 100`;
+    return `<div class="proceso-ia pendiente-revision">
+        <div>
+            <strong>#${id} · ${escapeHtml(item.agente || "Sin agente")}</strong>
+            <span>${escapeHtml(item.cartera || "Sin cartera")}${item.fecha_llamada ? ` · ${escapeHtml(formatoFecha(item.fecha_llamada))}` : ""}</span>
+            <span class="senales-bandeja">${senalesBandejaIa(item)}</span>
+        </div>
+        <small>${nota}</small>
+        <div class="proceso-acciones">
+            <button type="button" class="btn-primary btn-small" onclick="verAnalisisIa(${id})">Revisar</button>
+        </div>
+    </div>`;
+}
+
+function pintarBandejaIa() {
+    const el = document.getElementById("procesosIa");
+    if (!el) return;
+    const enProceso = bandejaIa.en_proceso || [];
+    const conError = bandejaIa.con_error || [];
+    const porRevisar = bandejaIa.por_revisar || [];
+    if (!enProceso.length && !conError.length && !porRevisar.length) {
+        el.innerHTML = `<p class="bandeja-vacia">No tienes llamadas pendientes. Carga un audio para empezar.</p>`;
+        return;
+    }
+    const bloques = [];
+    if (enProceso.length) {
+        bloques.push(`<p class="procesos-titulo">En proceso · ${enProceso.length}</p>${enProceso.map(i => filaBandejaIa(i, "proceso")).join("")}`);
+    }
+    if (conError.length) {
+        bloques.push(`<p class="procesos-titulo">Con error · ${conError.length}</p>${conError.map(i => filaBandejaIa(i, "error")).join("")}`);
+    }
+    if (porRevisar.length) {
+        const sinAgente = Number(bandejaIa.resumen?.sin_agente || 0);
+        bloques.push(`<p class="procesos-titulo">Por revisar · ${porRevisar.length}${sinAgente ? ` <em>(${sinAgente} sin agente)</em>` : ""}</p>
+            ${porRevisar.map(i => filaBandejaIa(i, "revisar")).join("")}`);
+    }
+    el.innerHTML = bloques.join("");
+}
+
+// El reloj de las filas en proceso avanza aunque no llegue respuesta nueva.
+setInterval(() => {
+    if ((bandejaIa.en_proceso || []).some(i => inicioProcesoIa.has(Number(i.id_feedback)))) {
+        pintarBandejaIa();
+    }
+}, 1000);
+
+async function reintentarProcesoIa(id) {
+    try {
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}/${id}/analizar/iniciar`, { method: "POST" }, 30000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo reintentar.");
+        inicioProcesoIa.set(Number(id), Date.now());
+        cargarBandejaIa();
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo reintentar.", "error");
+    }
+}
+
+function siguientePendienteIa(excluirId = null) {
+    return (bandejaIa.por_revisar || []).find(i => Number(i.id_feedback) !== Number(excluirId)) || null;
 }
 
 async function cargarCarterasIa() {
@@ -248,6 +517,9 @@ function pintarCarterasIa(carteras) {
     if (select && carterasFiltradas.length === 1) {
         select.value = select.options[1]?.value || "";
     }
+    // Asignar el valor por codigo no dispara "change": si la cartera quedo
+    // preseleccionada, sus agentes se cargan aqui.
+    cargarAgentesCargaIa(valorCarteraIa());
 
     const filtroCartera = document.getElementById("filtroCarteraIa");
     if (filtroCartera) {
@@ -517,6 +789,7 @@ function pintarFichaRevisionIa(data = {}) {
     setText("detalleBreadcrumbIa", `Evaluaciones / Evaluación #${id}`);
     setText("detalleTituloIa", "Ficha de evaluación");
     setText("detalleSubtituloIa", `Llamada del ${formatoFecha(fecha)} · ${data.cartera || "Sin cartera"}`);
+    pintarAgenteFichaIa(data);
     setText("resultadoNivelIa", descalificada ? "DESCALIFICADA" : riesgo);
     setText("revisionHumanaBadgeIa", data.requiere_revision_humana ? "Requiere revisión humana" : revision.texto);
     const revisionBadge = document.getElementById("revisionHumanaBadgeIa");
@@ -1675,22 +1948,22 @@ async function validarEvaluacionDesdeFichaIa() {
         mostrarMensajeIa(estado.motivo || "Selecciona una decisión válida antes de continuar.", "error");
         return;
     }
-    if (decision === "recalibrar") {
-        if (!valor("comentarioFeedbackIa")) {
-            mostrarMensajeIa("Ingresa un comentario para solicitar recalibración.", "error");
-            return;
-        }
-        abrirRecalibracionIa();
-        setValue("motivoRecalibracionIa", valor("comentarioFeedbackIa"));
+    // Avisos, no bloqueos: el supervisor decide si sigue.
+    const data = resultadoActualIa || {};
+    if (!limpiarTextoIa(data.agente) && !window.confirm(
+        "Esta llamada no tiene agente asignado: no contará en el desempeño ni en los planes de mejora de nadie.\n\n¿Validar de todos modos?")) {
         return;
     }
     if (decision === "modificar") {
-        mostrarMensajeIa("Edición pendiente de integración con el backend. Guarda como borrador o solicita recalibración.", "error");
-        return;
+        const sinEnviar = correccionesSinEnviarIa();
+        if (sinEnviar > 0 && !window.confirm(
+            `Tienes ${sinEnviar} corrección(es) en borrador que Calidad todavía no ve.\n\n¿Validar igual? (puedes enviarlas después desde la pestaña Calibración)`)) {
+            return;
+        }
     }
     setBotonesValidarFichaIa(true);
     try {
-        setValue("estadoRevisionIa", decision === "modificar" ? "REVISADO" : "REVISADO");
+        setValue("estadoRevisionIa", "REVISADO");
         await guardarRevisionIa();
     } finally {
         setBotonesValidarFichaIa(false);
@@ -1706,22 +1979,33 @@ function setBotonesValidarFichaIa(loading = false) {
     });
 }
 
+function limpiarTextoIa(value) {
+    const texto = String(value ?? "").trim();
+    return ["", "sin agente", "none", "null", "-"].includes(texto.toLowerCase()) ? "" : texto;
+}
+
+// Correcciones de criterio que el supervisor guardo pero no envio a Calidad.
+function correccionesSinEnviarIa() {
+    return (calibracionCriteriosIa || []).filter(c => c.estado_calibracion === "BORRADOR").length;
+}
+
+function irACorregirCriteriosIa() {
+    mostrarTabDetalleIa("calibracion");
+    document.getElementById("calibracionCriteriosIa")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function actualizarDecisionSupervisorIa() {
     const decision = document.querySelector("input[name='decisionSupervisorIa']:checked")?.value || "";
     const editable = false;
     document.querySelectorAll(".editable-criteria-action").forEach(btn => {
         btn.disabled = !editable;
-        btn.title = decision === "modificar"
-            ? "Edición pendiente de integración con el backend"
-            : "Selecciona Modificar evaluación para registrar una discrepancia";
+        btn.title = "Las correcciones por criterio se registran en la pestaña Calibración";
     });
     const comentario = document.getElementById("comentarioFeedbackIa");
     if (comentario) {
-        comentario.placeholder = decision === "recalibrar"
-            ? "Explica el motivo de la recalibración antes de enviarla..."
-            : decision === "modificar"
-                ? "Describe los criterios discrepantes. La edición por ítem aún no recalcula ni persiste score final..."
-                : "Escriba su comentario aquí...";
+        comentario.placeholder = decision === "modificar"
+            ? "Resume qué corregiste y por qué (el detalle por criterio va en Calibración)..."
+            : "Escriba su comentario aquí...";
     }
     pintarAvisoDecisionSupervisorIa(decision);
     const estado = estadoDecisionSupervisorIa();
@@ -1747,9 +2031,6 @@ function estadoDecisionSupervisorIa() {
     if (!decision) {
         return { puedeValidar: false, motivo: "Selecciona una decisión del supervisor." };
     }
-    if (decision === "modificar") {
-        return { puedeValidar: false, motivo: "Edición pendiente de integración con el backend. Guarda borrador o solicita recalibración." };
-    }
     if (requiereComentario && !comentario) {
         return { puedeValidar: false, motivo: "Ingresa un comentario para dejar trazabilidad de la decisión." };
     }
@@ -1758,7 +2039,7 @@ function estadoDecisionSupervisorIa() {
 
 function fichaRequiereComentarioIa(decision) {
     if (!decision) return true;
-    if (["modificar", "recalibrar"].includes(decision)) return true;
+    if (decision === "modificar") return true;
     const data = resultadoActualIa || {};
     return Boolean(data.requiere_revision_humana || confianzaEsBajaIa(data.confianza_evaluacion || data.calidad_transcripcion));
 }
@@ -1776,7 +2057,11 @@ function pintarAvisoDecisionSupervisorIa(decision) {
     const data = resultadoActualIa || {};
     const requiereComentario = fichaRequiereComentarioIa(decision);
     if (decision === "modificar") {
-        aviso.textContent = "Edición pendiente de integración con el backend. Puedes guardar borrador o solicitar recalibración; no se validará un score modificado sin persistencia.";
+        const sinEnviar = correccionesSinEnviarIa();
+        aviso.innerHTML = `Marca en <strong>Calibración</strong> los criterios que la IA evaluó mal y envíalos a Calidad. `
+            + `La nota cambia cuando Calidad publica.`
+            + (sinEnviar ? ` <strong>${sinEnviar} corrección(es) sin enviar.</strong>` : "")
+            + ` <button type="button" class="btn-light btn-small" onclick="irACorregirCriteriosIa()">Ir a corregir criterios</button>`;
         aviso.classList.remove("oculto");
         return;
     }
@@ -1786,7 +2071,7 @@ function pintarAvisoDecisionSupervisorIa(decision) {
         return;
     }
     if (requiereComentario && (data.requiere_revision_humana || confianzaEsBajaIa(data.confianza_evaluacion || data.calidad_transcripcion))) {
-        aviso.textContent = "La evaluación tiene confianza baja o requiere revisión humana. Debes registrar comentario antes de confirmar o recalibrar.";
+        aviso.textContent = "La evaluación tiene confianza baja o requiere revisión humana. Debes registrar un comentario antes de validar.";
         aviso.classList.remove("oculto");
         return;
     }
@@ -1882,6 +2167,7 @@ function nuevaLlamadaIa() {
     cambiarEstadoProceso("PENDIENTE");
     setText("resultadoNivelIa", "-");
     setValue("fechaIa", fechaLocalActualIa());
+    cargarBandejaIa();
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -2570,15 +2856,25 @@ function normalizarCalificacionItemIa(item = {}) {
     return Number(item.nota || 0) === 0 ? "No cumple" : "Parcial";
 }
 
+// Regla unica de "brecha" para toda la reporteria: solo cuenta lo que se
+// midio y fallo (No cumple / Parcial). No evaluable, No aplica y Requiere
+// revision NO son brechas del agente: no se midieron o estan pendientes de
+// una persona. Es la misma regla que saca esos estados del denominador del
+// score. Antes cada vista tenia su propio filtro y el Pareto contaba
+// "Tipificacion" y "Tono de voz" (No evaluables por diseno) en el 100% de
+// las llamadas.
+function esBrechaItemIa(item = {}) {
+    const cal = String(item.calificacion || normalizarCalificacionItemIa(item)).toLowerCase();
+    return cal.includes("no cumple") || cal.includes("no evidenciado") || cal.includes("parcial");
+}
+
 function requiereFeedbackItemIa(item = {}) {
-    const cal = String(item.calificacion || "").toLowerCase();
-    return cal && !["cumple", "no aplica", "no evaluable"].includes(cal);
+    return esBrechaItemIa(item);
 }
 
 function requiereCoachingItemIa(item = {}) {
-    const cal = String(item.calificacion || "").toLowerCase();
     const grupo = String(item.grupo_error_sgc || "").toLowerCase();
-    return cal !== "cumple" && grupo.includes("cumplimiento");
+    return esBrechaItemIa(item) && grupo.includes("cumplimiento");
 }
 
 function itemsSgcDetalleIa(row = {}) {
@@ -2591,8 +2887,7 @@ function resumenSgcDesdeItemsIa(items = []) {
     const resumen = Object.fromEntries(SGC_GRUPOS_IA.map(grupo => [grupo, 0]));
     items.forEach(raw => {
         const item = itemSgcIa(raw);
-        const cal = String(item.calificacion || "").toLowerCase();
-        if (!esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica", "no evaluable"].includes(cal) && !cal.includes("revision") && !cal.includes("revisión")) {
+        if (!esValorNoAplicableIa(item.grupo_error_sgc) && esBrechaItemIa(item)) {
             resumen[item.grupo_error_sgc] = (resumen[item.grupo_error_sgc] || 0) + 1;
         }
     });
@@ -2898,57 +3193,97 @@ function pintarVistaCoachingIa(detalle) {
     `;
 }
 
-function pintarVistaCalibracionTabIa(detalle) {
+// La version anterior comparaba score_final contra score_calidad_ia, que el
+// backend iguala al analizar: la "coincidencia" salia ~100% por construccion y
+// "evaluaciones calibradas" contaba todas las que tenian nota. Eran numeros
+// falsos presentados como indicadores. Ahora la pestaña lee lo que de verdad
+// registra Calidad: la bandeja pendiente y la precision medida por criterio.
+function pintarVistaCalibracionTabIa(_detalle) {
+    cargarVistaCalibracionGlobalIa();
+}
+
+async function cargarVistaCalibracionGlobalIa() {
     const kpis = document.getElementById("calibracionKpisIa");
     const tabla = document.getElementById("calibracionTablaIa");
-    const discrepancias = document.getElementById("calibracionDiscrepanciasIa");
-    if (!kpis || !tabla || !discrepancias) return;
-    const diffs = detalle.map(item => Math.abs(Number(item.score_final ?? item.score_calidad ?? 0) - Number(item.score_calidad_ia ?? item.score_calidad ?? 0))).filter(value => !Number.isNaN(value));
-    const diferencia = diffs.length ? diffs.reduce((sum, value) => sum + value, 0) / diffs.length : 0;
-    const coincidencia = diffs.length ? Math.max(0, 100 - diferencia).toFixed(1) : "-";
-    const calibradas = detalle.filter(item => item.score_supervisor != null || item.score_final != null).length;
-    const abiertas = detalle.filter(item => String(item.estado_recalibracion || "").toUpperCase() === "PENDIENTE").length;
-    const revision = detalle.filter(item => item.requiere_revision_humana || item.error_critico).length;
+    const precisionEl = document.getElementById("calibracionDiscrepanciasIa");
+    if (!kpis || !tabla || !precisionEl) return;
+
+    kpis.innerHTML = `<p class="calibration-empty">Cargando…</p>`;
+    const [cola, precision] = await Promise.all([
+        fetchIa(`${CALIBRACION_BASE_IA}/cola`, {}, 15000).then(leerJsonSeguro).catch(() => ({})),
+        fetchIa(`${CALIBRACION_BASE_IA}/reporte/precision?perfil=${encodeURIComponent(tipoUsuarioIa())}`, {}, 15000)
+            .then(async r => (r.ok ? leerJsonSeguro(r) : { sin_acceso: r.status === 403 }))
+            .catch(() => ({})),
+    ]);
+    await cargarPermisosCalibracionIa();
+
+    const pendientes = Array.isArray(cola?.data) ? cola.data : [];
+    const criteriosEnCola = pendientes.reduce((t, i) => t + Number(i.en_revision || 0), 0);
+    const correccionesEnCola = pendientes.reduce((t, i) => t + Number(i.correcciones || 0), 0);
+    const detallePrecision = Array.isArray(precision?.detalle) ? precision.detalle : [];
+    const revisados = Number(precision?.criterios_revisados || 0);
+    const suficiente = Boolean(precision?.muestra_suficiente);
+
+    // Promedios ponderados por criterios revisados, no promedio de porcentajes.
+    const suma = campo => detallePrecision.reduce((t, i) => t + Number(i[campo] || 0), 0);
+    const pct = campo => (revisados ? (suma(campo) / revisados) * 100 : null);
+    const pResultado = pct("acierto_resultado");
+    const pEvidencia = pct("acierto_evidencia");
+    const fmtPct = valor => (valor == null ? "-" : `${valor.toFixed(1)}%`);
+    const aviso = revisados && !suficiente ? "Muestra aún chica: menos de 30 criterios" : "";
+
     kpis.innerHTML = [
-        cardKpiTabIa("Coincidencia IA vs supervisor", coincidencia === "-" ? "-" : `${coincidencia}%`, "Meta de consistencia"),
-        cardKpiTabIa("Diferencia promedio", `${diferencia.toFixed(1)} pts`, "IA vs score validado"),
-        cardKpiTabIa("Evaluaciones calibradas", calibradas, "Con revisión validada"),
-        cardKpiTabIa("Recalibraciones abiertas", abiertas, "Pendientes"),
-        cardKpiTabIa("Requieren revisión humana", revision, "Casos sensibles"),
+        cardKpiTabIa("Llamadas esperando a Calidad", formatoNumero(pendientes.length), `${formatoNumero(criteriosEnCola)} criterio(s) en revisión`),
+        cardKpiTabIa("Correcciones propuestas", formatoNumero(correccionesEnCola), "Cambian la nota si se publican"),
+        cardKpiTabIa("Criterios revisados", formatoNumero(revisados), precision?.sin_acceso ? "Tu perfil no ve la precisión" : "Base de la precisión"),
+        cardKpiTabIa("Precisión de resultado", fmtPct(pResultado), aviso || "La IA concluyó lo mismo que Calidad"),
+        cardKpiTabIa("Precisión de evidencia", fmtPct(pEvidencia), aviso || "Además citó una evidencia válida"),
     ].join("");
-    const rows = detalle.filter(item => String(item.estado_recalibracion || "SIN_APELACION").toUpperCase() !== "SIN_APELACION" || item.requiere_revision_humana);
-    if (!rows.length) {
-        tabla.innerHTML = `<div class="empty-report-state"><strong>No hay recalibraciones pendientes para los filtros seleccionados.</strong><small>Las solicitudes aparecerán aquí cuando se registren.</small></div>`;
+
+    if (!pendientes.length) {
+        tabla.innerHTML = `<div class="empty-report-state"><strong>No hay calibraciones esperando a Calidad.</strong><small>Aparecen aquí cuando un supervisor envía una llamada calibrada.</small></div>`;
     } else {
         tabla.innerHTML = `
             <table class="copc-mini-table">
-                <thead><tr><th>Evaluación</th><th>Agente</th><th>Supervisor</th><th>Score IA</th><th>Score supervisor</th><th>Diferencia</th><th>Estado recalibración</th><th>Acción</th></tr></thead>
-                <tbody>${rows.slice(0, 80).map(row => {
-                    const scoreIa = Number(row.score_calidad_ia ?? row.score_calidad ?? 0);
-                    const scoreSup = Number(row.score_supervisor ?? row.score_final ?? row.score_calidad ?? 0);
-                    const diff = Math.abs(scoreSup - scoreIa);
-                    const estado = formatearEstadoRecalibracionIa(row.estado_recalibracion);
-                    return `
-                        <tr>
-                            <td>${escapeHtml(row.id_feedback || "-")}</td>
-                            <td>${escapeHtml(row.agente || "Sin agente asociado")}</td>
-                            <td>${escapeHtml(row.supervisor || "-")}</td>
-                            <td>${scoreIa.toFixed(1)}</td>
-                            <td>${scoreSup.toFixed(1)}</td>
-                            <td>${diff.toFixed(1)} pts</td>
-                            <td>${badgeGerencialIa(estado, String(row.estado_recalibracion || "").toUpperCase() === "PENDIENTE" ? "alto" : "medio")}</td>
-                            <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.id_feedback || 0)})">${String(row.estado_recalibracion || "").toUpperCase() === "PENDIENTE" ? "Resolver" : "Ver"}</button></td>
-                        </tr>
-                    `;
-                }).join("")}</tbody>
-            </table>
-        `;
+                <thead><tr><th>Evaluación</th><th>Agente</th><th>Cartera</th><th>En revisión</th><th>Correcciones</th><th>Propuesto por</th><th>Esperando desde</th><th>Nota IA</th><th></th></tr></thead>
+                <tbody>${pendientes.map(row => `
+                    <tr>
+                        <td>#${escapeHtml(row.id_feedback)}</td>
+                        <td>${escapeHtml(row.agente || "Sin agente asignado")}</td>
+                        <td>${escapeHtml(row.cartera || "-")}</td>
+                        <td>${formatoNumero(row.en_revision)}</td>
+                        <td>${formatoNumero(row.correcciones)}</td>
+                        <td>${escapeHtml(row.propuesto_por || "-")}</td>
+                        <td>${escapeHtml(formatoFecha(row.enviado_desde) || "-")}</td>
+                        <td>${row.score_final == null ? "No evaluable" : `${formatoPeso(row.score_final)}`}</td>
+                        <td><button class="historial-action" type="button" onclick="verAnalisisIa(${Number(row.id_feedback)}, 'calibracion')">${permisosCalibracionIa.puede_publicar ? "Revisar" : "Ver"}</button></td>
+                    </tr>`).join("")}</tbody>
+            </table>`;
     }
-    const items = construirItemsMayorDiscrepanciaIa(detalle).slice(0, 8);
-    discrepancias.innerHTML = items.length ? `
-        <table><thead><tr><th>Ítem</th><th>Frecuencia</th><th>Diferencia prom.</th></tr></thead>
-        <tbody>${items.map(item => `<tr><td>${escapeHtml(item.item)}</td><td>${formatoNumero(item.frecuencia)}</td><td>${item.diferencia.toFixed(1)} pts</td></tr>`).join("")}</tbody></table>
-    ` : `<div class="empty-report-state"><strong>No hay discrepancias registradas.</strong></div>`;
+
+    if (precision?.sin_acceso) {
+        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Tu perfil no tiene acceso a la precisión de la IA.</strong><small>Es una métrica del módulo, visible para Calidad y jefaturas.</small></div>`;
+    } else if (!detallePrecision.length) {
+        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Todavía no hay criterios revisados por Calidad.</strong><small>La precisión se calcula solo sobre criterios con una decisión humana: lo que nadie revisó no cuenta como acierto.</small></div>`;
+    } else {
+        // Peor precision primero: es donde la IA necesita ajuste.
+        const ordenado = [...detallePrecision].sort((a, b) => Number(a.precision_resultado_pct) - Number(b.precision_resultado_pct));
+        const motivos = Array.isArray(precision?.motivos) ? precision.motivos.slice(0, 5) : [];
+        precisionEl.innerHTML = `
+            <table>
+                <thead><tr><th>Criterio</th><th>Cartera</th><th>Revisados</th><th>Resultado</th><th>Evidencia</th></tr></thead>
+                <tbody>${ordenado.map(item => `
+                    <tr>
+                        <td><strong>${escapeHtml(item.codigo_criterio)}</strong> ${escapeHtml(item.nombre_criterio || "")}</td>
+                        <td>${escapeHtml(item.cartera || "-")}</td>
+                        <td>${formatoNumero(item.revisados)}</td>
+                        <td>${Number(item.precision_resultado_pct).toFixed(1)}%</td>
+                        <td>${Number(item.precision_evidencia_pct).toFixed(1)}%</td>
+                    </tr>`).join("")}</tbody>
+            </table>
+            ${motivos.length ? `<p class="cal-motivos-titulo">Motivos más frecuentes de corrección</p>
+            <ul class="cal-motivos-lista">${motivos.map(m => `<li><strong>${formatoNumero(m.veces)}</strong> ${escapeHtml(m.nombre)}</li>`).join("")}</ul>` : ""}`;
+    }
 }
 
 function pintarVistaReportesSgcIa(data, detalle) {
@@ -2989,8 +3324,7 @@ function construirParetoSgcIa(data, detalle) {
         const idEvaluacion = String(row.id_feedback || row.id_llamada || row.archivo_nombre || rowIndex);
         itemsSgcDetalleIa(row).forEach(raw => {
             const item = itemSgcIa(raw);
-            const cal = String(item.calificacion || "").toLowerCase();
-            if (esValorNoAplicableIa(item.grupo_error_sgc) || ["cumple", "no aplica"].includes(cal)) return;
+            if (esValorNoAplicableIa(item.grupo_error_sgc) || !esBrechaItemIa(item)) return;
             const key = `${item.grupo_error_sgc}::${item.factor_sgc}`;
             const actual = map[key] || {
                 grupo_error_sgc: item.grupo_error_sgc,
@@ -3305,8 +3639,7 @@ function evaluacionesAfectadasPorFactorIa(detalle, factor) {
     if (!target) return 0;
     return detalle.filter(row => itemsSgcDetalleIa(row).some(raw => {
         const item = itemSgcIa(raw);
-        const cal = String(item.calificacion || "").toLowerCase();
-        return String(item.factor_sgc || "").toLowerCase() === target && !["cumple", "no aplica"].includes(cal);
+        return String(item.factor_sgc || "").toLowerCase() === target && esBrechaItemIa(item);
     })).length;
 }
 
@@ -3373,8 +3706,7 @@ function carteraMasAfectadaPorFactorSgcIa(detalle, factorNombre) {
     detalle.forEach(row => {
         const tieneFactor = itemsSgcDetalleIa(row).some(raw => {
             const item = itemSgcIa(raw);
-            const calificacion = String(item.calificacion || "").toLowerCase();
-            return !["cumple", "no aplica"].includes(calificacion)
+            return esBrechaItemIa(item)
                 && String(item.factor_sgc || "").toLowerCase() === String(factorNombre || "").toLowerCase();
         });
         if (!tieneFactor) return;
@@ -4546,13 +4878,14 @@ async function guardarRevisionIa(options = {}) {
             renderResultadoIa(data);
             mostrarMensajeIa("Borrador guardado correctamente.", "ok");
         } else {
-            resultadoActualIa = null;
-            document.getElementById("resultadoContenidoIa")?.classList.add("oculto");
-            document.getElementById("resultadoVacioIa")?.classList.remove("oculto");
-            activarVistaReporteriaIa();
-            await cargarHistorialIa();
-            await cargarReporteriaIa();
-            mostrarMensajeIa("Revisión guardada correctamente.", "ok");
+            // Tras validar se vuelve a la bandeja: el trabajo del supervisor
+            // es vaciar "Por revisar", no mirar el reporte despues de cada llamada.
+            nuevaLlamadaIa();
+            await cargarBandejaIa();
+            const quedan = (bandejaIa.por_revisar || []).length;
+            mostrarMensajeIa(quedan
+                ? `Revisión guardada (#${idFeedback}). Quedan ${quedan} por revisar.`
+                : `Revisión guardada (#${idFeedback}). No te quedan llamadas por revisar.`, "ok");
         }
     } catch (error) {
         mostrarMensajeIa(error.message || "Error guardando revisión.", "error");
@@ -4572,7 +4905,12 @@ function comentarioRevisionConTrazabilidadIa() {
     if (comentario) partes.push(comentario);
     partes.push(`Decisión supervisor: ${decision}`);
     if (tipoSupervisor) partes.push(`Tipo de llamada supervisor: ${tipoSupervisor}`);
-    if (decision === "modificar") partes.push("Nota: edición pendiente de integración con el backend; no se recalcula ni persiste score final por ítem.");
+    if (decision === "modificar") {
+        const sinEnviar = correccionesSinEnviarIa();
+        partes.push(sinEnviar
+            ? `Correcciones por criterio: ${sinEnviar} en borrador, sin enviar a Calidad.`
+            : "Correcciones por criterio registradas en Calibración.");
+    }
     return partes.join("\n");
 }
 
@@ -5214,10 +5552,7 @@ function pintarTablaSgcDetalleIa(items) {
     if (!tbody) return;
     const rows = items
         .map(itemSgcIa)
-        .filter(item => {
-            const cal = String(item.calificacion || "").toLowerCase();
-            return !esValorNoAplicableIa(item.grupo_error_sgc) && !["cumple", "no aplica"].includes(cal);
-        });
+        .filter(item => !esValorNoAplicableIa(item.grupo_error_sgc) && esBrechaItemIa(item));
     if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="8" class="empty-row">Sin brechas SGC / PEC para mostrar en la vista ejecutiva.</td></tr>`;
         return;
@@ -7771,6 +8106,7 @@ function limpiarFormularioBasicoIa(options = {}) {
         const cartera = document.getElementById("carteraIa");
         if (cartera && cartera.options.length > 2) cartera.value = "";
     }
+    cargarAgentesCargaIa(valorCarteraIa());
 }
 
 function mostrarMensajeIa(texto, tipo = "ok") {
@@ -7816,7 +8152,10 @@ async function fetchIa(url, options = {}, timeoutMs = 30000) {
         });
     } catch (error) {
         if (error.name === "AbortError") {
-            throw new Error("El analisis IA esta tardando mas de lo esperado. Intenta nuevamente en unos minutos o revisa si la evaluacion termino en el historial.");
+            // Antes este texto hablaba siempre del "analisis IA", aunque la
+            // consulta que vencio fuera el historial o la reporteria.
+            const ruta = String(url).replace(/^https?:\/\/[^/]+/, "").split("?")[0];
+            throw new Error(`El servidor no respondió en ${Math.round(timeoutMs / 1000)} s (${ruta}). Puede estar ocupado con otra consulta o con un análisis en curso; intenta de nuevo en un momento.`);
         }
         throw error;
     } finally {
@@ -8253,6 +8592,8 @@ async function cargarCalibracionCriteriosIa(forzar = false) {
         calibracionCriteriosIa = Array.isArray(data?.criterios) ? data.criterios : [];
         contenedor.dataset.idFeedback = String(idFeedback);
         pintarAvanceCalibracionIa(data?.resumen || {});
+        await cargarPermisosCalibracionIa();
+        pintarAccionesCalibracionIa(data?.resumen || {});
         pintarCalibracionCriteriosIa();
     } catch (error) {
         contenedor.innerHTML = `<p class="calibration-empty">No se pudo cargar la calibración: ${escapeHtml(error.message || "error")}</p>`;
@@ -8274,6 +8615,159 @@ function pintarAvanceCalibracionIa(resumen = {}) {
     el.innerHTML = `
         <div class="calibration-progress-bar"><i style="width:${Math.max(2, Math.min(100, pct))}%"></i></div>
         <small>${revisados} de ${total} criterios revisados · ${pct}%</small>`;
+}
+
+// ---------------------------------------------------------------------------
+// Flujo de calibracion: el supervisor propone, Calidad publica.
+// Hasta ahora todo quedaba en BORRADOR para siempre: la pantalla nunca enviaba
+// a revision ni publicaba, asi que la nota nunca cambiaba y la precision de la
+// IA no se podia medir.
+// ---------------------------------------------------------------------------
+
+let permisosCalibracionIa = { puede_publicar: false };
+
+async function cargarPermisosCalibracionIa() {
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/permisos?perfil=${encodeURIComponent(tipoUsuarioIa())}`, {}, 10000);
+        const data = await leerJsonSeguro(response);
+        permisosCalibracionIa = { puede_publicar: Boolean(data?.puede_publicar) };
+    } catch {
+        permisosCalibracionIa = { puede_publicar: false };
+    }
+    return permisosCalibracionIa;
+}
+
+function pintarAccionesCalibracionIa(resumen = {}) {
+    const el = document.getElementById("calibracionAccionesIa");
+    if (!el) return;
+    const borrador = Number(resumen.borrador || 0);
+    const enRevision = Number(resumen.en_revision || 0);
+    const publicadas = Number(resumen.publicadas || 0);
+    const bloques = [];
+
+    const scoreIa = resultadoActualIa?.score_final;
+    const calibrado = resultadoActualIa?.score_calibrado;
+    const vigenteCalibrado = String(resultadoActualIa?.origen_score || "").toUpperCase() === "CALIBRACION" && calibrado != null;
+    if (vigenteCalibrado) {
+        bloques.push(`<div class="cal-flujo-nota">
+            <span>Nota vigente</span><strong>${formatoPeso(calibrado)} / 100</strong>
+            <small>Calibrada por Calidad · la IA había dado ${scoreIa == null ? "sin nota" : `${formatoPeso(scoreIa)} / 100`}</small>
+        </div>`);
+    }
+
+    if (borrador > 0) {
+        bloques.push(`<div class="cal-flujo-paso">
+            <p><strong>${borrador}</strong> criterio(s) revisado(s) en borrador. Todavía no cuentan: Calidad debe aprobarlos.</p>
+            <button type="button" class="btn-primary btn-small" onclick="enviarCalibracionACalidadIa()">Enviar a Calidad</button>
+        </div>`);
+    }
+    if (enRevision > 0) {
+        bloques.push(permisosCalibracionIa.puede_publicar
+            ? `<div class="cal-flujo-paso cal-flujo-calidad">
+                <p><strong>${enRevision}</strong> criterio(s) esperando tu decisión. Publicar cambia la nota de la llamada.</p>
+                <div>
+                    <button type="button" class="btn-light btn-small" onclick="resolverCalibracionLlamadaIa('RECHAZADA')">Rechazar todo</button>
+                    <button type="button" class="btn-primary btn-small" onclick="resolverCalibracionLlamadaIa('PUBLICADA')">Publicar</button>
+                </div>
+            </div>`
+            : `<div class="cal-flujo-paso cal-flujo-espera">
+                <p><strong>${enRevision}</strong> criterio(s) en revisión por Calidad. La nota cambiará cuando se publiquen.</p>
+            </div>`);
+    }
+    if (!borrador && !enRevision && publicadas > 0 && !vigenteCalibrado) {
+        bloques.push(`<div class="cal-flujo-paso"><p>${publicadas} criterio(s) publicado(s) confirmando a la IA: la nota no cambia.</p></div>`);
+    }
+    el.innerHTML = bloques.join("");
+}
+
+async function recargarFichaTrasCalibracionIa() {
+    const idFeedback = idFeedbackActualIa();
+    if (!idFeedback) return;
+    // La nota pudo cambiar: se relee la llamada completa antes de repintar.
+    try {
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}/${idFeedback}`, {}, 15000);
+        const data = await leerJsonSeguro(response);
+        if (response.ok) resultadoActualIa = { ...resultadoActualIa, ...data };
+    } catch { /* se repinta con lo que haya */ }
+    await cargarCalibracionCriteriosIa(true);
+}
+
+async function enviarCalibracionACalidadIa() {
+    const idFeedback = idFeedbackActualIa();
+    if (!idFeedback) return;
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/llamada/${idFeedback}/enviar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usuario: usuarioActualIa() }),
+        }, 15000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo enviar a Calidad.");
+        mostrarMensajeIa(`${data.enviadas} criterio(s) enviados a Calidad.`, "ok");
+        await recargarFichaTrasCalibracionIa();
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo enviar a Calidad.", "error");
+    }
+}
+
+async function resolverCalibracionLlamadaIa(estado) {
+    const idFeedback = idFeedbackActualIa();
+    if (!idFeedback) return;
+    let motivo = null;
+    if (estado === "RECHAZADA") {
+        motivo = window.prompt("Motivo del rechazo (se guarda en la trazabilidad):");
+        if (motivo === null) return;
+        if (!motivo.trim()) {
+            mostrarMensajeIa("Un rechazo necesita motivo.", "error");
+            return;
+        }
+    } else if (!window.confirm("¿Publicar la calibración? La nota de la llamada se recalcula con los criterios corregidos.")) {
+        return;
+    }
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/llamada/${idFeedback}/resolver`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ estado, usuario: usuarioActualIa(), motivo_rechazo: motivo, perfil: tipoUsuarioIa() }),
+        }, 20000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo resolver la calibración.");
+        mostrarMensajeIa(
+            estado === "PUBLICADA"
+                ? (data.score_calibrado != null
+                    ? `Calibración publicada. Nueva nota: ${formatoPeso(data.score_calibrado)} / 100.`
+                    : "Calibración publicada.")
+                : "Calibración rechazada. El supervisor puede corregirla y volver a enviarla.",
+            "ok",
+        );
+        await recargarFichaTrasCalibracionIa();
+        await cargarReporteriaIa();
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo resolver la calibración.", "error");
+    }
+}
+
+async function rechazarCriterioCalibracionIa(idCalibracion) {
+    if (!idCalibracion) return;
+    const motivo = window.prompt("Motivo del rechazo de este criterio:");
+    if (motivo === null) return;
+    if (!motivo.trim()) {
+        mostrarMensajeIa("Un rechazo necesita motivo.", "error");
+        return;
+    }
+    try {
+        const response = await fetchIa(`${CALIBRACION_BASE_IA}/${idCalibracion}/resolver`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ estado: "RECHAZADA", usuario: usuarioActualIa(), motivo_rechazo: motivo, perfil: tipoUsuarioIa() }),
+        }, 15000);
+        const data = await leerJsonSeguro(response);
+        if (!response.ok) throw new Error(data.detail || "No se pudo rechazar.");
+        mostrarMensajeIa("Criterio rechazado. El resto sigue en revisión.", "ok");
+        await recargarFichaTrasCalibracionIa();
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo rechazar.", "error");
+    }
 }
 
 function estadoCalibracionEtiquetaIa(item) {
@@ -8317,6 +8811,11 @@ function pintarCalibracionCriteriosIa() {
                 <button type="button" class="btn-light btn-small"
                         onclick="abrirCorreccionCalibracionIa(${item.id_evaluacion_criterio})">Corregir</button>
                 <span class="cal-confianza">Confianza IA: ${escapeHtml(item.confianza_ia || "-")}</span>
+                ${item.estado_calibracion === "EN_REVISION" && permisosCalibracionIa.puede_publicar
+                    ? `<button type="button" class="btn-light btn-small cal-rechazar-uno"
+                               onclick="rechazarCriterioCalibracionIa(${Number(item.id_calibracion)})"
+                               title="Rechaza solo este criterio; el resto se publica aparte">Rechazar este</button>`
+                    : ""}
             </footer>
             ${abierto ? formularioCorreccionCalibracionIa(item) : ""}
         </article>`;

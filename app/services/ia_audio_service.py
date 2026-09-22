@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from copy import deepcopy
+from collections import OrderedDict
+from functools import lru_cache
+from hashlib import sha256
 import json
 import logging
 import os
 import re
 import time
 from pathlib import Path
+from threading import Lock
 from typing import Dict, List, Optional
 from uuid import uuid4
 
@@ -552,6 +557,142 @@ def listar_feedback(limit: int = 100, supervisor: Optional[str] = None) -> List[
     return [preparar_resumen(dict(row)) for row in rows]
 
 
+ESTADOS_EN_PROCESO = ("PENDIENTE", "EN_COLA", "TRANSCRIBIENDO", "ANALIZANDO")
+
+
+def obtener_bandeja_supervisor(
+    supervisor: Optional[str] = None,
+    ver_todo: bool = False,
+    dias: int = 30,
+    limite: int = 150,
+) -> Dict:
+    """La bandeja de trabajo del supervisor: que esta en proceso y que falta revisar.
+
+    Responde "y ahora que hago": cada llamada cargada termina aqui hasta que el
+    supervisor la revisa. Vive en el servidor, asi que sobrevive a recargar la
+    pagina o cambiar de equipo, a diferencia de una lista en el navegador.
+
+    Incluye:
+      - en proceso: cargadas que todavia se estan transcribiendo o evaluando.
+      - con error:  el analisis fallo y hay que reintentarlo.
+      - por revisar: analizadas, sin revision del supervisor.
+    Cada una lleva las senales que definen el siguiente paso: si falta el
+    agente, si la IA pidio revision humana, si hay calibraciones en curso.
+    """
+    ensure_tabla_feedback()
+    filtros = [
+        "L.fecha_creacion >= DATEADD(DAY, :dias_atras, GETDATE())",
+        f"""(
+            L.estado IN ({", ".join(f"'{e}'" for e in ESTADOS_EN_PROCESO)}, 'ERROR')
+            OR (L.estado = 'FINALIZADO' AND ISNULL(L.estado_revision, 'PENDIENTE') = 'PENDIENTE')
+        )""",
+    ]
+    params: Dict = {"dias_atras": -abs(int(dias)), "limite": int(limite)}
+    if not ver_todo and limpiar_texto(supervisor):
+        filtros.append("LTRIM(RTRIM(ISNULL(L.supervisor, ''))) = :supervisor")
+        params["supervisor"] = limpiar_texto(supervisor)
+
+    query = text(f"""
+        SELECT TOP (:limite)
+            L.id_feedback, L.archivo_nombre, L.agente, L.cartera, L.supervisor,
+            L.fecha_llamada, L.fecha_creacion, L.fecha_analisis,
+            L.estado, L.estado_revision, L.mensaje_error, L.requiere_revision_humana,
+            L.score_final, L.score_calibrado, L.origen_score,
+            cal_borrador = (SELECT COUNT(1) FROM CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO C
+                            WHERE C.id_feedback = L.id_feedback AND C.estado = 'BORRADOR'),
+            cal_en_revision = (SELECT COUNT(1) FROM CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO C
+                               WHERE C.id_feedback = L.id_feedback AND C.estado = 'EN_REVISION')
+        FROM CobAuto.dbo.ia_feedback_llamadas L WITH(NOLOCK)
+        WHERE {" AND ".join(filtros)}
+        ORDER BY L.fecha_creacion DESC, L.id_feedback DESC
+    """)
+    with engine_siscob.connect() as conn:
+        filas = conn.execute(query, params).mappings().all()
+
+    en_proceso, con_error, por_revisar = [], [], []
+    for fila in filas:
+        item = serializar(dict(fila))
+        item["score_vigente"] = score_vigente_llamada(item)
+        item["sin_agente"] = not limpiar_texto(item.get("agente"))
+        estado = str(item.get("estado") or "").upper()
+        if estado in ESTADOS_EN_PROCESO:
+            en_proceso.append(item)
+        elif estado == "ERROR":
+            con_error.append(item)
+        else:
+            por_revisar.append(item)
+    # La bandeja se trabaja de la mas antigua a la mas nueva: lo que lleva mas
+    # tiempo esperando va primero.
+    por_revisar.sort(key=lambda i: (i.get("fecha_analisis") or i.get("fecha_creacion") or ""))
+    return {
+        "en_proceso": en_proceso,
+        "con_error": con_error,
+        "por_revisar": por_revisar,
+        "resumen": {
+            "en_proceso": len(en_proceso),
+            "con_error": len(con_error),
+            "por_revisar": len(por_revisar),
+            "sin_agente": sum(1 for i in por_revisar if i["sin_agente"]),
+        },
+    }
+
+
+def score_vigente_llamada(row: Dict) -> Optional[float]:
+    """La nota que vale para una llamada.
+
+    Regla del modulo de calibracion: solo una calibracion PUBLICADA mueve la
+    nota. Si existe, manda; si no, vale la de la IA. Centralizarlo aqui evita
+    que la ficha muestre una nota y los reportes promedien otra.
+    """
+    calibrado = row.get("score_calibrado")
+    if calibrado is not None and str(row.get("origen_score") or "").upper() == "CALIBRACION":
+        return float(calibrado)
+    for campo in ("score_final", "score_calidad"):
+        valor = row.get(campo)
+        if valor is not None:
+            return float(valor)
+    return None
+
+
+@lru_cache(maxsize=512)
+def _enriquecer_fila_reporteria_cache(fila_json: str) -> Dict:
+    """Conserva el calculo actual para filas que no cambiaron en SQL."""
+    return enriquecer_sgc_registro(json.loads(fila_json))
+
+
+def _enriquecer_fila_reporteria(row_data: Dict) -> Dict:
+    # La clave incluye todas las columnas consultadas: una revision, calibracion
+    # o nueva evaluacion invalida solo su fila. La copia evita que los agregados
+    # de una peticion modifiquen la entrada compartida con otras peticiones.
+    fila_json = json.dumps(row_data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return deepcopy(_enriquecer_fila_reporteria_cache(fila_json))
+
+
+_REPORTERIA_CACHE: OrderedDict[tuple, Dict] = OrderedDict()
+_REPORTERIA_CACHE_LOCK = Lock()
+_REPORTERIA_CACHE_MAX = 4
+_REPORTERIA_CAMPOS = (
+    "id_feedback", "archivo_nombre", "cartera", "supervisor", "agente",
+    "score_calidad", "score_calidad_ia", "score_supervisor", "score_final",
+    "score_normalizado", "nivel_riesgo", "tipo_llamada",
+    "requiere_revision_humana", "evaluacion_calidad", "fecha_creacion",
+    "fecha_llamada", "comentario_supervisor", "comentario_feedback",
+    "resultado_gestion", "nivel_oportunidad_mejora", "puntos_criticos",
+    "estado_revision", "falta_anulante", "error_critico",
+    "estado_recalibracion", "estado_coaching", "resumen_sgc",
+    "estado_feedback", "requiere_feedback", "requiere_coaching",
+    "fecha_coaching", "score_calibrado", "origen_score",
+)
+
+
+def _firma_reporteria(conn, query, params: Dict) -> bytes:
+    huella = sha256()
+    for id_feedback, firma_fila in conn.execute(query, params):
+        huella.update(int(id_feedback).to_bytes(8, "big"))
+        huella.update(bytes(firma_fila))
+    return huella.digest()
+
+
 def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = None) -> Dict:
     ensure_tabla_feedback()
     filtros = ["estado = 'FINALIZADO'"]
@@ -561,29 +702,45 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
         params["supervisor"] = limpiar_texto(supervisor)
 
     query = text("""
-        SELECT TOP (:limit)
-            id_feedback, archivo_nombre, cartera, supervisor, agente, score_calidad,
-            score_calidad_ia, score_supervisor, score_final, score_normalizado,
-            nivel_riesgo, tipo_llamada, requiere_revision_humana,
-            evaluacion_calidad, fecha_creacion, fecha_llamada, comentario_supervisor,
-            comentario_feedback, resultado_gestion, nivel_oportunidad_mejora,
-            puntos_criticos, estado_revision, falta_anulante, error_critico,
-            estado_recalibracion, estado_coaching, resumen_sgc, estado_feedback,
-            requiere_feedback, requiere_coaching, fecha_coaching
+        SELECT TOP (:limit) {campos}
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE {where_sql}
         ORDER BY fecha_creacion DESC, id_feedback DESC
-    """.format(where_sql=" AND ".join(filtros)))
+    """.format(campos=", ".join(_REPORTERIA_CAMPOS), where_sql=" AND ".join(filtros)))
+    query_firma = text("""
+        SELECT TOP (:limit) L.id_feedback,
+            HASHBYTES('SHA2_256', (
+                SELECT {campos_json}
+                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES
+            )) AS firma
+        FROM CobAuto.dbo.ia_feedback_llamadas L WITH(NOLOCK)
+        WHERE {where_sql}
+        ORDER BY L.fecha_creacion DESC, L.id_feedback DESC
+    """.format(
+        campos_json=", ".join(f"L.{campo}" for campo in _REPORTERIA_CAMPOS),
+        where_sql=" AND ".join(filtros),
+    ))
 
     with engine_siscob.connect() as conn:
+        firma_antes = _firma_reporteria(conn, query_firma, params)
+        clave_cache = (int(limit), limpiar_texto(supervisor), firma_antes)
+        with _REPORTERIA_CACHE_LOCK:
+            reporte_guardado = _REPORTERIA_CACHE.get(clave_cache)
+            if reporte_guardado is not None:
+                _REPORTERIA_CACHE.move_to_end(clave_cache)
+        if reporte_guardado is not None:
+            return deepcopy(reporte_guardado)
         rows = conn.execute(query, params).mappings().all()
+        # No guardar una captura si una llamada cambio entre las dos lecturas.
+        firma_despues = _firma_reporteria(conn, query_firma, params)
+
+    # La firma SQL incluye exactamente las columnas de la consulta completa:
+    # una evaluacion, revision o calibracion modificada invalida la cache.
+    filas = [serializar(dict(row)) for row in rows]
 
     total = len(rows)
-    scores = [
-        float(row.get("score_final") if row.get("score_final") is not None else row.get("score_calidad") or 0)
-        for row in rows
-        if row.get("score_final") is not None or row.get("score_calidad") is not None
-    ]
+    # Promedio sobre la nota VIGENTE: la calibrada si Calidad la publico.
+    scores = [valor for valor in (score_vigente_llamada(row) for row in rows) if valor is not None]
     segmentos = {}
     items = {}
     carteras = {}
@@ -600,9 +757,8 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
     # fuera de los agregados y se cuenta aparte, para que el reporte pueda
     # decir sobre cuantas llamadas se calculo realmente el promedio.
     no_evaluables = 0
-    for row in rows:
-        score_crudo = row.get("score_final") if row.get("score_final") is not None else row.get("score_calidad")
-        score = float(score_crudo) if score_crudo is not None else None
+    for row, row_serializada in zip(rows, filas):
+        score = score_vigente_llamada(row)
         cartera = str(row.get("cartera") or "Sin cartera")
         agente = str(row.get("agente") or "Sin agente asociado")
         supervisor_row = str(row.get("supervisor") or "Sin supervisor")
@@ -613,10 +769,10 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             acumular_score(carteras, cartera, "cartera", score)
             acumular_score(agentes, agente, "agente", score)
             acumular_score(semanas, semana, "semana", score)
-        row_data = serializar(dict(row))
+        row_data = row_serializada
         evaluacion = cargar_json_lista(row.get("evaluacion_calidad"))
         row_data["evaluacion_calidad_lista"] = evaluacion
-        row_data = enriquecer_sgc_registro(row_data)
+        row_data = _enriquecer_fila_reporteria(row_data)
         evaluacion = row_data["evaluacion_calidad_lista"]
         resumen_sgc = row_data["resumen_sgc"]
         notas_segmento = resumir_notas_segmento(evaluacion)
@@ -654,6 +810,11 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             "score_final": score,
             "score_normalizado": float(row["score_normalizado"]) if row.get("score_normalizado") is not None else score,
             "evaluable": score is not None,
+            # La nota de la IA se conserva aparte: es contra lo que se mide la
+            # calibracion. score_final ya refleja la vigente.
+            "score_ia": float(row["score_final"]) if row.get("score_final") is not None else None,
+            "score_calibrado": float(row["score_calibrado"]) if row.get("score_calibrado") is not None else None,
+            "origen_score": str(row.get("origen_score") or "IA"),
             "nivel_riesgo": row.get("nivel_riesgo") or row.get("nivel_oportunidad_mejora"),
             "tipo_llamada": row.get("tipo_llamada"),
             "requiere_revision_humana": bool(row.get("requiere_revision_humana")),
@@ -684,6 +845,14 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
 
         for item in evaluacion:
             if not isinstance(item, dict):
+                continue
+            # Misma regla que el score: un criterio que no se midio (No aplica,
+            # No evaluable, Requiere revision) no entra al cumplimiento por
+            # segmento/item ni se cuenta como brecha. Antes su nota 0 se sumaba
+            # como "cero" y su peso al denominador, y Tipificacion y Tono de voz
+            # -No evaluables por diseno- salian como brecha en el 100% de las
+            # llamadas.
+            if _estado_criterio_para_agregado(item) in ESTADOS_FUERA_DEL_AGREGADO:
                 continue
             segmento = str(item.get("segmento") or "Sin segmento")
             nombre_item = str(item.get("item") or "Sin item")
@@ -738,7 +907,7 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
     agentes_lista.sort(key=lambda item: (item.get("score_promedio") or 0))
     semanas_lista.sort(key=lambda item: item.get("semana") or "")
 
-    return {
+    reporte = {
         "total_audios": total,
         "score_promedio": round(sum(scores) / len(scores), 2) if scores else None,
         # Sobre cuantas llamadas se calculo realmente el promedio. Un promedio
@@ -755,6 +924,13 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
         "semanas": semanas_lista,
         "detalle": detalle,
     }
+    if firma_antes == firma_despues:
+        with _REPORTERIA_CACHE_LOCK:
+            _REPORTERIA_CACHE[clave_cache] = deepcopy(reporte)
+            _REPORTERIA_CACHE.move_to_end(clave_cache)
+            if len(_REPORTERIA_CACHE) > _REPORTERIA_CACHE_MAX:
+                _REPORTERIA_CACHE.popitem(last=False)
+    return reporte
 
 
 def agregar_porcentaje(item: Dict) -> Dict:
@@ -834,7 +1010,8 @@ def obtener_feedback(id_feedback: int) -> Dict:
             falta_anulante, frase_anulante, momento_falta_anulante, estado_recalibracion,
             estado_coaching, fecha_coaching, responsable_coaching, compromiso_agente, resultado_coaching,
             resumen_sgc, estado_feedback, requiere_feedback, requiere_coaching,
-            fecha_creacion, fecha_analisis, fecha_revision
+            fecha_creacion, fecha_analisis, fecha_revision,
+            score_calibrado, origen_score
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE id_feedback = :id_feedback
     """)
@@ -857,6 +1034,30 @@ def obtener_feedback(id_feedback: int) -> Dict:
     data["historial_lista"] = listar_historial_feedback(id_feedback)
     data["total_puntos_criticos"] = len(data["puntos_criticos_lista"])
     data = enriquecer_sgc_registro(data)
+    # Despues de enriquecer: esa funcion puede recalcular score_final, y la
+    # nota vigente debe salir de los valores definitivos.
+    data["score_vigente"] = score_vigente_llamada(data)
+    return data
+
+
+def obtener_estado_feedback(id_feedback: int) -> Dict:
+    """Estado del procesamiento, sin cargar la ficha completa.
+
+    La pantalla lo consulta cada pocos segundos mientras la llamada se procesa.
+    obtener_feedback es pesada -relee JSON y re-ejecuta las guardas-; hacerla
+    cada 4 segundos por cada llamada en curso cargaria al servidor sin motivo.
+    """
+    with engine_siscob.connect() as conn:
+        fila = conn.execute(text("""
+            SELECT id_feedback, estado, mensaje_error, agente, cartera,
+                   score_final, score_calibrado, origen_score, fecha_analisis
+            FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
+            WHERE id_feedback = :id_feedback
+        """), {"id_feedback": id_feedback}).mappings().first()
+    if not fila:
+        raise ValueError("Analisis IA no encontrado.")
+    data = serializar(dict(fila))
+    data["score_vigente"] = score_vigente_llamada(data)
     return data
 
 
@@ -1255,7 +1456,10 @@ def guardar_revision_feedback(
     with engine_siscob.begin() as conn:
         conn.execute(text("""
             UPDATE CobAuto.dbo.ia_feedback_llamadas
-            SET agente = :agente,
+            -- COALESCE: una revision que no trae agente NO lo borra. Antes
+            -- era SET agente = :agente, y como la pantalla envia ese campo
+            -- vacio, guardar cualquier revision dejaba el agente en NULL.
+            SET agente = COALESCE(:agente, agente),
                 comentario_feedback = :comentario_feedback,
                 estado_revision = :estado_revision,
                 revisado_por = :revisado_por,
@@ -1275,6 +1479,42 @@ def guardar_revision_feedback(
         f"Revision guardada con estado {estado}.",
         usuario=limpiar_texto(revisado_por),
         valor_nuevo=limpiar_texto(comentario_feedback),
+    )
+    return obtener_feedback(id_feedback)
+
+
+def asignar_agente_feedback(id_feedback: int, agente: Optional[str], usuario: Optional[str] = None) -> Dict:
+    """Asigna o corrige el agente evaluado en una llamada.
+
+    El agente es la unidad de todo lo que viene despues -desempeno, planes de
+    mejora, reportes por asesor-. Sin el, cada evaluacion queda suelta. Por eso
+    tiene su propia operacion, con traza en el historial, en vez de viajar
+    escondido dentro de la revision del supervisor.
+
+    Formato: "USUARIO - Nombres Apellidos", la misma convencion que ya usa el
+    campo supervisor, para que agrupar por agente sea estable.
+    """
+    ensure_tabla_feedback()
+    anterior = obtener_feedback(id_feedback)
+    agente_limpio = limpiar_texto(agente)
+    if not agente_limpio:
+        raise ValueError("Indica el agente a asignar.")
+
+    with engine_siscob.begin() as conn:
+        conn.execute(text("""
+            UPDATE CobAuto.dbo.ia_feedback_llamadas
+            SET agente = :agente
+            WHERE id_feedback = :id_feedback
+        """), {"id_feedback": id_feedback, "agente": agente_limpio})
+
+    agente_previo = limpiar_texto(anterior.get("agente"))
+    registrar_historial_feedback(
+        id_feedback,
+        "ASIGNACION_AGENTE",
+        "Agente asignado." if not agente_previo else "Agente corregido.",
+        usuario=limpiar_texto(usuario),
+        valor_anterior=agente_previo,
+        valor_nuevo=agente_limpio,
     )
     return obtener_feedback(id_feedback)
 
@@ -1778,3 +2018,28 @@ def serializar(row: Dict) -> Dict:
         else:
             serializado[key] = value
     return serializado
+
+
+# Estados que no se midieron: fuera del denominador del score y de la
+# reporteria por segmento/item/SGC (misma regla en todo el modulo).
+ESTADOS_FUERA_DEL_AGREGADO = {"NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
+
+
+def _estado_criterio_para_agregado(item: Dict) -> Optional[str]:
+    """Estado tecnico del criterio, o None si no se puede saber.
+
+    A diferencia de _resultado_ia_normalizado, lo desconocido NO se vuelve
+    REQUIERE_REVISION: un item antiguo sin estado sigue contando como antes
+    (por nota vs peso) en vez de desaparecer del reporte.
+    """
+    estado = str(item.get("estado") or item.get("estado_tecnico") or "").strip().upper().replace(" ", "_")
+    if estado:
+        return estado
+    texto = str(item.get("calificacion") or item.get("resultado") or "").strip().lower()
+    if "no evaluable" in texto:
+        return "NO_EVALUABLE"
+    if "no aplica" in texto:
+        return "NO_APLICA"
+    if "revisi" in texto:
+        return "REQUIERE_REVISION"
+    return None

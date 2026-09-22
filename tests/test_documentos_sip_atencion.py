@@ -13,8 +13,6 @@ REGISTRO_SIP = {
     "TipoDocumento": "DNI",
     "NumDocumento": "45006821",
     "NomCliente": "MARY GARCIA OLAYA",
-    "Nombres": "MARY",
-    "Apellidos": "GARCIA OLAYA",
     "Operacion": "4040719023523664",
 }
 
@@ -26,7 +24,7 @@ class DocumentosSipAtencionTests(unittest.TestCase):
         self.assertEqual(config["cartera_id"], 132)
         self.assertEqual(config["document_kind"], "sip_atencion")
 
-    def test_usa_campos_separados_fecha_lima_y_canal_fijo(self):
+    def test_usa_nombre_completo_fecha_elegida_y_canal_fijo(self):
         capturado = {}
         with patch.object(service, "consultar_datos_documento_sip", return_value=[REGISTRO_SIP.copy()]):
             def pdf_falso(path, context):
@@ -41,8 +39,7 @@ class DocumentosSipAtencionTests(unittest.TestCase):
                     formato="pdf",
                 )
 
-        self.assertEqual(capturado["nombres"], "MARY")
-        self.assertEqual(capturado["apellidos"], "GARCIA OLAYA")
+        self.assertEqual(capturado["cliente"], "MARY GARCIA OLAYA")
         self.assertEqual(capturado["tarjeta"], "4040719023523664")
         self.assertEqual(capturado["tarjeta_titular"], "4040719023523664")
         self.assertEqual(capturado["canal"], "CALL CENTER")
@@ -53,8 +50,9 @@ class DocumentosSipAtencionTests(unittest.TestCase):
         self.assertEqual(detalle["canal"], "CALL CENTER")
         self.assertEqual(detalle["tipo_documento_cliente"], "DNI")
         self.assertEqual(detalle["numero_documento_cliente"], "45006821")
-        self.assertEqual(detalle["nombres"], "MARY")
-        self.assertEqual(detalle["apellidos"], "GARCIA OLAYA")
+        self.assertEqual(detalle["nombre_completo"], "MARY GARCIA OLAYA")
+        self.assertNotIn("nombres", detalle)
+        self.assertNotIn("apellidos", detalle)
         self.assertEqual(detalle["tarjeta"], "4040719023523664")
         self.assertEqual(detalle["tarjeta_titular"], "4040719023523664")
 
@@ -100,8 +98,7 @@ class DocumentosSipAtencionTests(unittest.TestCase):
             "canal": "CALL CENTER",
             "tipo_documento_cliente": "DNI",
             "numero_documento_cliente": "45006821",
-            "nombres": "MARY",
-            "apellidos": "GARCIA OLAYA",
+            "nombre_completo": "MARY GARCIA OLAYA",
             "tarjeta": "4040719023523664",
             "tarjeta_titular": "4040719023523664",
             "operaciones": [{"operacion": "4040719023523664"}],
@@ -126,13 +123,14 @@ class DocumentosSipAtencionTests(unittest.TestCase):
         self.assertEqual(detalle_guardado["fecha_solicitud"], "18/08/2026")
         self.assertEqual(detalle_guardado["canal"], "CALL CENTER")
         self.assertEqual(detalle_guardado["numero_documento_cliente"], "45006821")
+        self.assertEqual(detalle_guardado["nombre_completo"], "MARY GARCIA OLAYA")
         self.assertEqual(detalle_guardado["tarjeta"], "4040719023523664")
 
-    def test_no_inventa_nombres_ausentes(self):
+    def test_no_inventa_nombre_completo_ausente(self):
         registro = REGISTRO_SIP.copy()
-        registro["Nombres"] = ""
+        registro["NomCliente"] = ""
         with patch.object(service, "consultar_datos_documento_sip", return_value=[registro]):
-            with self.assertRaisesRegex(ValueError, "nombres"):
+            with self.assertRaisesRegex(ValueError, "nombre completo"):
                 service.generar_constancia_atencion_sip(
                     service.obtener_config_documento("sip_constancia_atencion"),
                     dni=registro["NumDocumento"],
@@ -145,8 +143,6 @@ class DocumentosSipAtencionTests(unittest.TestCase):
             "cliente": REGISTRO_SIP["NomCliente"],
             "tipo_documento": REGISTRO_SIP["TipoDocumento"],
             "dni": REGISTRO_SIP["NumDocumento"],
-            "nombres": REGISTRO_SIP["Nombres"],
-            "apellidos": REGISTRO_SIP["Apellidos"],
             "fecha_solicitud": "20/09/2026",
             "canal": "CALL CENTER",
             "tarjeta": REGISTRO_SIP["Operacion"],
@@ -156,8 +152,10 @@ class DocumentosSipAtencionTests(unittest.TestCase):
         ElementTree.fromstring(document_xml)
 
         self.assertIn("Constancia de Atención", document_xml)
-        self.assertIn("MARY", document_xml)
-        self.assertIn("GARCIA OLAYA", document_xml)
+        self.assertIn("Nombre completo", document_xml)
+        self.assertIn("MARY GARCIA OLAYA", document_xml)
+        self.assertNotIn("<w:t>Nombres</w:t>", document_xml)
+        self.assertNotIn("<w:t>Apellidos</w:t>", document_xml)
         self.assertIn("CALL CENTER", document_xml)
         self.assertIn(REGISTRO_SIP["Operacion"], document_xml)
         self.assertIn("protección de datos personales", document_xml)

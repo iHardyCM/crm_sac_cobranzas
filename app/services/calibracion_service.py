@@ -42,6 +42,23 @@ EVIDENCIA_VALIDA = {"SI", "NO", "PARCIAL"}
 # solo CUMPLE otorga el peso del criterio.
 ESTADOS_QUE_PUNTUAN = {"CUMPLE"}
 
+# Estados en los que no hay respuesta y por eso salen del denominador. Debe ser
+# el MISMO conjunto que ESTADOS_FUERA_DEL_DENOMINADOR_V3 en el motor: si no, la
+# nota calibrada de una llamada se calcula con otra regla que su nota IA.
+ESTADOS_FUERA_DEL_DENOMINADOR = {"NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
+
+# Perfiles que pueden publicar o rechazar. El flujo acordado es de doble
+# control: el supervisor propone, Calidad publica. Si cualquiera pudiera
+# publicar, ese control seria de nombre.
+PERFILES_PUBLICAN = {
+    "ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE DE COBRANZA", "JEFE CARTERA",
+}
+
+
+def perfil_puede_publicar_calibracion(perfil: Optional[str]) -> bool:
+    normalizado = str(perfil or "").strip().upper()
+    return normalizado in PERFILES_PUBLICAN or "CALIDAD" in normalizado
+
 
 def _texto(value, limite: Optional[int] = None) -> Optional[str]:
     texto = str(value or "").strip()
@@ -105,6 +122,11 @@ def obtener_calibracion(id_feedback: int) -> Dict:
         data.append(item)
 
     revisados = sum(1 for item in data if item["calibrado"])
+    por_estado = {estado: 0 for estado in (ESTADO_BORRADOR, ESTADO_EN_REVISION, ESTADO_PUBLICADA)}
+    for item in data:
+        estado = item.get("estado_calibracion")
+        if estado in por_estado:
+            por_estado[estado] += 1
     return {
         "id_feedback": id_feedback,
         "criterios": data,
@@ -115,6 +137,11 @@ def obtener_calibracion(id_feedback: int) -> Dict:
             # El avance es sobre criterios revisados, no sobre criterios corregidos:
             # confirmar tambien es revisar.
             "avance_pct": round((revisados / len(data)) * 100, 1) if data else 0.0,
+            # Dice en que etapa del flujo esta la llamada, para que la pantalla
+            # muestre la accion que corresponde: enviar, publicar o nada.
+            "borrador": por_estado[ESTADO_BORRADOR],
+            "en_revision": por_estado[ESTADO_EN_REVISION],
+            "publicadas": por_estado[ESTADO_PUBLICADA],
         },
     }
 
@@ -234,11 +261,14 @@ def resolver_calibracion(
     estado: str,
     usuario: Optional[str] = None,
     motivo_rechazo: Optional[str] = None,
+    perfil: Optional[str] = None,
 ) -> Dict:
     """Publica o rechaza una calibracion en revision.
 
     Publicar es el unico acto que mueve la nota de la llamada.
     """
+    if not perfil_puede_publicar_calibracion(perfil):
+        raise PermissionError("Solo Calidad puede publicar o rechazar una calibracion.")
     estado = str(estado or "").strip().upper()
     if estado not in {ESTADO_PUBLICADA, ESTADO_RECHAZADA}:
         raise ValueError("El estado debe ser PUBLICADA o RECHAZADA.")
@@ -277,6 +307,110 @@ def resolver_calibracion(
     id_feedback = int(actual["id_feedback"])
     recalculo = recalcular_score_calibrado(id_feedback)
     return {"ok": True, "estado": estado, "id_feedback": id_feedback, **recalculo}
+
+
+def enviar_llamada_a_revision(id_feedback: int, usuario: Optional[str] = None) -> Dict:
+    """El supervisor entrega a Calidad todo lo que calibro en una llamada.
+
+    Los criterios se guardan de a uno como BORRADOR mientras se trabaja; la
+    llamada completa es la unidad que se entrega. Asi Calidad recibe un caso
+    cerrado y no criterios sueltos a medio revisar.
+    """
+    with engine_siscob.begin() as conn:
+        resultado = conn.execute(text("""
+            UPDATE CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
+            SET estado = 'EN_REVISION',
+                actualizado_por = :usuario,
+                fecha_actualizacion = GETDATE()
+            WHERE id_feedback = :id_feedback
+              AND estado = 'BORRADOR'
+        """), {"id_feedback": id_feedback, "usuario": _texto(usuario, 150)})
+        enviadas = int(resultado.rowcount or 0)
+    if not enviadas:
+        raise ValueError("No hay calibraciones en borrador para enviar en esta llamada.")
+    return {"ok": True, "id_feedback": id_feedback, "enviadas": enviadas}
+
+
+def resolver_llamada(
+    id_feedback: int,
+    *,
+    estado: str,
+    usuario: Optional[str] = None,
+    motivo_rechazo: Optional[str] = None,
+    perfil: Optional[str] = None,
+) -> Dict:
+    """Calidad publica o rechaza de una vez todo lo que esta en revision.
+
+    Para rechazar solo un criterio y aprobar el resto se usa
+    resolver_calibracion criterio por criterio.
+    """
+    if not perfil_puede_publicar_calibracion(perfil):
+        raise PermissionError("Solo Calidad puede publicar o rechazar una calibracion.")
+    estado = str(estado or "").strip().upper()
+    if estado not in {ESTADO_PUBLICADA, ESTADO_RECHAZADA}:
+        raise ValueError("El estado debe ser PUBLICADA o RECHAZADA.")
+    if estado == ESTADO_RECHAZADA and not _texto(motivo_rechazo):
+        raise ValueError("Un rechazo necesita motivo.")
+
+    with engine_siscob.begin() as conn:
+        resultado = conn.execute(text("""
+            UPDATE CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
+            SET estado = :estado,
+                motivo_rechazo = :motivo_rechazo,
+                revisado_por = :usuario,
+                fecha_revision = GETDATE(),
+                publicado_por = CASE WHEN :estado = 'PUBLICADA' THEN :usuario ELSE publicado_por END,
+                fecha_publicacion = CASE WHEN :estado = 'PUBLICADA' THEN GETDATE() ELSE fecha_publicacion END,
+                actualizado_por = :usuario,
+                fecha_actualizacion = GETDATE()
+            WHERE id_feedback = :id_feedback
+              AND estado = 'EN_REVISION'
+        """), {
+            "id_feedback": id_feedback,
+            "estado": estado,
+            "motivo_rechazo": _texto(motivo_rechazo),
+            "usuario": _texto(usuario, 150),
+        })
+        resueltas = int(resultado.rowcount or 0)
+    if not resueltas:
+        raise ValueError("No hay calibraciones en revision en esta llamada.")
+    recalculo = recalcular_score_calibrado(id_feedback)
+    return {"ok": True, "estado": estado, "id_feedback": id_feedback, "resueltas": resueltas, **recalculo}
+
+
+def listar_cola_revision(limite: int = 200) -> List[Dict]:
+    """Llamadas con calibraciones esperando a Calidad, las mas antiguas primero.
+
+    Es la bandeja de trabajo de Calidad: sin ella las calibraciones en revision
+    no tienen donde verse y se quedan esperando para siempre.
+    """
+    with engine_siscob.begin() as conn:
+        filas = conn.execute(text("""
+            SELECT TOP (:limite)
+                   C.id_feedback,
+                   L.agente, L.cartera, L.fecha_llamada,
+                   L.score_final, L.score_calibrado,
+                   en_revision = SUM(CASE WHEN C.estado = 'EN_REVISION' THEN 1 ELSE 0 END),
+                   correcciones = SUM(CASE WHEN C.estado = 'EN_REVISION' AND C.accion = 'CORREGIR' THEN 1 ELSE 0 END),
+                   enviado_desde = MIN(CASE WHEN C.estado = 'EN_REVISION' THEN C.fecha_actualizacion END),
+                   propuesto_por = MAX(CASE WHEN C.estado = 'EN_REVISION' THEN C.actualizado_por END)
+            FROM CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO C
+            INNER JOIN CobAuto.dbo.ia_feedback_llamadas L ON L.id_feedback = C.id_feedback
+            GROUP BY C.id_feedback, L.agente, L.cartera, L.fecha_llamada, L.score_final, L.score_calibrado
+            HAVING SUM(CASE WHEN C.estado = 'EN_REVISION' THEN 1 ELSE 0 END) > 0
+            ORDER BY MIN(CASE WHEN C.estado = 'EN_REVISION' THEN C.fecha_actualizacion END)
+        """), {"limite": int(limite)}).mappings().all()
+    salida = []
+    for fila in filas:
+        item = dict(fila)
+        for campo in ("fecha_llamada", "enviado_desde"):
+            if item.get(campo) is not None:
+                item[campo] = item[campo].isoformat()
+        for campo in ("score_final", "score_calibrado"):
+            if item.get(campo) is not None:
+                item[campo] = float(item[campo])
+        salida.append(item)
+    return salida
 
 
 def recalcular_score_calibrado(id_feedback: int) -> Dict:
@@ -321,8 +455,8 @@ def recalcular_score_calibrado(id_feedback: int) -> Dict:
                 resultado = fila.get("resultado_esperado") or resultado
             resultado = str(resultado or "").upper()
 
-            # NO_APLICA y NO_EVALUABLE salen del denominador: no son incumplimientos.
-            if resultado in {"NO_APLICA", "NO_EVALUABLE"}:
+            # Sin respuesta no hay incumplimiento: sale del denominador.
+            if resultado in ESTADOS_FUERA_DEL_DENOMINADOR:
                 continue
             peso_aplicable += peso
             if resultado in ESTADOS_QUE_PUNTUAN:

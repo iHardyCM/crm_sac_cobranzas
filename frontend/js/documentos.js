@@ -695,7 +695,7 @@ function seleccionarDocumento(index) {
     }
 
     if (esDocumentoSipAtencion()) {
-        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.Nombres)} ${valueOrDash(documentoSeleccionado.Apellidos)} - ${valueOrDash(documentoSeleccionado.TipoDocumento)} ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
+        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - ${valueOrDash(documentoSeleccionado.TipoDocumento)} ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
         document.getElementById("operacionSeleccionada").textContent = `Tarjeta ${valueOrDash(documentoSeleccionado.Operacion)}`;
         document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
         document.getElementById("montoMinimo").textContent = valueOrDash(documentoSeleccionado.TipoDocumento);
@@ -1179,7 +1179,7 @@ function pintarPreviewSipAtencion() {
         <div class="sip-atencion-preview">
             <header><span class="sip-atencion-brand" aria-label="SIP">sip<sup>•</sup></span><strong>www.sip.pe</strong></header>
             <h1>Constancia de Atención</h1>
-            ${seccion("DATOS DEL CLIENTE", `${fila("Tipo Documento", documentoSeleccionado.TipoDocumento)}${fila("Nro. Documento", documentoSeleccionado.NumDocumento, "valor-fuerte")}${fila("Nombres", documentoSeleccionado.Nombres, "valor-fuerte")}${fila("Apellidos", documentoSeleccionado.Apellidos, "valor-fuerte")}`)}
+            ${seccion("DATOS DEL CLIENTE", `${fila("Tipo Documento", documentoSeleccionado.TipoDocumento)}${fila("Nro. Documento", documentoSeleccionado.NumDocumento, "valor-fuerte")}${fila("Nombre completo", documentoSeleccionado.NomCliente, "ancho-completo valor-fuerte")}`)}
             ${seccion("DATOS DE LA SOLICITUD", `${fila("Fecha solicitud", fechaCortaDesdeFecha(parseDateInput(fechaSolicitud)))}${fila("Canal", "CALL CENTER")}${fila("Nro. Tarjeta", documentoSeleccionado.Operacion, "ancho-completo")}`)}
             ${seccion("DATOS DE LA CUENTA Y TARJETA", `${fila("Número de tarjeta del titular", documentoSeleccionado.Operacion, "ancho-completo valor-fuerte")}`)}
             <p class="sip-atencion-legal">Mediante el envío del presente documento, el cliente declara que los datos consignados son correctos, y han sido proporcionados de forma voluntaria. Asimismo, autoriza a registrar y utilizar esta información conforme a la normativa vigente sobre protección de datos personales.</p>

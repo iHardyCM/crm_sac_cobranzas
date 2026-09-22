@@ -21,6 +21,7 @@ from app.api.routes_control_horario import router as control_horario_router
 from app.api.routes_documentos import router as documentos_router
 from app.api.routes_metas import router as metas_router
 from app.api.routes_pagos import router as pagos_router
+from app.api.routes_planes_mejora import router as planes_mejora_router
 from app.api.routes_importacion import router as importacion_router
 from app.api.routes_score_telefonico import router as score_telefonico_router
 from app.api.routes_ia_feedback import router as ia_feedback_router
@@ -88,6 +89,7 @@ app.include_router(importacion_router, prefix="/importacion", tags=["Importacion
 app.include_router(ia_feedback_router, prefix="/ia-feedback", tags=["Analisis IA"])
 app.include_router(susurro_ia_router, prefix="/susurro-ia", tags=["Susurro IA"])
 app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"])
+app.include_router(planes_mejora_router, prefix="/planes-mejora", tags=["Planes de mejora IA"])
 app.include_router(metas_router, prefix="/metas", tags=["Metas"])
 app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"])
 app.include_router(telefonos_router, prefix="/telefonos", tags=["Validación de Teléfonos"])

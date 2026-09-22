@@ -1268,8 +1268,6 @@ def consultar_datos_documento_sip(dni=None, operacion=None, nombre_cliente=None,
                 END AS TipoDocumento,
                 F.DNI AS NumDocumento,
                 F.NOMBRE_COMPLETO AS NomCliente,
-                F.NOMBRE AS Nombres,
-                LTRIM(RTRIM(CONCAT(ISNULL(F.APELLIDO_PATERNO, ''), ' ', ISNULL(F.APELLIDO_MATERNO, '')))) AS Apellidos,
                 F.NUM_CUENTA_ORI AS Operacion,
                 F.NUM_CUENTA_ORI AS CtaCliente,
                 F.SLD_TOTAL_ASIG AS DeudaTotal,
@@ -2634,7 +2632,7 @@ def document_sip_atencion_xml(context):
         title_xml("Constancia de Atención"),
         sip_atencion_table_xml("DATOS DEL CLIENTE", [
             [("Tipo Documento", context["tipo_documento"]), ("Nro. Documento", context["dni"])],
-            [("Nombres", context["nombres"]), ("Apellidos", context["apellidos"])],
+            [("Nombre completo", context["cliente"])],
         ]),
         paragraph_xml("", after=80, size=1),
         sip_atencion_table_xml("DATOS DE LA SOLICITUD", [
@@ -3143,7 +3141,7 @@ def generar_pdf_sip_atencion(output_path, context):
 
     client_table = section_table("DATOS DEL CLIENTE", [
         [("Tipo Documento", context["tipo_documento"], False), ("Nro. Documento", context["dni"], True)],
-        [("Nombres", context["nombres"], True), ("Apellidos", context["apellidos"], True)],
+        [("Nombre completo", context["cliente"], True)],
     ])
     request_table = section_table("DATOS DE LA SOLICITUD", [
         [("Fecha solicitud", context["fecha_solicitud"], False), ("Canal", context["canal"], False)],
@@ -4263,8 +4261,7 @@ def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago
         raise ValueError("La búsqueda SIP devolvió más de una operación. Selecciona una operación antes de generar.")
 
     registro = rows[0]
-    nombres = limpiar_texto(registro.get("Nombres"))
-    apellidos = limpiar_texto(registro.get("Apellidos"))
+    nombre_completo = limpiar_texto(registro.get("NomCliente"))
     tipo_documento = limpiar_texto(registro.get("TipoDocumento"))
     dni_registro = limpiar_texto(registro.get("NumDocumento"))
     tarjeta = limpiar_texto(registro.get("Operacion"))
@@ -4273,8 +4270,7 @@ def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago
         for etiqueta, valor in (
             ("tipo de documento", tipo_documento),
             ("número de documento", dni_registro),
-            ("nombres", nombres),
-            ("apellidos", apellidos),
+            ("nombre completo", nombre_completo),
             ("número de tarjeta", tarjeta),
         )
         if not valor
@@ -4292,11 +4288,9 @@ def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago
     else:
         fecha_solicitud = datetime.now(ZoneInfo("America/Lima")).date()
     context = {
-        "cliente": limpiar_texto(registro.get("NomCliente")) or f"{nombres} {apellidos}".strip(),
+        "cliente": nombre_completo,
         "tipo_documento": tipo_documento,
         "dni": dni_registro,
-        "nombres": nombres,
-        "apellidos": apellidos,
         "fecha_solicitud": fecha_solicitud.strftime("%d/%m/%Y"),
         "canal": "CALL CENTER",
         "tarjeta": tarjeta,
@@ -4323,8 +4317,7 @@ def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago
             "canal": context["canal"],
             "tipo_documento_cliente": context["tipo_documento"],
             "numero_documento_cliente": context["dni"],
-            "nombres": context["nombres"],
-            "apellidos": context["apellidos"],
+            "nombre_completo": context["cliente"],
             "tarjeta": context["tarjeta"],
             "tarjeta_titular": context["tarjeta_titular"],
             "operaciones": [{"operacion": context["tarjeta"]}],
