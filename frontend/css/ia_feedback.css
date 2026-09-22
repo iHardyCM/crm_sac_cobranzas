@@ -8026,3 +8026,66 @@ body.crm-shell .v2-plan footer small { margin-left: auto; font-size: 11px; }
 body.crm-shell .v2-plan-cerrados { margin-top: 12px; }
 body.crm-shell .v2-plan-cerrados summary { cursor: pointer; color: #1769c2; font-weight: 700; font-size: 12px; }
 body.crm-shell .v2-plan footer .btn-small, body.crm-shell .v2-gap .btn-small { width: auto; flex: none; white-space: nowrap; }
+
+/* v20260922-bandeja: bandeja compacta (una linea por llamada) */
+body.crm-shell .procesos-ia { gap: 4px; }
+body.crm-shell .procesos-titulo span { color: #8496a8; font-weight: 600; text-transform: none; letter-spacing: 0; }
+body.crm-shell .bandeja-lista { display: grid; border: 1px solid #dde7f2; border-radius: 10px; background: #fff; overflow: hidden; }
+body.crm-shell .bandeja-scroll { max-height: 320px; overflow-y: auto; }
+body.crm-shell .bandeja-fila {
+    display: grid;
+    grid-template-columns: 52px minmax(140px, 1.1fr) minmax(160px, 1.3fr) minmax(0, 1fr) 44px auto;
+    gap: 10px; align-items: center;
+    padding: 6px 10px; min-height: 38px;
+    border-bottom: 1px solid #edf2f7; font-size: 12px;
+}
+body.crm-shell .bandeja-fila:last-child { border-bottom: 0; }
+body.crm-shell .bandeja-fila:hover { background: #f6f9fd; }
+body.crm-shell .bandeja-fila > b { color: #14324f; }
+body.crm-shell .bandeja-agente { color: #10263d; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.crm-shell .bandeja-meta { color: #5f7488; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.crm-shell .bandeja-senales { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+body.crm-shell .bandeja-nota { color: #10263d; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+body.crm-shell .bandeja-fila .btn-small { padding: 4px 12px; font-size: 11px; width: auto; }
+body.crm-shell .bandeja-fila.curso { background: #f6f9fd; }
+body.crm-shell .bandeja-fila.error { background: #fff8f8; }
+body.crm-shell .bandeja-fila.nueva { background: #eef8f1; box-shadow: inset 3px 0 0 #2f9e5b; }
+body.crm-shell .bandeja-fila .senal { font-size: 10px; padding: 1px 6px; white-space: nowrap; }
+body.crm-shell .senal-nueva { background: #2f9e5b !important; color: #fff !important; }
+body.crm-shell .bandeja-anteriores { margin-top: 6px; padding: 7px 10px; border-radius: 8px; background: #f3f7fb; color: #4a6480; font-size: 12px; }
+body.crm-shell .bandeja-anteriores .link-button { font-size: 12px; }
+@media (max-width: 900px) {
+    body.crm-shell .bandeja-fila { grid-template-columns: 48px 1fr 40px auto; }
+    body.crm-shell .bandeja-meta, body.crm-shell .bandeja-senales { display: none; }
+}
+body.crm-shell .bandeja-fila .senal { display: inline-block; border-radius: 999px; background: #eef3f9; color: #48627c; font-weight: 700; }
+body.crm-shell .bandeja-fila .senal-alerta { background: #fdecec; color: #a8323c; }
+body.crm-shell .bandeja-fila .senal-calidad { background: #eaf2fd; color: #1769c2; }
+
+/* v20260922-bandeja2: bandeja al costado del formulario, filas de dos lineas */
+body.crm-shell .bandeja-fila { grid-template-columns: 46px minmax(0, 1fr) 44px auto; gap: 10px; }
+body.crm-shell .bandeja-principal { display: grid; gap: 2px; min-width: 0; }
+body.crm-shell .bandeja-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+body.crm-shell .bandeja-meta .senal { flex: none; }
+@media (min-width: 1200px) {
+    body.crm-shell #panelCargaIa {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+        grid-template-areas: "head head" "form bandeja" "msg bandeja";
+        column-gap: 24px;
+        align-items: start;
+    }
+    body.crm-shell #panelCargaIa > .panel-head { grid-area: head; }
+    body.crm-shell #panelCargaIa > #formIaFeedback { grid-area: form; }
+    body.crm-shell #panelCargaIa > #mensajeIa { grid-area: msg; }
+    body.crm-shell #panelCargaIa > #procesosIa { grid-area: bandeja; margin-top: 0; position: sticky; top: 80px; }
+    body.crm-shell #panelCargaIa .bandeja-scroll { max-height: 440px; }
+}
+@media (max-width: 1199px) {
+    body.crm-shell #procesosIa { max-width: 760px; }
+}
+body.crm-shell .bandeja-meta { flex-wrap: wrap; white-space: normal; row-gap: 2px; }
+@media (min-width: 1200px) {
+    body.crm-shell #panelCargaIa > #procesosIa { padding: 0 18px 18px 0; }
+}
+body.crm-shell .bandeja-lista { display: block; }

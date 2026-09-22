@@ -389,45 +389,66 @@ function tiempoTranscurridoIa(inicio) {
 
 function senalesBandejaIa(item) {
     const senales = [];
-    if (item.sin_agente) senales.push(`<span class="senal senal-alerta">Sin agente</span>`);
-    if (item.requiere_revision_humana) senales.push(`<span class="senal">La IA pide revisión</span>`);
+    if (item.requiere_revision_humana) senales.push(`<span class="senal">IA pide revisión</span>`);
     if (Number(item.cal_borrador) > 0) senales.push(`<span class="senal">Corrección sin enviar</span>`);
     if (Number(item.cal_en_revision) > 0) senales.push(`<span class="senal senal-calidad">En Calidad</span>`);
     return senales.join("");
 }
 
+function horaCortaIa(valor) {
+    const f = valor ? new Date(valor) : null;
+    return f && !Number.isNaN(f.getTime()) ? f.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+// Fila compacta: una linea por llamada. La bandeja es una lista de trabajo,
+// no una ficha: tiene que caber sin obligar a desplazarse.
 function filaBandejaIa(item, tipo) {
     const id = Number(item.id_feedback);
     if (tipo === "proceso") {
         const estado = String(item.estado || "").toUpperCase();
         const reloj = inicioProcesoIa.has(id) ? tiempoTranscurridoIa(inicioProcesoIa.get(id)) : "";
-        return `<div class="proceso-ia curso">
-            <div><strong>#${id}</strong><span>${escapeHtml(ETIQUETAS_PROCESO_IA[estado] || estado)}</span></div>
-            <small>${reloj}</small>
-            <div class="proceso-acciones"><span class="proceso-spinner" aria-hidden="true"></span></div>
+        return `<div class="bandeja-fila curso">
+            <b>#${id}</b>
+            <div class="bandeja-principal">
+                <span class="bandeja-agente">${escapeHtml(ETIQUETAS_PROCESO_IA[estado] || estado)}</span>
+                <span class="bandeja-meta">${escapeHtml(item.cartera || "")}</span>
+            </div>
+            <small class="bandeja-nota">${reloj}</small>
+            <span class="proceso-spinner" aria-hidden="true"></span>
         </div>`;
     }
     if (tipo === "error") {
-        return `<div class="proceso-ia error">
-            <div><strong>#${id}</strong><span>${escapeHtml(item.cartera || "")}</span></div>
-            <small>${escapeHtml(String(item.mensaje_error || "El análisis falló").slice(0, 90))}</small>
-            <div class="proceso-acciones">
-                <button type="button" class="btn-light btn-small" onclick="reintentarProcesoIa(${id})">Reintentar</button>
+        return `<div class="bandeja-fila error">
+            <b>#${id}</b>
+            <div class="bandeja-principal">
+                <span class="bandeja-agente">Falló el análisis</span>
+                <span class="bandeja-meta" title="${escapeHtml(item.mensaje_error || "")}">${escapeHtml(String(item.mensaje_error || "").slice(0, 70))}</span>
             </div>
+            <small class="bandeja-nota"></small>
+            <button type="button" class="btn-light btn-small" onclick="reintentarProcesoIa(${id})">Reintentar</button>
         </div>`;
     }
-    const nota = item.score_vigente == null ? "No evaluable" : `${formatoPeso(item.score_vigente)} / 100`;
-    return `<div class="proceso-ia pendiente-revision">
-        <div>
-            <strong>#${id} · ${escapeHtml(item.agente || "Sin agente")}</strong>
-            <span>${escapeHtml(item.cartera || "Sin cartera")}${item.fecha_llamada ? ` · ${escapeHtml(formatoFecha(item.fecha_llamada))}` : ""}</span>
-            <span class="senales-bandeja">${senalesBandejaIa(item)}</span>
+    const nota = item.score_vigente == null ? "N/E" : formatoPeso(item.score_vigente);
+    const nueva = inicioProcesoIa.has(id);
+    const agente = item.sin_agente ? `<span class="senal senal-alerta">Sin agente</span>` : escapeHtml(nombreAgenteLimpioIa(item.agente));
+    return `<div class="bandeja-fila revisar ${nueva ? "nueva" : ""}">
+        <b>#${id}</b>
+        <div class="bandeja-principal">
+            <span class="bandeja-agente">${nueva ? `<span class="senal senal-nueva">Nueva</span> ` : ""}${agente}</span>
+            <span class="bandeja-meta">${escapeHtml(item.cartera || "Sin cartera")} · ${escapeHtml(horaCortaIa(item.fecha_analisis || item.fecha_creacion))} ${senalesBandejaIa(item)}</span>
         </div>
-        <small>${nota}</small>
-        <div class="proceso-acciones">
-            <button type="button" class="btn-primary btn-small" onclick="verAnalisisIa(${id})">Revisar</button>
-        </div>
+        <small class="bandeja-nota">${nota}</small>
+        <button type="button" class="btn-primary btn-small" onclick="verAnalisisIa(${id})">Revisar</button>
     </div>`;
+}
+
+function verPendientesAnterioresIa() {
+    if (typeof filtrarEvaluacionesV2 === "function" && typeof evalV2 === "object") {
+        evalV2.filtro = "por_revisar";
+        evalV2.busqueda = "";
+        evalV2.pagina = 1;
+    }
+    mostrarVistaEvaluacionesIa();
 }
 
 function pintarBandejaIa() {
@@ -436,23 +457,29 @@ function pintarBandejaIa() {
     const enProceso = bandejaIa.en_proceso || [];
     const conError = bandejaIa.con_error || [];
     const porRevisar = bandejaIa.por_revisar || [];
+    const anteriores = Number(bandejaIa.resumen?.anteriores_por_revisar || 0);
+    const pieAnteriores = anteriores
+        ? `<div class="bandeja-anteriores">${formatoNumero(anteriores)} evaluación(es) de días anteriores siguen por revisar
+            ${Number(bandejaIa.resumen?.anteriores_sin_agente || 0) ? `(${formatoNumero(bandejaIa.resumen.anteriores_sin_agente)} sin agente)` : ""}.
+            <button type="button" class="link-button" onclick="verPendientesAnterioresIa()">Verlas en Evaluaciones →</button></div>`
+        : "";
     if (!enProceso.length && !conError.length && !porRevisar.length) {
-        el.innerHTML = `<p class="bandeja-vacia">No tienes llamadas pendientes. Carga un audio para empezar.</p>`;
+        el.innerHTML = `<p class="bandeja-vacia">Hoy no tienes llamadas pendientes. Carga un audio para empezar.</p>${pieAnteriores}`;
         return;
     }
     const bloques = [];
     if (enProceso.length) {
-        bloques.push(`<p class="procesos-titulo">En proceso · ${enProceso.length}</p>${enProceso.map(i => filaBandejaIa(i, "proceso")).join("")}`);
+        bloques.push(`<p class="procesos-titulo">En proceso · ${enProceso.length}</p><div class="bandeja-lista">${enProceso.map(i => filaBandejaIa(i, "proceso")).join("")}</div>`);
     }
     if (conError.length) {
-        bloques.push(`<p class="procesos-titulo">Con error · ${conError.length}</p>${conError.map(i => filaBandejaIa(i, "error")).join("")}`);
+        bloques.push(`<p class="procesos-titulo">Con error · ${conError.length}</p><div class="bandeja-lista">${conError.map(i => filaBandejaIa(i, "error")).join("")}</div>`);
     }
     if (porRevisar.length) {
         const sinAgente = Number(bandejaIa.resumen?.sin_agente || 0);
-        bloques.push(`<p class="procesos-titulo">Por revisar · ${porRevisar.length}${sinAgente ? ` <em>(${sinAgente} sin agente)</em>` : ""}</p>
-            ${porRevisar.map(i => filaBandejaIa(i, "revisar")).join("")}`);
+        bloques.push(`<p class="procesos-titulo">Por revisar hoy · ${porRevisar.length}${sinAgente ? ` <em>(${sinAgente} sin agente)</em>` : ""} <span>· la más reciente arriba</span></p>
+            <div class="bandeja-lista bandeja-scroll">${porRevisar.map(i => filaBandejaIa(i, "revisar")).join("")}</div>`);
     }
-    el.innerHTML = bloques.join("");
+    el.innerHTML = bloques.join("") + pieAnteriores;
 }
 
 // El reloj de las filas en proceso avanza aunque no llegue respuesta nueva.
