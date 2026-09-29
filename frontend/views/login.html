@@ -38,7 +38,7 @@
                 <div class="login-card-header">
                     <span>Acceso interno</span>
                     <h2>Inicia sesion</h2>
-                    <p>Ingresa tu DNI registrado para abrir tu panel de trabajo.</p>
+                    <p>Ingresa tu DNI y tu contraseña para abrir tu panel de trabajo.</p>
                 </div>
 
                 <div class="login-field">
@@ -56,6 +56,18 @@
                     >
                 </div>
 
+                <div class="login-field">
+                    <label for="clave">Contraseña</label>
+                    <input
+                        type="password"
+                        id="clave"
+                        maxlength="128"
+                        autocomplete="current-password"
+                        placeholder="Ingrese su contraseña"
+                        onkeydown="if(event.key === 'Enter') login()"
+                    >
+                </div>
+
                 <div id="loginMensaje" class="login-message oculto" role="status" aria-live="polite"></div>
 
                 <button id="loginBtn" class="login-button" onclick="login()">Ingresar</button>
@@ -65,6 +77,6 @@
     </main>
 
     <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/login.js?v=20260616a"></script>
+    <script src="../js/login.js?v=20260929a"></script>
 </body>
 </html>

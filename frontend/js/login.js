@@ -20,11 +20,19 @@ async function login() {
     if (loginEnProceso) return;
 
     const dniCampo = document.getElementById("dni");
+    const claveCampo = document.getElementById("clave");
     const dniInput = (dniCampo?.value || "").replace(/\D/g, "").trim();
+    const claveInput = claveCampo?.value || "";
 
     if (dniInput.length !== 8) {
         mostrarLoginMensaje("Ingresa un DNI valido de 8 digitos.");
         dniCampo?.focus();
+        return;
+    }
+
+    if (!claveInput) {
+        mostrarLoginMensaje("Ingresa tu contraseña.");
+        claveCampo?.focus();
         return;
     }
 
@@ -37,25 +45,44 @@ async function login() {
 
         const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
 
-        const res = await fetch(`${BASE_URL}/auth/login`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ dni: dniInput })
-        });
-
-        if (!res.ok) {
-            throw new Error("Error de conexion con el servidor");
-        }
-
-        const data = await res.json();
-
-        if (!data.ok) {
-            mostrarLoginMensaje(data.msg || "Usuario no encontrado.");
+        let res;
+        try {
+            res = await fetch(`${BASE_URL}/auth/login`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ dni: dniInput, clave: claveInput })
+            });
+        } catch (errorRed) {
+            console.error("ERROR LOGIN (red):", errorRed);
+            mostrarLoginMensaje("No se pudo conectar con el servidor.");
             return;
         }
 
+        let data = null;
+        try {
+            data = await res.json();
+        } catch (errorJson) {
+            data = null;
+        }
+
+        if (!res.ok || !data || !data.ok || !data.access_token) {
+            mostrarLoginMensaje(data?.msg || "No se pudo validar el acceso.");
+            if (claveCampo) {
+                claveCampo.value = "";
+                claveCampo.focus();
+            }
+            return;
+        }
+
+        // Token de acceso: es la credencial real ante el backend.
+        localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("token_type", data.token_type || "bearer");
+        localStorage.setItem("requiere_cambio_clave", data.requiere_cambio_clave ? "1" : "0");
+
+        // Datos de compatibilidad para las pantallas actuales.
+        // NO son seguridad: el backend resuelve perfil y carteras desde el token.
         localStorage.setItem("dni", data.user.dni);
         localStorage.setItem("agente", data.user.agente);
         localStorage.setItem("tipo", data.user.tipo);
@@ -72,7 +99,7 @@ async function login() {
 
     } catch (error) {
         console.error("ERROR LOGIN:", error);
-        mostrarLoginMensaje("No se pudo conectar con el servidor.");
+        mostrarLoginMensaje("No se pudo completar el inicio de sesion.");
     } finally {
         loginEnProceso = false;
         setLoginLoading(false);
@@ -90,6 +117,11 @@ function setLoginLoading(loading) {
 
     if (dni) {
         dni.disabled = loading;
+    }
+
+    const clave = document.getElementById("clave");
+    if (clave) {
+        clave.disabled = loading;
     }
 }
 

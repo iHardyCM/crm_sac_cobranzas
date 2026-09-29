@@ -15,3 +15,5 @@ soundcard
 sounddevice
 numpy
 scipy
+PyJWT
+pwdlib[argon2]
