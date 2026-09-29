@@ -1,17 +1,38 @@
-document.addEventListener("DOMContentLoaded", () => {
-    if (!exigirSesion()) return;
+// Home es la puerta de sesion del CRM: nada del usuario se pinta hasta que el
+// backend confirma la sesion (GET /auth/me). Con 401 vuelve al login, con cambio
+// obligatorio va a cambiar_clave.html y con error tecnico queda bloqueada.
+// Nombre, perfil y carteras salen de la respuesta del backend, no de localStorage.
+document.addEventListener("DOMContentLoaded", iniciarHome);
 
-    pintarCabeceraHome();
-    pintarModulos();
-    pintarRoadmap();
-    pintarMensajeHome();
+// Volver con "Atras" puede mostrar la pagina desde la cache del navegador sin
+// ejecutar nada: en ese caso se recarga para revalidar la sesion.
+window.addEventListener("pageshow", event => {
+    if (event.persisted) window.location.reload();
 });
 
-function pintarCabeceraHome() {
-    const agente = localStorage.getItem("agente") || "Usuario";
-    const tipo = localStorage.getItem("tipo") || "Agente";
+async function iniciarHome() {
+    if (typeof asegurarSesionBackend !== "function") {
+        console.error("session.js desactualizado: falta asegurarSesionBackend().");
+        return;
+    }
+
+    const usuario = await asegurarSesionBackend();
+    if (!usuario) return;
+
+    pintarCabeceraHome(usuario);
+    pintarModulos(usuario);
+    pintarRoadmap();
+    pintarMensajeHome();
+    document.body.classList.remove("home-validando-sesion");
+}
+
+function pintarCabeceraHome(usuario) {
+    const agente = usuario.agente || usuario.dni || "Usuario";
+    const tipo = usuario.tipo || "Agente";
     const nombre = agente.includes(" - ") ? agente.split(" - ").slice(1).join(" - ") : agente;
-    const carteras = typeof obtenerIdCarterasSesion === "function" ? obtenerIdCarterasSesion() : [];
+    const carteras = Array.isArray(usuario.idcarteras)
+        ? usuario.idcarteras.filter(Boolean).map(String)
+        : [];
     const inicioSesion = localStorage.getItem("session_started_at");
 
     document.getElementById("homeUsuario").innerText = agente;
@@ -58,8 +79,8 @@ function obtenerDescripcionPerfil(tipo) {
     return "Puedes revisar tus compromisos, gestionar clientes y controlar el avance de tus promesas.";
 }
 
-function pintarModulos() {
-    const tipo = normalizarTipoUsuario(localStorage.getItem("tipo"));
+function pintarModulos(usuario) {
+    const tipo = normalizarTipoUsuario(usuario.tipo);
     const contenedor = document.getElementById("modulosHome");
     const modulos = obtenerModulosPorPerfil(tipo);
     const contador = document.getElementById("homeModulos");

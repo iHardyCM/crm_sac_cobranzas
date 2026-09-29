@@ -6,8 +6,20 @@
     <title>Biznescob - Inicio</title>
     <link rel="stylesheet" href="../css/home.css?v=20260829-apple-home">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <style>
+        /* Mientras /auth/me no responde, no se muestra nada del usuario. */
+        body.home-validando-sesion .home-topbar .user-box,
+        body.home-validando-sesion .home-container { visibility: hidden; }
+        .home-cargando-sesion { display: none; }
+        body.home-validando-sesion .home-cargando-sesion {
+            display: block; position: fixed; top: 45%; left: 0; right: 0;
+            text-align: center; color: #5f7083; font-weight: 700;
+        }
+    </style>
 </head>
-<body>
+<body class="home-validando-sesion">
+
+    <div class="home-cargando-sesion" role="status" aria-live="polite">Validando sesión…</div>
 
     <header class="home-topbar">
         <div class="brand">
@@ -76,7 +88,7 @@
         <section id="roadmapHome" class="roadmap-grid"></section>
     </main>
 
-    <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/home.js?v=20260923-consumo"></script>
+    <script src="../js/session.js?v=20260929-home"></script>
+    <script src="../js/home.js?v=20260929-home"></script>
 </body>
 </html>

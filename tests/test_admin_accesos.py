@@ -213,6 +213,11 @@ class CambioObligatorioBackendTests(BaseAccesosTest):
         resp = routes_admin_accesos.listar_usuarios(Response(), q=None, limite=10, admin=self.admin())
         self.assertTrue(resp["data"])
 
+    def test_auth_me_informa_cambio_obligatorio_desde_la_bd(self):
+        self.assertFalse(routes_auth.me(usuario=self.usuario_actual(ADMIN))["requiere_cambio_clave"])
+        self.cuentas[ADMIN]["FLG_CAMBIO_OBLIGATORIO"] = True
+        self.assertTrue(routes_auth.me(usuario=self.usuario_actual(ADMIN))["requiere_cambio_clave"])
+
     def test_requiere_administrador_depende_de_clave_definitiva(self):
         import inspect
         dependencia = inspect.signature(auth_dependencies.requiere_administrador).parameters["usuario"].default

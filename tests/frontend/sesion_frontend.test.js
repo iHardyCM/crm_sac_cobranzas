@@ -33,18 +33,37 @@ function respuesta(status, body) {
 }
 
 // Crea un "navegador" minimo. rutas: { "/auth/me": respuesta(...) , ... }
-function crearEntorno({ storage = {}, rutas = {} } = {}) {
+function crearEntorno({ storage = {}, rutas = {}, pagina = "http://localhost:5500/views/ia_feedback.html",
+                       conElementos = false, clasesIniciales = [] } = {}) {
     const llamadas = [];
     const listeners = {};
-    const location = { protocol: "http:", hostname: "localhost", href: "http://localhost:5500/views/ia_feedback.html" };
+    let hrefActual = pagina;
+    const redirecciones = [];
+    const location = {
+        protocol: "http:",
+        hostname: "localhost",
+        get href() { return hrefActual; },
+        set href(valor) { redirecciones.push(valor); hrefActual = valor; },
+        reload() {},
+    };
     const elementos = [];
+    const porId = {};
+    const clasesBody = new Set(clasesIniciales);
     const documentStub = {
         body: {
             appendChild: el => elementos.push(el),
             contains: () => true,
+            classList: {
+                add: c => clasesBody.add(c),
+                remove: c => clasesBody.delete(c),
+                contains: c => clasesBody.has(c),
+            },
         },
         addEventListener: (tipo, fn) => { (listeners[tipo] = listeners[tipo] || []).push(fn); },
-        getElementById: () => null,
+        // Los elementos de Home se crean al pedirlos; el aviso tecnico de session.js se crea con createElement.
+        getElementById: id => (conElementos && id !== "crmSesionErrorBackend"
+            ? (porId[id] = porId[id] || { id, innerText: "", innerHTML: "", textContent: "" })
+            : null),
         querySelector: () => null,
         querySelectorAll: () => [],
         createElement: () => ({
@@ -74,8 +93,9 @@ function crearEntorno({ storage = {}, rutas = {} } = {}) {
     };
     contexto.window = contexto;
     contexto.window.location = location;
+    contexto.addEventListener = (tipo, fn) => { (listeners["window:" + tipo] = listeners["window:" + tipo] || []).push(fn); };
     vm.createContext(contexto);
-    return { contexto, llamadas, listeners, location, elementos };
+    return { contexto, llamadas, listeners, location, elementos, porId, clasesBody, redirecciones };
 }
 
 function cargar(entorno, ...archivos) {
@@ -224,6 +244,140 @@ const casos = {
         return r.status === 403 && e.location.href.endsWith("ia_feedback.html");
     },
 };
+
+// ---------------------------------------------------------------- Home
+const HOME = "http://localhost:5500/views/home.html";
+
+function entornoHome(opciones) {
+    const e = crearEntorno({ pagina: HOME, conElementos: true, clasesIniciales: ["home-validando-sesion"], ...opciones });
+    cargar(e, "frontend/js/session.js", "frontend/js/home.js");
+    return e;
+}
+
+async function iniciarPagina(e) {
+    for (const fn of e.listeners.DOMContentLoaded || []) await fn();
+}
+
+function homeSinPintar(e) {
+    return e.porId.homeTitulo === undefined
+        && e.porId.modulosHome === undefined
+        && e.clasesBody.has("home-validando-sesion");
+}
+
+const STORAGE_VIEJO = {
+    access_token: "tok", dni: "22222222", agente: "22222222 - NOMBRE VIEJO",
+    tipo: "SUPERVISOR", idcartera: "117", idcarteras: "117,133",
+};
+
+Object.assign(casos, {
+    async home_200_continua() {
+        const e = entornoHome({
+            storage: STORAGE_VIEJO,
+            rutas: { "/auth/me": respuesta(200, { ...USUARIO_ME, requiere_cambio_clave: false }) },
+        });
+        await iniciarPagina(e);
+        return e.porId.homeTitulo.innerText === "Hola, GINO GESTOR"
+            && e.porId.homeUsuario.innerText === "22222222 - GINO GESTOR"
+            && e.porId.modulosHome.innerHTML.includes("Mis compromisos")
+            && !e.clasesBody.has("home-validando-sesion")
+            && e.redirecciones.length === 0;
+    },
+
+    async home_identidad_backend_reemplaza_localstorage() {
+        // SISCOB paso al usuario de SUPERVISOR a GESTOR; el JWT sigue vigente.
+        const e = entornoHome({
+            storage: STORAGE_VIEJO,
+            rutas: { "/auth/me": respuesta(200, { ...USUARIO_ME, requiere_cambio_clave: false }) },
+        });
+        await iniciarPagina(e);
+        const ls = e.contexto.localStorage;
+        return e.porId.homePerfil.innerText === "GESTOR"
+            && e.porId.homeCarteras.innerText === "112, 144"
+            && !e.porId.modulosHome.innerHTML.includes("Compromisos supervisor")
+            && ls.getItem("tipo") === "GESTOR"
+            && ls.getItem("agente") === "22222222 - GINO GESTOR"
+            && ls.getItem("idcarteras") === "112,144";
+    },
+
+    async home_401_limpia_sesion() {
+        const e = entornoHome({ storage: STORAGE_VIEJO, rutas: { "/auth/me": respuesta(401, { detail: "x" }) } });
+        await iniciarPagina(e);
+        const ls = e.contexto.localStorage;
+        return Object.keys(ls._datos).length === 0
+            && Object.keys(e.contexto.sessionStorage._datos).join() === "loginMensaje"
+            && e.contexto.sessionStorage.getItem("loginMensaje") === "Tu sesión ya no está habilitada. Inicia sesión nuevamente.";
+    },
+
+    async home_401_redirige_login() {
+        const e = entornoHome({ storage: STORAGE_VIEJO, rutas: { "/auth/me": respuesta(401, { detail: "x" }) } });
+        await iniciarPagina(e);
+        return e.redirecciones.length === 1 && e.redirecciones[0] === "login.html";
+    },
+
+    async home_401_no_continua() {
+        const e = entornoHome({ storage: STORAGE_VIEJO, rutas: { "/auth/me": respuesta(401, { detail: "x" }) } });
+        await iniciarPagina(e);
+        return homeSinPintar(e) && e.llamadas.length === 1;
+    },
+
+    async home_cambio_obligatorio_va_a_cambiar_clave() {
+        const e = entornoHome({
+            storage: { ...STORAGE_VIEJO, requiere_cambio_clave: "false" },
+            rutas: { "/auth/me": respuesta(200, { ...USUARIO_ME, requiere_cambio_clave: true }) },
+        });
+        await iniciarPagina(e);
+        return e.redirecciones.join() === "cambiar_clave.html"
+            && homeSinPintar(e)
+            && e.contexto.localStorage.getItem("requiere_cambio_clave") === "true"
+            && e.contexto.localStorage.getItem("access_token") === "tok";
+    },
+
+    async home_5xx_no_usa_sesion_vieja() {
+        const e = entornoHome({ storage: STORAGE_VIEJO, rutas: { "/auth/me": respuesta(503, { detail: "x" }) } });
+        await iniciarPagina(e);
+        return homeSinPintar(e)                                   // no pinta datos viejos
+            && e.redirecciones.length === 0
+            && e.elementos.length === 1                           // aviso tecnico bloqueante
+            && e.contexto.localStorage.getItem("access_token") === "tok"
+            && e.contexto.obtenerEstadoSesionBackend() === "ERROR_TECNICO";
+    },
+
+    async home_sin_token_va_al_login() {
+        const e = entornoHome({ storage: { dni: "22222222", agente: "x", tipo: "SUPERVISOR" } });
+        await iniciarPagina(e);
+        return e.llamadas.length === 0
+            && e.redirecciones.join() === "login.html"
+            && homeSinPintar(e)
+            && e.contexto.localStorage.getItem("tipo") === null;
+    },
+
+    async redireccion_ocurre_una_sola_vez() {
+        const e = crearEntorno({
+            storage: { access_token: "tok" },
+            rutas: { "/ia-feedback/": respuesta(401, { detail: "x" }), "/auth/me": respuesta(401, { detail: "x" }) },
+        });
+        cargar(e, "frontend/js/session.js", "frontend/js/ia_feedback.js");
+        // Varias llamadas fallan a la vez (bandeja, reporteria, config) + /auth/me.
+        await Promise.allSettled([
+            e.contexto.fetchIa("http://localhost:8000/ia-feedback/bandeja"),
+            e.contexto.fetchIa("http://localhost:8000/ia-feedback/reporteria"),
+            e.contexto.fetchIa("http://localhost:8000/ia-feedback/config"),
+            e.contexto.validarSesionBackend(),
+        ]);
+        e.contexto.cerrarSesionPorInvalidez("otro mensaje");
+        return e.redirecciones.length === 1
+            && e.redirecciones[0] === "login.html"
+            && e.contexto.sessionStorage.getItem("loginMensaje") === "Tu sesión ya no está habilitada. Inicia sesión nuevamente.";
+    },
+
+    async home_recarga_desde_cache_revalida() {
+        const e = entornoHome({ storage: STORAGE_VIEJO });
+        let recargo = false;
+        e.location.reload = () => { recargo = true; };
+        for (const fn of e.listeners["window:pageshow"] || []) fn({ persisted: true });
+        return recargo;
+    },
+});
 
 (async () => {
     const resultados = {};

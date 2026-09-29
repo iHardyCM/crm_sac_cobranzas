@@ -1,4 +1,4 @@
-"""Tests de la validacion de sesion del frontend (session.js y fetchIa).
+"""Tests de la validacion de sesion del frontend (session.js, home.js y fetchIa).
 
 Ejecuta tests/frontend/sesion_frontend.test.js con Node (sin navegador ni BD).
 Si Node no esta instalado, se saltan.
@@ -26,6 +26,17 @@ CASOS_ESPERADOS = {
     "fetch_ia_401_cierra_sesion",
     "fetch_ia_403_cambio_obligatorio_redirige",
     "fetch_ia_otro_403_no_redirige",
+    # Home como puerta de sesion
+    "home_200_continua",
+    "home_identidad_backend_reemplaza_localstorage",
+    "home_401_limpia_sesion",
+    "home_401_redirige_login",
+    "home_401_no_continua",
+    "home_cambio_obligatorio_va_a_cambiar_clave",
+    "home_5xx_no_usa_sesion_vieja",
+    "home_sin_token_va_al_login",
+    "redireccion_ocurre_una_sola_vez",
+    "home_recarga_desde_cache_revalida",
 }
 
 

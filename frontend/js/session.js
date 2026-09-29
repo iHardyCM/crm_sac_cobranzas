@@ -136,6 +136,21 @@ const MENSAJE_SESION_REVOCADA = "Tu sesión ya no está habilitada. Inicia sesi�
 const MENSAJE_CAMBIO_CLAVE_BACKEND = "Debes cambiar tu contraseña antes de continuar.";
 
 let _promesaSesionBackend = null;
+let _redireccionSesionEnCurso = false;
+
+// Resultado de la ultima validacion (para que las paginas distingan los casos).
+const ESTADOS_SESION_BACKEND = Object.freeze({
+    VALIDA: "VALIDA",
+    SIN_TOKEN: "SIN_TOKEN",
+    REVOCADA: "REVOCADA",
+    CAMBIO_OBLIGATORIO: "CAMBIO_OBLIGATORIO",
+    ERROR_TECNICO: "ERROR_TECNICO",
+});
+let _estadoSesionBackend = null;
+
+function obtenerEstadoSesionBackend() {
+    return _estadoSesionBackend;
+}
 
 function obtenerAccessToken() {
     try {
@@ -155,15 +170,36 @@ function agregarAuthorizationHeader(headers) {
     return resultado;
 }
 
-function cerrarSesionPorBackend(mensaje = MENSAJE_SESION_REVOCADA) {
+// Redirige una sola vez aunque varias llamadas fallen al mismo tiempo.
+function redirigirSesionUnaVez(destino) {
+    if (_redireccionSesionEnCurso) return false;
+    _redireccionSesionEnCurso = true;
+    window.location.href = destino;
+    return true;
+}
+
+// Sesion invalida (401, sin token, cuenta deshabilitada): limpia todo el
+// estado del navegador, conserva solo el mensaje para el login y redirige.
+function cerrarSesionPorInvalidez(mensaje = MENSAJE_SESION_REVOCADA) {
+    if (_redireccionSesionEnCurso) return;
     localStorage.clear();
     sessionStorage.clear();
     sessionStorage.setItem("loginMensaje", mensaje);
-    window.location.href = "login.html";
+    redirigirSesionUnaVez("login.html");
+}
+
+// Nombre anterior, usado por IA y Consumo de IA: mismo comportamiento.
+function cerrarSesionPorBackend(mensaje = MENSAJE_SESION_REVOCADA) {
+    cerrarSesionPorInvalidez(mensaje);
 }
 
 function irACambioClaveObligatorio() {
-    window.location.href = "cambiar_clave.html";
+    try {
+        localStorage.setItem("requiere_cambio_clave", "true");
+    } catch (error) {
+        // sin almacenamiento disponible: igual se redirige
+    }
+    redirigirSesionUnaVez("cambiar_clave.html");
 }
 
 // true si la respuesta es el 403 estable del cambio de clave obligatorio.
@@ -194,10 +230,16 @@ function mostrarErrorSesionBackend(mensaje) {
 }
 
 async function validarSesionBackend() {
+    const resultado = await _consultarSesionBackend();
+    _estadoSesionBackend = resultado.estado;
+    return resultado.estado === ESTADOS_SESION_BACKEND.VALIDA ? resultado.usuario : null;
+}
+
+async function _consultarSesionBackend() {
     const token = obtenerAccessToken();
     if (!token) {
-        cerrarSesionPorBackend("Inicia sesión para continuar.");
-        return null;
+        cerrarSesionPorInvalidez("Inicia sesión para continuar.");
+        return { estado: ESTADOS_SESION_BACKEND.SIN_TOKEN };
     }
 
     let response;
@@ -208,7 +250,7 @@ async function validarSesionBackend() {
         });
     } catch (error) {
         mostrarErrorSesionBackend("El servidor no respondió. Revisa tu conexión e intenta nuevamente.");
-        return null;
+        return { estado: ESTADOS_SESION_BACKEND.ERROR_TECNICO };
     }
 
     let data = null;
@@ -219,19 +261,20 @@ async function validarSesionBackend() {
     }
 
     if (response.status === 401) {
-        cerrarSesionPorBackend(MENSAJE_SESION_REVOCADA);
-        return null;
+        cerrarSesionPorInvalidez(MENSAJE_SESION_REVOCADA);
+        return { estado: ESTADOS_SESION_BACKEND.REVOCADA };
     }
     if (esRespuestaCambioClave(response.status, data)) {
         irACambioClaveObligatorio();
-        return null;
+        return { estado: ESTADOS_SESION_BACKEND.CAMBIO_OBLIGATORIO };
     }
     if (!response.ok || !data || !data.dni) {
         mostrarErrorSesionBackend("Ocurrió un problema técnico al validar tu sesión. Intenta nuevamente en un momento.");
-        return null;
+        return { estado: ESTADOS_SESION_BACKEND.ERROR_TECNICO };
     }
 
     // La identidad sale del backend; lo que hubiera en localStorage se reemplaza.
+    // localStorage queda solo como estado de UI / compatibilidad.
     const idcarteras = Array.isArray(data.idcarteras) ? data.idcarteras.filter(Boolean) : [];
     localStorage.setItem("dni", data.dni);
     localStorage.setItem("agente", data.agente || data.dni);
@@ -239,12 +282,18 @@ async function validarSesionBackend() {
     localStorage.setItem("idcartera", data.idcartera || idcarteras[0] || "");
     localStorage.setItem("idcarteras", idcarteras.join(","));
 
-    if (localStorage.getItem("requiere_cambio_clave") === "true") {
+    // El backend informa el cambio obligatorio; si no lo informa (version
+    // anterior), se usa el indicador que guardo el login.
+    const requiereCambio = typeof data.requiere_cambio_clave === "boolean"
+        ? data.requiere_cambio_clave
+        : localStorage.getItem("requiere_cambio_clave") === "true";
+    localStorage.setItem("requiere_cambio_clave", requiereCambio ? "true" : "false");
+    if (requiereCambio) {
         irACambioClaveObligatorio();
-        return null;
+        return { estado: ESTADOS_SESION_BACKEND.CAMBIO_OBLIGATORIO };
     }
 
-    return data;
+    return { estado: ESTADOS_SESION_BACKEND.VALIDA, usuario: data };
 }
 
 // Bootstrap unico por pagina: todas las cargas esperan la misma validacion.

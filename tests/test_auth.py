@@ -101,6 +101,12 @@ class BaseAuthTest(unittest.TestCase):
                 "cuenta_crm_activa",
                 side_effect=lambda dni: bool(self.cuentas.get(dni, {}).get("FLG_ACTIVO")),
             ),
+            # /auth/me informa requiere_cambio_clave leyendo la BD: se simula.
+            patch.object(
+                auth_dependencies,
+                "cuenta_requiere_cambio_clave",
+                side_effect=lambda dni: bool(self.cuentas.get(dni, {}).get("FLG_CAMBIO_OBLIGATORIO", True)),
+            ),
         ]
         for p in self.parches:
             p.start()

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.auth_service import ErrorCambioClave, autenticar_usuario, cambiar_clave_propia
+from app.core import auth_dependencies
 from app.core.auth_dependencies import obtener_usuario_actual
 
 
@@ -70,8 +71,17 @@ def login(payload: LoginRequest):
 
 @router.get("/me")
 def me(usuario: Dict = Depends(obtener_usuario_actual)):
-    """Identidad que el backend reconoce para el token enviado."""
-    return usuario
+    """Identidad que el backend reconoce para el token enviado.
+
+    Incluye requiere_cambio_clave (leido de CRM_USUARIO_ACCESO) para que el
+    frontend envie al cambio de clave sin depender de localStorage.
+    """
+    try:
+        requiere_cambio = auth_dependencies.cuenta_requiere_cambio_clave(usuario["dni"])
+    except Exception:
+        logger.exception("Error verificando cambio obligatorio en /auth/me usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MENSAJE_ERROR_TECNICO)
+    return {**usuario, "requiere_cambio_clave": bool(requiere_cambio)}
 
 
 @router.post("/cambiar-clave")

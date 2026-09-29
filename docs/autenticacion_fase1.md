@@ -1,4 +1,4 @@
-# Autenticación CRM — Fases 1 a 3 (rama `hardening/security-phase1`)
+# Autenticación CRM — Fases 1 a 4 (rama `hardening/security-phase1`)
 
 ## Qué hace
 
@@ -131,7 +131,7 @@ Las páginas migradas esperan `asegurarSesionBackend()` (que llama una vez a `va
 
 Helpers disponibles en `session.js` para las próximas migraciones: `agregarAuthorizationHeader()`, `cerrarSesionPorBackend()`, `irACambioClaveObligatorio()` y `esRespuestaCambioClave()`.
 
-**Páginas migradas:** `ia_feedback.html` (Análisis IA, con calibración y reportería) y `consumo_ia.html`. `admin_accesos.html` y `cambiar_clave.html` ya enviaban el token desde la Fase 2.
+**Páginas migradas:** `home.html` (Fase 4), `ia_feedback.html` (Análisis IA, con calibración y reportería) y `consumo_ia.html`. `admin_accesos.html` y `cambiar_clave.html` ya enviaban el token desde la Fase 2.
 
 ### Módulo IA en el frontend
 
@@ -166,11 +166,38 @@ Antes, si el payload de calibración venía sin `perfil`, el servicio omitía el
 ### Revocación en la práctica
 
 Con una cuenta deshabilitada:
-1. Al recargar cualquier página migrada, `/auth/me` responde 401 y el usuario vuelve al login.
+1. Al recargar Home o cualquier página migrada, `/auth/me` responde 401 y el usuario vuelve al login. No hace falta entrar a IA.
 2. Cualquier llamada a `/ia-feedback/*`, `/calibracion/*` o `/admin-accesos/*` con el JWT anterior responde 401.
 3. Si la página IA ya estaba abierta, la siguiente llamada (bandeja, estado, ficha, audio) responde 401 y la envía al login.
 
 Los módulos todavía no migrados (lista abajo) **siguen respondiendo** a esa sesión hasta que se migren. Por eso la pantalla de Accesos CRM ya no dice que el corte es total.
+
+## Fase 4 — Home como puerta de sesión
+
+`home.html` ya **no confía en `localStorage`**. Al cargar (o al volver con "Atrás" desde la caché del navegador), Home espera `asegurarSesionBackend()` antes de pintar nada: nombre, perfil, carteras, módulos, tarjetas y mensajes.
+
+| `GET /auth/me` | Resultado en Home |
+| --- | --- |
+| Sin `access_token` | Limpia la sesión y va a `login.html` ("Inicia sesión para continuar."). Esto también saca a las sesiones antiguas, anteriores al login con contraseña |
+| 200 y `requiere_cambio_clave = false` | Actualiza `dni`, `agente`, `tipo`, `idcartera` e `idcarteras` con la respuesta y construye Home **con esos datos** |
+| 200 y `requiere_cambio_clave = true` | Va a `cambiar_clave.html` sin mostrar Home |
+| 401 | `localStorage` y `sessionStorage` limpios (solo queda `loginMensaje` = "Tu sesión ya no está habilitada. Inicia sesión nuevamente.") y va a `login.html`. Home no continúa |
+| 5xx o sin respuesta | No muestra datos viejos. Home sigue oculto con un aviso técnico y "Reintentar". Las credenciales no se borran |
+
+Detalles:
+
+- **Sin datos viejos en pantalla:** `home.html` arranca con `body.home-validando-sesion` (contenido y usuario ocultos, texto "Validando sesión…"). La clase se quita solo cuando `/auth/me` respondió 200.
+- **Perfil actualizado:** si SISCOB cambia al usuario, por ejemplo de SUPERVISOR a GESTOR, con el JWT todavía vigente, al recargar Home se ven el perfil, las carteras y los módulos nuevos.
+- **`/auth/me` ahora devuelve `requiere_cambio_clave`,** leído de `CRM_USUARIO_ACCESO`. Así el cambio obligatorio se detecta aunque el administrador resetee la clave de un usuario que ya tenía sesión abierta. JWT y SQL no cambian: se reutiliza `cuenta_requiere_cambio_clave`.
+- **Un solo cierre de sesión:** `cerrarSesionPorInvalidez(mensaje)` en `session.js` limpia el almacenamiento, conserva solo `loginMensaje` y redirige **una sola vez**, aunque varias llamadas reciban 401 al mismo tiempo. `cerrarSesionPorBackend()` (usado por IA y Consumo de IA) delega en ella. La redirección a `cambiar_clave.html` usa la misma protección.
+- **Estado de la última validación:** `obtenerEstadoSesionBackend()` devuelve `VALIDA`, `SIN_TOKEN`, `REVOCADA`, `CAMBIO_OBLIGATORIO` o `ERROR_TECNICO`.
+- **`app_layout.js` no participa:** `home.html` no lo carga (tiene su propia cabecera). En los demás módulos, el menú sigue construyéndose con `localStorage` hasta que se migren.
+
+**`localStorage` queda solo como estado de UI y compatibilidad.** La autoridad es el backend (`/auth/me` y la validación de cada endpoint protegido).
+
+### Límite importante
+
+Home protegido **no significa** que los demás routers estén protegidos. La revocación se detecta al recargar Home o al usar un módulo migrado, pero si alguien llama directamente a un endpoint no migrado (`/pagos`, `/compromisos`, `/cliente`, `/metas`, `/telefonos`, etc.), ese endpoint todavía responde sin validar la sesión.
 
 ## Filtro por cartera todavía pendiente en IA
 
@@ -188,7 +215,7 @@ Para resolverlo hay que decidir la regla por perfil (por ejemplo: supervisor = s
 
 **Routers sin autenticación en el backend:** `/admin-metas-agentes`, `/admin-pautas-evaluacion`, `/admin-supervisores`, `/canales`, `/cliente`, `/compromisos`, `/corporativo`, `/control-horario`, `/documentos`, `/importacion`, `/metas`, `/pagos`, `/planes-mejora`, `/score-telefonico`, `/susurro-ia` y `/telefonos`.
 
-**Páginas que aún usan solo `exigirSesion()`:** home, compromisos, supervisor, compartamos, corporativo, promesas hoy, metas, ritmo meta, control horario, matriz, importación, pagos, canales, teléfonos, documentos, susurro IA, score telefónico y las administraciones de supervisores, metas por agente y pautas de evaluación.
+**Páginas que aún usan solo `exigirSesion()`:** compromisos, supervisor, compartamos, corporativo, promesas hoy, metas, ritmo meta, control horario, matriz, importación, pagos, canales, teléfonos, documentos, susurro IA, score telefónico y las administraciones de supervisores, metas por agente y pautas de evaluación.
 
 Para migrar cada módulo:
 1. En el router, agregar `usuario: Dict = Depends(requiere_clave_definitiva)` a cada endpoint. Reemplazar `perfil` y `usuario` del payload por los de la sesión.
@@ -197,7 +224,7 @@ Para migrar cada módulo:
 ## Pendientes
 
 1. **Migración del resto de módulos** (lista de arriba) y del filtro por cartera en IA.
-2. **Otras páginas y sesiones antiguas:** fuera de las páginas migradas, `exigirSesion()` sigue validando solo `dni` y `agente` en `localStorage`.
+2. **Otras páginas:** fuera de Home y las páginas migradas, `exigirSesion()` sigue validando solo `dni` y `agente` en `localStorage`. Un usuario deshabilitado que tenga abierta una de esas páginas puede seguir usándola hasta que recargue Home o entre a un módulo migrado.
 3. **Fallos de la clave actual en el cambio de clave:** no suman a `INTENTOS_FALLIDOS` (quien lo intenta ya tiene un token válido). Evaluar si deben contar.
 4. **Último administrador:** un administrador no puede deshabilitar su propia cuenta, pero sí a otro administrador. No hay una regla que garantice que quede al menos un administrador activo.
 5. **Enlace a "Cambiar contraseña"** desde el menú o la barra superior, para el cambio voluntario. La pantalla ya existe.
