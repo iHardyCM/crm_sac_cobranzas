@@ -44,8 +44,17 @@ let iaAudioConfig = {
     maxMb: 25,
 };
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     if (typeof exigirSesion === "function" && !exigirSesion()) return;
+
+    // Seguridad: ninguna carga de datos arranca hasta que el backend confirme
+    // la sesion (GET /auth/me). Una cuenta deshabilitada vuelve al login aqui.
+    if (typeof asegurarSesionBackend !== "function") {
+        console.error("session.js desactualizado: falta asegurarSesionBackend().");
+        return;
+    }
+    const usuarioSesionIa = await asegurarSesionBackend();
+    if (!usuarioSesionIa) return;
 
     prepararFormularioIa();
     prepararFiltrosReporteIa();
@@ -904,13 +913,14 @@ function pintarAudioYTranscripcionFichaIa(data = {}) {
         : "Separación de interlocutores no disponible.");
     if (wrap) {
         wrap.innerHTML = audioUrl
-            ? `<audio id="audioRevisionIa" controls preload="metadata"><source src="${escapeHtml(audioSrc)}" type="${escapeHtml(tipoMimeAudioIa(data.archivo_nombre || audioUrl))}"></audio>`
+            ? `<audio id="audioRevisionIa" controls preload="metadata"></audio>`
             : `<div class="audio-unavailable"><strong>Audio pendiente de integración</strong><span>El backend guarda la ruta del archivo, pero aún no expone una URL segura para reproducirlo desde la ficha.</span></div>`;
         const audio = document.getElementById("audioRevisionIa");
         audio?.addEventListener("loadedmetadata", () => {
             const activo = document.querySelector(".transcript-tabs button.active")?.dataset.transcriptTab || "limpia";
             mostrarTranscripcionIa(activo);
         }, { once: true });
+        if (audio && audioSrc) cargarAudioAutenticadoIa(audio, audioSrc);
     }
     mostrarTranscripcionIa("limpia");
 }
@@ -1895,6 +1905,25 @@ function tipoMimeAudioIa(nombre = "") {
     if (value.endsWith(".ogg")) return "audio/ogg";
     if (value.endsWith(".wav")) return "audio/wav";
     return "audio/wav";
+}
+
+// El endpoint de audio exige Authorization: Bearer, que un <audio src> no envia.
+// Se descarga con fetchIa y se reproduce desde un blob local.
+let audioObjectUrlIa = null;
+
+async function cargarAudioAutenticadoIa(audio, url) {
+    try {
+        const response = await fetchIa(url, {}, 120000);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        if (audioObjectUrlIa) URL.revokeObjectURL(audioObjectUrlIa);
+        audioObjectUrlIa = URL.createObjectURL(blob);
+        if (document.body.contains(audio)) audio.src = audioObjectUrlIa;
+    } catch (error) {
+        if (error instanceof SesionIaInvalidaError) return;
+        console.error("No se pudo cargar el audio:", error);
+        audio.insertAdjacentHTML("afterend", `<div class="audio-unavailable"><strong>No se pudo cargar el audio</strong><span>${escapeHtml(error.message || "")}</span></div>`);
+    }
 }
 
 function resolverAudioUrlIa(url = "") {
@@ -8189,14 +8218,23 @@ async function leerJsonSeguro(response) {
     }
 }
 
+// Todas las llamadas del modulo IA pasan por aqui: agrega Authorization: Bearer
+// (sin pisar headers existentes; FormData conserva su Content-Type automatico)
+// y corta la sesion si el backend responde 401 o exige cambio de clave.
 async function fetchIa(url, options = {}, timeoutMs = 30000) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(url, {
+        const headers = typeof agregarAuthorizationHeader === "function"
+            ? agregarAuthorizationHeader(options.headers)
+            : new Headers(options.headers || {});
+        const response = await fetch(url, {
             ...options,
+            headers,
             signal: controller.signal,
         });
+        await verificarRespuestaSesionIa(response);
+        return response;
     } catch (error) {
         if (error.name === "AbortError") {
             // Antes este texto hablaba siempre del "analisis IA", aunque la
@@ -8207,6 +8245,27 @@ async function fetchIa(url, options = {}, timeoutMs = 30000) {
         throw error;
     } finally {
         clearTimeout(timeout);
+    }
+}
+
+class SesionIaInvalidaError extends Error {}
+
+async function verificarRespuestaSesionIa(response) {
+    if (response.status === 401) {
+        if (typeof cerrarSesionPorBackend === "function") cerrarSesionPorBackend();
+        throw new SesionIaInvalidaError("Tu sesión ya no está habilitada.");
+    }
+    if (response.status === 403) {
+        let data = null;
+        try {
+            data = await response.clone().json();
+        } catch (error) {
+            data = null;
+        }
+        if (typeof esRespuestaCambioClave === "function" && esRespuestaCambioClave(403, data)) {
+            if (typeof irACambioClaveObligatorio === "function") irACambioClaveObligatorio();
+            throw new SesionIaInvalidaError("Debes cambiar tu contraseña antes de continuar.");
+        }
     }
 }
 

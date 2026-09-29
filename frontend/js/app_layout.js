@@ -56,6 +56,11 @@
             title: "Consumo de IA",
             subtitle: "Tokens y costo de la API por audio evaluado"
         },
+        "admin_accesos.html": {
+            key: "accesos_admin",
+            title: "Accesos al CRM",
+            subtitle: "Habilitacion, claves temporales y bloqueos de usuarios"
+        },
         "admin_pautas_evaluacion.html": {
             key: "pautas_evaluacion_admin",
             title: "Pautas de Evaluación",
@@ -182,6 +187,13 @@
         label: "Consumo de IA",
         href: "consumo_ia.html",
         icon: iconChart()
+    });
+
+    NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
+        key: "accesos_admin",
+        label: "Accesos CRM",
+        href: "admin_accesos.html",
+        icon: iconUsers()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
@@ -432,6 +444,8 @@
         if (key === "inicio") return true;
         // El consumo de la API es informacion de costo del modulo: solo administracion.
         if (key === "consumo_ia_admin") return tipoUsuario() === "ADMINISTRADOR";
+        // Accesos al CRM: solo administracion. La seguridad real esta en el backend (403).
+        if (key === "accesos_admin") return tipoUsuario() === "ADMINISTRADOR";
         if (key === "reportes") return true;
         if (key === "documentos") return puedeAccederDocumentos();
         if (key === "admin") return esPerfilGerencial();

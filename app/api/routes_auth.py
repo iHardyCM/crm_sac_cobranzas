@@ -1,11 +1,11 @@
 import logging
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.services.auth_service import autenticar_usuario
+from app.services.auth_service import ErrorCambioClave, autenticar_usuario, cambiar_clave_propia
 from app.core.auth_dependencies import obtener_usuario_actual
 
 
@@ -23,6 +23,13 @@ MAX_LARGO_CLAVE = 128
 class LoginRequest(BaseModel):
     dni: Optional[str] = None
     clave: Optional[str] = None
+
+
+class CambiarClaveRequest(BaseModel):
+    # Sin campo DNI: el usuario sale exclusivamente del JWT.
+    clave_actual: Optional[str] = None
+    clave_nueva: Optional[str] = None
+    confirmacion: Optional[str] = None
 
 
 def _respuesta_error(status_code: int, mensaje: str) -> JSONResponse:
@@ -65,3 +72,18 @@ def login(payload: LoginRequest):
 def me(usuario: Dict = Depends(obtener_usuario_actual)):
     """Identidad que el backend reconoce para el token enviado."""
     return usuario
+
+
+@router.post("/cambiar-clave")
+def cambiar_clave(payload: CambiarClaveRequest, usuario: Dict = Depends(obtener_usuario_actual)):
+    """Cambia la clave del usuario autenticado y quita el cambio obligatorio."""
+    dni = usuario["dni"]
+    try:
+        cambiar_clave_propia(dni, payload.clave_actual, payload.clave_nueva, payload.confirmacion)
+    except ErrorCambioClave as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception:
+        logger.exception("Error tecnico cambiando clave usuario=%s", dni)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MENSAJE_ERROR_TECNICO)
+
+    return {"ok": True, "requiere_cambio_clave": False}

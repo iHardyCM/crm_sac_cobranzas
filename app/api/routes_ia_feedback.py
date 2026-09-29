@@ -7,12 +7,15 @@ import time
 from datetime import datetime
 import threading
 
-from fastapi import APIRouter, BackgroundTasks, Body, File, Form, HTTPException, Query, UploadFile
+from typing import Dict
+
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 import re
 
+from app.core.auth_dependencies import normalizar_tipo_usuario, requiere_clave_definitiva
 from app.services.admin_metas_agentes_service import listar_agentes
 from app.services.admin_supervisores_service import listar_carteras
 from app.services.reporte_calidad_export import construir_reporte_calidad_excel
@@ -46,6 +49,28 @@ from app.services.ia_audio_service import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Seguridad (hardening fase 3)
+# Todos los endpoints de datos o mutacion exigen sesion valida:
+# requiere_clave_definitiva = JWT + cuenta CRM activa + usuario activo en
+# SISCOB + clave definitiva (sin cambio obligatorio pendiente).
+# Perfil e identidad salen SIEMPRE del usuario autenticado, nunca de
+# parametros "perfil", "supervisor", "usuario" o "actualizado_por" del
+# navegador. Esos parametros se siguen aceptando por compatibilidad con la
+# pantalla, pero se ignoran.
+# Pendiente: filtrar por idcarteras del usuario (ver docs/autenticacion_fase1.md).
+# ---------------------------------------------------------------------------
+UsuarioIa = Depends(requiere_clave_definitiva)
+
+
+def _perfil_sesion(usuario: Dict) -> str:
+    return normalizar_tipo_usuario(usuario.get("tipo"))
+
+
+def _identidad_sesion(usuario: Dict) -> str:
+    """Mismo formato que la pantalla usaba ("DNI - Nombres Apellidos")."""
+    return usuario.get("agente") or usuario.get("dni")
+
 # Llamadas que se estan procesando en este proceso del servidor. Evita lanzar
 # dos analisis a la vez sobre la misma llamada -doble clic, dos pestañas-, que
 # gastarian API dos veces y se pisarian al guardar.
@@ -67,12 +92,12 @@ def vista_ia_feedback():
 
 
 @router.get("/config")
-def config_ia_feedback():
+def config_ia_feedback(usuario: Dict = UsuarioIa):
     return obtener_configuracion_audio()
 
 
 @router.get("/carteras")
-def carteras_ia_feedback():
+def carteras_ia_feedback(usuario: Dict = UsuarioIa):
     try:
         return {"data": listar_carteras()}
     except Exception:
@@ -90,10 +115,11 @@ def carteras_ia_feedback():
 
 @router.get("/prompt")
 def obtener_prompt_ia_feedback(
-    perfil: str | None = Query(default=None),
     cartera: str | None = Query(default=None),
+    usuario: Dict = UsuarioIa,
 ):
-    puede_editar = perfil_puede_editar_prompt(perfil)
+    # "perfil" en la query se ignora: el permiso sale de la sesion.
+    puede_editar = perfil_puede_editar_prompt(_perfil_sesion(usuario))
     if not puede_editar:
         return {
             "prompt_base": None,
@@ -111,15 +137,15 @@ def obtener_prompt_ia_feedback(
 @router.post("/prompt")
 def guardar_prompt_ia_feedback(
     prompt_base: str = Form(...),
-    actualizado_por: str | None = Form(default=None),
-    perfil: str | None = Form(default=None),
     cartera: str | None = Form(default=None),
+    usuario: Dict = UsuarioIa,
 ):
+    # "perfil" y "actualizado_por" del formulario se ignoran: salen de la sesion.
     try:
         return guardar_prompt_configuracion(
             prompt_base=prompt_base,
-            actualizado_por=actualizado_por,
-            perfil=perfil,
+            actualizado_por=_identidad_sesion(usuario),
+            perfil=_perfil_sesion(usuario),
             cartera=cartera,
         )
     except PermissionError as exc:
@@ -131,16 +157,14 @@ def guardar_prompt_ia_feedback(
 
 
 @router.get("/bandeja")
-def bandeja_ia_feedback(
-    supervisor: str | None = Query(default=None),
-    perfil: str | None = Query(default=None),
-):
+def bandeja_ia_feedback(usuario: Dict = UsuarioIa):
     """Lo que el supervisor tiene en curso y pendiente de revisar.
-    Los perfiles con vision global ven la de todos."""
+    Los perfiles con vision global ven la de todos.
+    Supervisor y perfil salen de la sesion; los de la query se ignoran."""
     try:
         return obtener_bandeja_supervisor(
-            supervisor=supervisor,
-            ver_todo=perfil_puede_ver_historial_global_ia(perfil),
+            supervisor=_identidad_sesion(usuario),
+            ver_todo=perfil_puede_ver_historial_global_ia(_perfil_sesion(usuario)),
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error cargando la bandeja: {exc}")
@@ -150,6 +174,7 @@ def bandeja_ia_feedback(
 def agentes_ia_feedback(
     cartera: str | None = Query(default=None),
     idcartera: int | None = Query(default=None),
+    usuario: Dict = UsuarioIa,
 ):
     """Gestores activos, filtrados por cartera.
 
@@ -172,13 +197,14 @@ def agentes_ia_feedback(
 async def upload_ia_feedback(
     archivo: UploadFile = File(...),
     agente: str | None = Form(default=None),
-    supervisor: str | None = Form(default=None),
     cartera: str | None = Form(default=None),
     dni: str | None = Form(default=None),
     telefono: str | None = Form(default=None),
     fecha_llamada: str | None = Form(default=None),
     comentario_supervisor: str | None = Form(default=None),
+    usuario: Dict = UsuarioIa,
 ):
+    # El supervisor que carga el audio es el usuario autenticado (no el formulario).
     try:
         contenido = await archivo.read()
         return await run_in_threadpool(
@@ -186,7 +212,7 @@ async def upload_ia_feedback(
             archivo_nombre=archivo.filename or "audio",
             contenido=contenido,
             agente=agente,
-            supervisor=supervisor,
+            supervisor=_identidad_sesion(usuario),
             cartera=cartera,
             dni=dni,
             telefono=telefono,
@@ -216,6 +242,7 @@ def iniciar_analisis_ia_feedback(
     id_feedback: int,
     background_tasks: BackgroundTasks,
     forzar_transcripcion: bool = Query(default=False),
+    usuario: Dict = UsuarioIa,
 ):
     """Lanza el analisis y responde al instante.
 
@@ -238,7 +265,7 @@ def iniciar_analisis_ia_feedback(
 
 
 @router.get("/{id_feedback}/estado")
-def estado_ia_feedback(id_feedback: int):
+def estado_ia_feedback(id_feedback: int, usuario: Dict = UsuarioIa):
     try:
         data = obtener_estado_feedback(id_feedback)
         with _EN_PROCESO_LOCK:
@@ -254,6 +281,7 @@ def estado_ia_feedback(id_feedback: int):
 async def analizar_ia_feedback(
     id_feedback: int,
     forzar_transcripcion: bool = Query(default=False),
+    usuario: Dict = UsuarioIa,
 ):
     # Mismo guardia que la version en segundo plano: si la llamada ya se esta
     # procesando, un reanalisis simultaneo gastaria API dos veces y se pisaria.
@@ -278,15 +306,16 @@ def guardar_revision_ia_feedback(
     agente: str | None = Form(default=None),
     comentario_feedback: str | None = Form(default=None),
     estado_revision: str | None = Form(default="REVISADO"),
-    revisado_por: str | None = Form(default=None),
+    usuario: Dict = UsuarioIa,
 ):
+    # "revisado_por" del formulario se ignora: es el usuario autenticado.
     try:
         return guardar_revision_feedback(
             id_feedback,
             agente=agente,
             comentario_feedback=comentario_feedback,
             estado_revision=estado_revision,
-            revisado_por=revisado_por,
+            revisado_por=_identidad_sesion(usuario),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -300,7 +329,7 @@ def guardar_revision_ia_feedback(
 # Toda correccion pasa ahora por /calibracion: se corrige el criterio y la nota
 # se recalcula sola. El historial anterior se mantiene visible (GET de abajo).
 @router.post("/{id_feedback}/recalibracion")
-def solicitar_recalibracion_ia_feedback(id_feedback: int):
+def solicitar_recalibracion_ia_feedback(id_feedback: int, usuario: Dict = UsuarioIa):
     raise HTTPException(
         status_code=410,
         detail="La recalibracion por nota sugerida fue retirada. Corrige el criterio en Calibracion: la nota se recalcula sola.",
@@ -308,7 +337,7 @@ def solicitar_recalibracion_ia_feedback(id_feedback: int):
 
 
 @router.get("/{id_feedback}/recalibraciones")
-def recalibraciones_ia_feedback(id_feedback: int):
+def recalibraciones_ia_feedback(id_feedback: int, usuario: Dict = UsuarioIa):
     try:
         return {"data": listar_recalibraciones_feedback(id_feedback)}
     except Exception as exc:
@@ -316,7 +345,7 @@ def recalibraciones_ia_feedback(id_feedback: int):
 
 
 @router.post("/recalibracion/{id_recalibracion}/resolver")
-def resolver_recalibracion_ia_feedback(id_recalibracion: int):
+def resolver_recalibracion_ia_feedback(id_recalibracion: int, usuario: Dict = UsuarioIa):
     raise HTTPException(
         status_code=410,
         detail="La resolucion de recalibraciones fue retirada. Jefatura aprueba las correcciones desde Calibracion.",
@@ -332,6 +361,7 @@ def guardar_coaching_ia_feedback(
     fecha_programada: str | None = Form(default=None),
     resultado: str | None = Form(default=None),
     responsable: str | None = Form(default=None),
+    usuario: Dict = UsuarioIa,
 ):
     try:
         return guardar_coaching_feedback(
@@ -352,16 +382,15 @@ def guardar_coaching_ia_feedback(
 @router.get("/listar")
 def listar_ia_feedback(
     limit: int = Query(default=100, ge=1, le=300),
-    supervisor: str | None = Query(default=None),
-    perfil: str | None = Query(default=None),
+    usuario: Dict = UsuarioIa,
 ):
+    # Vision global o solo lo propio: se decide con el perfil de la sesion.
+    # "perfil" y "supervisor" de la query se ignoran.
     try:
-        if perfil_puede_ver_historial_global_ia(perfil):
+        if perfil_puede_ver_historial_global_ia(_perfil_sesion(usuario)):
             supervisor_filtro = None
         else:
-            if not supervisor:
-                return {"data": []}
-            supervisor_filtro = supervisor
+            supervisor_filtro = _identidad_sesion(usuario)
         inicio = time.perf_counter()
         data = listar_feedback(limit=limit, supervisor=supervisor_filtro)
         logger.info("[TIEMPOS] listar filas=%s segundos=%.2f", len(data), time.perf_counter() - inicio)
@@ -373,27 +402,16 @@ def listar_ia_feedback(
 @router.get("/reporteria")
 def reporteria_ia_feedback(
     limit: int = Query(default=300, ge=1, le=1000),
-    supervisor: str | None = Query(default=None),
-    perfil: str | None = Query(default=None),
     fuente: str = Query(default="json", pattern="^(json|sql)$"),
+    usuario: Dict = UsuarioIa,
 ):
+    # Vision global o solo lo propio: se decide con el perfil de la sesion.
+    # "perfil" y "supervisor" de la query se ignoran.
     try:
-        if perfil_puede_ver_historial_global_ia(perfil):
+        if perfil_puede_ver_historial_global_ia(_perfil_sesion(usuario)):
             supervisor_filtro = None
         else:
-            if not supervisor:
-                return {
-                    "total_audios": 0,
-                    "score_promedio": None,
-                    "items_nota_cero": 0,
-                    "segmentos": [],
-                    "brechas": [],
-                    "carteras": [],
-                    "agentes": [],
-                    "semanas": [],
-                    "detalle": [],
-                }
-            supervisor_filtro = supervisor
+            supervisor_filtro = _identidad_sesion(usuario)
         # [TIEMPOS] Medir antes de optimizar: la pagina queda en blanco mientras
         # esto responde. Si el tiempo crece con el numero de filas, el costo
         # esta en re-enriquecer cada evaluacion (guardas) dentro del servicio.
@@ -415,27 +433,25 @@ def reporteria_ia_feedback(
 
 # Quien ve el costo de la API. Por defecto solo ADMINISTRADOR; se puede ampliar
 # sin tocar codigo con IA_FEEDBACK_CONSUMO_PERFILES="ADMINISTRADOR,JEFE DE CARTERA".
-# Limitacion conocida: el perfil lo envia el cliente, igual que en el resto del
-# modulo. Es un control de visibilidad, no de seguridad: para produccion hace
-# falta validar la sesion en el servidor.
+# El perfil sale de la sesion validada en el servidor (no del navegador).
 def _perfil_ve_consumo_ia(perfil: str | None) -> bool:
     permitidos = {
         p.strip().upper()
         for p in os.getenv("IA_FEEDBACK_CONSUMO_PERFILES", "ADMINISTRADOR").split(",")
         if p.strip()
     }
-    return str(perfil or "").strip().upper() in permitidos
+    return normalizar_tipo_usuario(perfil) in permitidos
 
 
 @router.get("/consumo")
 def consumo_ia_feedback(
     dias: int = Query(default=30, ge=1, le=180),
     limite: int = Query(default=200, ge=1, le=1000),
-    perfil: str | None = Query(default=None),
+    usuario: Dict = UsuarioIa,
 ):
     """Cuanto consumio la API por evaluacion. Solo perfiles con vision global:
     es informacion de costo del modulo, no de una cartera."""
-    if not _perfil_ve_consumo_ia(perfil):
+    if not _perfil_ve_consumo_ia(_perfil_sesion(usuario)):
         raise HTTPException(status_code=403, detail="Perfil sin acceso al consumo de la API.")
     try:
         return obtener_consumo(dias=dias, limite=limite)
@@ -444,7 +460,7 @@ def consumo_ia_feedback(
 
 
 @router.post("/reporteria/exportar-excel")
-def exportar_reporteria_excel(payload: dict = Body(...)):
+def exportar_reporteria_excel(payload: dict = Body(...), usuario: Dict = UsuarioIa):
     """Arma el Excel con lo que la pagina ya filtro. No recalcula reglas."""
     try:
         contenido = construir_reporte_calidad_excel(payload)
@@ -460,7 +476,7 @@ def exportar_reporteria_excel(payload: dict = Body(...)):
 
 
 @router.get("/{id_feedback}/audio")
-def audio_ia_feedback(id_feedback: int):
+def audio_ia_feedback(id_feedback: int, usuario: Dict = UsuarioIa):
     try:
         data = obtener_feedback(id_feedback)
         ruta = data.get("ruta_archivo")
@@ -497,7 +513,7 @@ def audio_ia_feedback(id_feedback: int):
 
 
 @router.get("/{id_feedback}")
-def detalle_ia_feedback(id_feedback: int):
+def detalle_ia_feedback(id_feedback: int, usuario: Dict = UsuarioIa):
     try:
         return obtener_feedback(id_feedback)
     except ValueError as exc:
@@ -511,10 +527,11 @@ def detalle_ia_feedback(id_feedback: int):
 def asignar_agente_ia_feedback(
     id_feedback: int,
     agente: str = Form(...),
-    usuario: str | None = Form(default=None),
+    usuario: Dict = UsuarioIa,
 ):
+    # Quien asigna es el usuario autenticado; un "usuario" en el formulario se ignora.
     try:
-        return asignar_agente_feedback(id_feedback, agente, usuario)
+        return asignar_agente_feedback(id_feedback, agente, _identidad_sesion(usuario))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

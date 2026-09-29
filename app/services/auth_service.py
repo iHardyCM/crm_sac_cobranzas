@@ -13,6 +13,10 @@ Reglas:
   - Cuando el bloqueo vence, el contador arranca de nuevo (5 intentos nuevos).
   - Todas las fechas se toman del reloj de SQL Server (SYSDATETIME).
   - Nunca se registra la clave, el hash ni el token en el log.
+
+Cambio de clave propia (POST /auth/cambiar-clave):
+  - El usuario se identifica solo por el JWT; el DNI nunca viene del payload.
+  - Politica minima: 8 a 128 caracteres, distinta del DNI y de la clave actual.
 """
 
 import logging
@@ -200,6 +204,20 @@ class RepositorioAcceso:
             WHERE USUARIO = :dni
         """), {"dni": dni, "intentos": intentos, "bloqueado_hasta": bloqueado_hasta})
 
+    def actualizar_clave_propia(self, dni: str, password_hash: str) -> None:
+        """Guarda la clave definitiva elegida por el propio usuario."""
+        self.conn.execute(text("""
+            UPDATE CobAuto.dbo.CRM_USUARIO_ACCESO
+            SET PASSWORD_HASH = :password_hash,
+                FLG_CAMBIO_OBLIGATORIO = 0,
+                INTENTOS_FALLIDOS = 0,
+                BLOQUEADO_HASTA = NULL,
+                FECHA_CAMBIO_CLAVE = SYSDATETIME(),
+                USUARIO_ACTUALIZACION = :dni,
+                FECHA_ACTUALIZACION = SYSDATETIME()
+            WHERE USUARIO = :dni
+        """), {"dni": dni, "password_hash": password_hash})
+
     def registrar_login_exitoso(self, dni: str) -> None:
         self.conn.execute(text("""
             UPDATE CobAuto.dbo.CRM_USUARIO_ACCESO
@@ -333,3 +351,64 @@ def autenticar_usuario(dni: str, clave: str) -> ResultadoAutenticacion:
         access_token=crear_access_token(dni),
         requiere_cambio_clave=requiere_cambio,
     )
+
+
+# ---------------------------------------------------------------------------
+# Cambio de clave del propio usuario
+# ---------------------------------------------------------------------------
+
+LARGO_MINIMO_CLAVE = 8
+LARGO_MAXIMO_CLAVE = 128
+
+
+class ErrorCambioClave(ValueError):
+    """Error de negocio del cambio de clave. El mensaje es seguro para mostrar."""
+
+
+def validar_politica_clave(dni: str, clave_nueva: str) -> None:
+    """Politica minima: largo 8-128 y distinta del DNI. Sin reglas arbitrarias."""
+    if len(clave_nueva) < LARGO_MINIMO_CLAVE:
+        raise ErrorCambioClave(f"La nueva contraseña debe tener al menos {LARGO_MINIMO_CLAVE} caracteres.")
+    if len(clave_nueva) > LARGO_MAXIMO_CLAVE:
+        raise ErrorCambioClave(f"La nueva contraseña no puede superar {LARGO_MAXIMO_CLAVE} caracteres.")
+    if not clave_nueva.strip():
+        raise ErrorCambioClave("La nueva contraseña no puede estar en blanco.")
+    if clave_nueva.strip() == str(dni).strip():
+        raise ErrorCambioClave("La nueva contraseña no puede ser igual a tu DNI.")
+
+
+def cambiar_clave_propia(dni: str, clave_actual: str, clave_nueva: str, confirmacion: str) -> None:
+    """Cambia la clave del usuario identificado por el JWT (`dni`).
+
+    Lanza ErrorCambioClave ante datos invalidos (mensaje apto para el usuario).
+    Los errores tecnicos se propagan como excepcion.
+    """
+    dni = str(dni or "").strip()
+    clave_actual = clave_actual or ""
+    clave_nueva = clave_nueva or ""
+    confirmacion = confirmacion or ""
+
+    if not clave_actual or not clave_nueva or not confirmacion:
+        raise ErrorCambioClave("Completa la contraseña actual, la nueva y su confirmación.")
+    if len(clave_actual) > LARGO_MAXIMO_CLAVE:
+        raise ErrorCambioClave("La contraseña actual no es correcta.")
+    if clave_nueva != confirmacion:
+        raise ErrorCambioClave("La nueva contraseña y su confirmación no coinciden.")
+    validar_politica_clave(dni, clave_nueva)
+
+    with _transaccion_acceso() as repo:
+        cuenta = repo.leer_cuenta_para_login(dni)
+        if not cuenta or not cuenta.get("FLG_ACTIVO") or not cuenta.get("PASSWORD_HASH"):
+            logger.info("Cambio de clave rechazado usuario=%s motivo=CUENTA_NO_DISPONIBLE", dni)
+            raise ErrorCambioClave("Tu acceso no está disponible. Contacta al administrador.")
+
+        if not verificar_clave(clave_actual, cuenta["PASSWORD_HASH"]):
+            logger.info("Cambio de clave rechazado usuario=%s motivo=CLAVE_ACTUAL_INCORRECTA", dni)
+            raise ErrorCambioClave("La contraseña actual no es correcta.")
+
+        if clave_nueva == clave_actual:
+            raise ErrorCambioClave("La nueva contraseña debe ser distinta de la actual.")
+
+        repo.actualizar_clave_propia(dni, generar_hash_clave(clave_nueva))
+
+    logger.info("Clave propia cambiada usuario=%s resultado=OK", dni)

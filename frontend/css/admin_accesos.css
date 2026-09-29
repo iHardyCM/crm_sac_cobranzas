@@ -1,0 +1,94 @@
+/* Accesos al CRM: complementa admin_supervisores.css (misma familia visual). */
+
+.oculto { display: none !important; }
+
+.accesos-busqueda {
+    display: flex;
+    gap: 10px;
+    margin: 0 0 14px;
+}
+
+.accesos-busqueda input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #c8d8ea;
+    border-radius: 7px;
+}
+
+body.crm-shell .accesos-busqueda { margin: 0 20px 16px; }
+
+.estado-acceso {
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 5px 10px;
+    white-space: nowrap;
+}
+
+.estado-acceso.activo { background: #e6f8ee; color: #08733e; }
+.estado-acceso.cambio_obligatorio { background: #fff6dd; color: #8a5a00; }
+.estado-acceso.bloqueado { background: #ffe9e9; color: #b91c1c; }
+.estado-acceso.deshabilitado { background: #eef1f5; color: #475569; }
+.estado-acceso.sin_acceso { background: #f4f8fc; color: #46617f; }
+.estado-acceso.sin_clave { background: #fff6dd; color: #8a5a00; }
+
+.acciones-acceso {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+
+.acciones-acceso button {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 11px;
+}
+
+.btn-peligro {
+    background: #ffffff;
+    border: 1px solid #f3b4b4;
+    border-radius: 7px;
+    color: #b91c1c;
+    cursor: pointer;
+    font-weight: 900;
+}
+
+.acciones-acceso button:disabled { cursor: wait; opacity: .6; }
+
+.clave-temporal-card {
+    border: 2px solid #f3c969;
+    background: #fffdf5;
+}
+
+.clave-temporal-body {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0 20px;
+}
+
+.clave-temporal-valor {
+    background: #0b1f36;
+    border-radius: 10px;
+    color: #ffffff;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 22px;
+    letter-spacing: .08em;
+    padding: 12px 18px;
+    user-select: all;
+}
+
+.clave-temporal-aviso {
+    color: #8a5a00;
+    font-weight: 900;
+    margin: 14px 20px 0;
+}
+
+@media (max-width: 720px) {
+    .accesos-busqueda { flex-direction: column; }
+}

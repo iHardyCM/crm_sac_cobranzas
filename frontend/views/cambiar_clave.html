@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biznescob - Cambiar contraseña</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/login.css?v=20260829-apple-base2">
+    <style>
+        .login-foot a { color: #2d6ca8; font-weight: 700; text-decoration: none; margin-right: 14px; }
+        .login-foot a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body class="login-body">
+
+    <main class="login-shell">
+        <section class="login-panel">
+            <div class="login-brand">
+                <div class="brand-top">
+                    <div class="login-logo"><img src="logo_i_biznescob.png" alt="Biznescob"></div>
+                    <div>
+                        <h1>Biznescob</h1>
+                        <p>CRM - Cobranzas</p>
+                    </div>
+                </div>
+
+                <div class="brand-copy">
+                    <span>Seguridad de acceso</span>
+                    <h2>Crea tu contraseña personal.</h2>
+                    <p>La contraseña temporal solo sirve para este paso. Elige una propia que no compartas con nadie.</p>
+                </div>
+
+                <div class="brand-pills">
+                    <span>Mínimo 8 caracteres</span>
+                    <span>Distinta de tu DNI</span>
+                    <span>Distinta de la actual</span>
+                </div>
+            </div>
+
+            <div class="login-card">
+                <div class="login-card-header">
+                    <span id="cambioEtiqueta">Cambio obligatorio</span>
+                    <h2>Cambiar contraseña</h2>
+                    <p id="cambioDescripcion">Antes de continuar debes reemplazar la contraseña temporal que te entregó el administrador.</p>
+                </div>
+
+                <form id="formCambioClave" autocomplete="on" onsubmit="event.preventDefault(); cambiarClave();">
+                    <div class="login-field">
+                        <label for="claveActual">Contraseña actual o temporal</label>
+                        <input type="password" id="claveActual" maxlength="128" autocomplete="current-password" required>
+                    </div>
+
+                    <div class="login-field">
+                        <label for="claveNueva">Nueva contraseña</label>
+                        <input type="password" id="claveNueva" maxlength="128" autocomplete="new-password" required>
+                    </div>
+
+                    <div class="login-field">
+                        <label for="claveConfirmacion">Confirmar nueva contraseña</label>
+                        <input type="password" id="claveConfirmacion" maxlength="128" autocomplete="new-password" required>
+                    </div>
+
+                    <div id="cambioMensaje" class="login-message oculto" role="status" aria-live="polite"></div>
+
+                    <button id="cambioBtn" class="login-button" type="submit">Guardar nueva contraseña</button>
+                </form>
+
+                <p class="login-foot">
+                    <a id="cambioVolver" class="oculto" href="home.html">Volver al inicio</a>
+                    <a href="#" onclick="event.preventDefault(); cerrarSesion();">Cerrar sesión</a>
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <script src="../js/session.js?v=20260825a"></script>
+    <script src="../js/cambiar_clave.js?v=20260929a"></script>
+</body>
+</html>

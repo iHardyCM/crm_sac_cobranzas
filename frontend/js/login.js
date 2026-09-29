@@ -79,7 +79,15 @@ async function login() {
         // Token de acceso: es la credencial real ante el backend.
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("token_type", data.token_type || "bearer");
-        localStorage.setItem("requiere_cambio_clave", data.requiere_cambio_clave ? "1" : "0");
+        localStorage.setItem("requiere_cambio_clave", data.requiere_cambio_clave ? "true" : "false");
+
+        // Cambio obligatorio: solo se guarda el token y se va a cambiar la clave.
+        // Sin dni/agente en localStorage, exigirSesion() no deja entrar a otras
+        // pantallas; esos datos se guardan despues del cambio (desde /auth/me).
+        if (data.requiere_cambio_clave === true) {
+            window.location.href = "cambiar_clave.html";
+            return;
+        }
 
         // Datos de compatibilidad para las pantallas actuales.
         // NO son seguridad: el backend resuelve perfil y carteras desde el token.

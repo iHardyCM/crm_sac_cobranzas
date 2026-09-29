@@ -12,14 +12,12 @@
 const CONSUMO_BASE = `http://${window.location.hostname || "127.0.0.1"}:8000/ia-feedback`;
 const consumoIa = { data: null, abierto: false, cargando: false };
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     if (typeof exigirSesion === "function" && !exigirSesion()) return;
+    // No se consulta nada hasta que el backend confirme la sesion (GET /auth/me).
+    if (typeof asegurarSesionBackend !== "function" || !(await asegurarSesionBackend())) return;
     cargarConsumoIa();
 });
-
-function perfilConsumoIa() {
-    return (localStorage.getItem("tipo") || localStorage.getItem("perfil") || "").trim();
-}
 
 function mensajeConsumo(texto, tipo = "ok") {
     const el = document.getElementById("mensajeConsumo");
@@ -37,9 +35,21 @@ async function cargarConsumoIa() {
             <span class="v2-spinner" aria-hidden="true"></span><strong>Leyendo el consumo de la API…</strong></div></section>`;
     }
     try {
-        const params = new URLSearchParams({ dias, limite: "500", perfil: perfilConsumoIa() });
-        const response = await fetch(`${CONSUMO_BASE}/consumo?${params}`);
+        // El perfil ya no se envia: el backend lo toma de la sesion (JWT).
+        const params = new URLSearchParams({ dias, limite: "500" });
+        const response = await fetch(`${CONSUMO_BASE}/consumo?${params}`, {
+            headers: agregarAuthorizationHeader(),
+        });
+        if (response.status === 401) {
+            cerrarSesionPorBackend();
+            return;
+        }
         if (response.status === 403) {
+            const detalle = await response.clone().json().catch(() => null);
+            if (esRespuestaCambioClave(403, detalle)) {
+                irACambioClaveObligatorio();
+                return;
+            }
             consumoIa.data = null;
             pintarVacioConsumo("Tu perfil no tiene acceso al consumo de la API",
                 "Es información de costo del módulo, visible solo para administración.");

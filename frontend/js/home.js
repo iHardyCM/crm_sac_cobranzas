@@ -302,6 +302,14 @@ function obtenerModulosPorPerfil(tipo) {
             ruta: "consumo_ia.html",
             destacado: false
         });
+        // La seguridad real esta en el backend: /admin-accesos responde 403 si no es administrador.
+        modulos.push({
+            sigla: "AC",
+            titulo: "Accesos CRM",
+            descripcion: "Habilita usuarios, genera claves temporales, desbloquea o deshabilita accesos.",
+            ruta: "admin_accesos.html",
+            destacado: false
+        });
     }
 
     if (puedeAccederDocumentos(tipo)) {

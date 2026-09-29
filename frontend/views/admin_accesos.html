@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accesos al CRM</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
+    <link rel="stylesheet" href="../css/admin_supervisores.css?v=20260829-apple-admin">
+    <link rel="stylesheet" href="../css/admin_accesos.css?v=20260929a">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+</head>
+<body>
+
+<main class="admin-super-page">
+    <section class="admin-hero">
+        <div>
+            <span>Seguridad</span>
+            <h2>Accesos al CRM</h2>
+            <p>Habilita, resetea, desbloquea o deshabilita el acceso de usuarios activos en SISCOB.</p>
+        </div>
+        <button class="btn-primary" type="button" id="accesosActualizar">Actualizar</button>
+    </section>
+
+    <div id="adminAccesosToast" class="admin-toast"></div>
+
+    <section id="claveTemporalCard" class="card clave-temporal-card oculto" aria-live="assertive">
+        <div class="section-head">
+            <div>
+                <h3>Clave temporal generada</h3>
+                <p id="claveTemporalUsuario">-</p>
+            </div>
+        </div>
+        <div class="clave-temporal-body">
+            <code id="claveTemporalValor" class="clave-temporal-valor"></code>
+            <button class="btn-secondary" type="button" id="claveTemporalCopiar">Copiar</button>
+        </div>
+        <p class="clave-temporal-aviso">
+            Esta clave solo se mostrará ahora. El usuario deberá cambiarla en su primer ingreso.
+        </p>
+        <div class="actions">
+            <button class="btn-primary" type="button" id="claveTemporalCerrar">Ya la entregué, ocultar</button>
+        </div>
+    </section>
+
+    <article class="card">
+        <div class="section-head">
+            <div>
+                <h3>Usuarios activos en SISCOB</h3>
+                <p>Busca por DNI, nombres o apellidos. Solo se listan usuarios con estado A.</p>
+            </div>
+        </div>
+
+        <form id="accesosBuscarForm" class="accesos-busqueda">
+            <input id="accesosBusqueda" type="search" maxlength="100" placeholder="DNI, nombres o apellidos" autocomplete="off">
+            <button class="btn-primary" type="submit">Buscar</button>
+        </form>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Perfil</th>
+                        <th>Cartera</th>
+                        <th>Estado de acceso</th>
+                        <th>Último login</th>
+                        <th>Intentos fallidos</th>
+                        <th>Bloqueado hasta</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaAccesos">
+                    <tr><td colspan="8" class="empty-table">Cargando usuarios...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </article>
+
+    <section class="note-card">
+        <strong>Importante:</strong>
+        Las contraseñas se guardan solo como hash; nadie puede consultarlas.
+        Deshabilitar revoca de inmediato la autenticación del usuario: los módulos ya protegidos
+        (Accesos CRM, Análisis IA con su calibración y Consumo de IA) dejan de responderle aunque tenga una sesión abierta.
+        Los demás módulos se están migrando progresivamente para exigir esta validación.
+        La cuenta y su historial no se borran.
+    </section>
+</main>
+
+<script src="../js/session.js?v=20260825a"></script>
+<script src="../js/app_layout.js?v=20260929-accesos"></script>
+<script src="../js/admin_accesos.js?v=20260929b"></script>
+</body>
+</html>
