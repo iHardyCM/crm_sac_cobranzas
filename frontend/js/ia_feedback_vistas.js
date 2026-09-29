@@ -8,7 +8,7 @@
 
    Reglas únicas que usan TODAS las vistas de este archivo:
    - Nota de la llamada = score_final (ya es la vigente: la calibrada si
-     Calidad la publicó). null = "No evaluable": fuera de promedios, se cuenta
+     jefatura la aprobó). null = "No evaluable": fuera de promedios, se cuenta
      aparte.
    - Un criterio está MEDIDO si salió Cumple, No cumple o Parcial. No aplica,
      No evaluable y Requiere revisión no entran a ningún porcentaje.
@@ -411,7 +411,7 @@ const FILTROS_EVAL_V2 = [
     ["critico", "Con error crítico", tieneErrorCriticoV2],
     ["ia_revision", "La IA pide revisión", r => Boolean(r.requiere_revision_humana)],
     ["no_evaluable", "No evaluables", r => notaV2(r) === null],
-    ["calibradas", "Calibradas por Calidad", r => String(r.origen_score || "").toUpperCase() === "CALIBRACION"],
+    ["calibradas", "Calibradas y aprobadas", r => String(r.origen_score || "").toUpperCase() === "CALIBRACION"],
 ];
 
 function pintarBandejaEvaluacionesIa(items) {
@@ -641,17 +641,17 @@ async function cargarVistaCalibracionGlobalIa() {
     el.innerHTML = `
         <div class="v2-flow">
             <div class="v2-flow-step"><span>1</span><div><strong>Supervisor corrige</strong><small>Marca criterios mal evaluados y los envía</small></div></div>
-            <div class="v2-flow-step ${pendientes.length ? "active" : ""}"><span>2</span><div><strong>${formatoNumero(pendientes.length)} en Calidad</strong><small>${formatoNumero(criteriosEnCola)} criterio(s) esperando${atrasadas ? ` · <b>${atrasadas} con 2+ días</b>` : ""}</small></div></div>
-            <div class="v2-flow-step"><span>3</span><div><strong>${formatoNumero(calibradas.length)} publicadas</strong><small>En el periodo filtrado; su nota ya es la calibrada</small></div></div>
+            <div class="v2-flow-step ${pendientes.length ? "active" : ""}"><span>2</span><div><strong>${formatoNumero(pendientes.length)} en jefatura</strong><small>${formatoNumero(criteriosEnCola)} criterio(s) esperando${atrasadas ? ` · <b>${atrasadas} con 2+ días</b>` : ""}</small></div></div>
+            <div class="v2-flow-step"><span>3</span><div><strong>${formatoNumero(calibradas.length)} aprobadas</strong><small>En el periodo filtrado; su nota ya es la calibrada</small></div></div>
         </div>
         <div class="v2-kpi-row">
-            ${kpiV2("Esperando a Calidad", formatoNumero(pendientes.length), `${formatoNumero(criteriosEnCola)} criterio(s)`, pendientes.length ? "warn" : "ok")}
-            ${kpiV2("Cambio de nota al calibrar", deltaProm === null ? "—" : `${deltaProm > 0 ? "+" : ""}${deltaProm.toFixed(1)} pts`, calibradas.length ? `Promedio sobre ${calibradas.length} llamada(s)` : "Sin calibraciones publicadas en el periodo")}
+            ${kpiV2("Esperando aprobación de jefatura", formatoNumero(pendientes.length), `${formatoNumero(criteriosEnCola)} criterio(s)`, pendientes.length ? "warn" : "ok")}
+            ${kpiV2("Cambio de nota al calibrar", deltaProm === null ? "—" : `${deltaProm > 0 ? "+" : ""}${deltaProm.toFixed(1)} pts`, calibradas.length ? `Promedio sobre ${calibradas.length} llamada(s)` : "Sin calibraciones aprobadas en el periodo")}
             ${kpiV2("La IA acierta el resultado", pctV2(pRes, 1), precision?.sin_acceso ? "Tu perfil no ve la precisión" : `${formatoNumero(revisados)} criterio(s) revisados ${avisoMuestra}`)}
             ${kpiV2("Acierta y cita bien la evidencia", pctV2(pEvi, 1), "Resultado correcto con evidencia válida")}
         </div>
         <section class="v2-panel">
-            <header><h4>Cola de Calidad</h4><small>Las que más esperan, primero</small></header>
+            <header><h4>Cola de aprobación de jefatura</h4><small>Las que más esperan, primero</small></header>
             ${pendientes.length ? `
             <div class="v2-table-wrap"><table class="v2-table">
                 <thead><tr><th>Evaluación</th><th>Agente</th><th>Cartera</th><th>Criterios</th><th>Cambian nota</th><th>Propuesto por</th><th>Espera</th><th>Nota IA</th><th></th></tr></thead>
@@ -669,12 +669,12 @@ async function cargarVistaCalibracionGlobalIa() {
                         <td><button class="${permisosCalibracionIa.puede_publicar ? "btn-primary" : "btn-light"} btn-small" type="button" onclick="verAnalisisIa(${Number(r.id_feedback)}, 'calibracion')">${permisosCalibracionIa.puede_publicar ? "Revisar" : "Ver"}</button></td>
                     </tr>`;
                 }).join("")}</tbody>
-            </table></div>` : vacioV2("No hay calibraciones esperando a Calidad", "Aparecen aquí cuando un supervisor envía correcciones desde la ficha.")}
+            </table></div>` : vacioV2("No hay calibraciones esperando aprobación", "Aparecen aquí cuando Calidad o un supervisor envía correcciones desde la ficha.")}
         </section>
         <div class="v2-two-col">
             <section class="v2-panel">
                 <header><h4>¿En qué criterios se equivoca la IA?</h4><small>Solo criterios revisados por una persona</small></header>
-                ${precision?.sin_acceso ? vacioV2("Tu perfil no tiene acceso a la precisión", "Visible para Calidad y jefaturas.")
+                ${precision?.sin_acceso ? vacioV2("Tu perfil no tiene acceso a la precisión", "Visible para Calidad y jefatura.")
                     : !detallePrec.length ? vacioV2("Todavía no hay criterios revisados", "Lo que nadie revisó no cuenta como acierto ni como error.")
                     : `<div class="v2-bars">${agruparPrecisionV2(detallePrec).map(p => `
                         <div class="v2-bar-row">
@@ -684,7 +684,7 @@ async function cargarVistaCalibracionGlobalIa() {
                         </div>`).join("")}</div>`}
             </section>
             <section class="v2-panel">
-                <header><h4>Por qué se corrige</h4><small>Motivos registrados por supervisores y Calidad</small></header>
+                <header><h4>Por qué se corrige</h4><small>Motivos registrados por Calidad y supervisores</small></header>
                 ${(precision?.motivos || []).length
                     ? `<div class="v2-bars">${precision.motivos.slice(0, 6).map(m => {
                         const max = Math.max(...precision.motivos.map(x => Number(x.veces || 0)), 1);

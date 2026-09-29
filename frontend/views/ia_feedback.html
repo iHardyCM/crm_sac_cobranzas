@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
     <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260922-bandeja2">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260928-calibracion">
     <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
 </head>
 <body>
@@ -330,7 +330,7 @@
                                         </label>
                                         <label class="decision-option">
                                             <input type="radio" name="decisionSupervisorIa" value="modificar">
-                                            <span>Corregir criterios (va a Calidad)</span>
+                                            <span>Corregir criterios (los aprueba jefatura)</span>
                                         </label>
                                         <input id="feedbackIdActualIa" type="hidden">
                                         <input id="agenteRevisionIa" type="hidden">
@@ -1062,8 +1062,8 @@
             <section id="tabCalibracionIa" class="report-tab-panel calibracion-only oculto">
                 <div class="tab-panel-head">
                     <div>
-                        <h4>Calibración: IA frente a Calidad</h4>
-                        <p>Bandeja de revisión de Calidad y precisión de la IA medida sobre criterios revisados por una persona.</p>
+                        <h4>Calibración: IA frente al revisor</h4>
+                        <p>Correcciones esperando aprobación de jefatura y precisión de la IA medida sobre criterios revisados por una persona.</p>
                     </div>
                 </div>
                 <div id="calibracionV2Ia" class="v2-root"></div>
@@ -1187,7 +1187,11 @@
                 </section>
             </div>
         </div>
-        <div id="modalRecalibracionIa" class="modal-overlay oculto">
+        <!-- RETIRADO 28/09/2026: el formulario de "nota sugerida" a mano competía con la
+             nota recalculada desde los criterios. Se conserva el marcado para no romper
+             referencias, pero ya nada lo abre: la corrección se hace por criterio en
+             la pestaña Calibración y la aprueba jefatura. -->
+        <div id="modalRecalibracionIa" class="modal-overlay oculto legacy-v1">
             <div class="prompt-modal recalibration-modal" role="dialog" aria-modal="true" aria-labelledby="tituloModalRecalibracionIa">
                 <div class="modal-head">
                     <div>
@@ -1283,7 +1287,7 @@
 
     <script src="../js/session.js?v=20260825a"></script>
     <script src="../js/app_layout.js?v=20260915-supervisor-importacion1"></script>
-    <script src="../js/ia_feedback.js?v=20260922-bandeja2"></script>
-    <script src="../js/ia_feedback_vistas.js?v=20260922-bandeja2"></script>
+    <script src="../js/ia_feedback.js?v=20260928-calibracion"></script>
+    <script src="../js/ia_feedback_vistas.js?v=20260928-calibracion"></script>
 </body>
 </html>

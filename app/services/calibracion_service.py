@@ -47,17 +47,37 @@ ESTADOS_QUE_PUNTUAN = {"CUMPLE"}
 # nota calibrada de una llamada se calcula con otra regla que su nota IA.
 ESTADOS_FUERA_DEL_DENOMINADOR = {"NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
 
-# Perfiles que pueden publicar o rechazar. El flujo acordado es de doble
-# control: el supervisor propone, Calidad publica. Si cualquiera pudiera
-# publicar, ese control seria de nombre.
-PERFILES_PUBLICAN = {
+# FLUJO ACORDADO (28/09/2026)
+#   Proponen   el analista de Calidad y el supervisor: marcan el criterio mal
+#              evaluado, con motivo y evidencia.
+#   Aprueba    jefatura (jefe de cartera / cobranza / administrador). Al publicar,
+#              la nota se RECALCULA desde los criterios corregidos.
+# Calidad ya no publica: si quien propone tambien aprueba, el doble control es
+# de nombre. Ademas, nadie aprueba su propia propuesta (ver resolver_llamada).
+PERFILES_APRUEBAN = {
     "ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE DE COBRANZA", "JEFE CARTERA",
+}
+
+# Quien puede registrar una propuesta de correccion sobre un criterio.
+PERFILES_PROPONEN_EXACTOS = {
+    "ADMINISTRADOR", "SUPERVISOR", "SUPERVISORA",
+    "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE DE COBRANZA", "JEFE CARTERA",
 }
 
 
 def perfil_puede_publicar_calibracion(perfil: Optional[str]) -> bool:
+    """Aprueba y publica: solo jefatura. Calidad propone, no publica."""
+    return str(perfil or "").strip().upper() in PERFILES_APRUEBAN
+
+
+def perfil_puede_proponer_calibracion(perfil: Optional[str]) -> bool:
+    """Propone una correccion: Calidad, supervisores y jefaturas."""
     normalizado = str(perfil or "").strip().upper()
-    return normalizado in PERFILES_PUBLICAN or "CALIDAD" in normalizado
+    return (
+        normalizado in PERFILES_PROPONEN_EXACTOS
+        or "CALIDAD" in normalizado
+        or "SUPERVISOR" in normalizado
+    )
 
 
 def _texto(value, limite: Optional[int] = None) -> Optional[str]:
@@ -156,6 +176,7 @@ def guardar_calibracion(
     evidencia_revisor: Optional[str] = None,
     comentario: Optional[str] = None,
     usuario: Optional[str] = None,
+    perfil: Optional[str] = None,
     enviar_a_revision: bool = False,
 ) -> Dict:
     """Registra el acto humano sobre un criterio. Crea o actualiza el borrador.
@@ -163,6 +184,9 @@ def guardar_calibracion(
     No se permite editar una calibracion ya PUBLICADA: para cambiarla hay que
     rechazarla y calibrar de nuevo, de modo que quede rastro de ambas decisiones.
     """
+    if perfil is not None and not perfil_puede_proponer_calibracion(perfil):
+        raise PermissionError("Tu perfil no puede registrar correcciones de criterio.")
+
     accion = str(accion or "").strip().upper()
     if accion not in {ACCION_CONFIRMAR, ACCION_CORREGIR}:
         raise ValueError("La accion debe ser CONFIRMAR o CORREGIR.")
@@ -309,13 +333,16 @@ def resolver_calibracion(
     return {"ok": True, "estado": estado, "id_feedback": id_feedback, **recalculo}
 
 
-def enviar_llamada_a_revision(id_feedback: int, usuario: Optional[str] = None) -> Dict:
-    """El supervisor entrega a Calidad todo lo que calibro en una llamada.
+def enviar_llamada_a_revision(id_feedback: int, usuario: Optional[str] = None,
+                              perfil: Optional[str] = None) -> Dict:
+    """Quien propone entrega a jefatura todo lo que corrigio en una llamada.
 
     Los criterios se guardan de a uno como BORRADOR mientras se trabaja; la
-    llamada completa es la unidad que se entrega. Asi Calidad recibe un caso
+    llamada completa es la unidad que se entrega. Asi jefatura recibe un caso
     cerrado y no criterios sueltos a medio revisar.
     """
+    if perfil is not None and not perfil_puede_proponer_calibracion(perfil):
+        raise PermissionError("Tu perfil no puede enviar correcciones a aprobacion.")
     with engine_siscob.begin() as conn:
         resultado = conn.execute(text("""
             UPDATE CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
@@ -339,13 +366,13 @@ def resolver_llamada(
     motivo_rechazo: Optional[str] = None,
     perfil: Optional[str] = None,
 ) -> Dict:
-    """Calidad publica o rechaza de una vez todo lo que esta en revision.
+    """Jefatura aprueba o rechaza de una vez todo lo que esta en revision.
 
     Para rechazar solo un criterio y aprobar el resto se usa
     resolver_calibracion criterio por criterio.
     """
     if not perfil_puede_publicar_calibracion(perfil):
-        raise PermissionError("Solo Calidad puede publicar o rechazar una calibracion.")
+        raise PermissionError("Solo jefatura puede aprobar o rechazar una correccion.")
     estado = str(estado or "").strip().upper()
     if estado not in {ESTADO_PUBLICADA, ESTADO_RECHAZADA}:
         raise ValueError("El estado debe ser PUBLICADA o RECHAZADA.")
@@ -353,6 +380,24 @@ def resolver_llamada(
         raise ValueError("Un rechazo necesita motivo.")
 
     with engine_siscob.begin() as conn:
+        # Doble control: quien propuso no puede aprobar su propia correccion.
+        # Rechazar si se permite, para no dejar un caso trabado cuando el unico
+        # jefe disponible es quien lo propuso.
+        if estado == ESTADO_PUBLICADA:
+            propuestos_por = [
+                str(fila[0] or "").strip().upper()
+                for fila in conn.execute(text("""
+                    SELECT DISTINCT actualizado_por
+                    FROM CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
+                    WHERE id_feedback = :id_feedback AND estado = 'EN_REVISION'
+                """), {"id_feedback": id_feedback}).all()
+            ]
+            quien_aprueba = str(_texto(usuario, 150) or "").strip().upper()
+            if propuestos_por and quien_aprueba and set(propuestos_por) == {quien_aprueba}:
+                raise PermissionError(
+                    "No puedes aprobar una correccion que tu mismo propusiste: debe revisarla otra persona."
+                )
+
         resultado = conn.execute(text("""
             UPDATE CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
             SET estado = :estado,

@@ -51,6 +51,11 @@
             title: "Metas por Agente",
             subtitle: "Configuracion de metas mensuales individuales"
         },
+        "consumo_ia.html": {
+            key: "consumo_ia_admin",
+            title: "Consumo de IA",
+            subtitle: "Tokens y costo de la API por audio evaluado"
+        },
         "admin_pautas_evaluacion.html": {
             key: "pautas_evaluacion_admin",
             title: "Pautas de Evaluación",
@@ -170,6 +175,13 @@
         label: "Metas Agentes",
         href: "admin_metas_agentes.html",
         icon: iconTarget()
+    });
+
+    NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
+        key: "consumo_ia_admin",
+        label: "Consumo de IA",
+        href: "consumo_ia.html",
+        icon: iconChart()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
@@ -418,6 +430,8 @@
 
     function puedeAccederModulo(key) {
         if (key === "inicio") return true;
+        // El consumo de la API es informacion de costo del modulo: solo administracion.
+        if (key === "consumo_ia_admin") return tipoUsuario() === "ADMINISTRADOR";
         if (key === "reportes") return true;
         if (key === "documentos") return puedeAccederDocumentos();
         if (key === "admin") return esPerfilGerencial();

@@ -12,6 +12,7 @@ from app.services.calibracion_service import (
     listar_motivos,
     obtener_calibracion,
     obtener_precision,
+    perfil_puede_proponer_calibracion,
     perfil_puede_publicar_calibracion,
     recalcular_score_calibrado,
     resolver_calibracion,
@@ -32,6 +33,7 @@ class CalibracionPayload(BaseModel):
     evidencia_revisor: Optional[str] = None
     comentario: Optional[str] = None
     usuario: Optional[str] = None
+    perfil: Optional[str] = None
     enviar_a_revision: bool = False
 
 
@@ -44,6 +46,7 @@ class ResolucionPayload(BaseModel):
 
 class EnvioPayload(BaseModel):
     usuario: Optional[str] = None
+    perfil: Optional[str] = None
 
 
 @router.get("/motivos")
@@ -66,14 +69,19 @@ def cola_revision():
 @router.get("/permisos")
 def permisos_calibracion(perfil: Optional[str] = Query(default=None)):
     """La pantalla pregunta que puede hacer el perfil, en vez de decidirlo ella."""
-    return {"puede_publicar": perfil_puede_publicar_calibracion(perfil)}
+    return {
+        "puede_publicar": perfil_puede_publicar_calibracion(perfil),
+        "puede_proponer": perfil_puede_proponer_calibracion(perfil),
+    }
 
 
 @router.post("/llamada/{id_feedback}/enviar")
 def enviar_llamada(id_feedback: int, payload: EnvioPayload):
-    """El supervisor entrega a Calidad lo que calibro en la llamada."""
+    """Calidad o el supervisor entregan a jefatura lo que corrigieron."""
     try:
-        return enviar_llamada_a_revision(id_feedback, payload.usuario)
+        return enviar_llamada_a_revision(id_feedback, payload.usuario, perfil=payload.perfil)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -82,7 +90,7 @@ def enviar_llamada(id_feedback: int, payload: EnvioPayload):
 
 @router.post("/llamada/{id_feedback}/resolver")
 def resolver_llamada_completa(id_feedback: int, payload: ResolucionPayload):
-    """Calidad publica o rechaza todo lo que esta en revision en la llamada."""
+    """Jefatura aprueba o rechaza todo lo que esta en revision en la llamada."""
     try:
         return resolver_llamada(
             id_feedback,
@@ -119,8 +127,11 @@ def guardar_criterio(payload: CalibracionPayload):
             evidencia_revisor=payload.evidencia_revisor,
             comentario=payload.comentario,
             usuario=payload.usuario,
+            perfil=payload.perfil,
             enviar_a_revision=payload.enviar_a_revision,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

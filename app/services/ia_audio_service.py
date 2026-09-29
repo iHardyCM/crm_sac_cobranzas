@@ -14,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.db_siscob import engine_siscob
+from app.services.ia_consumo_service import fijar_contexto_consumo, liberar_contexto_consumo
 from app.services.ia_analysis_service import (
     analizar_transcripcion_mock,
     analizar_transcripcion_real,
@@ -462,6 +463,9 @@ def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> D
     registro = obtener_feedback(id_feedback)
     tiempos["leer_registro"] = time.perf_counter() - t_inicio
 
+    # Todo lo que llame a la API dentro de este try queda registrado en
+    # CRM_IA_CONSUMO_API con este id_feedback (contexto por hilo/tarea).
+    token_consumo = fijar_contexto_consumo(id_feedback)
     try:
         aviso_ia = None
         transcripcion_guardada = str(registro.get("transcripcion") or "").strip()
@@ -520,6 +524,8 @@ def analizar_feedback(id_feedback: int, forzar_transcripcion: bool = False) -> D
     except Exception as exc:
         actualizar_estado(id_feedback, "ERROR", str(exc))
         raise
+    finally:
+        liberar_contexto_consumo(token_consumo)
 
 
 def listar_feedback(limit: int = 100, supervisor: Optional[str] = None) -> List[Dict]:

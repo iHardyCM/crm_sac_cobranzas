@@ -8089,3 +8089,100 @@ body.crm-shell .bandeja-meta { flex-wrap: wrap; white-space: normal; row-gap: 2p
     body.crm-shell #panelCargaIa > #procesosIa { padding: 0 18px 18px 0; }
 }
 body.crm-shell .bandeja-lista { display: block; }
+
+/* ===========================================================================
+   Calibración por criterio dentro de la ficha (v20260923-calib)
+   Este bloque faltaba: el JS pintaba las tarjetas de criterio pero ninguna de
+   sus clases tenía estilo, así que la pestaña salía como texto corrido.
+   =========================================================================== */
+body.crm-shell .calibration-progress { display: grid; gap: 5px; margin: 6px 0 14px; }
+body.crm-shell .calibration-progress small { color: #4a6480; font-size: 11px; font-weight: 700; }
+body.crm-shell .calibration-progress-bar {
+    position: relative; height: 8px; border-radius: 99px; background: #e8eef5; overflow: hidden;
+}
+body.crm-shell .calibration-progress-bar i { display: block; height: 100%; border-radius: 99px; background: #1769c2; }
+
+body.crm-shell .calibration-criteria { display: grid; gap: 10px; }
+
+body.crm-shell .cal-criterio {
+    display: grid; gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid #dde7f2; border-left: 3px solid #9aabbd; border-radius: 10px;
+    background: #fff;
+}
+body.crm-shell .cal-criterio.calibrado { border-left-color: #2f9e5b; background: #fbfdfc; }
+body.crm-shell .cal-criterio > header {
+    display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between;
+}
+body.crm-shell .cal-criterio > header strong { color: #10263d; font-size: 13px; margin-right: 6px; }
+body.crm-shell .cal-criterio > header span { color: #3f5872; font-size: 13px; }
+body.crm-shell .cal-criterio-estado { display: flex; gap: 6px; align-items: center; }
+
+body.crm-shell .cal-resultado {
+    display: inline-block; padding: 2px 9px; border-radius: 99px;
+    background: #eef3f9; color: #3f5872; font-size: 10px; font-weight: 800; letter-spacing: .03em;
+}
+body.crm-shell .cal-resultado.cumple { background: #e7f6ed; color: #17633a; }
+body.crm-shell .cal-resultado.no_cumple { background: #fdecec; color: #a8323c; }
+body.crm-shell .cal-resultado.no_aplica,
+body.crm-shell .cal-resultado.no_evaluable { background: #f1f4f8; color: #6a7f94; }
+body.crm-shell .cal-resultado.requiere_revision { background: #fdf3e2; color: #8a5a0b; }
+
+body.crm-shell .cal-chip {
+    display: inline-block; padding: 2px 9px; border-radius: 99px;
+    font-size: 10px; font-weight: 800;
+    background: #eef3f9; color: #48627c;
+}
+body.crm-shell .cal-chip.pendiente { background: #f1f4f8; color: #6a7f94; }
+body.crm-shell .cal-chip.confirmado { background: #e7f6ed; color: #17633a; }
+body.crm-shell .cal-chip.corregido { background: #fdf3e2; color: #8a5a0b; }
+
+body.crm-shell .cal-motivo { margin: 0; color: #1f3850; font-size: 12px; line-height: 1.5; }
+body.crm-shell .cal-criterio blockquote {
+    margin: 0; padding: 8px 12px;
+    border-left: 3px solid #c8d8ea; border-radius: 0 8px 8px 0;
+    background: #f6f9fd; color: #23405f; font-size: 12px; font-style: italic; line-height: 1.5;
+}
+body.crm-shell .cal-criterio blockquote span { color: #6a7f94; font-style: normal; font-weight: 700; }
+body.crm-shell .cal-sin-cita { margin: 0; color: #8496a8; font-size: 11px; font-style: italic; }
+
+body.crm-shell .cal-criterio > footer {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding-top: 8px; border-top: 1px solid #edf2f7;
+}
+body.crm-shell .cal-criterio > footer .btn-small { width: auto; flex: none; }
+body.crm-shell .cal-confianza { color: #6a7f94; font-size: 11px; font-weight: 700; }
+
+body.crm-shell .cal-form {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;
+    padding: 12px; border: 1px dashed #c8d8ea; border-radius: 8px; background: #f8fbfe;
+}
+body.crm-shell .cal-form label { display: grid; gap: 4px; color: #4a6480; font-size: 11px; font-weight: 700; }
+body.crm-shell .cal-form select,
+body.crm-shell .cal-form textarea,
+body.crm-shell .cal-form input {
+    border: 1px solid #d5e2f0; border-radius: 8px; padding: 7px 9px;
+    font-size: 12px; font-weight: 500; color: #1f3850; background: #fff; font-family: inherit;
+}
+body.crm-shell .cal-form textarea { resize: vertical; }
+body.crm-shell .cal-prueba { grid-column: 1 / -1; margin: 0; color: #8a5a0b; font-size: 11px; }
+body.crm-shell .cal-prueba:empty { display: none; }
+body.crm-shell .cal-form-actions { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
+body.crm-shell .cal-form-actions .btn-small { width: auto; flex: none; }
+body.crm-shell .cal-flujo-paso .btn-small, body.crm-shell .calibracion-flujo-ia .btn-small { width: auto; flex: none; }
+body.crm-shell .v2-consumo-bloques { display: grid; gap: 14px; }
+body.crm-shell #consumoIaPanel { margin-bottom: 14px; }
+
+/* Pantalla Configuración > Consumo de IA (v20260923-consumo) */
+body.crm-shell .consumo-page { display: grid; gap: 14px; padding: 18px 22px 40px; }
+body.crm-shell .consumo-hero {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border: 1px solid #dde7f2; border-radius: 14px; background: #fff;
+}
+body.crm-shell .consumo-hero span { color: #4a6480; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+body.crm-shell .consumo-hero h2 { margin: 2px 0; color: #10263d; font-size: 20px; }
+body.crm-shell .consumo-hero p { margin: 0; color: #5f7488; font-size: 12px; }
+body.crm-shell .consumo-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+body.crm-shell .consumo-acciones label { display: flex; gap: 6px; align-items: center; color: #4a6480; font-size: 12px; font-weight: 700; }
+body.crm-shell .consumo-acciones select { border: 1px solid #d5e2f0; border-radius: 8px; padding: 7px 9px; font-size: 12px; background: #fff; }
+body.crm-shell .consumo-acciones .btn-light, body.crm-shell .consumo-acciones .btn-primary { width: auto; flex: none; }

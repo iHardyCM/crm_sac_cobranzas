@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -54,6 +55,8 @@ TRANSCRIPTION_FALLBACK_MODEL = (
 )
 ANALYSIS_MODEL = os.getenv("IA_FEEDBACK_ANALYSIS_MODEL", "gpt-4o-mini")
 PROMPT_CONFIG_TABLE = "CobAuto.dbo.ia_feedback_prompt_config"
+
+from app.services.ia_consumo_service import registrar_consumo  # noqa: E402
 logger = logging.getLogger(__name__)
 
 SGC_GRUPO_NEGOCIO = "Errores críticos del negocio"
@@ -900,6 +903,7 @@ def transcribir_audio_real(ruta_audio: str, info_preproceso: Optional[Dict] = No
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     try:
         with Path(ruta_efectiva).open("rb") as audio_file:
+            inicio_tr = time.perf_counter()
             try:
                 result = client.audio.transcriptions.create(
                     model=TRANSCRIPTION_MODEL,
@@ -907,12 +911,21 @@ def transcribir_audio_real(ruta_audio: str, info_preproceso: Optional[Dict] = No
                     response_format="diarized_json",
                     chunking_strategy="auto",
                 )
+                registrar_consumo("TRANSCRIPCION", TRANSCRIPTION_MODEL, result,
+                                  duracion_ms=int((time.perf_counter() - inicio_tr) * 1000),
+                                  segundos_audio=preproceso.get("segundos_utiles") or preproceso.get("duracion_segundos"))
                 diarizada = normalizar_transcripcion_diarizada(result, offset_segundos=offset)
                 if diarizada.get("segmentos"):
                     diarizada["speaker_role_mapping"] = asignar_roles_speakers(client, diarizada["segmentos"])
                     return construir_texto_diarizado_canonico(diarizada)
-            except Exception:
+            except Exception as exc_diarize:
+                # El intento diarizado fallo: se registra igual, porque explica
+                # por que una llamada puede costar dos transcripciones.
+                registrar_consumo("TRANSCRIPCION", TRANSCRIPTION_MODEL, None,
+                                  duracion_ms=int((time.perf_counter() - inicio_tr) * 1000),
+                                  exito=False, detalle_error=str(exc_diarize))
                 audio_file.seek(0)
+                inicio_fb = time.perf_counter()
                 try:
                     result = client.audio.transcriptions.create(
                         model=TRANSCRIPTION_FALLBACK_MODEL,
@@ -926,6 +939,9 @@ def transcribir_audio_real(ruta_audio: str, info_preproceso: Optional[Dict] = No
                         model=TRANSCRIPTION_FALLBACK_MODEL,
                         file=audio_file,
                     )
+                registrar_consumo("TRANSCRIPCION_FALLBACK", TRANSCRIPTION_FALLBACK_MODEL, result,
+                                  duracion_ms=int((time.perf_counter() - inicio_fb) * 1000),
+                                  segundos_audio=preproceso.get("segundos_utiles") or preproceso.get("duracion_segundos"))
     finally:
         limpiar_recorte(preproceso)
 
@@ -1172,7 +1188,7 @@ Devuelve JSON:
 
     mapping = {}
     try:
-        data = llamar_json_modelo_pipeline_v3(client, prompt, "Asigna rol global por speaker diarizado.")
+        data = llamar_json_modelo_pipeline_v3(client, prompt, "Asigna rol global por speaker diarizado.", paso="ROLES")
         raw_mapping = data.get("speakers") if isinstance(data.get("speakers"), dict) else {}
     except Exception:
         raw_mapping = {}
@@ -2063,7 +2079,7 @@ Devuelve JSON:
 ]}}
 """.strip()
         try:
-            data = llamar_json_modelo_pipeline_v3(client, prompt, "Identifica hablantes por secuencia; no cambies el texto.")
+            data = llamar_json_modelo_pipeline_v3(client, prompt, "Identifica hablantes por secuencia; no cambies el texto.", paso="HABLANTES")
         except Exception:
             continue
 
@@ -2234,7 +2250,7 @@ Devuelve JSON:
   "inventario": {{"apertura.saludo": {{"encontrado": true, "segmentos": [1]}}}}
 }}
 """.strip()
-        data = llamar_json_modelo_pipeline_v3(client, prompt, "Extrae hechos de cobranza; no evalues ni puntues.")
+        data = llamar_json_modelo_pipeline_v3(client, prompt, "Extrae hechos de cobranza; no evalues ni puntues.", paso="HECHOS")
         for categoria, items in (data.get("hechos") or {}).items():
             if categoria not in hechos or not isinstance(items, list):
                 continue
@@ -2307,7 +2323,7 @@ Devuelve JSON:
   {{"codigo": "", "nombre": "", "peso": 0, "estado": "{contrato_estado}", "puntaje_obtenido": 0, "segmentos_evidencia": [], "segmentos_contexto": [], "tipo_evidencia": "DIRECTA|CONTEXTUAL|AUSENCIA_EN_SECUENCIA|REVISION_HUMANA", "conducta_observada": "", "hallazgo": "", "impacto_negocio": "", "impacto_cliente": "", "recomendacion_entrenable": "", "frase_sugerida": "", "fortaleza_relacionada": null, "confianza": "ALTA|MEDIA|BAJA", "posible_descalificacion": false, "justificacion_descalificacion": null}}
 ]}}
 """.strip()
-    data = llamar_json_modelo_pipeline_v3(client, prompt, "Evalua criterios tecnicos desde hechos; no generes score global ni SGC.")
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Evalua criterios tecnicos desde hechos; no generes score global ni SGC.", paso="CRITERIOS")
     return data.get("criterios") if isinstance(data.get("criterios"), list) else []
 
 
@@ -2330,7 +2346,7 @@ Criterios:
 Devuelve JSON:
 {{"inconsistencias": [{{"criterio": "4.1", "tipo": "CONTRADICCION|EVIDENCIA_INSUFICIENTE|COBERTURA", "descripcion": "", "segmentos": [], "accion": "REVISAR_CRITERIO|SIN_CAMBIO"}}]}}
 """.strip()
-    data = llamar_json_modelo_pipeline_v3(client, prompt, "Audita contradicciones sin reevaluar toda la llamada.")
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Audita contradicciones sin reevaluar toda la llamada.", paso="AUDITORIA")
     inconsistencias = data.get("inconsistencias") if isinstance(data.get("inconsistencias"), list) else []
     return {"inconsistencias": inconsistencias}
 
@@ -2373,7 +2389,7 @@ Observaciones auditor:
 Devuelve JSON:
 {{"criterios": [{{"codigo": "", "nombre": "", "peso": 0, "estado": "{estados}", "puntaje_obtenido": 0, "segmentos_evidencia": [], "segmentos_contexto": [], "tipo_evidencia": "DIRECTA|CONTEXTUAL|AUSENCIA_EN_SECUENCIA|REVISION_HUMANA", "conducta_observada": "", "hallazgo": "", "impacto_negocio": "", "impacto_cliente": "", "recomendacion_entrenable": "", "frase_sugerida": "", "fortaleza_relacionada": null, "confianza": "ALTA|MEDIA|BAJA", "posible_descalificacion": false, "justificacion_descalificacion": null}}]}}
 """.strip()
-    data = llamar_json_modelo_pipeline_v3(client, prompt, "Corrige criterios puntuales observados por auditoria.")
+    data = llamar_json_modelo_pipeline_v3(client, prompt, "Corrige criterios puntuales observados por auditoria.", paso="CORRECCION")
     corregidos = normalizar_criterios_pipeline_v3(data.get("criterios") if isinstance(data.get("criterios"), list) else [], segmentos, pauta=pauta)
     codigos_cuestionados = {
         str(item.get("criterio") or "").strip()
@@ -2568,19 +2584,30 @@ Score Python:
 Devuelve JSON:
 {{"relato_gestion": "", "segmentos_relato": [], "resumen_ejecutivo": {{"texto": "", "fortaleza_principal": "", "debilidad_principal": "", "riesgo_principal": "", "oportunidad_principal": "", "conclusion": ""}}, "resultado_gestion": {{"tipo_contacto": "", "resultado_principal": "", "tipo_cierre": "", "monto_acordado": null, "fecha_acordada": null, "canal_acordado": null, "confirmacion_cliente": false, "segmentos_acuerdo": [], "resumen": ""}}, "tipificaciones_sugeridas": [], "coaching": {{"feedback_supervisor": {{"resumen_tecnico": "", "fortalezas": [], "brechas_principales": [], "conducta_prioritaria": "", "accion_entrenable": "", "objetivo_siguiente_llamada": ""}}, "feedback_asesor": {{"mensaje": "", "lo_que_hiciste_bien": "", "mejora_prioritaria": "", "frase_a_evitar": "", "frase_recomendada": "", "ejemplo_mejorado": "", "compromiso_sugerido": ""}}}}}}
 """.strip()
-    return llamar_json_modelo_pipeline_v3(client, prompt, "Genera feedback final desde matriz validada.")
+    return llamar_json_modelo_pipeline_v3(client, prompt, "Genera feedback final desde matriz validada.", paso="FEEDBACK")
 
 
-def llamar_json_modelo_pipeline_v3(client, prompt: str, system: str) -> Dict:
-    response = client.chat.completions.create(
-        model=ANALYSIS_MODEL,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": f"{system} Responde exclusivamente JSON valido y trabaja solo con la llamada actual."},
-            {"role": "user", "content": prompt},
-        ],
-    )
+def llamar_json_modelo_pipeline_v3(client, prompt: str, system: str, paso: str = "ANALISIS") -> Dict:
+    # Cada llamada deja su consumo (tokens y modelo) ligado a la evaluacion en
+    # curso: es la unica forma de saber cuanto cuesta evaluar un audio.
+    inicio = time.perf_counter()
+    try:
+        response = client.chat.completions.create(
+            model=ANALYSIS_MODEL,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": f"{system} Responde exclusivamente JSON valido y trabaja solo con la llamada actual."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+    except Exception as exc:
+        registrar_consumo(paso, ANALYSIS_MODEL, None,
+                          duracion_ms=int((time.perf_counter() - inicio) * 1000),
+                          exito=False, detalle_error=str(exc))
+        raise
+    registrar_consumo(paso, ANALYSIS_MODEL, response,
+                      duracion_ms=int((time.perf_counter() - inicio) * 1000))
     return cargar_json_analisis(response.choices[0].message.content or "{}", client=client)
 
 
@@ -4845,6 +4872,7 @@ def cargar_json_analisis(content: str, *, client=None) -> Dict:
     if client is None:
         raise ValueError("La IA devolvió un JSON inválido y no se pudo reparar.")
 
+    inicio_rep = time.perf_counter()
     reparacion = client.chat.completions.create(
         model=ANALYSIS_MODEL,
         temperature=0,
@@ -4857,6 +4885,8 @@ def cargar_json_analisis(content: str, *, client=None) -> Dict:
             {"role": "user", "content": content or "{}"},
         ],
     )
+    registrar_consumo("REPARACION_JSON", ANALYSIS_MODEL, reparacion,
+                      duracion_ms=int((time.perf_counter() - inicio_rep) * 1000))
     reparado = reparacion.choices[0].message.content or "{}"
     data = json.loads(reparado)
     if not isinstance(data, dict):

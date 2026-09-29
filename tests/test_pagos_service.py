@@ -5,27 +5,52 @@ import unittest
 from openpyxl import Workbook
 import pandas as pd
 
-from app.services.pagos_service import leer_archivo, normalizar_registros
+from app.services.pagos_service import (
+    leer_archivo,
+    normalizar_identity_code,
+    normalizar_registros,
+)
 
 
 class PagosServiceTests(unittest.TestCase):
-    def test_financiera_oh_mapea_cuenta_original_y_cliente(self):
+    def test_financiera_oh_conserva_operacion_y_enriquece_llaves(self):
         df = pd.DataFrame([{
-            "FECHA_PROCESO": date(2026, 8, 31),
+            "FECHA_PROCESO": date(2026, 9, 21),
+            "FEC_ULT_PAGO": date(2026, 9, 18),
             "GESTOR": "BIZNESCOB",
             "SUMA_PAGOS_MES": 450,
-            "NUM_CUENTA_ORI": 1234567890123456,
+            "IDENTITY_CODE": "D000045573053",
+            "NUM_CUENTA_PMCP": "9202040000000001",
+            "NUM_CUENTA_ORI": "9202040000000002",
             "NOMBRE_CLIENTE": "CLIENTE DE PRUEBA",
         }])
 
         registro = normalizar_registros(
             df,
             "FINANCIERA_OH",
-            "Cartera_BIZNESCOB_2026-08-31.xls",
+            "Cartera_BIZNESCOB_2026-09-21.xls",
         )[0]
 
-        self.assertEqual(registro["num_operacion"], "1234567890123456")
+        self.assertEqual(registro["idcartera"], 132)
+        self.assertEqual(registro["cartera"], "FINANCIERA OH")
+        self.assertEqual(registro["tipo_medicion"], "RECUPERO")
+        self.assertEqual(registro["dni"], "45573053")
+        self.assertEqual(registro["documento"], "D000045573053")
+        self.assertEqual(registro["num_operacion"], "9202040000000002")
+        self.assertEqual(registro["num_cuenta"], "9202040000000001")
         self.assertEqual(registro["cliente"], "CLIENTE DE PRUEBA")
+        self.assertEqual(registro["monto_pago"], 450)
+        self.assertEqual(registro["monto_pago_soles"], 450)
+        self.assertEqual(registro["fecha_corte"], date(2026, 9, 21))
+        self.assertEqual(registro["fecha_movimiento"], date(2026, 9, 18))
+        self.assertEqual(registro["fecha_pago"], date(2026, 9, 21))
+        self.assertEqual(registro["codmes"], "202609")
+
+    def test_financiera_oh_normaliza_identity_code_como_texto(self):
+        self.assertEqual(normalizar_identity_code("D000045573053"), "45573053")
+        self.assertEqual(normalizar_identity_code("C000123456789"), "123456789")
+        self.assertEqual(normalizar_identity_code("  X0000123  "), "X0000123")
+        self.assertEqual(normalizar_identity_code(""), "")
 
     def test_lectura_interbank_preserva_ceros_iniciales_de_cu(self):
         workbook = Workbook()

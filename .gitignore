@@ -1,7 +1,13 @@
+# Secretos / configuración local
+.env
+.env.*
+!.env.example
+
 # Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+.venv/
+venv/
 
 # Node / frontend
 node_modules/
@@ -9,12 +15,25 @@ node_modules/
 # VS Code
 .vscode/
 
-# logs
+# Logs de ejecución
+logs/
 *.log
+
+# Archivos cargados / datos de clientes
+uploads/
+
+# Temporales de ejecución y QA
+tmp/
+_qa_*/
+.codex_tmp_docx_images/
+
+# Documentos generados
 app/generated_documents/
 
-# Windows
+# Windows / sistema
 Thumbs.db
+.DS_Store
 
-# archivos temporales
+# Temporales
 *.tmp
+*.bak

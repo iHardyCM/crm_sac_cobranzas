@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consumo de IA</title>
+    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260923-consumo">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+</head>
+<body>
+<main class="consumo-page">
+    <section class="consumo-hero">
+        <div>
+            <span>Configuración</span>
+            <h2>Consumo de la API de IA</h2>
+            <p>Cuántos tokens y cuánto costó cada audio evaluado. Solo administración.</p>
+        </div>
+        <div class="consumo-acciones">
+            <label>Periodo
+                <select id="periodoConsumo" onchange="cargarConsumoIa()">
+                    <option value="7">Últimos 7 días</option>
+                    <option value="30" selected>Últimos 30 días</option>
+                    <option value="90">Últimos 90 días</option>
+                </select>
+            </label>
+            <button class="btn-light" type="button" onclick="cargarConsumoIa()">Actualizar</button>
+            <button class="btn-primary" type="button" onclick="exportarConsumoCsv()">Exportar CSV</button>
+        </div>
+    </section>
+
+    <div id="mensajeConsumo" class="ia-message oculto"></div>
+    <div id="contenidoConsumo" class="v2-root"></div>
+</main>
+
+<script src="../js/session.js?v=20260825a"></script>
+<script src="../js/app_layout.js?v=20260923-consumo"></script>
+<script src="../js/consumo_ia.js?v=20260923-consumo"></script>
+</body>
+</html>

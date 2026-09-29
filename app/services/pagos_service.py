@@ -42,10 +42,21 @@ FORMATS = {
     },
     "FINANCIERA_OH": {
         "required": ["GESTOR", "SUMA_PAGOS_MES", "FECHA_PROCESO"],
+        "required_extra": [
+            "IDENTITY_CODE",
+            "NUM_CUENTA_PMCP",
+            "NUM_CUENTA_ORI",
+            "NOMBRE_CLIENTE",
+            "FEC_ULT_PAGO",
+        ],
         "filter_col": "GESTOR",
         "filter_val": "BIZNESCOB",
         "monto": "SUMA_PAGOS_MES",
         "fecha": "FECHA_PROCESO",
+        "fecha_corte": "FECHA_PROCESO",
+        "fecha_movimiento": "FEC_ULT_PAGO",
+        "identity_code": "IDENTITY_CODE",
+        "num_cuenta": "NUM_CUENTA_PMCP",
         "num_operacion": "NUM_CUENTA_ORI",
         "cliente": "NOMBRE_CLIENTE",
         "idcartera": 132,
@@ -369,7 +380,7 @@ def normalizar_registros(
         if motivos:
             estado_fila = "ERROR"
 
-        registros.append({
+        registro = {
             "formato": formato,
             "archivo": filename,
             "archivo_nombre": filename,
@@ -415,7 +426,19 @@ def normalizar_registros(
             "activo": 0,
             "data_json": json.dumps(serializar_dict(row.to_dict()), ensure_ascii=False),
             "fecha_registro": datetime.now(),
-        })
+        }
+
+        if formato == "FINANCIERA_OH":
+            identity_code = valor_texto(row, df, config.get("identity_code"))
+            registro.update({
+                "dni": normalizar_identity_code(identity_code),
+                "documento": identity_code,
+                "num_cuenta": valor_texto(row, df, config.get("num_cuenta")),
+                "fecha_corte": valor_fecha(row, df, config.get("fecha_corte")),
+                "fecha_movimiento": valor_fecha(row, df, config.get("fecha_movimiento")),
+            })
+
+        registros.append(registro)
 
     return registros
 
@@ -468,6 +491,19 @@ def obtener_fecha_pago(row, df, config: Dict):
     if not fecha_col:
         return None
     return valor_fecha(row, df, fecha_col, strict_yyyymmdd=config.get("fecha_yyyymmdd", False))
+
+
+def normalizar_identity_code(identity_code: str) -> str:
+    valor = str(identity_code or "").strip()
+    if not valor:
+        return ""
+
+    prefijo = valor[:1].upper()
+    if prefijo == "D":
+        return valor[-8:]
+    if prefijo == "C":
+        return valor[-9:]
+    return valor
 
 
 def obtener_codmes(row, df, config: Dict, fecha_pago):

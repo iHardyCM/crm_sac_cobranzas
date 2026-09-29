@@ -293,6 +293,17 @@ function obtenerModulosPorPerfil(tipo) {
         );
     }
 
+    // Consumo de la API de IA: es informacion de costo del modulo, solo administracion.
+    if (String(tipo || "").trim().toUpperCase() === "ADMINISTRADOR") {
+        modulos.push({
+            sigla: "CI",
+            titulo: "Consumo de IA",
+            descripcion: "Tokens y costo de la API por cada audio evaluado.",
+            ruta: "consumo_ia.html",
+            destacado: false
+        });
+    }
+
     if (puedeAccederDocumentos(tipo)) {
         modulos.unshift({
             sigla: "DO",

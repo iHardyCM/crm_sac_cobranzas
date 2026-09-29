@@ -2,6 +2,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import logging
+import os
 import time
 from datetime import datetime
 import threading
@@ -15,6 +16,7 @@ import re
 from app.services.admin_metas_agentes_service import listar_agentes
 from app.services.admin_supervisores_service import listar_carteras
 from app.services.reporte_calidad_export import construir_reporte_calidad_excel
+from app.services.ia_consumo_service import obtener_consumo
 from app.services.reporteria_sql_service import obtener_reporteria_sql
 from app.services.ia_analysis_service import (
     guardar_prompt_configuracion,
@@ -292,30 +294,17 @@ def guardar_revision_ia_feedback(
         raise HTTPException(status_code=500, detail=f"Error guardando revision IA: {exc}")
 
 
+# Formulario antiguo de recalibracion: RETIRADO el 28/09/2026.
+# Escribia la nota a mano en score_final, por fuera de la pauta y en paralelo a
+# la calibracion por criterio, asi que dos correcciones podian contradecirse.
+# Toda correccion pasa ahora por /calibracion: se corrige el criterio y la nota
+# se recalcula sola. El historial anterior se mantiene visible (GET de abajo).
 @router.post("/{id_feedback}/recalibracion")
-def solicitar_recalibracion_ia_feedback(
-    id_feedback: int,
-    item_cuestionado: str | None = Form(default=None),
-    score_sugerido: float | None = Form(default=None),
-    nivel_sugerido: str | None = Form(default=None),
-    motivo: str | None = Form(default=None),
-    evidencia_supervisor: str | None = Form(default=None),
-    solicitado_por: str | None = Form(default=None),
-):
-    try:
-        return solicitar_recalibracion_feedback(
-            id_feedback,
-            item_cuestionado=item_cuestionado,
-            score_sugerido=score_sugerido,
-            nivel_sugerido=nivel_sugerido,
-            motivo=motivo,
-            evidencia_supervisor=evidencia_supervisor,
-            solicitado_por=solicitado_por,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error solicitando recalibracion IA: {exc}")
+def solicitar_recalibracion_ia_feedback(id_feedback: int):
+    raise HTTPException(
+        status_code=410,
+        detail="La recalibracion por nota sugerida fue retirada. Corrige el criterio en Calibracion: la nota se recalcula sola.",
+    )
 
 
 @router.get("/{id_feedback}/recalibraciones")
@@ -327,25 +316,11 @@ def recalibraciones_ia_feedback(id_feedback: int):
 
 
 @router.post("/recalibracion/{id_recalibracion}/resolver")
-def resolver_recalibracion_ia_feedback(
-    id_recalibracion: int,
-    estado: str | None = Form(default="APROBADA"),
-    score_final: float | None = Form(default=None),
-    motivo_resolucion: str | None = Form(default=None),
-    resuelto_por: str | None = Form(default=None),
-):
-    try:
-        return resolver_recalibracion_feedback(
-            id_recalibracion,
-            estado=estado,
-            score_final=score_final,
-            motivo_resolucion=motivo_resolucion,
-            resuelto_por=resuelto_por,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error resolviendo recalibracion IA: {exc}")
+def resolver_recalibracion_ia_feedback(id_recalibracion: int):
+    raise HTTPException(
+        status_code=410,
+        detail="La resolucion de recalibraciones fue retirada. Jefatura aprueba las correcciones desde Calibracion.",
+    )
 
 
 @router.post("/{id_feedback}/coaching")
@@ -436,6 +411,36 @@ def reporteria_ia_feedback(
         return data
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error obteniendo reporteria IA: {exc}")
+
+
+# Quien ve el costo de la API. Por defecto solo ADMINISTRADOR; se puede ampliar
+# sin tocar codigo con IA_FEEDBACK_CONSUMO_PERFILES="ADMINISTRADOR,JEFE DE CARTERA".
+# Limitacion conocida: el perfil lo envia el cliente, igual que en el resto del
+# modulo. Es un control de visibilidad, no de seguridad: para produccion hace
+# falta validar la sesion en el servidor.
+def _perfil_ve_consumo_ia(perfil: str | None) -> bool:
+    permitidos = {
+        p.strip().upper()
+        for p in os.getenv("IA_FEEDBACK_CONSUMO_PERFILES", "ADMINISTRADOR").split(",")
+        if p.strip()
+    }
+    return str(perfil or "").strip().upper() in permitidos
+
+
+@router.get("/consumo")
+def consumo_ia_feedback(
+    dias: int = Query(default=30, ge=1, le=180),
+    limite: int = Query(default=200, ge=1, le=1000),
+    perfil: str | None = Query(default=None),
+):
+    """Cuanto consumio la API por evaluacion. Solo perfiles con vision global:
+    es informacion de costo del modulo, no de una cartera."""
+    if not _perfil_ve_consumo_ia(perfil):
+        raise HTTPException(status_code=403, detail="Perfil sin acceso al consumo de la API.")
+    try:
+        return obtener_consumo(dias=dias, limite=limite)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo el consumo de la IA: {exc}")
 
 
 @router.post("/reporteria/exportar-excel")

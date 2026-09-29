@@ -391,7 +391,7 @@ function senalesBandejaIa(item) {
     const senales = [];
     if (item.requiere_revision_humana) senales.push(`<span class="senal">IA pide revisión</span>`);
     if (Number(item.cal_borrador) > 0) senales.push(`<span class="senal">Corrección sin enviar</span>`);
-    if (Number(item.cal_en_revision) > 0) senales.push(`<span class="senal senal-calidad">En Calidad</span>`);
+    if (Number(item.cal_en_revision) > 0) senales.push(`<span class="senal senal-calidad">Esperando jefatura</span>`);
     return senales.join("");
 }
 
@@ -1984,7 +1984,7 @@ async function validarEvaluacionDesdeFichaIa() {
     if (decision === "modificar") {
         const sinEnviar = correccionesSinEnviarIa();
         if (sinEnviar > 0 && !window.confirm(
-            `Tienes ${sinEnviar} corrección(es) en borrador que Calidad todavía no ve.\n\n¿Validar igual? (puedes enviarlas después desde la pestaña Calibración)`)) {
+            `Tienes ${sinEnviar} corrección(es) en borrador que jefatura todavía no ve.\n\n¿Validar igual? (puedes enviarlas después desde la pestaña Calibración)`)) {
             return;
         }
     }
@@ -2085,8 +2085,8 @@ function pintarAvisoDecisionSupervisorIa(decision) {
     const requiereComentario = fichaRequiereComentarioIa(decision);
     if (decision === "modificar") {
         const sinEnviar = correccionesSinEnviarIa();
-        aviso.innerHTML = `Marca en <strong>Calibración</strong> los criterios que la IA evaluó mal y envíalos a Calidad. `
-            + `La nota cambia cuando Calidad publica.`
+        aviso.innerHTML = `Marca en <strong>Calibración</strong> los criterios que la IA evaluó mal y envíalos a jefatura. `
+            + `La nota cambia cuando jefatura los aprueba.`
             + (sinEnviar ? ` <strong>${sinEnviar} corrección(es) sin enviar.</strong>` : "")
             + ` <button type="button" class="btn-light btn-small" onclick="irACorregirCriteriosIa()">Ir a corregir criterios</button>`;
         aviso.classList.remove("oculto");
@@ -3260,15 +3260,15 @@ async function cargarVistaCalibracionGlobalIa() {
     const aviso = revisados && !suficiente ? "Muestra aún chica: menos de 30 criterios" : "";
 
     kpis.innerHTML = [
-        cardKpiTabIa("Llamadas esperando a Calidad", formatoNumero(pendientes.length), `${formatoNumero(criteriosEnCola)} criterio(s) en revisión`),
+        cardKpiTabIa("Llamadas esperando a jefatura", formatoNumero(pendientes.length), `${formatoNumero(criteriosEnCola)} criterio(s) esperando aprobación`),
         cardKpiTabIa("Correcciones propuestas", formatoNumero(correccionesEnCola), "Cambian la nota si se publican"),
         cardKpiTabIa("Criterios revisados", formatoNumero(revisados), precision?.sin_acceso ? "Tu perfil no ve la precisión" : "Base de la precisión"),
-        cardKpiTabIa("Precisión de resultado", fmtPct(pResultado), aviso || "La IA concluyó lo mismo que Calidad"),
+        cardKpiTabIa("Precisión de resultado", fmtPct(pResultado), aviso || "La IA concluyó lo mismo que el revisor"),
         cardKpiTabIa("Precisión de evidencia", fmtPct(pEvidencia), aviso || "Además citó una evidencia válida"),
     ].join("");
 
     if (!pendientes.length) {
-        tabla.innerHTML = `<div class="empty-report-state"><strong>No hay calibraciones esperando a Calidad.</strong><small>Aparecen aquí cuando un supervisor envía una llamada calibrada.</small></div>`;
+        tabla.innerHTML = `<div class="empty-report-state"><strong>No hay calibraciones esperando aprobación.</strong><small>Aparecen aquí cuando Calidad o un supervisor envía una llamada con criterios corregidos.</small></div>`;
     } else {
         tabla.innerHTML = `
             <table class="copc-mini-table">
@@ -3289,9 +3289,9 @@ async function cargarVistaCalibracionGlobalIa() {
     }
 
     if (precision?.sin_acceso) {
-        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Tu perfil no tiene acceso a la precisión de la IA.</strong><small>Es una métrica del módulo, visible para Calidad y jefaturas.</small></div>`;
+        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Tu perfil no tiene acceso a la precisión de la IA.</strong><small>Es una métrica del módulo, visible para Calidad y jefatura.</small></div>`;
     } else if (!detallePrecision.length) {
-        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Todavía no hay criterios revisados por Calidad.</strong><small>La precisión se calcula solo sobre criterios con una decisión humana: lo que nadie revisó no cuenta como acierto.</small></div>`;
+        precisionEl.innerHTML = `<div class="empty-report-state"><strong>Todavía no hay criterios revisados por una persona.</strong><small>La precisión se calcula solo sobre criterios con una decisión humana: lo que nadie revisó no cuenta como acierto.</small></div>`;
     } else {
         // Peor precision primero: es donde la IA necesita ajuste.
         const ordenado = [...detallePrecision].sort((a, b) => Number(a.precision_resultado_pct) - Number(b.precision_resultado_pct));
@@ -4935,17 +4935,37 @@ function comentarioRevisionConTrazabilidadIa() {
     if (decision === "modificar") {
         const sinEnviar = correccionesSinEnviarIa();
         partes.push(sinEnviar
-            ? `Correcciones por criterio: ${sinEnviar} en borrador, sin enviar a Calidad.`
+            ? `Correcciones por criterio: ${sinEnviar} en borrador, sin enviar a jefatura.`
             : "Correcciones por criterio registradas en Calibración.");
     }
     return partes.join("\n");
 }
 
-function abrirRecalibracionIa(criterioInicial = "") {
+// RETIRADO (28/09/2026): el formulario pedia una "nota sugerida" a mano, que
+// competia con la nota recalculada a partir de los criterios y dejaba dos
+// verdades para la misma llamada. Ahora la correccion se registra por criterio
+// en la pestana Calibracion y la nota se recalcula sola al aprobarla jefatura.
+// La funcion se conserva porque hay botones antiguos que la llaman: lleva a
+// Calibracion en vez de abrir el modal. El backend responde 410 a la ruta vieja.
+async function abrirRecalibracionIa(criterioInicial = "") {
     if (!resultadoActualIa?.id_feedback) {
-        mostrarMensajeIa("Primero abre o genera un análisis para solicitar recalibración.", "error");
+        mostrarMensajeIa("Primero abre o genera un análisis para corregir un criterio.", "error");
         return;
     }
+    mostrarTabDetalleIa("calibracion");
+    mostrarMensajeIa("Marca el criterio mal evaluado aquí y envíalo a jefatura: la nota se recalcula al aprobarse.", "ok");
+    if (criterioInicial) {
+        await cargarCalibracionCriteriosIa();
+        const objetivo = normalizarTextoComparacionIa(criterioInicial);
+        const item = calibracionCriteriosIa.find(c =>
+            normalizarTextoComparacionIa(c.codigo_criterio || "").includes(objetivo)
+            || normalizarTextoComparacionIa(c.nombre_criterio || "").includes(objetivo));
+        if (item && permisosCalibracionIa.puede_proponer) abrirCorreccionCalibracionIa(item.id_evaluacion_criterio);
+    }
+}
+
+function abrirRecalibracionLegacyIa(criterioInicial = "") {
+    if (!resultadoActualIa?.id_feedback) return;
     setText("recalibracionIdIa", resultadoActualIa.id_feedback || "-");
     const scoreIa = scoreIaOriginalCalibracionIa(resultadoActualIa);
     const scoreTecnico = scoreTecnicoActualCalibracionIa(resultadoActualIa);
@@ -6864,7 +6884,7 @@ function renderCalibracionSinSolicitudIa(data = {}) {
             <article class="calibration-empty-state">
                 <span>Sin solicitudes de recalibración</span>
                 <h5>El supervisor no ha cuestionado criterios o puntajes de esta evaluación.</h5>
-                <p>Cuando exista una discrepancia, la solicitud debe registrar criterio, evidencia y motivo antes de enviarse a Calidad.</p>
+                <p>Cuando exista una discrepancia, la corrección debe registrar criterio, evidencia y motivo antes de enviarse a jefatura.</p>
                 <button class="btn-primary btn-small" type="button" onclick="abrirRecalibracionIa()">Solicitar recalibración</button>
             </article>
         </section>
@@ -8645,21 +8665,37 @@ function pintarAvanceCalibracionIa(resumen = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Flujo de calibracion: el supervisor propone, Calidad publica.
-// Hasta ahora todo quedaba en BORRADOR para siempre: la pantalla nunca enviaba
-// a revision ni publicaba, asi que la nota nunca cambiaba y la precision de la
-// IA no se podia medir.
+// Flujo de calibracion (acordado el 28/09/2026)
+//
+//   1. Calidad o el supervisor detecta que la IA falló en un criterio y registra
+//      la corrección (resultado correcto + motivo + evidencia). Queda BORRADOR:
+//      no cambia la nota.
+//   2. Cuando termina de revisar la llamada, la envía a jefatura -> EN_REVISION.
+//   3. Solo jefatura aprueba (publica) o rechaza. Nadie aprueba lo que él mismo
+//      propuso.
+//   4. Al publicar, la nota se recalcula con los criterios corregidos
+//      (score_calibrado, origen_score = 'CALIBRACION'). No se escribe una nota
+//      a mano: por eso el formulario antiguo de "nota sugerida" fue retirado.
+//
+// Antes todo quedaba en BORRADOR para siempre: la pantalla nunca enviaba a
+// revision ni publicaba, asi que la nota nunca cambiaba y la precision de la IA
+// no se podia medir.
 // ---------------------------------------------------------------------------
 
-let permisosCalibracionIa = { puede_publicar: false };
+let permisosCalibracionIa = { puede_publicar: false, puede_proponer: false };
 
 async function cargarPermisosCalibracionIa() {
     try {
         const response = await fetchIa(`${CALIBRACION_BASE_IA}/permisos?perfil=${encodeURIComponent(tipoUsuarioIa())}`, {}, 10000);
         const data = await leerJsonSeguro(response);
-        permisosCalibracionIa = { puede_publicar: Boolean(data?.puede_publicar) };
+        permisosCalibracionIa = {
+            puede_publicar: Boolean(data?.puede_publicar),
+            // Compatibilidad: si el backend todavia no devuelve puede_proponer,
+            // no se bloquea al usuario (el servidor vuelve a validar igual).
+            puede_proponer: data?.puede_proponer === undefined ? true : Boolean(data.puede_proponer),
+        };
     } catch {
-        permisosCalibracionIa = { puede_publicar: false };
+        permisosCalibracionIa = { puede_publicar: false, puede_proponer: false };
     }
     return permisosCalibracionIa;
 }
@@ -8678,31 +8714,33 @@ function pintarAccionesCalibracionIa(resumen = {}) {
     if (vigenteCalibrado) {
         bloques.push(`<div class="cal-flujo-nota">
             <span>Nota vigente</span><strong>${formatoPeso(calibrado)} / 100</strong>
-            <small>Calibrada por Calidad · la IA había dado ${scoreIa == null ? "sin nota" : `${formatoPeso(scoreIa)} / 100`}</small>
+            <small>Recalculada con los criterios corregidos y aprobados por jefatura · la IA había dado ${scoreIa == null ? "sin nota" : `${formatoPeso(scoreIa)} / 100`}</small>
         </div>`);
     }
 
     if (borrador > 0) {
         bloques.push(`<div class="cal-flujo-paso">
-            <p><strong>${borrador}</strong> criterio(s) revisado(s) en borrador. Todavía no cuentan: Calidad debe aprobarlos.</p>
-            <button type="button" class="btn-primary btn-small" onclick="enviarCalibracionACalidadIa()">Enviar a Calidad</button>
+            <p><strong>${borrador}</strong> criterio(s) corregido(s) en borrador. Todavía no cambian la nota: los aprueba jefatura.</p>
+            ${permisosCalibracionIa.puede_proponer
+                ? `<button type="button" class="btn-primary btn-small" onclick="enviarCalibracionACalidadIa()">Enviar a jefatura</button>`
+                : `<small>Tu perfil no puede enviar correcciones a aprobación.</small>`}
         </div>`);
     }
     if (enRevision > 0) {
         bloques.push(permisosCalibracionIa.puede_publicar
             ? `<div class="cal-flujo-paso cal-flujo-calidad">
-                <p><strong>${enRevision}</strong> criterio(s) esperando tu decisión. Publicar cambia la nota de la llamada.</p>
+                <p><strong>${enRevision}</strong> criterio(s) esperando tu aprobación. Al aprobar, la nota se recalcula con los criterios corregidos.</p>
                 <div>
                     <button type="button" class="btn-light btn-small" onclick="resolverCalibracionLlamadaIa('RECHAZADA')">Rechazar todo</button>
-                    <button type="button" class="btn-primary btn-small" onclick="resolverCalibracionLlamadaIa('PUBLICADA')">Publicar</button>
+                    <button type="button" class="btn-primary btn-small" onclick="resolverCalibracionLlamadaIa('PUBLICADA')">Aprobar y recalcular nota</button>
                 </div>
             </div>`
             : `<div class="cal-flujo-paso cal-flujo-espera">
-                <p><strong>${enRevision}</strong> criterio(s) en revisión por Calidad. La nota cambiará cuando se publiquen.</p>
+                <p><strong>${enRevision}</strong> criterio(s) esperando aprobación de jefatura. La nota cambia cuando se apruebe.</p>
             </div>`);
     }
     if (!borrador && !enRevision && publicadas > 0 && !vigenteCalibrado) {
-        bloques.push(`<div class="cal-flujo-paso"><p>${publicadas} criterio(s) publicado(s) confirmando a la IA: la nota no cambia.</p></div>`);
+        bloques.push(`<div class="cal-flujo-paso"><p>${publicadas} criterio(s) revisado(s) confirmando a la IA: la nota no cambia.</p></div>`);
     }
     el.innerHTML = bloques.join("");
 }
@@ -8726,14 +8764,14 @@ async function enviarCalibracionACalidadIa() {
         const response = await fetchIa(`${CALIBRACION_BASE_IA}/llamada/${idFeedback}/enviar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ usuario: usuarioActualIa() }),
+            body: JSON.stringify({ usuario: usuarioActualIa(), perfil: tipoUsuarioIa() }),
         }, 15000);
         const data = await leerJsonSeguro(response);
-        if (!response.ok) throw new Error(data.detail || "No se pudo enviar a Calidad.");
-        mostrarMensajeIa(`${data.enviadas} criterio(s) enviados a Calidad.`, "ok");
+        if (!response.ok) throw new Error(data.detail || "No se pudo enviar a jefatura.");
+        mostrarMensajeIa(`${data.enviadas} criterio(s) enviados a jefatura para aprobación.`, "ok");
         await recargarFichaTrasCalibracionIa();
     } catch (error) {
-        mostrarMensajeIa(error.message || "No se pudo enviar a Calidad.", "error");
+        mostrarMensajeIa(error.message || "No se pudo enviar a jefatura.", "error");
     }
 }
 
@@ -8748,7 +8786,7 @@ async function resolverCalibracionLlamadaIa(estado) {
             mostrarMensajeIa("Un rechazo necesita motivo.", "error");
             return;
         }
-    } else if (!window.confirm("¿Publicar la calibración? La nota de la llamada se recalcula con los criterios corregidos.")) {
+    } else if (!window.confirm("¿Aprobar la calibración? La nota de la llamada se recalcula con los criterios corregidos.")) {
         return;
     }
     try {
@@ -8762,9 +8800,9 @@ async function resolverCalibracionLlamadaIa(estado) {
         mostrarMensajeIa(
             estado === "PUBLICADA"
                 ? (data.score_calibrado != null
-                    ? `Calibración publicada. Nueva nota: ${formatoPeso(data.score_calibrado)} / 100.`
-                    : "Calibración publicada.")
-                : "Calibración rechazada. El supervisor puede corregirla y volver a enviarla.",
+                    ? `Calibración aprobada. Nueva nota: ${formatoPeso(data.score_calibrado)} / 100.`
+                    : "Calibración aprobada.")
+                : "Calibración rechazada. Quien la propuso puede corregirla y volver a enviarla.",
             "ok",
         );
         await recargarFichaTrasCalibracionIa();
@@ -8833,10 +8871,11 @@ function pintarCalibracionCriteriosIa() {
             <p class="cal-motivo">${escapeHtml(item.motivo_ia || "-")}</p>
             ${evidencia}
             <footer>
+                ${permisosCalibracionIa.puede_proponer ? `
                 <button type="button" class="btn-light btn-small"
                         onclick="confirmarCriterioCalibracionIa(${item.id_evaluacion_criterio})">Confirmar</button>
                 <button type="button" class="btn-light btn-small"
-                        onclick="abrirCorreccionCalibracionIa(${item.id_evaluacion_criterio})">Corregir</button>
+                        onclick="abrirCorreccionCalibracionIa(${item.id_evaluacion_criterio})">Corregir</button>` : ""}
                 <span class="cal-confianza">Confianza IA: ${escapeHtml(item.confianza_ia || "-")}</span>
                 ${item.estado_calibracion === "EN_REVISION" && permisosCalibracionIa.puede_publicar
                     ? `<button type="button" class="btn-light btn-small cal-rechazar-uno"
@@ -8875,7 +8914,7 @@ function formularioCorreccionCalibracionIa(item) {
             </select>
         </label>
         <p class="cal-prueba" id="calPrueba_${item.id_evaluacion_criterio}"></p>
-        <label>Evidencia correcta según Calidad
+        <label>Evidencia correcta según el revisor
             <textarea id="calEvidenciaRevisor_${item.id_evaluacion_criterio}" rows="2"
                       placeholder="Cita el pasaje que sí sustenta el resultado"></textarea>
         </label>
@@ -8915,7 +8954,8 @@ async function enviarCalibracionCriterioIa(payload) {
     const response = await fetchIa(`${CALIBRACION_BASE_IA}/criterio`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        // El perfil viaja para que el servidor valide quien puede proponer.
+        body: JSON.stringify({ perfil: tipoUsuarioIa(), ...payload }),
     }, 15000);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
