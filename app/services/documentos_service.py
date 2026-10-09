@@ -1,6 +1,6 @@
 # documento_service.py
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from copy import deepcopy
 import re
@@ -25,6 +25,12 @@ FIRMA_LUIS_PATH = TEMPLATES_DIR / "firma_luis_portuguez.png"
 LOGO_MIBANCO_PATH = TEMPLATES_DIR / "logo_mibanco.png"
 SIP_TEMPLATE_PATH = TEMPLATES_DIR / "convenio_pagos_sip_template.docx"
 LOGO_SIP_PATH = TEMPLATES_DIR / "logo_sip.png"
+PROPIA_TEMPLATES = {
+    (148, False): TEMPLATES_DIR / "acuerdo_propia_sip_cancelacion.docx",
+    (148, True): TEMPLATES_DIR / "acuerdo_propia_sip_cuotas.docx",
+    (137, False): TEMPLATES_DIR / "acuerdo_propia_interbank_cancelacion.docx",
+    (137, True): TEMPLATES_DIR / "acuerdo_propia_interbank_cuotas.docx",
+}
 
 DOCUMENT_TYPES = {
     "transaccion_cancelacion": {
@@ -194,6 +200,18 @@ DOCUMENT_TYPES = {
         "document_kind": "sip_atencion",
         "sin_correo": True,
     },
+    **{
+        f"propia_{origen}_{modalidad}": {
+            "id": f"propia_{origen}_{modalidad}",
+            "nombre": f"Acuerdo de {'cuotas' if modalidad == 'cuotas' else 'cancelación'} - {'Tarjeta SIP' if origen == 'sip' else 'Interbank propia'}",
+            "descripcion": "Acuerdo de cartera propia basado en el modelo aprobado.",
+            "cartera_id": 148 if origen == "sip" else 137,
+            "cartera_nombre": "Tarjeta SIP propia" if origen == "sip" else "Interbank propia",
+            "document_kind": "propia_cuotas" if modalidad == "cuotas" else "propia_cancelacion",
+            "sin_correo": True,
+        }
+        for origen in ("sip", "interbank") for modalidad in ("cancelacion", "cuotas")
+    },
 }
 
 DOCUMENT_QUERY_SCOPES = {
@@ -239,6 +257,8 @@ DOCUMENT_QUERY_SCOPES = {
         "consulta": "actualizacionfoh_sip",
         "activo": True,
     },
+    148: {"nombre": "Tarjeta SIP propia", "entidad": "Propia Biznescob", "consulta": "propia_financieraoh", "activo": True},
+    137: {"nombre": "Interbank propia", "entidad": "Propia Biznescob", "consulta": "CARTERA_IBK_PROPIA", "activo": True},
 }
 
 EMAIL_TEMPLATE_SCOPES = {
@@ -360,7 +380,9 @@ def registrar_auditoria_documento(result, documento_tipo, usuario=None, nombre_u
         detalle = {"operaciones": operaciones_detalle}
     campania_total = sum((decimal_value(item.get("campania"), Decimal("0")) or Decimal("0")) for item in operaciones_detalle)
     if not campania_total:
-        campania_total = decimal_value(registro.get("MtoCancelacionCliente"), Decimal("0")) or Decimal("0")
+        campania_total = decimal_value(registro.get("MtoCancelacionCliente"))
+        if campania_total is None and cartera_id not in (137, 148):
+            campania_total = Decimal("0")
     detalle["excepcion"] = bool(excepcion)
     conn = None
     cursor = None
@@ -430,6 +452,14 @@ def decimal_value(value, default=None):
         return Decimal(str(value).replace(",", ""))
     except (InvalidOperation, ValueError):
         return default
+
+
+def referencia_sip_propia(capital):
+    """Referencia sin campaña: 50 % del capital, redondeado a céntimos."""
+    valor = decimal_value(capital)
+    if valor is None or valor <= 0:
+        return None
+    return (valor * Decimal("0.5")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def serialize_value(value):
@@ -845,6 +875,8 @@ def filtros_documento_castigo(dni=None, operacion=None):
 
 def consultar_datos_documento(dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, codigo_cliente=None, nombre_cliente=None, limit=20, cartera_id=133):
     cartera_id = int(cartera_id or 133)
+    if cartera_id in (137, 148):
+        return consultar_datos_documento_propia(cartera_id, dni=dni, operacion=operacion, nombre_cliente=nombre_cliente, limit=limit)
     if cartera_id == 112:
         return consultar_datos_documento_mibanco(dni=dni, operacion=operacion, codigo_cliente=codigo_cliente, nombre_cliente=nombre_cliente, limit=limit)
     if cartera_id == 132:
@@ -1235,6 +1267,83 @@ def consultar_datos_documento_mibanco(dni=None, operacion=None, codigo_cliente=N
         rows = fetch_resultset(cursor)
         for row in rows:
             row["MtoCancelacionCliente"] = float(calcular_campania_mibanco(row))
+        return rows
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
+def consultar_datos_documento_propia(cartera_id, dni=None, operacion=None, nombre_cliente=None, limit=20):
+    """Consulta la asignación propia sin mezclarla con la cartera cedida SIP."""
+    if cartera_id == 148:
+        table = "Desarrollo.dbo.propia_financieraoh"
+        nombre = "P.TITULAR"
+        documento = "P.DOCUMENTO"
+        cuenta = "P.NUM_CUENTA_ORIGEN"
+        filtro_cuenta = "(CAST(P.NUM_CUENTA_CASTIGADO AS VARCHAR(50)) = ? OR CAST(P.NUM_CUENTA_ORIGEN AS VARCHAR(50)) = ?)"
+        select = """
+            P.TIPO_DOCUMENTO AS TipoDocumento,
+            P.NUM_CUENTA_ORIGEN AS CuentaOrigen,
+            P.NUM_CUENTA_CASTIGADO AS CuentaCastigada,
+            P.DIRECCION AS DireccionPrincipal,
+            P.DISTRITO AS Distrito,
+            P.PRODUCTO_SBS AS Producto,
+            P.DEUDA_TOTAL AS DeudaTotal,
+            P.CAPITAL AS SdoCapital,
+            CAST(NULL AS DECIMAL(18,2)) AS MtoCancelacionCliente,
+            P.MONEDA AS Moneda,"""
+    elif cartera_id == 137:
+        table = "Desarrollo.dbo.CARTERA_IBK_PROPIA"
+        nombre = "LTRIM(RTRIM(CONCAT(COALESCE(P.PRIMER_NOMBRE, ''), ' ', COALESCE(P.SEGUNDO_NOMBRE, ''), ' ', COALESCE(P.APELLIDO_PATERNO, ''), ' ', COALESCE(P.APELLIDO_MATERNO, ''))))"
+        documento = "P.NRO_DOCUMENTO"
+        cuenta = "P.CJ"
+        filtro_cuenta = "(CAST(P.CJ AS VARCHAR(50)) = ? OR CAST(P.CU AS VARCHAR(50)) = ?)"
+        select = """
+            P.TIPO_DOCUMENTO AS TipoDocumento,
+            P.CU AS CuentaOrigen,
+            P.CJ AS CuentaCastigada,
+            CAST(NULL AS NVARCHAR(500)) AS DireccionPrincipal,
+            P.DISTRITO_CLIENTE AS Distrito,
+            P.PRODUCTO AS Producto,
+            CAST(COALESCE(P.CAPITAL, 0) + COALESCE(P.INTERES_REGULAR, 0)
+                 + COALESCE(P.INTERES_COMPENSATORIO, 0) AS DECIMAL(18,2)) AS DeudaTotal,
+            P.CAPITAL AS SdoCapital,
+            P.IMPORTE_CANCELACION AS MtoCancelacionCliente,
+            P.MONEDA AS Moneda,"""
+    else:
+        raise ValueError("Cartera propia no soportada.")
+    if limpiar_texto(operacion):
+        where, params = filtro_cuenta, [limpiar_texto(operacion)] * 2
+    elif limpiar_texto(dni):
+        where, params = f"CAST({documento} AS VARCHAR(50)) = ?", [limpiar_texto(dni)]
+    elif limpiar_texto(nombre_cliente):
+        where, params = f"UPPER({nombre}) LIKE ?", [f"%{limpiar_texto(nombre_cliente).upper()}%"]
+    else:
+        raise ValueError("Ingresa documento, cuenta o nombre para buscar en cartera propia.")
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT TOP {max(1, min(int(limit), 100))}
+                CAST({documento} AS VARCHAR(50)) AS NumDocumento,
+                CAST({cuenta} AS VARCHAR(50)) AS Operacion,
+                {nombre} AS NomCliente,
+                {select}
+                {cartera_id} AS CarteraId
+            FROM {table} P WITH(NOLOCK)
+            WHERE {where}
+            ORDER BY {nombre}, {cuenta}
+            """, *params,
+        )
+        rows = fetch_resultset(cursor)
+        if cartera_id == 148:
+            for row in rows:
+                referencia = referencia_sip_propia(row.get("SdoCapital"))
+                row["MontoReferenciaPropia"] = float(referencia) if referencia is not None else None
         return rows
     finally:
         if cursor is not None:
@@ -4325,12 +4434,386 @@ def generar_constancia_atencion_sip(config, dni=None, operacion=None, fecha_pago
     }
 
 
-def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, operaciones_mibanco=None, pagos_mibanco=None, permitir_preview=False):
+def _fecha_propia(value):
+    if not limpiar_texto(value):
+        return datetime.now(ZoneInfo("America/Lima")).date()
+    try:
+        return datetime.strptime(limpiar_texto(value), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("Las fechas del acuerdo deben tener el formato AAAA-MM-DD.") from exc
+
+
+def _cambiar_texto_modelo(element, patron, value):
+    """Reemplaza texto incluso si Word dividió el dato entre varios runs."""
+    nodes = element.findall(".//w:t", WORD_NS)
+    original = "".join(node.text or "" for node in nodes)
+    match = re.search(patron, original)
+    if not match:
+        raise ValueError("El modelo de acuerdo cambió y no se pudo completar un campo.")
+    start, end = match.span()
+    offsets = []
+    pos = 0
+    for node in nodes:
+        offsets.append((pos, pos + len(node.text or "")))
+        pos = offsets[-1][1]
+    first = next(i for i, (_, finish) in enumerate(offsets) if finish > start)
+    last = next(i for i, (_, finish) in enumerate(offsets) if finish >= end)
+    prefix = (nodes[first].text or "")[:start - offsets[first][0]]
+    suffix = (nodes[last].text or "")[end - offsets[last][0]:]
+    nodes[first].text = prefix + str(value) + (suffix if first == last else "")
+    for i in range(first + 1, last + 1):
+        nodes[i].text = suffix if i == last else ""
+
+
+def _tablas_cuotas_propia(context):
+    cronograma = []
+    for index, pago in enumerate(context["pagos"]):
+        mes, anio, dia = nombre_mes_sip(pago["fecha"])
+        cronograma.append([
+            "" if index == 0 else str(index),
+            "CUOTA INICIAL" if index == 0 else "CUOTA MENSUAL",
+            mes, anio, dia, pago["monto"],
+        ])
+    return (
+        (["Concepto", "Monto"], [
+            ["Monto convenio", context["cancelacion"]],
+            ["Cuota inicial", context["cuota_inicial"]],
+            ["Número de cuotas", str(context["cantidad_cuotas"])],
+            ["Monto de cuota", context["cuota_regular"]],
+        ], [4700, 2500]),
+        (["NUM CUOTA", "CUOTA", "MES", "AÑO", "DÍA", "MONTO"], cronograma,
+         [900, 2400, 1700, 1000, 800, 2700]),
+    )
+
+
+def _tabla_cancelacion_propia(context):
+    return (
+        ["CANCELACIÓN TOTAL", "FECHA DE PAGO"],
+        [[context["cancelacion"], context["fecha_pago"]]],
+        [4500, 4500],
+    )
+
+
+PROPIA_BIZNESCOB_BLUE = "2B6FD4"
+
+
+def _tabla_cuotas_propia_ooxml(headers, rows, widths):
+    """Tabla del acuerdo propio con el azul del logo Biznescob."""
+    namespace = WORD_NS["w"]
+    def tag(name): return f"{{{namespace}}}{name}"
+    table = ET.Element(tag("tbl"))
+    props = ET.SubElement(table, tag("tblPr"))
+    width = ET.SubElement(props, tag("tblW"))
+    width.set(tag("w"), str(sum(widths)))
+    width.set(tag("type"), "dxa")
+    align = ET.SubElement(props, tag("jc"))
+    align.set(tag("val"), "center")
+    borders = ET.SubElement(props, tag("tblBorders"))
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        border = ET.SubElement(borders, tag(edge))
+        border.set(tag("val"), "single")
+        border.set(tag("sz"), "6")
+        border.set(tag("color"), "333333")
+    grid = ET.SubElement(table, tag("tblGrid"))
+    for col_width in widths:
+        ET.SubElement(grid, tag("gridCol")).set(tag("w"), str(col_width))
+    for row_index, values in enumerate([headers, *rows]):
+        row = ET.SubElement(table, tag("tr"))
+        for col_index, value in enumerate(values):
+            cell = ET.SubElement(row, tag("tc"))
+            cell_props = ET.SubElement(cell, tag("tcPr"))
+            cell_width = ET.SubElement(cell_props, tag("tcW"))
+            cell_width.set(tag("w"), str(widths[col_index]))
+            cell_width.set(tag("type"), "dxa")
+            if row_index == 0:
+                shading = ET.SubElement(cell_props, tag("shd"))
+                shading.set(tag("fill"), PROPIA_BIZNESCOB_BLUE)
+            paragraph = ET.SubElement(cell, tag("p"))
+            para_props = ET.SubElement(paragraph, tag("pPr"))
+            justification = ET.SubElement(para_props, tag("jc"))
+            justification.set(tag("val"), "left" if col_index == 0 and row_index else "center")
+            run = ET.SubElement(paragraph, tag("r"))
+            run_props = ET.SubElement(run, tag("rPr"))
+            if row_index == 0 or (len(headers) == 2 and col_index == 0):
+                ET.SubElement(run_props, tag("b"))
+            if row_index == 0:
+                ET.SubElement(run_props, tag("color")).set(tag("val"), "FFFFFF")
+            font_size = ET.SubElement(run_props, tag("sz"))
+            font_size.set(tag("val"), "16" if len(headers) == 2 else "14")
+            ET.SubElement(run, tag("t")).text = str(value)
+    return table
+
+
+def generar_docx_acuerdo_propia(template_path, output_path, context, es_cuotas):
+    with zipfile.ZipFile(template_path) as source, zipfile.ZipFile(output_path, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ET.fromstring(data)
+                body = root.find("w:body", WORD_NS)
+                paragraphs = body.findall("w:p", WORD_NS)
+                # Los cuatro modelos comparten estas posiciones y dos variantes de tabla.
+                _cambiar_texto_modelo(paragraphs[1], r".+", context["cliente"])
+                _cambiar_texto_modelo(paragraphs[2], r".+", context["fecha_larga"])
+                _cambiar_texto_modelo(paragraphs[4], r"(?<=por un valor de S/\.)\s*[\d,.]+", " " + context["deuda_total"])
+                titular = paragraphs[6 if es_cuotas else 5]
+                _cambiar_texto_modelo(titular, r"(?<=Nombre del Titular:)\s*.*?(?=\s*[-\u2013\ufffd]?\s*DNI\s*\d+\s*$)", " " + context["cliente"])
+                _cambiar_texto_modelo(titular, r"(?<=DNI\s)\d+", context["dni"])
+                _cambiar_texto_modelo(titular, r"\bDNI\b", context["tipo_documento"])
+                obligacion = paragraphs[8 if es_cuotas else 7]
+                _cambiar_texto_modelo(obligacion, r"\d+\s*$", context["operacion"])
+                producto = paragraphs[9 if es_cuotas else 8]
+                _cambiar_texto_modelo(producto, r"(?<=Producto:)\s*[^.]+", " " + context["producto"])
+                table = body.find("w:tbl", WORD_NS)
+                if es_cuotas:
+                    position = list(body).index(table)
+                    body.remove(table)
+                    summary, schedule = _tablas_cuotas_propia(context)
+                    body.insert(position, _tabla_cuotas_propia_ooxml(*summary))
+                    body.insert(position + 1, ET.Element(f"{{{WORD_NS['w']}}}p"))
+                    body.insert(position + 2, _tabla_cuotas_propia_ooxml(*schedule))
+                else:
+                    position = list(body).index(table)
+                    body.remove(table)
+                    body.insert(position, _tabla_cuotas_propia_ooxml(*_tabla_cancelacion_propia(context)))
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            target.writestr(item, data)
+
+
+def generar_pdf_acuerdo_propia(docx_path, output_path, context, es_cuotas):
+    """Vista PDF con el contenido legal del mismo DOCX generado."""
+    from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from io import BytesIO
+
+    with zipfile.ZipFile(docx_path) as source:
+        root = ET.fromstring(source.read("word/document.xml"))
+        header_root = ET.fromstring(source.read("word/header1.xml"))
+        signature = source.read("word/media/image1.png")
+        logo = source.read("word/media/image2.png")
+    header_lines = ["".join(t.text or "" for t in p.findall(".//w:t", WORD_NS)).strip()
+                    for p in header_root.findall("w:p", WORD_NS)]
+    header_lines = [line for line in header_lines if line]
+    body = root.find("w:body", WORD_NS)
+    paragraphs = ["".join(t.text or "" for t in p.findall(".//w:t", WORD_NS)) for p in body.findall("w:p", WORD_NS)]
+    normal = ParagraphStyle("propia", fontName="Helvetica", fontSize=9, leading=11.5, alignment=TA_JUSTIFY)
+    bold = ParagraphStyle("propia_bold", parent=normal, fontName="Helvetica-Bold")
+    table_header = ParagraphStyle("propia_table_header", fontName="Helvetica-Bold", fontSize=7, leading=8.2,
+                                  alignment=1, textColor="#FFFFFF")
+    table_body = ParagraphStyle("propia_table_body", fontName="Helvetica", fontSize=7.5, leading=9, alignment=1)
+    table_label = ParagraphStyle("propia_table_label", parent=table_body, fontName="Helvetica-Bold", alignment=TA_LEFT)
+    def draw_header(canvas, doc):
+        canvas.saveState()
+        top = A4[1] - .38 * inch
+        canvas.drawImage(ImageReader(BytesIO(logo)), .7 * inch, top - .47 * inch,
+                         width=1.55 * inch, height=.47 * inch, mask="auto")
+        canvas.setFillColorRGB(19 / 255, 34 / 255, 61 / 255)
+        for index, line in enumerate(header_lines):
+            canvas.setFont("Helvetica-Bold" if index == 0 else "Helvetica", 7.5)
+            canvas.drawRightString(A4[0] - .7 * inch, top - 8 - 9 * index, line)
+        canvas.restoreState()
+
+    story = []
+    closing = []
+    closing_start = [index for index, value in enumerate(paragraphs) if value.strip()][-2]
+    for index, value in enumerate(paragraphs):
+        target = closing if index >= closing_start else story
+        if not value.strip():
+            target.append(Spacer(1, 4))
+            continue
+        target.append(Paragraph(escape(value), bold if index in (1, 6 if es_cuotas else 5) else normal))
+        target.append(Spacer(1, 5 if index != 4 else 9))
+        if "siguiente cronograma" in value.lower():
+            if es_cuotas:
+                for headers, rows, widths in _tablas_cuotas_propia(context):
+                    values = [[Paragraph(escape(str(cell)), table_header) for cell in headers]]
+                    values += [[Paragraph(escape(str(cell)), table_label if len(headers) == 2 and index == 0 else table_body)
+                                for index, cell in enumerate(row)] for row in rows]
+                    table = Table(values, colWidths=[width * inch / 1440 for width in widths], repeatRows=1)
+                    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), .5, "#333333"), ("BACKGROUND", (0, 0), (-1, 0), f"#{PROPIA_BIZNESCOB_BLUE}"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+                    story.extend([table, Spacer(1, 8)])
+            else:
+                headers, rows, widths = _tabla_cancelacion_propia(context)
+                values = [[Paragraph(escape(value), table_header) for value in headers]]
+                values += [[Paragraph(escape(value), table_body) for value in row] for row in rows]
+                table = Table(values, colWidths=[width * inch / 1440 for width in widths], repeatRows=1)
+                table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), .5, "#333333"), ("BACKGROUND", (0, 0), (-1, 0), f"#{PROPIA_BIZNESCOB_BLUE}"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+                story.extend([table, Spacer(1, 8)])
+    closing.extend([Spacer(1, 3), Image(BytesIO(signature), width=1.95*inch, height=1.15*inch)])
+    story.append(KeepTogether(closing))
+    SimpleDocTemplate(str(output_path), pagesize=A4, rightMargin=.7*inch, leftMargin=.7*inch,
+                      topMargin=1.03*inch, bottomMargin=.45*inch).build(
+                          story, onFirstPage=draw_header, onLaterPages=draw_header)
+
+
+def generar_documento_propia(config, dni=None, operacion=None, cancelacion=None, fecha_pago=None, formato="docx", pagos=None, cantidad_cuotas=None, permitir_preview=False, excepcion=False, creditos_propia=None):
+    cartera_id = config["cartera_id"]
+    es_cuotas = config["document_kind"] == "propia_cuotas"
+    if es_cuotas and creditos_propia:
+        raise ValueError("La selección de varios créditos solo está disponible para acuerdos de cancelación.")
+    solicitudes = list(creditos_propia or [])
+    if len(solicitudes) > 20:
+        raise ValueError("Selecciona como máximo 20 créditos para un acuerdo.")
+    if solicitudes:
+        claves = [limpiar_texto(item.get("operacion")) for item in solicitudes]
+        if any(not clave for clave in claves) or len(set(claves)) != len(claves):
+            raise ValueError("Selecciona créditos distintos con número de obligación válido.")
+        rows = []
+        for clave in claves:
+            encontrados = consultar_datos_documento_propia(cartera_id, operacion=clave, limit=2)
+            if len(encontrados) != 1 or limpiar_texto(encontrados[0].get("Operacion")) != clave:
+                raise ValueError(f"No se encontró una obligación única para el crédito {clave}.")
+            rows.append(encontrados[0])
+    else:
+        rows = consultar_datos_documento_propia(cartera_id, dni=dni, operacion=operacion, limit=2)
+        if not rows:
+            raise ValueError("No se encontró información de cartera propia para generar el acuerdo.")
+        if len(rows) > 1:
+            raise ValueError("La búsqueda devolvió más de una obligación. Selecciona la cuenta exacta.")
+        solicitudes = [{"operacion": rows[0].get("Operacion"), "monto": cancelacion, "fecha": fecha_pago}]
+    row = rows[0]
+    documento = limpiar_texto(row.get("NumDocumento"))
+    if limpiar_texto(dni) and limpiar_texto(dni) != documento:
+        raise ValueError("Los créditos seleccionados no corresponden al documento del cliente.")
+    if any(limpiar_texto(item.get("NumDocumento")) != documento for item in rows):
+        raise ValueError("Todos los créditos del acuerdo deben pertenecer al mismo documento.")
+    fecha = _fecha_propia(fecha_pago)
+    creditos = []
+    for asignacion, solicitud in zip(rows, solicitudes):
+        cuenta = limpiar_texto(asignacion.get("CuentaOrigen") if cartera_id == 148 else asignacion.get("Operacion"))
+        deuda = decimal_value(asignacion.get("DeudaTotal"))
+        pago = decimal_value(solicitud.get("monto"))
+        if not cuenta or deuda is None or deuda <= 0:
+            raise ValueError("La asignación no contiene obligación o deuda total válida.")
+        if limpiar_texto(asignacion.get("Moneda")).upper() not in ("S", "SOLES", "PEN", "1"):
+            raise ValueError("Este modelo en soles no admite la moneda de la obligación seleccionada.")
+        if pago is None or pago <= 0:
+            if not permitir_preview:
+                raise ValueError(f"Ingresa una cancelación mayor a cero para el crédito {cuenta}.")
+            pago = None
+        if pago is not None and pago != pago.quantize(Decimal("0.01")):
+            raise ValueError("La cancelación admite como máximo dos decimales.")
+        if pago is not None and pago > deuda:
+            raise ValueError(f"La cancelación del crédito {cuenta} no puede superar su deuda total de S/ {format_money(deuda)}.")
+        referencia_credito = referencia_sip_propia(asignacion.get("SdoCapital")) if cartera_id == 148 else None
+        if cartera_id == 148 and pago is not None:
+            if referencia_credito is None:
+                raise ValueError(f"El crédito {cuenta} no tiene capital válido para calcular el 50 % de referencia.")
+            if pago < referencia_credito and not excepcion:
+                raise ValueError(f"La cancelación del crédito {cuenta} es menor al 50 % del capital (S/ {format_money(referencia_credito)}). Marca Excepción para permitirla.")
+        if creditos_propia and not permitir_preview and not limpiar_texto(solicitud.get("fecha")):
+            raise ValueError(f"Ingresa la fecha de pago del crédito {cuenta}.")
+        fecha_credito = _fecha_propia(solicitud.get("fecha") or fecha_pago)
+        if fecha_credito != fecha:
+            raise ValueError("Todos los créditos de la cancelación deben tener la misma fecha de pago.")
+        creditos.append({"row": asignacion, "operacion": cuenta, "deuda": deuda,
+                         "monto": pago, "fecha": fecha_credito, "referencia": referencia_credito})
+    deuda_total = sum((item["deuda"] for item in creditos), Decimal("0"))
+    monto = sum((item["monto"] or Decimal("0") for item in creditos), Decimal("0")) or None
+    monto_solicitado = decimal_value(cancelacion)
+    if creditos_propia and not permitir_preview and monto_solicitado is None:
+        raise ValueError("Ingresa la cancelación total de los créditos seleccionados.")
+    if monto_solicitado is not None and monto_solicitado != monto:
+        raise ValueError("La cancelación total debe coincidir con la suma de los créditos seleccionados.")
+    if monto is None and not permitir_preview:
+        raise ValueError("Ingresa un monto de cancelación mayor a cero.")
+    referencia = sum((item["referencia"] for item in creditos), Decimal("0")) if cartera_id == 148 and all(item["referencia"] is not None for item in creditos) else None
+    tipo_sql = limpiar_texto(row.get("TipoDocumento")).upper()
+    if tipo_sql == "D" or "DNI" in tipo_sql:
+        tipo_documento = "DNI"
+    elif tipo_sql == "C" or "C.E." in tipo_sql or "CARNET" in tipo_sql:
+        tipo_documento = "C.E."
+    elif tipo_sql == "R" or "RUC" in tipo_sql:
+        tipo_documento = "RUC"
+    else:
+        raise ValueError("La asignación no contiene un tipo de documento reconocido para este acuerdo.")
+    context = {
+        "cliente": limpiar_texto(row.get("NomCliente")),
+        "dni": limpiar_texto(row.get("NumDocumento")),
+        "tipo_documento": tipo_documento,
+        "operacion": ", ".join(item["operacion"] for item in creditos),
+        "producto": ", ".join(dict.fromkeys(limpiar_texto(item["row"].get("Producto")) for item in creditos)),
+        "deuda_total": format_money(deuda_total),
+        "cancelacion": format_money(monto) if monto is not None else "—",
+        "fecha_larga": f"{fecha.day} de {MESES[fecha.month].capitalize()} de {fecha.year}",
+        "fecha_pago": fecha.strftime("%d/%m/%Y"),
+        "creditos": [{"operacion": item["operacion"], "deuda": format_money(item["deuda"]),
+                      "cancelacion": format_money(item["monto"]) if item["monto"] is not None else "—",
+                      "fecha": item["fecha"].strftime("%d/%m/%Y")} for item in creditos],
+    }
+    if any(not context[key] for key in ("cliente", "dni", "operacion", "producto")):
+        raise ValueError("La asignación no contiene titular, documento, obligación, producto o deuda para este acuerdo.")
+    detalle_pagos = []
+    cantidad = None
+    if es_cuotas:
+        try:
+            cantidad = int(cantidad_cuotas) if cantidad_cuotas is not None else len(pagos or []) - 1
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ingresa una cantidad válida de cuotas.") from exc
+        if cantidad < 1 or cantidad > 120:
+            raise ValueError("La cantidad de cuotas debe estar entre 1 y 120.")
+        if len(pagos or []) != cantidad + 1:
+            raise ValueError("El cronograma debe incluir la cuota inicial y todas las cuotas regulares.")
+        for pago in pagos:
+            valor = decimal_value(pago.get("monto"), Decimal("0")) or Decimal("0")
+            if valor < 0 or (not permitir_preview and not limpiar_texto(pago.get("fecha"))):
+                raise ValueError("Cada pago debe tener monto no negativo y fecha.")
+            if valor != valor.quantize(Decimal("0.01")):
+                raise ValueError("Cada cuota admite como máximo dos decimales.")
+            detalle_pagos.append((valor, _fecha_propia(pago.get("fecha"))))
+        if any(detalle_pagos[index][1] < detalle_pagos[index - 1][1] for index in range(1, len(detalle_pagos))):
+            raise ValueError("Las fechas del cronograma deben estar en orden.")
+        if not permitir_preview:
+            if any(valor <= 0 for valor, _ in detalle_pagos[1:]):
+                raise ValueError("Cada cuota regular debe ser mayor a cero.")
+            if sum((valor for valor, _ in detalle_pagos), Decimal("0")) != monto:
+                raise ValueError("La cuota inicial y las cuotas regulares deben sumar la cancelación.")
+        context.update({
+            "cantidad_cuotas": cantidad,
+            "cuota_inicial": format_money(detalle_pagos[0][0]),
+            "cuota_regular": format_money(detalle_pagos[1][0]) if detalle_pagos[1][0] > 0 else "—",
+            "pagos": [
+                {"monto": format_money(valor) if index == 0 or valor > 0 else "—", "fecha": fecha_cuota.isoformat()}
+                for index, (valor, fecha_cuota) in enumerate(detalle_pagos)
+            ],
+        })
+    formato = str(formato or "docx").lower()
+    if formato not in ("docx", "pdf"):
+        raise ValueError("Formato no soportado. Selecciona Word o PDF.")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    restantes = len(creditos) - 1
+    identificador = creditos[0]["operacion"] if not restantes else f"{creditos[0]['operacion']}_y_{restantes}_{'credito' if restantes == 1 else 'creditos'}"
+    filename = f"{safe_filename(config['nombre'])}_{safe_filename(context['dni'])}_{safe_filename(identificador)}.{formato}"
+    output_path = OUTPUT_DIR / filename
+    template = PROPIA_TEMPLATES[(cartera_id, es_cuotas)]
+    if formato == "docx":
+        generar_docx_acuerdo_propia(template, output_path, context, es_cuotas)
+    else:
+        from uuid import uuid4
+        docx_path = OUTPUT_DIR / f"_preview_propia_{uuid4().hex}.docx"
+        try:
+            generar_docx_acuerdo_propia(template, docx_path, context, es_cuotas)
+            generar_pdf_acuerdo_propia(docx_path, output_path, context, es_cuotas)
+        finally:
+            docx_path.unlink(missing_ok=True)
+    registro_auditoria = dict(row, Operacion=context["operacion"], DeudaTotal=float(deuda_total))
+    return {"path": output_path, "filename": filename, "formato": formato, "registro": registro_auditoria,
+            "auditoria_detalle": {"modalidad": "cuotas" if es_cuotas else "cancelacion", "fecha_documento": context["fecha_larga"], "monto_acordado": context["cancelacion"], "referencia_50_capital": format_money(referencia) if referencia is not None else None, "cantidad_cuotas": cantidad, "pagos": [{"monto": format_money(p[0]), "fecha": p[1].isoformat()} for p in detalle_pagos], "operaciones": [{"operacion": item["operacion"], "deuda": format_money(item["deuda"]), "campania": item["row"].get("MtoCancelacionCliente"), "pago": format_money(item["monto"]) if item["monto"] is not None else None, "fecha": item["fecha"].isoformat()} for item in creditos]}}
+
+
+def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=None, cod_cre_grupal=None, cancelacion=None, fecha_pago=None, formato="docx", excepcion=False, encargado=None, pagos_grupales=None, cuotas_individual=None, cantidad_cuotas=None, operaciones_mibanco=None, pagos_mibanco=None, permitir_preview=False, creditos_propia=None):
     config = obtener_config_documento(documento_tipo)
     cartera_id = int(config.get("cartera_id") or 133)
 
     if config.get("solo_correo"):
         raise ValueError("Este tipo solo genera el preview de correo. No descarga carta.")
+
+    if config.get("document_kind") in ("propia_cancelacion", "propia_cuotas"):
+        return generar_documento_propia(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, pagos=pagos_mibanco, cantidad_cuotas=cantidad_cuotas, permitir_preview=permitir_preview, excepcion=excepcion, creditos_propia=creditos_propia)
 
     if config.get("document_kind") in ("mibanco_contado", "mibanco_cuotas"):
         return generar_documento_mibanco(config, dni=dni, operacion=operacion, cancelacion=cancelacion, fecha_pago=fecha_pago, formato=formato, operaciones_mibanco=operaciones_mibanco, pagos_mibanco=pagos_mibanco, excepcion=excepcion)

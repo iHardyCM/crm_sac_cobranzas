@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Accesos al CRM</title>
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/admin_supervisores.css?v=20260829-apple-admin">
-    <link rel="stylesheet" href="../css/admin_accesos.css?v=20260929a">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <title>Usuarios y accesos</title>
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/admin_supervisores.css?v=9f7bb1993d">
+    <link rel="stylesheet" href="../css/admin_accesos.css?v=d0ca36c9ad">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
@@ -15,8 +18,8 @@
     <section class="admin-hero">
         <div>
             <span>Seguridad</span>
-            <h2>Accesos al CRM</h2>
-            <p>Habilita, resetea, desbloquea o deshabilita el acceso de usuarios activos en SISCOB.</p>
+            <h2>Usuarios y accesos</h2>
+            <p>Gestiona cuentas y activa o quita vistas a cada usuario en pocos clics.</p>
         </div>
         <button class="btn-primary" type="button" id="accesosActualizar">Actualizar</button>
     </section>
@@ -76,18 +79,31 @@
         </div>
     </article>
 
+    <section id="vistasUsuarioPanel" class="card vistas-usuario-panel oculto" aria-labelledby="vistasUsuarioTitulo">
+        <div class="section-head">
+            <div>
+                <h3 id="vistasUsuarioTitulo">Vistas del usuario</h3>
+                <p>Los cambios se guardan al pulsar cada interruptor. Se mantiene el alcance de carteras del usuario.</p>
+            </div>
+            <button class="btn-secondary" type="button" id="vistasUsuarioCerrar">Cerrar</button>
+        </div>
+        <div id="vistasUsuarioLista" class="vistas-usuario-lista" aria-live="polite"></div>
+        <div class="vistas-usuario-pie">
+            <button class="btn-secondary" type="button" id="vistasUsuarioRestablecer">Restablecer permisos del perfil</button>
+        </div>
+    </section>
+
     <section class="note-card">
         <strong>Importante:</strong>
         Las contraseñas se guardan solo como hash; nadie puede consultarlas.
-        Deshabilitar revoca de inmediato la autenticación del usuario: los módulos ya protegidos
-        (Accesos CRM, Análisis IA con su calibración y Consumo de IA) dejan de responderle aunque tenga una sesión abierta.
-        Los demás módulos se están migrando progresivamente para exigir esta validación.
+        Deshabilitar la cuenta revoca la autenticación en las APIs protegidas.
+        Los interruptores de vistas se aplican en las APIs de esas vistas en la siguiente petición.
         La cuenta y su historial no se borran.
     </section>
 </main>
 
-<script src="../js/session.js?v=20260825a"></script>
-<script src="../js/app_layout.js?v=20260929-accesos"></script>
-<script src="../js/admin_accesos.js?v=20260929b"></script>
+<script src="../js/session.js?v=60298e1520"></script>
+<script src="../js/app_layout.js?v=876e8f616f"></script>
+<script src="../js/admin_accesos.js?v=1130dbd15b"></script>
 </body>
 </html>

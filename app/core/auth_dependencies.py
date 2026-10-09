@@ -19,7 +19,7 @@ import logging
 import unicodedata
 from typing import Dict, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import text
 
@@ -39,6 +39,20 @@ MENSAJE_SIN_PERMISO = "No tienes permiso para realizar esta accion."
 MENSAJE_CAMBIO_CLAVE = "Debes cambiar tu contraseña antes de continuar."
 
 PERFIL_ADMINISTRADOR = "ADMINISTRADOR"
+
+# Codigo estable para que el frontend distinga los 403 sin comparar textos:
+#   CAMBIO_CLAVE_OBLIGATORIO -> la cuenta tiene clave temporal (ir a cambiar_clave)
+#   ACCESO_DENEGADO          -> sesion valida, pero sin permiso por perfil/cartera
+# Viaja en una cabecera (el "detail" se mantiene igual para no romper a quien
+# ya lo lee). Access-Control-Expose-Headers permite leerla desde otro origen
+# sin tocar la configuracion CORS.
+HEADER_CODIGO_ERROR = "X-CRM-Codigo-Error"
+CODIGO_CAMBIO_CLAVE = "CAMBIO_CLAVE_OBLIGATORIO"
+CODIGO_ACCESO_DENEGADO = "ACCESO_DENEGADO"
+
+
+def cabeceras_codigo_error(codigo: str) -> Dict[str, str]:
+    return {HEADER_CODIGO_ERROR: codigo, "Access-Control-Expose-Headers": HEADER_CODIGO_ERROR}
 
 
 def _no_autorizado() -> HTTPException:
@@ -148,8 +162,52 @@ def requiere_clave_definitiva(usuario: Dict = Depends(obtener_usuario_actual)) -
 
     if requiere_cambio:
         logger.info("Acceso denegado por cambio de clave obligatorio usuario=%s", dni)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MENSAJE_CAMBIO_CLAVE)
-    return usuario
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MENSAJE_CAMBIO_CLAVE,
+            headers=cabeceras_codigo_error(CODIGO_CAMBIO_CLAVE),
+        )
+    from app.core.permisos_vistas import permisos_efectivos
+    try:
+        return {**usuario, "permisos_vistas": permisos_efectivos(usuario)}
+    except Exception:
+        logger.exception("Error verificando vistas usuario=%s", dni)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=MENSAJE_ERROR_TECNICO,
+        )
+
+
+def _es_vista_html(request: Request) -> bool:
+    """True si la peticion es la pagina HTML de un modulo (GET /control-horario).
+
+    Cada router publica su pantalla en GET "" (ruta = solo el prefijo). El
+    navegador la pide con una navegacion normal, que no puede enviar
+    Authorization, y el HTML no contiene datos: la proteccion real esta en los
+    endpoints de datos que esa pagina consulta despues con el token.
+    """
+    if request.method != "GET":
+        return False
+    # Se usa la URL real (no route.path, que cambia segun la version de FastAPI):
+    # la pagina es /<modulo>; cualquier endpoint de datos es /<modulo>/<algo>.
+    segmentos = [s for s in request.url.path.split("/") if s]
+    return len(segmentos) == 1
+
+
+def requiere_sesion_api(
+    request: Request,
+    credenciales: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> Optional[Dict]:
+    """Dependencia a nivel de router para los modulos que aun no validaban sesion.
+
+    Exige token valido, cuenta CRM activa, usuario activo en SISCOB y clave
+    definitiva (equivale a requiere_clave_definitiva), salvo en la pagina HTML
+    del modulo. Es AUTENTICACION: no restringe por perfil ni cartera.
+    """
+    if _es_vista_html(request):
+        return None
+    usuario = obtener_usuario_actual(credenciales)
+    return requiere_clave_definitiva(usuario)
 
 
 def requiere_administrador(usuario: Dict = Depends(requiere_clave_definitiva)) -> Dict:
@@ -165,5 +223,9 @@ def requiere_administrador(usuario: Dict = Depends(requiere_clave_definitiva)) -
             "Acceso administrativo denegado usuario=%s tipo=%s",
             usuario.get("dni"), usuario.get("tipo"),
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MENSAJE_SIN_PERMISO)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MENSAJE_SIN_PERMISO,
+            headers=cabeceras_codigo_error(CODIGO_ACCESO_DENEGADO),
+        )
     return usuario

@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <title>Biznescob - Seguimiento de Metas</title>
-    <link rel="stylesheet" href="../css/metas.css?v=20260829-apple-focus">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/metas.css?v=84477a260a">
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
     <aside class="meta-sidebar">
@@ -215,8 +218,8 @@
         </section>
     </main>
 
-    <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260923-consumo"></script>
-    <script src="../js/metas.js?v=20260829-apple-focus"></script>
+    <script src="../js/session.js?v=60298e1520"></script>
+    <script src="../js/app_layout.js?v=876e8f616f"></script>
+    <script src="../js/metas.js?v=317bc636fd"></script>
 </body>
 </html>

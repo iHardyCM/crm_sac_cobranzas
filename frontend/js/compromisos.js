@@ -1,36 +1,16 @@
 // compromisos.js
 // 🔐 VALIDAR SESIÓN
+// Seguridad: nada se pinta ni se consulta hasta que el backend confirme la
+// sesion (iniciarCompromisos). Los compromisos de otro agente solo los
+// devuelve el backend si el usuario tiene permiso (agente/cartera).
 const paramsIniciales = new URLSearchParams(window.location.search);
-const agente =
-    paramsIniciales.get("agente")
-    || localStorage.getItem("agente_filtro")
-    || localStorage.getItem("agente");
-
-console.log("AGENTE VISUAL:", agente);
-
-if (!agente) {
-    alert("Sesión inválida, vuelve a iniciar sesión");
-    window.location.href = "login.html";
-}
-
-// 🔥 EXTRAER DNI
-const dni = agente.substring(0, 8);
-
-console.log("DNI USADO:", dni);
+let agente = null;
+let dni = null;
 
 // 🔥 HEADER
 const fecha = new Date();
 const mes = fecha.toLocaleString('es-PE', { month: 'long' });
 const anio = fecha.getFullYear();
-
-document.getElementById("nombre_agente").innerText = agente;
-
-document.getElementById("titulo_tabla").innerText =
-    `Compromisos del mes (${mes} ${anio})`;
-
-configurarBotonVolver();
-configurarLinkRitmoMeta();
-cargarResumenMetaAgente();
 
 // 🔥 VARIABLES GLOBALES
 let dataGlobal = [];
@@ -73,27 +53,28 @@ async function cargar() {
 
         if (agenteFiltro) {
 
-            console.log("🔵 MODO SUPERVISOR → AGENTE:", agenteFiltro);
 
             url = `${BASE_URL}/compromisos/agente/compromisos?agente=${encodeURIComponent(agenteFiltro)}`;
 
         } else {
 
-            console.log("🟢 MODO AGENTE NORMAL:", dni);
 
             url = `${BASE_URL}/compromisos/${dni}`;
         }
 
-        const res = await fetch(url);
+        const res = await fetchConSesion(url);
 
+        if (res.status === 403) {
+            document.getElementById("titulo_tabla").innerText =
+                await mensajeErrorRespuesta(res, "No tienes acceso a estos compromisos.");
+            return;
+        }
         if (!res.ok) {
             throw new Error("Error en API");
         }
 
         const data = await res.json();
 
-        console.log("PRIMER REGISTRO:", data.data[0]);
-        console.log("DATA BACKEND:", data);
 
         dataGlobal = (data.data || []).map(x => ({
             id: x.IDCOMPROMISO || x.id,
@@ -121,11 +102,38 @@ async function cargar() {
         }
 
     } catch (error) {
+        if (error instanceof SesionInvalidaError) return;
         console.error("ERROR CARGA:", error);
     }
 }
 
-cargar();
+async function iniciarCompromisos() {
+    const usuarioSesion = await asegurarSesionBackend();
+    if (!usuarioSesion) return;
+    if (usuarioSesion.permisos_vistas?.compromisos === false) return;
+
+    // El agente propio sale del backend; "agente" de la URL / agente_filtro es
+    // solo el filtro visual del supervisor (el backend decide si puede verlo).
+    agente =
+        paramsIniciales.get("agente")
+        || localStorage.getItem("agente_filtro")
+        || usuarioSesion.agente;
+
+    // 🔥 EXTRAER DNI
+    dni = agente.substring(0, 8);
+
+    document.getElementById("nombre_agente").innerText = agente;
+
+    document.getElementById("titulo_tabla").innerText =
+        `Compromisos del mes (${mes} ${anio})`;
+
+    configurarBotonVolver();
+    configurarLinkRitmoMeta();
+    cargarResumenMetaAgente();
+    cargar();
+}
+
+iniciarCompromisos();
 
 async function cargarResumenMetaAgente() {
     try {
@@ -139,7 +147,7 @@ async function cargarResumenMetaAgente() {
             : dni;
         const codmes = `${anio}${String(fecha.getMonth() + 1).padStart(2, "0")}`;
         const params = new URLSearchParams({ usuario: agenteMeta, codmes });
-        const res = await fetch(`${BASE_URL}/admin-metas-agentes/resumen-agente?${params.toString()}`);
+        const res = await fetchConSesion(`${BASE_URL}/admin-metas-agentes/resumen-agente?${params.toString()}`);
 
         if (!res.ok) {
             throw new Error("No se pudo cargar resumen de meta");
@@ -221,7 +229,11 @@ async function verDetalle(id) {
 
         const BASE_URL = `http://${window.location.hostname}:8000`;
 
-        const res = await fetch(`${BASE_URL}/compromisos/detalle/${id}`);
+        const res = await fetchConSesion(`${BASE_URL}/compromisos/detalle/${id}`);
+        if (res.status === 403) {
+            alert(await mensajeErrorRespuesta(res, "No tienes acceso a este compromiso."));
+            return;
+        }
         const d = await res.json();
 
         const tipoUlt = getGestionUI(d.ult_tipocontacto, d.ult_indicador);

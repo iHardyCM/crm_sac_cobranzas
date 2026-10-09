@@ -58,8 +58,8 @@
         },
         "admin_accesos.html": {
             key: "accesos_admin",
-            title: "Accesos al CRM",
-            subtitle: "Habilitacion, claves temporales y bloqueos de usuarios"
+            title: "Usuarios y accesos",
+            subtitle: "Cuentas y permisos individuales de vistas"
         },
         "admin_pautas_evaluacion.html": {
             key: "pautas_evaluacion_admin",
@@ -83,7 +83,7 @@
         },
         "compartamos.html": {
             key: "clientes",
-            title: "Consulta Compartamos",
+            title: "Radar Compartamos",
             subtitle: "Informacion diaria de clientes activos, deuda, capital y cuotas"
         },
         "ia_feedback.html": {
@@ -128,19 +128,20 @@
         {
             title: "Operación",
             items: [
-                { key: "clientes", label: "Consulta Compartamos", href: "compartamos.html", icon: iconUsers() },
-                { key: getCompromisosKey(), label: "Compromisos", href: getCompromisosHref(), icon: iconClipboard() },
-                { key: "ritmo_meta", label: "Ritmo Meta", href: "ritmo_meta.html", icon: iconTarget() },
-                { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconCalendar() },
-                { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconUsers() },
-                { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocument() },
+                { key: "clientes", label: "Radar Compartamos", href: "compartamos.html", icon: iconRadar() },
+                { key: "compromisos", label: "Mis compromisos", href: "compromisos.html", icon: iconCompromisos() },
+                { key: "gestiones", label: "Compromisos del equipo", href: "supervisor.html", icon: iconUsers() },
+                { key: "ritmo_meta", label: "Ritmo Meta", href: "ritmo_meta.html", icon: iconMetas() },
+                { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconPdpHoy() },
+                { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconPhone() },
+                { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocumento() },
             ]
         },
         {
             title: "Control Gerencial",
             items: [
-                { key: "corporativo", label: "Panel Corporativo", href: "corporativo.html", icon: iconDashboard() },
-                { key: "metas", label: "Seguimiento de Metas", href: "metas.html", icon: iconTarget() },
+                { key: "corporativo", label: "Panel Corporativo", href: "corporativo.html", icon: iconBars() },
+                { key: "metas", label: "Seguimiento de Metas", href: "metas.html", icon: iconMetas() },
                 { key: "control_horario", label: "Gestion y Recupero", href: "control_horario.html", icon: iconClock() }
             ]
         },
@@ -148,15 +149,15 @@
             title: "Importaciones",
             items: [
                 { key: "importacion", label: "Importacion de Cartera", href: "importacion.html", icon: iconUpload() },
-                { key: "pagos", label: "Pagos del Negocio", href: "pagos.html", icon: iconUpload() },
-                { key: "canales", label: "Canales Alternos", href: "canales.html", icon: iconSend() }
+                { key: "pagos", label: "Pagos del Negocio", href: "pagos.html", icon: iconWallet() },
+                { key: "canales", label: "Canales Alternos", href: "canales.html", icon: iconMegaphone() }
             ]
         },
         {
             title: "Análisis",
             items: [
-                { key: "ia_feedback", label: "Analisis IA", href: "ia_feedback.html", icon: iconIa() },
-                { key: "susurro_ia", label: "Susurro IA", href: "susurro_ia.html", icon: iconIa() },
+                { key: "ia_feedback", label: "Analisis IA", href: "ia_feedback.html", icon: iconRobot() },
+                { key: "susurro_ia", label: "Susurro IA", href: "susurro_ia.html", icon: iconMic() },
                 { key: "reportes", label: "Reportes", disabled: true, icon: iconChart() }
             ]
         },
@@ -172,28 +173,28 @@
         key: "supervisores_admin",
         label: "Supervisores",
         href: "admin_supervisores.html",
-        icon: iconUsers()
+        icon: iconPerson()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
         key: "metas_agentes_admin",
         label: "Metas Agentes",
         href: "admin_metas_agentes.html",
-        icon: iconTarget()
+        icon: iconMetas()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
         key: "consumo_ia_admin",
         label: "Consumo de IA",
         href: "consumo_ia.html",
-        icon: iconChart()
+        icon: iconCoins()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
         key: "accesos_admin",
-        label: "Accesos CRM",
+        label: "Usuarios",
         href: "admin_accesos.html",
-        icon: iconUsers()
+        icon: iconKey()
     });
 
     NAV_GROUPS[NAV_GROUPS.length - 1].items.unshift({
@@ -203,12 +204,32 @@
         icon: iconClipboard()
     });
 
-    document.addEventListener("DOMContentLoaded", initCrmLayout);
 
-    function initCrmLayout() {
+    const CLAVE_PERMISOS_CACHE = "crmPermisosVistasCache";
+
+    // Pinta el menú y la cabecera de inmediato con lo último que se conoce de la
+    // sesión y valida contra el backend en segundo plano. Si la validación cambia
+    // permisos o datos del usuario, se vuelve a pintar; si la sesión no es válida,
+    // asegurarSesionBackend() redirige al login como antes.
+    // Los datos de cada página siguen esperando a asegurarSesionBackend().
+    async function initCrmLayout() {
         const page = currentPage();
         const meta = MODULES[page];
-        if (!meta) return;
+        if (!meta) {
+            document.documentElement.classList.remove("crm-boot");
+            return;
+        }
+
+        try {
+            restaurarPermisosCache();
+            montarCrmLayout(meta);
+        } finally {
+            document.documentElement.classList.remove("crm-boot");
+        }
+
+        if (typeof asegurarSesionBackend === "function" && !(await asegurarSesionBackend())) return;
+
+        guardarPermisosCache();
 
         if (!puedeAccederModulo(meta.key)) {
             alert("No tienes acceso a este módulo con tu perfil actual.");
@@ -216,20 +237,63 @@
             return;
         }
 
+        refrescarCrmLayout(meta);
+    }
+
+    function montarCrmLayout(meta) {
+        // Sin animacion en el primer montaje: el contenido no debe "deslizarse"
+        // hacia su lugar al abrir la pagina. Se reactiva al terminar el primer pintado.
+        document.body.classList.add("crm-sin-transicion");
+        requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove("crm-sin-transicion")));
         document.body.classList.add("crm-shell");
 
         if (localStorage.getItem("crmSidebarCollapsedV2") !== "0") {
             document.body.classList.add("crm-sidebar-collapsed");
         }
 
-        const activeKey = meta.key === "compromisos" && esUsuarioSupervisor()
-            ? "gestiones"
-            : meta.key;
-
         document.body.insertAdjacentHTML("afterbegin", renderTopbar(meta));
-        document.body.insertAdjacentHTML("afterbegin", renderSidebar(activeKey));
+        document.body.insertAdjacentHTML("afterbegin", renderSidebar(meta.key));
         asegurarCrmDialog();
         document.addEventListener("keydown", manejarAtajoFoco);
+    }
+
+    function refrescarCrmLayout(meta) {
+        reemplazarSiCambio(".crm-sidebar", renderSidebar(meta.key));
+        reemplazarSiCambio(".crm-topbar", renderTopbar(meta));
+    }
+
+    function reemplazarSiCambio(selector, html) {
+        const actual = document.querySelector(selector);
+        if (!actual) return;
+        const plantilla = document.createElement("template");
+        plantilla.innerHTML = html.trim();
+        const nuevo = plantilla.content.firstElementChild;
+        if (nuevo && nuevo.outerHTML !== actual.outerHTML) actual.replaceWith(nuevo);
+    }
+
+    // Permisos de vistas de la última validación: evitan que el menú cambie al
+    // llegar la respuesta. La validación del backend siempre manda; el logout
+    // borra el localStorage y con él esta copia.
+    function restaurarPermisosCache() {
+        if (window.crmPermisosVistas) return;
+        try {
+            const guardado = JSON.parse(localStorage.getItem(CLAVE_PERMISOS_CACHE) || "null");
+            if (guardado && typeof guardado === "object") window.crmPermisosVistas = guardado;
+        } catch (error) {
+            // sin copia local: el menú se calcula por perfil hasta validar
+        }
+    }
+
+    function guardarPermisosCache() {
+        try {
+            if (window.crmPermisosVistas) {
+                localStorage.setItem(CLAVE_PERMISOS_CACHE, JSON.stringify(window.crmPermisosVistas));
+            } else {
+                localStorage.removeItem(CLAVE_PERMISOS_CACHE);
+            }
+        } catch (error) {
+            // almacenamiento no disponible: no pasa nada
+        }
     }
 
     function asegurarCrmDialog() {
@@ -343,12 +407,21 @@
         `;
     }
 
+    // Color del icono por area (igual criterio que las areas del Home). Sin entrada = azul.
+    const TONO_NAV = {
+        ia_feedback: "calidad", susurro_ia: "calidad", consumo_ia_admin: "calidad",
+        documentos: "datos", importacion: "datos", pagos: "datos", canales: "datos",
+        supervisores_admin: "admin", metas_agentes_admin: "admin", accesos_admin: "admin",
+        pautas_evaluacion_admin: "admin", admin: "admin"
+    };
+
     function renderNavItem(item, activeKey) {
+        const tono = `tono-${TONO_NAV[item.key] || "operacion"}`;
         if (item.disabled) {
-            return `<span class="crm-nav-disabled" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span><small>Próx.</small></span>`;
+            return `<span class="crm-nav-disabled ${tono}" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span><small>Próx.</small></span>`;
         }
         const active = item.key === activeKey ? " active" : "";
-        return `<a class="crm-nav-link${active}" href="${item.href}" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span></a>`;
+        return `<a class="crm-nav-link ${tono}${active}" href="${item.href}" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span></a>`;
     }
 
     function renderTopbar(meta) {
@@ -423,25 +496,28 @@
         return "";
     }
 
-    function getCompromisosKey() {
-        return esUsuarioSupervisor() ? "gestiones" : "compromisos";
-    }
-
-    function getCompromisosHref() {
-        return esUsuarioSupervisor() ? "supervisor.html" : "compromisos.html";
-    }
-
     function filtrarGruposPorRol() {
+        const vistos = new Set();
         return NAV_GROUPS
             .map(group => ({
                 ...group,
-                items: group.items.filter(item => item.key === "inicio" || puedeAccederModulo(item.key))
+                items: group.items.filter(item => {
+                    if (item.key !== "inicio" && !puedeAccederModulo(item.key)) return false;
+                    const destino = item.href || item.key;
+                    if (vistos.has(destino)) return false;
+                    vistos.add(destino);
+                    return true;
+                })
             }))
             .filter(group => group.items.length);
     }
 
     function puedeAccederModulo(key) {
         if (key === "inicio") return true;
+        if (typeof puedeUsarVista === "function") {
+            const permiso = puedeUsarVista(key);
+            if (permiso !== null) return permiso;
+        }
         // El consumo de la API es informacion de costo del modulo: solo administracion.
         if (key === "consumo_ia_admin") return tipoUsuario() === "ADMINISTRADOR";
         // Accesos al CRM: solo administracion. La seguridad real esta en el backend (403).
@@ -566,7 +642,7 @@
     }
 
     function iconUsers() {
-        return svg('<path d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4"/><circle cx="12" cy="8" r="3"/><path d="M20 18c0-1.7-1-3-2.5-3.6"/><path d="M17 5.4a2.5 2.5 0 0 1 0 5"/>');
+        return svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 5.2a3.5 3.5 0 010 5.6M18 14.4c2.2.7 3.5 2.6 3.5 5.6"/>');
     }
 
     function iconClipboard() {
@@ -594,7 +670,7 @@
     }
 
     function iconUpload() {
-        return svg('<path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 18h14v2H5z"/>');
+        return svg('<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>');
     }
 
     function iconSend() {
@@ -613,7 +689,76 @@
         return svg('<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5l-.4 3.1a8 8 0 0 0-1.7 1l-2.4-1-2 3.4L5 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 3.1h5l.4-3.1a8 8 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/>');
     }
 
+    // Iconos por modulo: mismo set que el Home (home.js, ICONOS_HOME). Si se
+    // cambia uno, cambiarlo tambien alli para que menu e inicio coincidan.
+    function iconRadar() {
+        return svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>');
+    }
+
+    function iconCompromisos() {
+        return svg('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 14l2 2 4-4"/>');
+    }
+
+    function iconMetas() {
+        return svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>');
+    }
+
+    function iconPdpHoy() {
+        return svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>');
+    }
+
+    function iconPhone() {
+        return svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>');
+    }
+
+    function iconDocumento() {
+        return svg('<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5zM14 3v5h5M9 13h6M9 17h6"/>');
+    }
+
+    function iconBars() {
+        return svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>');
+    }
+
+    function iconWallet() {
+        return svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/>');
+    }
+
+    function iconMegaphone() {
+        return svg('<path d="M3 11v3l12 5V6L3 11zM15 9a4 4 0 010 6M6 14l1.5 6"/>');
+    }
+
+    function iconRobot() {
+        return svg('<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13v1M15 13v1M9 17h6"/>');
+    }
+
+    function iconMic() {
+        return svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/>');
+    }
+
+    function iconCoins() {
+        return svg('<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>');
+    }
+
+    function iconPerson() {
+        return svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>');
+    }
+
+    function iconKey() {
+        return svg('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>');
+    }
+
     function iconLogout() {
         return svg('<path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h6v16h-6"/>');
+    }
+
+    // Va al final del IIFE para que todas las constantes (TONO_NAV, etc.) ya existan.
+    // app_layout.js va al final del <body>: lo que hay arriba ya existe, asi que el
+    // menu se monta de inmediato en vez de esperar a DOMContentLoaded (que aguarda
+    // a scripts pesados como ia_feedback.js, ~450 KB). Si el script estuviera en el
+    // <head>, no hay body todavia y se usa DOMContentLoaded como antes.
+    if (document.body) {
+        initCrmLayout();
+    } else {
+        document.addEventListener("DOMContentLoaded", initCrmLayout);
     }
 })();

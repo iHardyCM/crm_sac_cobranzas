@@ -1,4 +1,4 @@
-# Autenticación CRM — Fases 1 a 4 (rama `hardening/security-phase1`)
+# Autenticación CRM — Fases 1 a 5 (rama `hardening/security-phase1`)
 
 ## Qué hace
 
@@ -33,7 +33,7 @@ La dependencia reutilizable es `app.core.auth_dependencies.obtener_usuario_actua
 
 ## Qué NO cambia todavía
 
-- Los endpoints fuera de `/auth`, `/admin-accesos`, `/ia-feedback` y `/calibracion` siguen sin proteger (ver "Módulos pendientes").
+- ~~Los endpoints fuera de `/auth`, `/admin-accesos`, `/ia-feedback`, `/calibracion`, `/cliente`, `/compromisos` y `/telefonos` siguen sin proteger.~~ Resuelto en la Fase 6: ya exigen sesión (ver "Fase 6").
 - CORS, `NOLOCK` y las conexiones SQL siguen como estaban.
 - El frontend sigue guardando `dni`, `agente`, `tipo`, `idcartera` e `idcarteras` en `localStorage` para no romper las pantallas. **Esos datos no son seguridad.** La credencial real es `access_token`.
 
@@ -66,7 +66,7 @@ Un DNI que no tiene 8 dígitos responde 400. Un error técnico responde 500 con 
 
 ### Clave temporal
 
-- Se genera con `secrets`: 12 caracteres, con al menos una mayúscula, una minúscula y un dígito. Se excluyen los caracteres que se confunden (`0/O`, `1/l/I`). No usa el DNI, fechas, claves fijas ni `SISCOB.Clave`.
+- Se genera con `secrets`: 12 caracteres, con al menos una mayúscula, una minúscula y un dígito. Se excluyen los caracteres que se confunden (`0/O`, `1/l/I`). No usa el DNI, fechas, claves fijas ni `SISCOB.Clave`. (La única excepción es la carga inicial masiva de la Fase 6, que usa el DNI como clave inicial; ver abajo.)
 - Solo se guarda su hash Argon2.
 - **Se muestra una sola vez**, en la respuesta del endpoint, que lleva `Cache-Control: no-store`. No se escribe en el log, ni en la BD en texto plano, ni en `localStorage`. En la pantalla vive solo en el DOM hasta que el administrador pulsa "Ya la entregué, ocultar".
 - Si se pierde, la única salida es resetear. Nadie puede consultar una clave, ni la temporal ni la definitiva.
@@ -197,7 +197,130 @@ Detalles:
 
 ### Límite importante
 
-Home protegido **no significa** que los demás routers estén protegidos. La revocación se detecta al recargar Home o al usar un módulo migrado, pero si alguien llama directamente a un endpoint no migrado (`/pagos`, `/compromisos`, `/cliente`, `/metas`, `/telefonos`, etc.), ese endpoint todavía responde sin validar la sesión.
+Home protegido **no significa** que los demás routers estén protegidos. La revocación se detecta al recargar Home o al usar un módulo migrado, pero si alguien llama directamente a un endpoint no migrado (`/pagos`, `/metas`, `/corporativo`, etc.), ese endpoint todavía responde sin validar la sesión. Cliente, Compromisos y Teléfonos se migraron en la Fase 5.
+
+## Fase 5 — Cliente, Compromisos y Teléfonos
+
+### Routers protegidos
+
+Todos los endpoints de datos usan `Depends(requiere_clave_definitiva)`: JWT, `FLG_ACTIVO = 1`, SISCOB `Estado = 'A'` y sin cambio obligatorio pendiente. Sin sesión válida responden **401**; una cuenta deshabilitada recibe 401 aunque conserve su JWT.
+
+| Router | Endpoints protegidos |
+| --- | --- |
+| `/cliente` | `GET /buscar` |
+| `/compromisos` | `GET /{dni}`, `GET /detalle/{id}`, `GET /agente/compromisos`, `GET /supervisor/resumen`, `GET /supervisor/exportar-cartera` |
+| `/telefonos` | `GET /buscar`, `GET /filtros`, `GET /detalle/{telefono}` |
+
+Solo `GET /telefonos` (sirve el HTML) queda abierto.
+
+### Páginas protegidas
+
+`compartamos.html` (usa `core/api.js`), `compromisos.html`, `supervisor.html` (Compromisos supervisor) y `telefonos.html`. `telefonos.html` antes no cargaba `session.js`; ahora sí.
+
+Las cuatro esperan `asegurarSesionBackend()` antes de pintar datos del usuario o llamar al backend. Envían el token con `fetchConSesion()`, el nuevo helper de `session.js`:
+
+- Agrega `Authorization: Bearer` a cada llamada.
+- Con 401 llama a `cerrarSesionPorInvalidez()`.
+- Con el 403 de cambio obligatorio va a `cambiar_clave.html`.
+- En ambos casos lanza `SesionInvalidaError` para que la página no siga.
+- Cualquier otro 403 (acceso denegado) se devuelve a la página, que muestra el mensaje y se queda. La sesión no se toca. Ver "Códigos de error 403".
+
+El export de supervisor ya no usa `window.open`, que no puede enviar el header: descarga con `fetchConSesion()`.
+
+### Identidad
+
+- El DNI, el perfil y las carteras salen de la sesión (`usuario_actual`), nunca del navegador.
+- `/compromisos/supervisor/resumen` y `/exportar-cartera` **ignoran** el `dni` de la query y usan el DNI del JWT.
+- Los parámetros `perfil`, `tipo`, `idcartera` o `idcarteras` en la query o el payload **no amplían** permisos. En Teléfonos, `idcartera` solo puede **acotar** dentro de las carteras permitidas; una cartera ajena da 403.
+- `compromisos.js` ya no toma el agente de `localStorage` antes de validar. El agente propio sale de `/auth/me`. El `agente` de la URL o `agente_filtro` sigue siendo solo el filtro visual del supervisor, y el backend decide si puede verlo.
+
+### Reglas de perfil y cartera (`app/core/autorizacion_carteras.py`)
+
+Solo reglas que ya existían en el CRM:
+
+| Regla | Origen |
+| --- | --- |
+| Visión global: ADMINISTRADOR, JEFE DE CARTERA, JEFE DE CARTERAS, JEFE DE COBRANZA, JEFE CARTERA | `puedeVerCorporativo()` (frontend) y `perfil_puede_editar_prompt()` (IA) |
+| Supervisor: `TipoUsuario` que contiene SUPERVISOR | `esSupervisor()` |
+| Monitor de calidad: solo Análisis IA (403 en estos módulos) | `puedeAccederModulo()` de `app_layout.js` |
+| Carteras permitidas = `idcartera` principal + `idcarteras` adicionales (`CRM_SUPERVISOR_CARTERA`) | `obtener_identidad_usuario()` |
+| Carteras Compartamos: 124, 126, 128, 133, 144 | `COMPARTAMOS_CARTERAS` de `cliente_crm_service`. `autorizacion_carteras` reutiliza esa constante: en el backend hay una sola lista |
+
+Cómo se aplica en cada módulo:
+
+| Módulo | Regla de cartera | Si no cumple |
+| --- | --- | --- |
+| **Cliente** | El usuario debe tener visión global o alguna cartera Compartamos (regla existente del módulo "Consulta Compartamos"). Sin visión global se aplica además la regla *fail closed* descrita abajo | 403 |
+| **Compromisos: lo propio** | `/{dni}` con el DNI propio siempre se permite | — |
+| **Compromisos: otro agente** (`/{dni}` ajeno o `/agente/compromisos`) | Visión global, o supervisor con la cartera principal del agente (`SISCOB.USUARIO.IDCARTERA`) entre sus carteras. Un gestor no ve a otros agentes | 403 |
+| **Compromisos: detalle** | Autorización por objeto (ver abajo): propietario y cartera leídos de SISCOB | 403 |
+| **Compromisos: supervisor** | `/supervisor/resumen` y `/exportar-cartera`: solo supervisores y visión global (regla existente de `supervisor.html`). La cartera sigue siendo la principal del supervisor, como antes | 403 |
+| **Teléfonos** | `TEMP_TELEFONOS.IDCARTERA` debe estar entre las carteras del usuario. Se aplica en SQL (`AND IDCARTERA IN (...)`) en la búsqueda, y en Python en relacionados, detalle y la lista de carteras de los filtros | 403 (`idcartera` ajena) o sin filas |
+
+Score, OSIPTEL, semaforización, prioridad y el conteo de contexto (`TOTAL_DNIS` y `TOTAL_CARTERAS` por teléfono) **no cambian**: siguen calculándose sobre todas las carteras, igual que antes.
+
+### Cliente: regla *fail closed*
+
+`VW_CLIENTE_CRM_SAC` no expone la cartera de cada operación, así que **no se puede filtrar operación por operación**. En la base existente no hay otra relación confiable operación → cartera: `SISCOB.CLIENTE` solo tiene `Dni` → `IdCartera`, y `SISCOB.COMPROMISO.NumOperacion` existe solo para operaciones con compromiso. No se inventó ninguna relación.
+
+Por eso la decisión se toma sobre la **entidad completa**: todas las filas que se devolverían, incluidos todos los integrantes de un grupo. Para usuarios sin visión global:
+
+1. Todas las filas deben tener DNI.
+2. Cada DNI debe tener al menos una cartera Compartamos en `SISCOB.CLIENTE`. La consulta está en `carteras_compartamos_por_dni()`.
+3. **Todas** esas carteras deben estar asignadas al usuario.
+
+Si algo no se cumple, o no se puede determinar, responde **403** y no se devuelve ningún dato. Eso incluye el caso de SISCOB sin cartera para el DNI y un cliente multicartera con una sola cartera ajena. Si falla la consulta a SISCOB, responde 500 genérico, sin datos.
+
+La verificación ocurre dentro de `buscar_cliente(valor, verificar_acceso=...)`, justo después de leer la vista y **antes** de consultar gestión, pagos y PDP. Sin el parámetro, el servicio se comporta igual que antes. La visión global no pasa por el verificador.
+
+**Impacto operativo:** un gestor ya no puede consultar a un cliente que también tenga operaciones en otra cartera. Tampoco a un cliente que SISCOB no tenga registrado en una cartera Compartamos. Lo verá un perfil con visión global o un usuario con todas esas carteras asignadas.
+
+### Compromisos: autorización por objeto en `/detalle/{id}`
+
+El `SELECT` del detalle ahora trae también el propietario (`U.USUARIO` del agente que registró la gestión, el mismo criterio que usa el listado) y su cartera (`U.IDCARTERA`). Filtros y joins no cambian. Todo sale de SISCOB; nada del navegador.
+
+| Perfil | Puede abrir |
+| --- | --- |
+| Visión global | Cualquier compromiso |
+| Gestor (y cualquier perfil sin visión global) | Solo los suyos (propietario = su DNI) |
+| Supervisor | Los suyos, y los de agentes cuya cartera (`USUARIO.IDCARTERA`) esté entre sus carteras, siempre que la cartera del compromiso (`GESTION.IDCARTERA`) también lo esté |
+| Monitor de calidad | Nada (403) |
+
+Si no hay propietario o cartera determinable, responde 403. Esto cierra el acceso por ID (IDOR): un gestor ya no abre el compromiso de otro gestor de su misma cartera.
+
+### Códigos de error 403
+
+Un 403 puede significar dos cosas distintas, así que el backend las marca con la cabecera **`X-CRM-Codigo-Error`**:
+
+| Caso | Código | Frontend (`fetchConSesion`) |
+| --- | --- | --- |
+| 401 | — | Limpia la sesión y va a `login.html` |
+| 403 por clave temporal (`requiere_clave_definitiva`) | `CAMBIO_CLAVE_OBLIGATORIO` | Va a `cambiar_clave.html` sin limpiar la sesión |
+| 403 por perfil o cartera (`autorizacion_carteras.prohibido()`, `requiere_administrador`) | `ACCESO_DENEGADO` | Se queda en el módulo y muestra el mensaje. No limpia la sesión ni manda a cambiar la clave |
+
+- El `detail` no cambió. Quien ya lo leía sigue funcionando.
+- La cabecera va con `Access-Control-Expose-Headers`, así se puede leer desde otro origen sin modificar la configuración CORS.
+- Si una respuesta 403 **no trae código** (routers aún no migrados), `esRespuestaCambioClave()` compara el `detail` exacto, como antes. Cualquier otro 403 se trata como acceso denegado.
+- `esAccesoDenegado(response)` está disponible para las páginas.
+
+### Cartera 139
+
+Solo aparece en dos lugares del proyecto:
+
+- `session.js`, en `esCarteraCompartamos()`: decide qué módulos muestra Home y el menú.
+- `control_horario_service.py`, en `CARTERAS_EXCLUIDAS_CONTROL = {120, 139, 141, 146}` y en los `NOT IN` de SQL, como cartera **excluida** del control horario.
+
+Ningún catálogo del proyecto la nombra: `CARTERAS` de control horario, score telefónico, documentos o `COMPARTAMOS_CARTERAS`. Las consultas Compartamos (`consultar_gestiones`, `consultar_pdp`) usan `IN (124, 126, 128, 133, 144)`. **No hay evidencia de que sea Compartamos**, así que no se agregó al backend.
+
+Tampoco se quitó de `session.js`: en el código no queda registrado por qué se agregó, y la regla no es clara. El efecto es acotado. Un usuario cuya única cartera sea la 139 verá la opción de Consulta Compartamos, pero el backend le responderá 403. Pendiente: confirmar con negocio qué es la 139 y alinear `session.js`. Otra opción es que `/auth/me` informe si el usuario puede usar el módulo.
+
+### Huecos pendientes en estos módulos
+
+1. **Cliente — completitud de SISCOB:** la regla supone que `SISCOB.CLIENTE` registra todas las carteras de cada DNI. Si la vista trae una operación de una cartera en la que SISCOB no tiene al DNI, esa operación no se detecta. Para filtrar operación por operación hay que confirmar si la vista tiene, o puede exponer, un campo de cartera.
+2. **Supervisor con carteras adicionales:** `/supervisor/resumen` y `/exportar-cartera` siguen usando solo la cartera principal del supervisor (comportamiento anterior, sin cambios). Las adicionales solo se usan para autorizar ver a un agente.
+3. **`/admin-metas-agentes/resumen-agente`**, que usa `compromisos.js`, recibe el Bearer pero su router **sigue sin protección** (pertenece a Metas).
+4. **Cartera 139:** ver arriba.
+5. **Detalle de compromiso inexistente:** responde `{"msg": "No encontrado"}` (comportamiento anterior). Un usuario puede distinguir "no existe" de "no autorizado", pero no ve datos.
 
 ## Filtro por cartera todavía pendiente en IA
 
@@ -211,15 +334,55 @@ La autenticación ya es real, pero **no se aplica todavía `idcarteras` del usua
 
 Para resolverlo hay que decidir la regla por perfil (por ejemplo: supervisor = sus carteras, monitor de calidad = todas) y aplicarla en `ia_audio_service` y `calibracion_service`. Eso toca la lógica de IA, así que queda para una tarea aparte.
 
-## Módulos pendientes de migración
+## Fase 6 — Todos los módulos exigen sesión y carga inicial de accesos (clave = DNI)
 
-**Routers sin autenticación en el backend:** `/admin-metas-agentes`, `/admin-pautas-evaluacion`, `/admin-supervisores`, `/canales`, `/cliente`, `/compromisos`, `/corporativo`, `/control-horario`, `/documentos`, `/importacion`, `/metas`, `/pagos`, `/planes-mejora`, `/score-telefonico`, `/susurro-ia` y `/telefonos`.
+### Backend: autenticación en los 13 routers que faltaban
 
-**Páginas que aún usan solo `exigirSesion()`:** compromisos, supervisor, compartamos, corporativo, promesas hoy, metas, ritmo meta, control horario, matriz, importación, pagos, canales, teléfonos, documentos, susurro IA, score telefónico y las administraciones de supervisores, metas por agente y pautas de evaluación.
+`/admin-metas-agentes`, `/admin-pautas-evaluacion`, `/admin-supervisores`, `/canales`, `/corporativo`, `/control-horario`, `/documentos`, `/importacion`, `/metas`, `/pagos`, `/planes-mejora`, `/score-telefonico` y `/susurro-ia` se registran en `app/main.py` con `dependencies=[Depends(requiere_sesion_api)]`.
+
+`requiere_sesion_api` (en `app/core/auth_dependencies.py`) equivale a `requiere_clave_definitiva`: JWT válido, cuenta CRM activa, usuario activo en SISCOB y sin cambio de clave pendiente (401 / 403 `CAMBIO_CLAVE_OBLIGATORIO`). La única excepción es la **página HTML** de cada módulo (`GET /<modulo>`), porque el navegador no puede enviar `Authorization` al navegar y el HTML no contiene datos; la página consulta sus datos con el token. Cualquier ruta de dos o más segmentos (`/<modulo>/<algo>`) siempre exige sesión.
+
+**Es autenticación, no autorización:** cualquier usuario con sesión válida puede llamar a estos endpoints aunque su perfil no vea ese módulo en el menú. Siguen pendientes (recomendado): restringir por perfil/cartera los módulos de administración e importación (`/admin-*`, `/importacion`, `/pagos`, `/metas/importar`, `/canales/importar`) y sustituir `usuario`/`perfil` que el navegador manda en payload/query por los de la sesión.
+
+### Frontend
+
+- Las llamadas de esos módulos usan `fetchConSesion()` (Bearer; 401 → login; 403 de cambio de clave → `cambiar_clave.html`).
+- Las descargas que antes eran navegación directa (`location.href`, `window.open`, `<a href>`) usan `descargarArchivoConSesion()` (en `session.js`): control horario, corporativo y score telefónico. Los endpoints exponen `Content-Disposition` para conservar el nombre del archivo.
+- `documentos.html` ahora carga `session.js`.
+- `tools/susurro_capturador.py` (cliente externo de `/susurro-ia`) ahora necesita sesión: `--dni` (pide la clave), `--token` o `CRM_ACCESS_TOKEN`.
+- Cualquier otro cliente externo (n8n, scripts, Postman) que llame a estos endpoints debe enviar `Authorization: Bearer <token>` obtenido en `POST /auth/login`.
+
+### Clave inicial = DNI (`tools/crear_accesos_iniciales.py`)
+
+Para el lanzamiento, los usuarios activos de SISCOB (`Estado = 'A'`, usuario de 8 dígitos) que aún no tienen cuenta CRM reciben una cuenta con **clave inicial = su DNI**, `FLG_ACTIVO = 1` y `FLG_CAMBIO_OBLIGATORIO = 1`. En el primer ingreso el CRM obliga a cambiarla; la política rechaza el DNI como clave nueva.
+
+```
+python tools/crear_accesos_iniciales.py                       # plan (dry-run), genera CSV en logs/
+python tools/crear_accesos_iniciales.py --ejecutar            # crea las cuentas (pide escribir CONFIRMAR)
+python tools/crear_accesos_iniciales.py --incluir-pendientes  # además, cuentas con clave temporal que nunca se usó
+python tools/crear_accesos_iniciales.py --excluir-tipos ADMINISTRADOR   # deja perfiles fuera del lote
+python tools/crear_accesos_iniciales.py --reporte             # quién sigue sin cambiar la clave
+python tools/crear_accesos_iniciales.py --cerrar-ventana --ejecutar     # deshabilita las que no cambiaron
+```
+
+No toca cuentas con clave definitiva ni cuentas deshabilitadas a propósito. Las cuentas del lote quedan marcadas con `USUARIO_CREACION = 'LOTE_DNI'`.
+
+**Riesgo:** el DNI no es secreto. Mientras una cuenta conserve la clave inicial, cualquiera que conozca el DNI puede entrar como esa persona y fijar su propia clave (el bloqueo por intentos no lo evita). Mitigación: ejecutar el lote el día del lanzamiento, pedir el cambio de inmediato, revisar `--reporte` a las 24-48 h y usar `--cerrar-ventana` con las que sigan pendientes (se reactivan con "Habilitar acceso", que entrega una clave aleatoria). Para perfiles con más alcance (administrador, jefes) se recomienda `--excluir-tipos` y habilitarlos uno a uno desde Administración de accesos.
+
+### Tests de la fase
+
+`tests.test_sesion_api` recorre todas las rutas reales de la aplicación y exige 401 sin token (salvo `/`, `/auth/login` y las páginas HTML). `tests.test_accesos_iniciales` cubre la clasificación del script y que nunca escribe sin `--ejecutar` y confirmación.
+
+## Módulos pendientes de migración (histórico, resuelto en la Fase 6)
+
+**Routers sin autenticación en el backend:** `/admin-metas-agentes`, `/admin-pautas-evaluacion`, `/admin-supervisores`, `/canales`, `/corporativo`, `/control-horario`, `/documentos`, `/importacion`, `/metas`, `/pagos`, `/planes-mejora`, `/score-telefonico` y `/susurro-ia`.
+
+**Páginas que aún usan solo `exigirSesion()`:** corporativo, promesas hoy, metas, ritmo meta, control horario, matriz, importación, pagos, canales, documentos, susurro IA, score telefónico y las administraciones de supervisores, metas por agente y pautas de evaluación.
 
 Para migrar cada módulo:
 1. En el router, agregar `usuario: Dict = Depends(requiere_clave_definitiva)` a cada endpoint. Reemplazar `perfil` y `usuario` del payload por los de la sesión.
-2. En la página, esperar `asegurarSesionBackend()` antes de cargar datos y enviar el header con `agregarAuthorizationHeader()`.
+2. En la página, esperar `asegurarSesionBackend()` antes de cargar datos y usar `fetchConSesion()` en cada llamada.
+3. Si el módulo maneja carteras, aplicar las reglas de `app/core/autorizacion_carteras.py`.
 
 ## Pendientes
 
@@ -271,9 +434,9 @@ WHERE USUARIO = '12345678';
 ## Tests
 
 ```
-python -m unittest tests.test_auth tests.test_admin_accesos tests.test_ia_seguridad tests.test_sesion_frontend -v
+python -m unittest tests.test_auth tests.test_admin_accesos tests.test_ia_seguridad tests.test_sesion_frontend tests.test_modulos_cartera tests.test_sesion_api tests.test_accesos_iniciales -v
 ```
 
 No usan la base de datos.
-- Los tests HTTP (TestClient) requieren `httpx`. Si no está instalado, se saltan; en ese caso casi todo `tests.test_ia_seguridad` queda sin ejecutar. Instálalo con `pip install httpx`.
+- Los tests HTTP (TestClient) requieren `httpx`. Si no está instalado, se saltan; en ese caso casi todo `tests.test_ia_seguridad` y `tests.test_modulos_cartera` queda sin ejecutar. Instálalo con `pip install httpx`.
 - `tests.test_sesion_frontend` ejecuta `tests/frontend/sesion_frontend.test.js` con Node. Si Node no está en el PATH, se salta.

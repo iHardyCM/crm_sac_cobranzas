@@ -24,9 +24,16 @@ async function buscar() {
     }
 
     try {
-        const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
-        const res = await fetch(`${BASE_URL}/cliente/buscar?valor=${encodeURIComponent(valor)}`);
+        // Seguridad: ninguna consulta sale antes de validar la sesion con el backend.
+        if (!(await asegurarSesionBackend())) return;
 
+        const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
+        const res = await fetchConSesion(`${BASE_URL}/cliente/buscar?valor=${encodeURIComponent(valor)}`);
+
+        if (res.status === 403) {
+            mostrarMensajeCliente(await mensajeErrorRespuesta(res, "No tienes acceso a este cliente."), "warning");
+            return;
+        }
         if (!res.ok) {
             throw new Error(`Error HTTP ${res.status}`);
         }
@@ -40,6 +47,7 @@ async function buscar() {
 
         renderCliente(data);
     } catch (e) {
+        if (e instanceof SesionInvalidaError) return;
         console.error("Error consultando cliente:", e);
         mostrarMensajeCliente(`No se pudo completar la consulta. ${e.message || ""}`, "error");
     } finally {
@@ -73,7 +81,10 @@ function escapeClienteHtml(value) {
         .replace(/'/g, "&#039;");
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+    // La pagina no consulta nada hasta que /auth/me confirme la sesion.
+    if (!(await asegurarSesionBackend())) return;
+
     const params = new URLSearchParams(window.location.search);
     const dni = params.get("dni");
     const codcliente = params.get("codcliente");

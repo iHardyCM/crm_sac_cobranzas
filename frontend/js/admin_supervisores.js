@@ -38,7 +38,7 @@ async function cargarAdminSupervisores() {
 }
 
 async function fetchJson(path, options = {}) {
-    const response = await fetch(`${BASE_URL_ADMIN_SUPER}${path}`, {
+    const response = await fetchConSesion(`${BASE_URL_ADMIN_SUPER}${path}`, {
         cache: "no-store",
         ...options,
         headers: {

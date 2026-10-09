@@ -46,7 +46,7 @@ function pintarTituloFiltros() {
 
 async function cargarFiltrosCorporativos() {
     try {
-        const response = await fetch(`${BASE_URL}/corporativo/filtros`);
+        const response = await fetchConSesion(`${BASE_URL}/corporativo/filtros`);
 
         if (!response.ok) {
             throw new Error("Error al consultar filtros corporativos");
@@ -78,7 +78,7 @@ function pintarOpcionesCartera(carteras) {
 
 async function cargarResumenCorporativo() {
     try {
-        const response = await fetch(`${BASE_URL}/corporativo/resumen${obtenerQueryFiltros()}`);
+        const response = await fetchConSesion(`${BASE_URL}/corporativo/resumen${obtenerQueryFiltros()}`);
 
         if (!response.ok) {
             throw new Error("Error al consultar endpoint corporativo");
@@ -374,5 +374,10 @@ function verPdpHoyGeneral() {
 }
 
 function descargarReporte() {
-    window.open(`${BASE_URL}/corporativo/exportar${obtenerQueryFiltros()}`, "_blank");
+    // window.open no puede enviar Authorization: se descarga con la sesion.
+    descargarArchivoConSesion(`${BASE_URL}/corporativo/exportar${obtenerQueryFiltros()}`, "reporte_corporativo.xlsx")
+        .catch(error => {
+            if (error instanceof SesionInvalidaError) return;
+            alert(error.message || "No se pudo descargar el reporte.");
+        });
 }

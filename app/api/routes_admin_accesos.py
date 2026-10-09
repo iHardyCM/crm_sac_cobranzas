@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
 
 from app.core.auth_dependencies import requiere_administrador
 from app.services import admin_accesos_service as servicio
@@ -20,6 +21,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MENSAJE_ERROR_TECNICO = "No se pudo completar la operacion. Intenta nuevamente."
+
+
+class VistaRequest(BaseModel):
+    permitido: bool
 
 
 def _ejecutar(accion: str, admin: Dict, funcion, *args, **kwargs):
@@ -72,3 +77,23 @@ def desbloquear(dni: str, response: Response, admin: Dict = Depends(requiere_adm
 def deshabilitar(dni: str, response: Response, admin: Dict = Depends(requiere_administrador)):
     _sin_cache(response)
     return _ejecutar("DESHABILITAR", admin, servicio.deshabilitar, dni, admin["dni"])
+
+
+@router.get("/{dni}/vistas")
+def listar_vistas(dni: str, response: Response, admin: Dict = Depends(requiere_administrador)):
+    _sin_cache(response)
+    return _ejecutar("LISTAR_VISTAS", admin, servicio.listar_vistas, dni)
+
+
+@router.put("/{dni}/vistas/{clave}")
+def guardar_vista(dni: str, clave: str, payload: VistaRequest, response: Response,
+                  admin: Dict = Depends(requiere_administrador)):
+    _sin_cache(response)
+    return _ejecutar("GUARDAR_VISTA", admin, servicio.guardar_vista,
+                     dni, clave, payload.permitido, admin["dni"])
+
+
+@router.delete("/{dni}/vistas")
+def restablecer_vistas(dni: str, response: Response, admin: Dict = Depends(requiere_administrador)):
+    _sin_cache(response)
+    return _ejecutar("RESTABLECER_VISTAS", admin, servicio.restablecer_vistas, dni, admin["dni"])

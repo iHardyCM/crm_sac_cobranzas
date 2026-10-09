@@ -99,7 +99,7 @@ async function cargarContextoScore() {
     if (perfil) params.set("perfil", perfil);
 
     try {
-        const response = await fetch(`${BASE_URL_SCORE}/score-telefonico/contexto?${params.toString()}`, {
+        const response = await fetchConSesion(`${BASE_URL_SCORE}/score-telefonico/contexto?${params.toString()}`, {
             cache: "no-store"
         });
 
@@ -147,7 +147,7 @@ async function cargarCatalogosScore(idcartera) {
     if (!idcartera) return;
 
     try {
-        const response = await fetch(`${BASE_URL_SCORE}/score-telefonico/catalogos?idcartera=${encodeURIComponent(idcartera)}`, {
+        const response = await fetchConSesion(`${BASE_URL_SCORE}/score-telefonico/catalogos?idcartera=${encodeURIComponent(idcartera)}`, {
             cache: "no-store"
         });
 
@@ -565,7 +565,7 @@ async function cargarResumenScore() {
     try {
         setKpisLoading(true);
 
-        const response = await fetch(`${BASE_URL_SCORE}/score-telefonico/resumen?${params.toString()}`, {
+        const response = await fetchConSesion(`${BASE_URL_SCORE}/score-telefonico/resumen?${params.toString()}`, {
             cache: "no-store"
         });
 
@@ -618,7 +618,7 @@ async function cargarResultadosScore() {
     try {
         setTableLoadingScore(true);
 
-        const response = await fetch(`${BASE_URL_SCORE}/score-telefonico/resultados?${params.toString()}`, {
+        const response = await fetchConSesion(`${BASE_URL_SCORE}/score-telefonico/resultados?${params.toString()}`, {
             cache: "no-store"
         });
 
@@ -755,12 +755,11 @@ function exportarScoreTelefonico() {
 
     showToast("Preparando exportación...");
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // <a href> no puede enviar Authorization: se descarga con la sesion.
+    descargarArchivoConSesion(url, "score_telefonico.xlsx").catch(error => {
+        if (error instanceof SesionInvalidaError) return;
+        showToast(error.message || "No se pudo exportar.");
+    });
 }
 
 function wireVisualActions() {
@@ -883,7 +882,7 @@ function wireVisualActions() {
 
 async function cargarUltimaActualizacionScore() {
     try {
-        const response = await fetch(`${BASE_URL_SCORE}/score-telefonico/ultima-actualizacion`, {
+        const response = await fetchConSesion(`${BASE_URL_SCORE}/score-telefonico/ultima-actualizacion`, {
             cache: "no-store"
         });
 

@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <title>Biznescob - Importación de Pagos</title>
-    <link rel="stylesheet" href="../css/pagos.css?v=20260829-apple-breathing">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/pagos.css?v=557bf1cc24">
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
@@ -137,7 +140,7 @@
 
             <div class="warning-strip">
                 <span>!</span>
-                <p>Esta importación reemplazará el corte activo anterior del mismo formato, período y cartera. Los cortes anteriores quedarán disponibles para auditoría.</p>
+                <p id="mensajePublicacion">Esta importación reemplazará el corte activo anterior del mismo formato, período y cartera. Los cortes anteriores quedarán disponibles para auditoría.</p>
             </div>
 
             <div class="resumen-actions">
@@ -242,8 +245,8 @@
         </section>
     </main>
 
-    <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260923-consumo"></script>
-    <script src="../js/pagos.js?v=20260829-apple-progress"></script>
+    <script src="../js/session.js?v=60298e1520"></script>
+    <script src="../js/app_layout.js?v=876e8f616f"></script>
+    <script src="../js/pagos.js?v=ee22b635ba"></script>
 </body>
 </html>

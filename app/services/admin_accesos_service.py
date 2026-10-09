@@ -356,3 +356,80 @@ def deshabilitar(dni: str, admin: str) -> Dict:
 
     _registrar("DESHABILITAR", admin, dni, "OK")
     return {"ok": True, "dni": dni, "accion": "DESHABILITAR"}
+
+
+# ---------------------------------------------------------------------------
+# Vistas por usuario. Solo se almacenan excepciones a su perfil.
+# ---------------------------------------------------------------------------
+
+def _usuario_para_vistas(dni: str) -> Dict:
+    usuario = _exigir_usuario_siscob_activo(dni)
+    carteras = auth_service.obtener_carteras_usuario(dni, usuario.get("idcartera"))
+    return {**usuario, "dni": dni, "idcarteras": carteras}
+
+
+def _filas_vistas(usuario: Dict, sobrescrituras: Dict[str, bool]) -> List[Dict]:
+    from app.core.permisos_vistas import CATALOGO, permisos_base, puede_habilitar_clientes
+    base = permisos_base(usuario)
+    return [
+        {
+            "clave": clave,
+            "nombre": nombre,
+            "base": base[clave],
+            "permitido": sobrescrituras.get(clave, base[clave]) and
+                         (clave != "clientes" or puede_habilitar_clientes(usuario)),
+            "personalizado": clave in sobrescrituras,
+            "habilitable": clave != "clientes" or puede_habilitar_clientes(usuario),
+        }
+        for clave, nombre in CATALOGO
+    ]
+
+
+def listar_vistas(dni: str) -> Dict:
+    from app.core.permisos_vistas import leer_sobrescrituras
+    dni = validar_dni(dni)
+    usuario = _usuario_para_vistas(dni)
+    return {"dni": dni, "vistas": _filas_vistas(usuario, leer_sobrescrituras(dni))}
+
+
+def guardar_vista(dni: str, clave: str, permitido: bool, admin: str) -> Dict:
+    from app.core.permisos_vistas import CLAVES, permisos_base, puede_habilitar_clientes
+    dni = validar_dni(dni)
+    if clave not in CLAVES:
+        raise ErrorAccesos("La vista indicada no se puede administrar.", 400)
+    usuario = _usuario_para_vistas(dni)
+    if clave == "clientes" and permitido and not puede_habilitar_clientes(usuario):
+        raise ErrorAccesos("El usuario no tiene una cartera Compartamos asignada.", 409)
+    base = permisos_base(usuario)[clave]
+    with engine_siscob.begin() as conn:
+        conn.execute(text("""
+            SELECT PERMITIDO
+            FROM CobAuto.dbo.CRM_USUARIO_VISTA WITH (UPDLOCK, HOLDLOCK)
+            WHERE USUARIO = :dni AND VISTA = :clave
+        """), {"dni": dni, "clave": clave}).fetchone()
+        conn.execute(text("""
+            DELETE FROM CobAuto.dbo.CRM_USUARIO_VISTA
+            WHERE USUARIO = :dni AND VISTA = :clave
+        """), {"dni": dni, "clave": clave})
+        if permitido != base:
+            conn.execute(text("""
+                INSERT INTO CobAuto.dbo.CRM_USUARIO_VISTA
+                    (USUARIO, VISTA, PERMITIDO, USUARIO_ACTUALIZACION)
+                VALUES (:dni, :clave, :permitido, :admin)
+            """), {
+                "dni": dni, "clave": clave, "permitido": int(permitido), "admin": admin,
+            })
+    _registrar("VISTA_" + ("PERMITIR" if permitido else "DENEGAR"), admin, dni, clave)
+    return {"ok": True, "dni": dni, "clave": clave, "permitido": permitido,
+            "personalizado": permitido != base}
+
+
+def restablecer_vistas(dni: str, admin: str) -> Dict:
+    dni = validar_dni(dni)
+    _usuario_para_vistas(dni)
+    with engine_siscob.begin() as conn:
+        conn.execute(text("""
+            DELETE FROM CobAuto.dbo.CRM_USUARIO_VISTA WHERE USUARIO = :dni
+        """), {"dni": dni})
+    _registrar("VISTAS_RESTABLECER", admin, dni, "OK")
+    return {"ok": True, "dni": dni}

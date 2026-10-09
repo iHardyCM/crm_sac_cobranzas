@@ -6,11 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Layout global del CRM -->
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
 
     <!-- CSS propio de la vista -->
-    <link rel="stylesheet" href="../css/telefonos.css?v=20260829-apple-spacing">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <link rel="stylesheet" href="../css/telefonos.css?v=8f1b87c648">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 
 <body>
@@ -297,11 +300,14 @@
 
 <div id="telefonosDrawerBackdrop" class="telefonos-drawer-backdrop hidden" aria-hidden="true"></div>
 
+<!-- Sesion (validacion con el backend y fetch autenticado) -->
+<script src="../js/session.js?v=60298e1520"></script>
+
 <!-- Layout global del CRM -->
-<script src="../js/app_layout.js?v=20260923-consumo"></script>
+<script src="../js/app_layout.js?v=876e8f616f"></script>
 
 <!-- JS propio de la vista -->
-<script src="../js/telefonos.js?v=20260829-apple-compare"></script>
+<script src="../js/telefonos.js?v=a21ece6510"></script>
 
 </body>
 </html>

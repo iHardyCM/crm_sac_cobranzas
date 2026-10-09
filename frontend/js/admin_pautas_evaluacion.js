@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function fetchPautas(path, options = {}) {
-    const response = await fetch(`${BASE_URL_PAUTAS}${path}`, {
+    const response = await fetchConSesion(`${BASE_URL_PAUTAS}${path}`, {
         cache: "no-store",
         ...options,
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -452,7 +452,7 @@ async function exportarPautaExcel() {
     const textoOriginal = boton?.textContent;
     if (boton) { boton.disabled = true; boton.textContent = "Generando…"; }
     try {
-        const respuesta = await fetch(`${BASE_URL_PAUTAS}/admin-pautas-evaluacion/pautas/${pautaActual.id_pauta}/exportar`);
+        const respuesta = await fetchConSesion(`${BASE_URL_PAUTAS}/admin-pautas-evaluacion/pautas/${pautaActual.id_pauta}/exportar`);
         if (!respuesta.ok) {
             let detalle = "No se pudo exportar la pauta.";
             try { detalle = (await respuesta.json()).detail || detalle; } catch (_) { /* respuesta sin JSON */ }

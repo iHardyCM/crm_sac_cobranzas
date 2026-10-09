@@ -86,6 +86,7 @@ def exportar_control_horario(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f"attachment; filename={nombre_archivo}"
+            "Content-Disposition": f"attachment; filename={nombre_archivo}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )

@@ -47,7 +47,7 @@ async function cargarConfiguracionesImportacion() {
     const selectCierre = document.getElementById("configCierreImportacion");
     const selectSaldos = document.getElementById("configSaldos");
     try {
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/configuraciones`, { cache: "no-store" });
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/configuraciones`, { cache: "no-store" });
         const json = await res.json();
         if (!res.ok) throw new Error(json.detail || "No se pudieron cargar configuraciones.");
 
@@ -114,7 +114,7 @@ async function analizarImportacion(event) {
         btn.disabled = true;
         btn.textContent = "Analizando...";
 
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/analizar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/analizar`, {
             method: "POST",
             body: formData
         });
@@ -392,7 +392,7 @@ function badgeEstadoCarga(estado) {
 
 async function cargarLotesImportacion(mostrarMensaje = true) {
     try {
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/lotes`, { cache: "no-store" });
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/lotes`, { cache: "no-store" });
         const json = await res.json();
         if (!res.ok) throw new Error(json.detail || "No se pudo cargar historial.");
         renderLotesImportacion(json.data || []);
@@ -579,7 +579,7 @@ async function confirmarCargaImportacion() {
             periodo: ultimoAnalisis.periodo,
             cartera: ultimoAnalisis.cartera,
         });
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/confirmar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/confirmar`, {
             method: "POST",
             body: formData
         });
@@ -629,7 +629,7 @@ function iniciarProgresoConfirmacion({ mensaje, inicio, totalInsertar, totalActu
         let detalleLote = "";
 
         try {
-            const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/lotes?limit=5`, { cache: "no-store" });
+            const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/lotes?limit=5`, { cache: "no-store" });
             const json = await res.json();
             const lote = (json.data || []).find(item =>
                 String(item.periodo || "") === String(periodo || "") &&
@@ -802,7 +802,7 @@ async function analizarSaldos(event) {
     try {
         btn.disabled = true;
         btn.textContent = "Analizando...";
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/saldos/analizar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/saldos/analizar`, {
             method: "POST",
             body: formData
         });
@@ -962,7 +962,7 @@ async function confirmarReemplazoSaldos() {
             periodo: analisis.periodo,
             cartera: analisis.cartera
         });
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/saldos/reemplazar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/saldos/reemplazar`, {
             method: "POST",
             body: formData
         });
@@ -1061,7 +1061,7 @@ async function validarCierreHistorico(event) {
     try {
         btn.disabled = true;
         btn.textContent = "Validando...";
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/cierre/validar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/cierre/validar`, {
             method: "POST",
             body: formData
         });
@@ -1158,7 +1158,7 @@ async function ejecutarCierreHistorico(modo) {
     try {
         cierreEnEjecucion = true;
         bloquearAccionesCierre(true);
-        const res = await fetch(`${BASE_URL_IMPORTACION}/importacion/cierre/ejecutar`, {
+        const res = await fetchConSesion(`${BASE_URL_IMPORTACION}/importacion/cierre/ejecutar`, {
             method: "POST",
             body: formData
         });

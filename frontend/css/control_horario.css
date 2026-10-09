@@ -155,9 +155,14 @@ body.crm-shell .control-modal-card { border: 1px solid rgba(255,255,255,.7); bor
 
 .control-filtros {
     display: grid;
-    grid-template-columns: repeat(5, minmax(180px, 1fr));
+    /* Se acomoda al ancho disponible (antes forzaba 5 columnas y el check quedaba cortado) */
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 12px;
     padding: 14px;
+}
+
+.control-filtros > * {
+    min-width: 0;
 }
 
 .field {
@@ -1472,3 +1477,21 @@ body.crm-shell .chart-switch button { border-radius: 7px; }
 body.crm-shell .chart-switch button.active { background: #fff; color: #0a66d8; box-shadow: 0 2px 7px rgba(15,23,42,.10); }
 body.crm-shell .control-modal { background: rgba(7,24,45,.38); backdrop-filter: blur(5px); }
 body.crm-shell .control-modal-card { border: 1px solid rgba(255,255,255,.7); border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: 0 28px 80px rgba(5,23,45,.28); }
+
+/* Ultima columna (Accion / Detalle) siempre visible aunque la tabla tenga scroll horizontal */
+.tabla-accion-fija th:last-child,
+.tabla-accion-fija td:last-child {
+    background: #ffffff;
+    box-shadow: -8px 0 10px -8px rgba(15, 23, 42, .22);
+    position: sticky;
+    right: 0;
+    z-index: 2;
+}
+
+.tabla-accion-fija thead th:last-child {
+    background: #f4f8fc;
+}
+
+.tabla-accion-fija tbody tr:hover td:last-child {
+    background: #f7fbff;
+}

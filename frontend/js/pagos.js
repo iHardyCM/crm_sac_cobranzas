@@ -49,7 +49,7 @@ async function validarArchivo(event) {
         btn.disabled = true;
         btn.innerText = "Validando...";
 
-        const response = await fetch(`${BASE_URL}/pagos/validar`, {
+        const response = await fetchConSesion(`${BASE_URL}/pagos/validar`, {
             method: "POST",
             body: data
         });
@@ -87,6 +87,13 @@ function pintarResumen(data) {
     document.getElementById("rErrores").innerText = numero(data.filas_error);
     document.getElementById("rMonto").innerText = soles(data.total_monto_pago);
     document.getElementById("rCapital").innerText = soles(data.total_capital_contenido);
+
+    const mensajePublicacion = document.getElementById("mensajePublicacion");
+    if (mensajePublicacion) {
+        mensajePublicacion.innerText = data.formato === "COMPARTAMOS_VIGENTE"
+            ? "Compartamos Vigente actualizará por operación: publicará solo registros nuevos o modificados, conservará los que no cambiaron y retirará del corte activo los que ya no califican."
+            : "Esta importación reemplazará el corte activo anterior del mismo formato, período y cartera. Los cortes anteriores quedarán disponibles para auditoría.";
+    }
 
     const tbody = document.getElementById("tablaResumenCartera");
     const resumen = data.resumen_por_cartera || [];
@@ -135,7 +142,7 @@ async function confirmarImportacion() {
         btn.disabled = true;
         btn.innerText = "Publicando...";
 
-        const response = await fetch(`${BASE_URL}/pagos/confirmar/${idImportacionActual}`, {
+        const response = await fetchConSesion(`${BASE_URL}/pagos/confirmar/${idImportacionActual}`, {
             method: "POST"
         });
         const result = await response.json();
@@ -149,7 +156,10 @@ async function confirmarImportacion() {
         flujo?.classList.add("is-published");
         publicado = true;
         btn.innerText = "Publicado";
-        mostrarToast(`Importación publicada correctamente: ${numero(result.filas_publicadas)} filas.`, "success");
+        const mensaje = result.modo_publicacion === "INCREMENTAL"
+            ? `Importación incremental publicada: ${numero(result.operaciones_nuevas)} nuevas, ${numero(result.operaciones_actualizadas)} actualizadas, ${numero(result.operaciones_sin_cambio)} sin cambio y ${numero(result.operaciones_retiradas)} retiradas.`
+            : `Importación publicada correctamente: ${numero(result.filas_publicadas)} filas.`;
+        mostrarToast(mensaje, "success");
         document.getElementById("formPagos").reset();
         actualizarNombreArchivo();
         await cargarHistorial(false);
@@ -197,7 +207,7 @@ async function cargarHistorial(mostrarError = true) {
             params.set("codmes", codmesActual());
         }
 
-        const response = await fetch(`${BASE_URL}/pagos/importaciones?${params.toString()}`);
+        const response = await fetchConSesion(`${BASE_URL}/pagos/importaciones?${params.toString()}`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -220,7 +230,7 @@ async function cargarHistorial(mostrarError = true) {
 }
 
 async function cargarCortesActivos() {
-    const response = await fetch(`${BASE_URL}/pagos/cortes-activos?codmes=${codmesActual()}`);
+    const response = await fetchConSesion(`${BASE_URL}/pagos/cortes-activos?codmes=${codmesActual()}`);
     const result = await response.json();
     if (!response.ok) {
         throw new Error(result.detail || "No se pudo cargar cortes activos.");

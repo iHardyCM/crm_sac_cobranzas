@@ -81,7 +81,15 @@ def me(usuario: Dict = Depends(obtener_usuario_actual)):
     except Exception:
         logger.exception("Error verificando cambio obligatorio en /auth/me usuario=%s", usuario.get("dni"))
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MENSAJE_ERROR_TECNICO)
-    return {**usuario, "requiere_cambio_clave": bool(requiere_cambio)}
+    if requiere_cambio:
+        return {**usuario, "requiere_cambio_clave": True}
+    from app.core.permisos_vistas import permisos_efectivos
+    try:
+        permisos = permisos_efectivos(usuario)
+    except Exception:
+        logger.exception("Error verificando vistas en /auth/me usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MENSAJE_ERROR_TECNICO)
+    return {**usuario, "requiere_cambio_clave": False, "permisos_vistas": permisos}
 
 
 @router.post("/cambiar-clave")

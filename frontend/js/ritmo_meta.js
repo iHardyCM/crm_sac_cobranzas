@@ -23,7 +23,7 @@ async function cargarRitmoMeta() {
         const usuario = (agenteRitmo || "").split(" - ")[0];
         const codmes = document.getElementById("ritmoCodmes").value;
         const params = new URLSearchParams({ usuario, codmes });
-        const res = await fetch(`${BASE_URL_RITMO}/admin-metas-agentes/ritmo-agente?${params.toString()}`, {
+        const res = await fetchConSesion(`${BASE_URL_RITMO}/admin-metas-agentes/ritmo-agente?${params.toString()}`, {
             cache: "no-store",
         });
         const data = await res.json();

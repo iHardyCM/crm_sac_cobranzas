@@ -56,7 +56,7 @@ async function seleccionarCarteraMeta() {
 }
 
 async function fetchJsonMetas(path, options = {}) {
-    const response = await fetch(`${BASE_URL_ADMIN_METAS}${path}`, {
+    const response = await fetchConSesion(`${BASE_URL_ADMIN_METAS}${path}`, {
         cache: "no-store",
         ...options,
         headers: {

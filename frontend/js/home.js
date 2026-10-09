@@ -36,6 +36,8 @@ function pintarCabeceraHome(usuario) {
     const inicioSesion = localStorage.getItem("session_started_at");
 
     document.getElementById("homeUsuario").innerText = agente;
+    const avatar = document.getElementById("homeAvatar");
+    if (avatar) avatar.textContent = (nombre.trim().charAt(0) || "U").toUpperCase();
     document.getElementById("homePerfil").innerText = tipo;
     document.getElementById("homeTitulo").innerText = `Hola, ${nombre}`;
     document.getElementById("homeFecha").innerText = new Date().toLocaleDateString("es-PE", {
@@ -82,23 +84,160 @@ function obtenerDescripcionPerfil(tipo) {
 function pintarModulos(usuario) {
     const tipo = normalizarTipoUsuario(usuario.tipo);
     const contenedor = document.getElementById("modulosHome");
-    const modulos = obtenerModulosPorPerfil(tipo);
+    const permisos = usuario.permisos_vistas || {};
+    const clavesPorRuta = {
+        "compartamos.html": "clientes",
+        "compromisos.html": "compromisos",
+        "supervisor.html": "gestiones",
+        "telefonos.html": "telefonos",
+        "ia_feedback.html": "ia_feedback"
+    };
+    const modulos = obtenerModulosPorPerfil(tipo).filter(modulo => {
+        const clave = clavesPorRuta[modulo.ruta.split("?")[0]];
+        return !clave || permisos[clave] !== false;
+    });
+    const extras = [
+        ["clientes", "compartamos.html", "CL", "Radar Compartamos", "Consulta de clientes de tus carteras."],
+        ["compromisos", "compromisos.html", "PD", "Mis compromisos", "Compromisos propios y asignados."],
+        ["gestiones", "supervisor.html", "SU", "Compromisos del equipo", "Seguimiento del equipo en tus carteras."],
+        ["telefonos", "telefonos.html", "TF", "Validación de Teléfonos", "Consulta de teléfonos de tus carteras."],
+        ["ia_feedback", "ia_feedback.html", "IA", "Análisis IA", "Feedback operativo de llamadas."]
+    ];
+    for (const [clave, ruta, sigla, titulo, descripcion] of extras) {
+        if (permisos[clave] === true && !modulos.some(modulo => modulo.ruta.split("?")[0] === ruta)) {
+            modulos.push({ sigla, titulo, descripcion, ruta, destacado: false });
+        }
+    }
+    // Un mismo destino no se muestra dos veces.
+    const vistos = new Set();
+    modulosMostrados = modulos.filter(modulo => {
+        if (vistos.has(modulo.ruta)) return false;
+        vistos.add(modulo.ruta);
+        return true;
+    });
+
     const contador = document.getElementById("homeModulos");
 
     if (contador) {
-        contador.innerText = String(modulos.length);
+        contador.innerText = String(modulosMostrados.length);
     }
 
-    contenedor.innerHTML = modulos.map(modulo => `
-        <article class="module-card ${modulo.destacado ? "destacado" : ""}">
-            <div class="module-icon">${modulo.sigla}</div>
-            <div>
-                <h4>${modulo.titulo}</h4>
-                <p>${modulo.descripcion}</p>
-            </div>
-            <button onclick="abrirModulo('${modulo.ruta}')">Abrir</button>
-        </article>
-    `).join("");
+    renderizarModulos(contenedor, "");
+
+    const buscador = document.getElementById("homeBuscar");
+    if (buscador && typeof buscador.addEventListener === "function") {
+        buscador.addEventListener("input", () => renderizarModulos(contenedor, buscador.value));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Presentacion de los modulos: agrupados por area, con icono y buscador.
+// La lista de modulos por perfil (obtenerModulosPorPerfil) no cambia; aqui solo
+// se decide como se muestra.
+// ---------------------------------------------------------------------------
+let modulosMostrados = [];
+
+const GRUPOS_HOME = [
+    { clave: "operacion", titulo: "Operación y seguimiento", tono: "" },
+    { clave: "calidad", titulo: "Calidad e IA", tono: "tono-calidad" },
+    { clave: "datos", titulo: "Cargas y documentos", tono: "tono-datos" },
+    { clave: "admin", titulo: "Administración", tono: "tono-admin" }
+];
+
+const GRUPO_POR_PAGINA = {
+    "ia_feedback.html": "calidad",
+    "susurro_ia.html": "calidad",
+    "consumo_ia.html": "calidad",
+    "importacion.html": "datos",
+    "pagos.html": "datos",
+    "canales.html": "datos",
+    "documentos.html": "datos",
+    "admin_supervisores.html": "admin",
+    "admin_accesos.html": "admin"
+};
+
+// Trazos de 24x24 (estilo linea). Si una pagina no tiene icono se muestra la sigla.
+const ICONOS_HOME = {
+    "corporativo.html": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    "metas.html": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>',
+    "compromisos.html": '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 14l2 2 4-4"/>',
+    "supervisor.html": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 5.2a3.5 3.5 0 010 5.6M18 14.4c2.2.7 3.5 2.6 3.5 5.6"/>',
+    "corporativo_pdp_hoy.html": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
+    "control_horario.html": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "compartamos.html": '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    "telefonos.html": '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
+    "ia_feedback.html": '<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13v1M15 13v1M9 17h6"/>',
+    "susurro_ia.html": '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/>',
+    "consumo_ia.html": '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+    "importacion.html": '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+    "pagos.html": '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/>',
+    "canales.html": '<path d="M3 11v3l12 5V6L3 11zM15 9a4 4 0 010 6M6 14l1.5 6"/>',
+    "documentos.html": '<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5zM14 3v5h5M9 13h6M9 17h6"/>',
+    "admin_supervisores.html": '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
+    "admin_accesos.html": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'
+};
+
+function paginaDeRuta(ruta) {
+    return String(ruta || "").split("?")[0].split("/").pop();
+}
+
+function escaparHtmlHome(texto) {
+    return String(texto ?? "").replace(/[&<>"']/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+}
+
+function normalizarBusquedaHome(texto) {
+    return String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function tarjetaModuloHome(modulo) {
+    const pagina = paginaDeRuta(modulo.ruta);
+    const trazo = ICONOS_HOME[pagina];
+    const icono = trazo
+        ? `<svg viewBox="0 0 24 24" aria-hidden="true">${trazo}</svg>`
+        : escaparHtmlHome(modulo.sigla);
+
+    return `
+        <a class="module-card ${modulo.destacado ? "destacado" : ""}" href="${escaparHtmlHome(modulo.ruta)}">
+            <span class="module-icon">${icono}</span>
+            <span class="module-text">
+                <h4>${escaparHtmlHome(modulo.titulo)}</h4>
+                <p>${escaparHtmlHome(modulo.descripcion)}</p>
+            </span>
+            <svg class="module-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </a>`;
+}
+
+function renderizarModulos(contenedor, filtro) {
+    const consulta = normalizarBusquedaHome(filtro);
+    const visibles = consulta
+        ? modulosMostrados.filter(m => normalizarBusquedaHome(`${m.titulo} ${m.descripcion}`).includes(consulta))
+        : modulosMostrados;
+
+    if (!visibles.length) {
+        contenedor.innerHTML = `<p class="modulos-vacio">${consulta
+            ? "Ningún módulo coincide con tu búsqueda."
+            : "Tu perfil no tiene módulos habilitados por ahora."}</p>`;
+        return;
+    }
+
+    // Con pocos modulos los encabezados de area sobran: una sola rejilla.
+    if (modulosMostrados.length <= 6) {
+        contenedor.innerHTML = `<div class="module-grid">${visibles.map(tarjetaModuloHome).join("")}</div>`;
+        return;
+    }
+
+    contenedor.innerHTML = GRUPOS_HOME.map(grupo => {
+        const delGrupo = visibles.filter(m => (GRUPO_POR_PAGINA[paginaDeRuta(m.ruta)] || "operacion") === grupo.clave)
+            .sort((a, b) => Number(!!b.destacado) - Number(!!a.destacado));
+        if (!delGrupo.length) return "";
+        return `
+            <section class="module-group ${grupo.tono}">
+                <h3 class="group-head">${grupo.titulo} <b>${delGrupo.length}</b></h3>
+                <div class="module-grid">${delGrupo.map(tarjetaModuloHome).join("")}</div>
+            </section>`;
+    }).join("");
 }
 
 function obtenerModulosPorPerfil(tipo) {
@@ -119,7 +258,7 @@ function obtenerModulosPorPerfil(tipo) {
         if (compartamos) {
             modulos.push({
                 sigla: "CL",
-                titulo: "Consulta Compartamos",
+                titulo: "Radar Compartamos",
                 descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
                 ruta: "compartamos.html",
                 destacado: false
@@ -152,7 +291,7 @@ function obtenerModulosPorPerfil(tipo) {
         modulos.unshift(
             ...(compartamos ? [{
                 sigla: "CL",
-                titulo: "Consulta Compartamos",
+                titulo: "Radar Compartamos",
                 descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
                 ruta: "compartamos.html",
                 destacado: false
@@ -243,7 +382,7 @@ function obtenerModulosPorPerfil(tipo) {
             },
             {
                 sigla: "CL",
-                titulo: "Consulta Compartamos",
+                titulo: "Radar Compartamos",
                 descripcion: "Informacion diaria de clientes activos, deuda, capital y cuotas.",
                 ruta: "compartamos.html",
                 destacado: false
@@ -326,8 +465,8 @@ function obtenerModulosPorPerfil(tipo) {
         // La seguridad real esta en el backend: /admin-accesos responde 403 si no es administrador.
         modulos.push({
             sigla: "AC",
-            titulo: "Accesos CRM",
-            descripcion: "Habilita usuarios, genera claves temporales, desbloquea o deshabilita accesos.",
+            titulo: "Usuarios y accesos",
+            descripcion: "Gestiona cuentas y permisos individuales de vistas.",
             ruta: "admin_accesos.html",
             destacado: false
         });

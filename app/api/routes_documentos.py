@@ -46,6 +46,12 @@ class PagoMibancoRequest(BaseModel):
     operacion: str | None = None
 
 
+class CreditoPropiaRequest(BaseModel):
+    operacion: str
+    monto: float | None = None
+    fecha: str | None = None
+
+
 class GenerarDocumentoRequest(BaseModel):
     documento_tipo: str
     dni: str | None = None
@@ -59,8 +65,10 @@ class GenerarDocumentoRequest(BaseModel):
     encargado: EncargadoDocumentoRequest | None = None
     pagos_grupales: list[PagoGrupalRequest] = Field(default_factory=list)
     cuotas_individual: int | None = None
+    cantidad_cuotas: int | None = None
     operaciones_mibanco: list[str] = Field(default_factory=list)
     pagos_mibanco: list[PagoMibancoRequest] = Field(default_factory=list)
+    creditos_propia: list[CreditoPropiaRequest] = Field(default_factory=list)
     usuario: str | None = None
     nombre_usuario: str | None = None
     perfil_usuario: str | None = None
@@ -169,8 +177,10 @@ async def generar_documento_endpoint(payload: GenerarDocumentoRequest):
             encargado=payload.encargado.dict() if payload.encargado else None,
             pagos_grupales=[item.dict() for item in payload.pagos_grupales],
             cuotas_individual=payload.cuotas_individual,
+            cantidad_cuotas=payload.cantidad_cuotas,
             operaciones_mibanco=payload.operaciones_mibanco,
             pagos_mibanco=[item.dict() for item in payload.pagos_mibanco],
+            creditos_propia=[item.model_dump() for item in payload.creditos_propia],
         )
         try:
             await run_in_threadpool(
@@ -181,13 +191,14 @@ async def generar_documento_endpoint(payload: GenerarDocumentoRequest):
                 nombre_usuario=payload.nombre_usuario,
                 perfil_usuario=payload.perfil_usuario,
                 cancelacion=payload.cancelacion,
-                operaciones=payload.operaciones_mibanco or ([payload.operacion] if payload.operacion else []),
+                operaciones=payload.operaciones_mibanco or [item.operacion for item in payload.creditos_propia]
+                or ([payload.operacion] if payload.operacion else []),
                 excepcion=payload.excepcion,
                 detalle_operaciones=result.get("auditoria_detalle") or result.get("auditoria_operaciones"),
             )
         except Exception as exc:
             logger.exception("No se pudo registrar la auditoria de documentos")
-            if payload.documento_tipo == "sip_constancia_atencion":
+            if payload.documento_tipo == "sip_constancia_atencion" or payload.documento_tipo.startswith("propia_"):
                 raise HTTPException(
                     status_code=503,
                     detail="No se pudo guardar la traza de auditoría. El documento no fue entregado; inténtalo nuevamente.",
@@ -226,8 +237,10 @@ async def previsualizar_documento_endpoint(payload: GenerarDocumentoRequest):
             encargado=payload.encargado.dict() if payload.encargado else None,
             pagos_grupales=[item.dict() for item in payload.pagos_grupales],
             cuotas_individual=payload.cuotas_individual,
+            cantidad_cuotas=payload.cantidad_cuotas,
             operaciones_mibanco=payload.operaciones_mibanco,
             pagos_mibanco=[item.dict() for item in payload.pagos_mibanco],
+            creditos_propia=[item.model_dump() for item in payload.creditos_propia],
             permitir_preview=True,
         )
         return FileResponse(

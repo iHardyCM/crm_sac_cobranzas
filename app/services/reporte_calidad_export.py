@@ -35,7 +35,8 @@ No inventa datos: lo que no viene en el payload queda vacio.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from html import escape
 from io import BytesIO
 from typing import Dict, List, Optional
 
@@ -44,6 +45,13 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Circle, Drawing, Line, Rect, String
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 FUENTE = "Arial"
 AZUL_TITULO = "0D355B"
@@ -365,3 +373,395 @@ def construir_reporte_calidad_excel(payload: Dict) -> bytes:
     salida = BytesIO()
     wb.save(salida)
     return salida.getvalue()
+
+
+# Los documentos ejecutivos no recalculan la evaluacion: reciben el mismo
+# payload que la vista ya filtro. Asi respetan nombres, pesos y resultados de
+# la pauta aplicada a cada llamada.
+def _texto_documento(valor, vacio: str = "—") -> str:
+    texto = str(valor or "").strip()
+    return texto if texto else vacio
+
+
+def _estilos_documento():
+    base = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle("quality-title", parent=base["Title"], fontName="Helvetica-Bold", fontSize=18,
+                                leading=22, textColor=colors.HexColor("#10263D"), spaceAfter=3),
+        "subtitle": ParagraphStyle("quality-subtitle", parent=base["Normal"], fontSize=8.5, leading=11,
+                                   textColor=colors.HexColor("#5F7488"), spaceAfter=10),
+        "section": ParagraphStyle("quality-section", parent=base["Heading2"], fontName="Helvetica-Bold", fontSize=10,
+                                  leading=13, textColor=colors.HexColor("#10263D"), spaceBefore=10, spaceAfter=5),
+        "body": ParagraphStyle("quality-body", parent=base["Normal"], fontSize=8, leading=10.5,
+                               textColor=colors.HexColor("#23384D")),
+        "small": ParagraphStyle("quality-small", parent=base["Normal"], fontSize=7, leading=9,
+                                textColor=colors.HexColor("#415A73")),
+        "header": ParagraphStyle("quality-header", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7,
+                                  leading=9, textColor=colors.white),
+        "score": ParagraphStyle("quality-score", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=22,
+                                leading=25, textColor=colors.HexColor("#10263D"), alignment=TA_CENTER),
+    }
+
+
+def _p(valor, estilo):
+    return Paragraph(escape(_texto_documento(valor)), estilo)
+
+
+def _p_lineas(valores, estilo, vacio: str = "—"):
+    """Texto seguro con saltos reales para Paragraph; no deja HTML visible."""
+    if isinstance(valores, (list, tuple)):
+        partes = [str(x).strip() for x in valores if str(x).strip()]
+    else:
+        partes = [str(valores or "").strip()]
+    return Paragraph("<br/>".join(escape(x) for x in partes) or escape(vacio), estilo)
+
+
+def _fecha_documento(valor) -> str:
+    texto = _texto_documento(valor)
+    try:
+        return datetime.fromisoformat(texto.replace("Z", "+00:00")).strftime("%d/%m/%Y %I:%M %p")
+    except ValueError:
+        return texto
+
+
+def _semana_documento(valor) -> str:
+    texto = _texto_documento(valor, "")
+    try:
+        fecha = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        return f"Semana {fecha.isocalendar().week}"
+    except ValueError:
+        return "Sin fecha"
+
+
+def _tabla_documento(datos, anchos, cabecera=True):
+    tabla = Table(datos, colWidths=anchos, repeatRows=1 if cabecera else 0, hAlign="LEFT")
+    comandos = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D5DEE8")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    if cabecera:
+        comandos += [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#10263D")),
+                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white)]
+    tabla.setStyle(TableStyle(comandos))
+    return tabla
+
+
+def _tarjeta_documento(titulo: str, contenido, ancho: float, estilos, detalle: str = ""):
+    encabezado = [_p(titulo, estilos["header"])]
+    if detalle:
+        encabezado.append(_p(detalle, estilos["header"]))
+    card = Table([encabezado, [contenido]], colWidths=[ancho * .72, ancho * .28], hAlign="LEFT")
+    card.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#10263D")),
+        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#D5DEE8")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("SPAN", (0, 1), (-1, 1)),
+    ]))
+    return card
+
+
+def _fila_criterio_documento(fila: Dict, estilos):
+    nombre = escape(_texto_documento(fila.get("criterio")))
+    evidencia = _texto_documento(fila.get("evidencia"), "") if fila.get("brecha") else ""
+    if evidencia:
+        nombre += f'<br/><font size="6.5" color="#5F7488">{escape(evidencia)}</font>'
+    nota, peso = fila.get("nota"), fila.get("peso")
+    puntaje = "No medido" if nota is None else f"{nota} de {_texto_documento(peso, '0')}"
+    resultado = _texto_documento(fila.get("resultado"))
+    color = "#17633A" if resultado.lower() == "cumple" else "#A8323C" if "no cumple" in resultado.lower() else "#8A5A0B"
+    return [Paragraph(nombre, estilos["small"]), _p(puntaje, estilos["small"]),
+            Paragraph(f'<font color="{color}">{escape(resultado)}</font>', estilos["small"])]
+
+
+def _bloques_criterios(criterios: List[Dict]) -> List[tuple[str, List[Dict]]]:
+    bloques = {}
+    for criterio in criterios or []:
+        nombre = _texto_documento(criterio.get("bloque_nombre") or criterio.get("bloque"), "Criterios evaluados")
+        bloques.setdefault(nombre, []).append(criterio)
+    return list(bloques.items())
+
+
+def construir_informe_individual_pdf(payload: Dict) -> bytes:
+    """Informe horizontal de lectura ejecutiva y trazabilidad por criterio."""
+    estilos = _estilos_documento()
+    salida = BytesIO()
+    doc = SimpleDocTemplate(salida, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm,
+                            topMargin=9 * mm, bottomMargin=9 * mm)
+    criterios = payload.get("criterios") or []
+    meta = payload.get("meta") or {}
+    score = payload.get("score_vigente")
+    score_txt = "No evaluable" if score is None else f"{float(score):.1f} / 100"
+
+    cabecera = [
+        Paragraph("Informe de evaluacion de llamada", estilos["title"]),
+        Paragraph("Centro de Calidad | Resultado vigente de la llamada", estilos["subtitle"]),
+        _tabla_documento([[
+            _p_lineas(["AGENTE", _texto_documento(meta.get("agente"))], estilos["small"]),
+            _p_lineas(["CARTERA", _texto_documento(meta.get("cartera"))], estilos["small"]),
+            _p_lineas(["FECHA Y HORA", _fecha_documento(meta.get("fecha"))], estilos["small"]),
+        ]], [64 * mm, 56 * mm, 53 * mm], cabecera=False),
+    ]
+    nota = _tarjeta_documento("NOTA FINAL DE LA LLAMADA", Paragraph(score_txt, estilos["score"]), 72 * mm, estilos, "Resultado vigente")
+    historia = [Table([[cabecera, nota]], colWidths=[190 * mm, 77 * mm], style=[
+        ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]), Spacer(1, 5),
+        Paragraph("Resumen de la llamada", estilos["section"]),
+        _tabla_documento([[_p(payload.get("resumen"), estilos["body"])]], [267 * mm], cabecera=False),
+        Paragraph("Criterios de evaluacion", estilos["section"]),
+    ]
+    cards = []
+    for bloque, filas in _bloques_criterios(criterios):
+        suma_nota = sum(float(x.get("nota") or 0) for x in filas if x.get("nota") is not None)
+        suma_peso = sum(float(x.get("peso") or 0) for x in filas)
+        tabla = [_fila_criterio_documento(fila, estilos) for fila in filas]
+        cards.append(_tarjeta_documento(bloque, _tabla_documento(tabla, [65 * mm, 20 * mm, 28 * mm], cabecera=False), 131 * mm, estilos, f"{suma_nota:g} de {suma_peso:g} pts"))
+    for indice in range(0, len(cards), 2):
+        fila = cards[indice:indice + 2]
+        if len(fila) == 1:
+            fila.append(Spacer(1, 1))
+        historia.append(Table([fila], colWidths=[132 * mm, 132 * mm], style=[
+            ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+
+    fortalezas = payload.get("fortalezas") or []
+    brechas = payload.get("brechas") or []
+    historia += [
+        Table([[
+            _tarjeta_documento("FORTALEZAS OBSERVADAS", _p_lineas([f"• {x}" for x in fortalezas] or ["Sin fortaleza registrada."], estilos["body"]), 131 * mm, estilos),
+            _tarjeta_documento("BRECHAS Y RECOMENDACION", _p_lineas([f"• {x}" for x in brechas] or ["Sin brecha registrada."], estilos["body"]), 131 * mm, estilos),
+        ]], colWidths=[132 * mm, 132 * mm], style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]),
+        Table([[
+            _tarjeta_documento("FEEDBACK DEL EVALUADOR", _p_lineas([
+                _texto_documento(payload.get("feedback")), "",
+                "Calidad | Firma: ____________________ | Fecha: ____________",
+            ], estilos["body"]), 131 * mm, estilos),
+            _tarjeta_documento("COMPROMISO DEL AGENTE", _p_lineas([
+                _texto_documento(payload.get("compromiso")), "",
+                "Jefatura de cartera (Lourdes) | Firma: ____________________ | Fecha: ____________",
+                "Agente | Firma: ____________________ | Fecha: ____________",
+            ], estilos["body"]), 131 * mm, estilos),
+        ]], colWidths=[132 * mm, 132 * mm], style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]),
+    ]
+    doc.build(historia)
+    return salida.getvalue()
+
+
+def _fecha_reporte(valor):
+    texto = _texto_documento(valor, "")
+    for formato in (None, "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.fromisoformat(texto.replace("Z", "+00:00")) if formato is None else datetime.strptime(texto[:10], formato)
+        except ValueError:
+            continue
+    return None
+
+
+def _barra_reporte(porcentaje: float, ancho: float = 31 * mm) -> Drawing:
+    dibujo = Drawing(ancho, 7)
+    dibujo.add(Rect(0, 1.5, ancho, 4, fillColor=colors.HexColor("#E3EAF2"), strokeColor=None))
+    dibujo.add(Rect(0, 1.5, max(0, min(ancho, ancho * porcentaje / 100)), 4, fillColor=colors.HexColor("#1769C2"), strokeColor=None))
+    return dibujo
+
+
+def _grafico_evolucion(semanas: List[Dict]) -> Drawing:
+    ancho, alto = 117 * mm, 30 * mm
+    dibujo = Drawing(ancho, alto)
+    izquierda, abajo, derecha, arriba = 18, 15, ancho - 5, alto - 8
+    for valor in (60, 70, 80, 90, 100):
+        y = abajo + (arriba - abajo) * (valor - 60) / 40
+        dibujo.add(Line(izquierda, y, derecha, y, strokeColor=colors.HexColor("#E5ECF3"), strokeWidth=.4))
+        dibujo.add(String(1, y - 2, str(valor), fontName="Helvetica", fontSize=5.5, fillColor=colors.HexColor("#5F7488")))
+    dibujo.add(Line(izquierda, abajo, derecha, abajo, strokeColor=colors.HexColor("#7B8FA3"), strokeWidth=.5))
+    if not semanas:
+        dibujo.add(String(izquierda, alto / 2, "Sin semanas suficientes para mostrar evolución.", fontName="Helvetica", fontSize=7, fillColor=colors.HexColor("#5F7488")))
+        return dibujo
+    paso = (derecha - izquierda) / max(len(semanas) - 1, 1)
+    puntos = []
+    for indice, semana in enumerate(semanas):
+        promedio = semana.get("promedio")
+        if promedio is None:
+            continue
+        x = izquierda + paso * indice
+        y = abajo + (arriba - abajo) * max(0, min(40, promedio - 60)) / 40
+        puntos.append((x, y, promedio, semana.get("etiqueta", "")))
+    for (x1, y1, _p1, _e1), (x2, y2, _p2, _e2) in zip(puntos, puntos[1:]):
+        dibujo.add(Line(x1, y1, x2, y2, strokeColor=colors.HexColor("#1769C2"), strokeWidth=1.5))
+    for x, y, promedio, etiqueta in puntos:
+        dibujo.add(Circle(x, y, 2.1, fillColor=colors.HexColor("#1769C2"), strokeColor=colors.white, strokeWidth=.6))
+        dibujo.add(String(x - 7, y + 5, f"{promedio:.1f}", fontName="Helvetica-Bold", fontSize=5.5, fillColor=colors.HexColor("#10263D")))
+        dibujo.add(String(x - 9, 4, etiqueta, fontName="Helvetica", fontSize=5, fillColor=colors.HexColor("#415A73")))
+    return dibujo
+
+
+def construir_informe_cartera_pdf(payload: Dict) -> bytes:
+    """Una pagina ejecutiva: tendencia, foco, agentes y plan desde datos reales."""
+    estilos = _estilos_documento()
+    salida = BytesIO()
+    doc = SimpleDocTemplate(salida, pagesize=landscape(A4), leftMargin=7 * mm, rightMargin=7 * mm,
+                            topMargin=7 * mm, bottomMargin=7 * mm)
+    evaluaciones = payload.get("evaluaciones") or []
+    criterios = payload.get("criterios") or []
+    meta = float(payload.get("meta") or 80)
+    evaluables = [x for x in evaluaciones if x.get("nota") is not None]
+    promedio = sum(float(x["nota"]) for x in evaluables) / len(evaluables) if evaluables else None
+    carteras = sorted({_texto_documento(x.get("cartera"), "") for x in evaluaciones if x.get("cartera")})
+    cartera = carteras[0] if len(carteras) == 1 else "Carteras seleccionadas"
+    criticos = sum(1 for x in evaluaciones if str(x.get("error_critico")).lower() in {"si", "sí", "true", "1"})
+
+    por_agente = {}
+    for fila in evaluaciones:
+        por_agente.setdefault(_texto_documento(fila.get("agente"), "Sin agente"), []).append(fila)
+    detalle_agentes = []
+    for nombre, filas in por_agente.items():
+        notas = [float(x["nota"]) for x in filas if x.get("nota") is not None]
+        promedio_ag = sum(notas) / len(notas) if notas else None
+        brecha = next((str(x.get("brecha_repite")) for x in payload.get("agentes", []) if x.get("agente") == nombre and x.get("brecha_repite")), "Sin recurrencia identificada")
+        detalle_agentes.append({"nombre": nombre, "filas": filas, "n": len(filas), "promedio": promedio_ag, "brecha": brecha,
+                                "criticos": sum(1 for x in filas if str(x.get("error_critico")).lower() in {"si", "sí", "true", "1"})})
+    detalle_agentes.sort(key=lambda x: (x["promedio"] is None, x["promedio"] or 0))
+
+    detalle_criterios = {}
+    for fila in criterios:
+        nombre = _texto_documento(fila.get("criterio"))
+        registro = detalle_criterios.setdefault(nombre, {"nombre": nombre, "medidas": 0, "brechas": 0, "notas": []})
+        if fila.get("medido"):
+            registro["medidas"] += 1
+            if fila.get("nota") is not None:
+                registro["notas"].append(float(fila["nota"]))
+        if fila.get("brecha"):
+            registro["brechas"] += 1
+    ranking = []
+    for item in detalle_criterios.values():
+        if item["medidas"]:
+            item["porcentaje"] = item["brechas"] * 100 / item["medidas"]
+            item["promedio"] = sum(item["notas"]) / len(item["notas"]) if item["notas"] else None
+            ranking.append(item)
+    ranking.sort(key=lambda x: (-x["porcentaje"], -x["brechas"], x["nombre"]))
+    principal = ranking[0] if ranking else None
+    medidos = sum(1 for x in criterios if x.get("medido"))
+    cobertura = medidos * 100 / len(criterios) if criterios else None
+
+    semanas_map = {}
+    for fila in evaluaciones:
+        fecha = _fecha_reporte(fila.get("fecha"))
+        if not fecha:
+            continue
+        inicio = fecha.date() - timedelta(days=fecha.weekday())
+        semanas_map.setdefault(inicio, []).append(fila)
+    semanas = []
+    for inicio, filas in sorted(semanas_map.items()):
+        notas = [float(x["nota"]) for x in filas if x.get("nota") is not None]
+        semanas.append({"etiqueta": f"S{len(semanas) + 1}", "promedio": sum(notas) / len(notas) if notas else None,
+                        "n": len(filas), "criticos": sum(1 for x in filas if str(x.get("error_critico")).lower() in {"si", "sí", "true", "1"})})
+    cambio = None
+    if len(semanas) >= 2 and semanas[-1]["promedio"] is not None and semanas[-2]["promedio"] is not None:
+        cambio = semanas[-1]["promedio"] - semanas[-2]["promedio"]
+
+    encabezado = [
+        Paragraph("Informe ejecutivo de calidad por cartera", estilos["title"]),
+        Paragraph("MONITOREO DE LLAMADAS | CALIDAD | EXPERIENCIA DEL CLIENTE", estilos["subtitle"]),
+        _tabla_documento([[
+            _p_lineas(["CARTERA", cartera], estilos["small"]),
+            _p_lineas(["PERIODO", _texto_documento(payload.get("periodo"))], estilos["small"]),
+            _p_lineas(["MUESTRA EVALUADA", f"{len(evaluaciones)} llamadas"], estilos["small"]),
+            _p_lineas(["FECHA DE EMISION", datetime.now().strftime("%d/%m/%Y")], estilos["small"]),
+        ]], [65 * mm, 70 * mm, 57 * mm, 65 * mm], cabecera=False),
+    ]
+    def kpi(titulo, valor, detalle=""):
+        contenido = f'<para align="center"><font size="18"><b>{escape(str(valor))}</b></font>'
+        if detalle:
+            contenido += f'<br/><font size="6.5" color="#5F7488">{escape(str(detalle))}</font>'
+        contenido += "</para>"
+        return _tarjeta_documento(titulo, Paragraph(contenido, estilos["body"]), 65 * mm, estilos)
+    kpis = Table([[
+        kpi("EVALUACIONES", str(len(evaluaciones)), f"{len(detalle_agentes)} agentes"),
+        kpi("PROMEDIO DEL PERIODO", "—" if promedio is None else f"{promedio:.1f} / 100", "vs meta" if promedio is None else f"{promedio - meta:+.1f} pts vs meta"),
+        kpi("RIESGO CRITICO", str(criticos), "evaluaciones con error critico"),
+        kpi("COBERTURA MEDIDA", "—" if cobertura is None else f"{cobertura:.0f}%", "criterios con resultado medible"),
+    ]], colWidths=[66 * mm, 66 * mm, 66 * mm, 66 * mm], style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])
+
+    evolucion = _tarjeta_documento("EVOLUCION DE LA NOTA PROMEDIO", _grafico_evolucion(semanas), 131 * mm, estilos,
+                                   "Comportamiento semanal del periodo")
+    hito_lineas = []
+    if cambio is not None:
+        direccion = "mejora" if cambio >= 0 else "disminucion"
+        hito_lineas.append(f"La nota promedio registra una {direccion} de {abs(cambio):.1f} puntos frente a la semana anterior.")
+    elif promedio is not None:
+        hito_lineas.append(f"La nota promedio del periodo es {promedio:.1f} sobre 100.")
+    if principal:
+        hito_lineas.append(f"Criterio mas afectado: {principal['nombre']} ({principal['porcentaje']:.0f}% de incumplimiento; {principal['brechas']} de {principal['medidas']} medidas).")
+    hito_lineas.append(f"{criticos} evaluaciones presentan error critico." if criticos else "No se registran errores criticos en la muestra.")
+    hitos = _tarjeta_documento("HITOS DEL PERIODO", _p_lineas([f"• {x}" for x in hito_lineas], estilos["body"]), 131 * mm, estilos,
+                               "Principales logros y oportunidades")
+
+    tabla_agentes = [[_p("#", estilos["header"]), _p("AGENTE", estilos["header"]), _p("EVAL.", estilos["header"]), _p("PROMEDIO", estilos["header"]), _p("PRINCIPAL BRECHA", estilos["header"]), _p("ESTADO", estilos["header"])]]
+    for indice, fila in enumerate(detalle_agentes[:8], 1):
+        estado = "En rango" if fila["promedio"] is not None and fila["promedio"] >= meta else "En seguimiento"
+        tabla_agentes.append([_p(str(indice), estilos["small"]), _p(fila["nombre"], estilos["small"]), _p(str(fila["n"]), estilos["small"]),
+                              _p("—" if fila["promedio"] is None else f"{fila['promedio']:.1f}", estilos["small"]), _p(fila["brecha"], estilos["small"]), _p(estado, estilos["small"])])
+    agentes_card = _tarjeta_documento("RENDIMIENTO POR AGENTE", _tabla_documento(tabla_agentes, [8 * mm, 58 * mm, 17 * mm, 24 * mm, 101 * mm, 47 * mm]), 264 * mm, estilos,
+                                      "Resultados individuales y oportunidad principal")
+
+    tabla_criterios = [[_p("CRITERIO", estilos["header"]), _p("AFECTADAS", estilos["header"]), _p("%", estilos["header"]), _p("INCIDENCIA", estilos["header"])]]
+    for fila in ranking[:5]:
+        tabla_criterios.append([_p(fila["nombre"], estilos["small"]), _p(f"{fila['brechas']} de {fila['medidas']}", estilos["small"]),
+                                _p(f"{fila['porcentaje']:.0f}%", estilos["small"]), _barra_reporte(fila["porcentaje"], 27 * mm)])
+    criterios_card = _tarjeta_documento("CRITERIOS QUE REQUIEREN ATENCION", _tabla_documento(tabla_criterios, [57 * mm, 24 * mm, 13 * mm, 31 * mm]), 131 * mm, estilos,
+                                        "Mayor incidencia de brechas")
+    analisis = []
+    if promedio is not None:
+        analisis.append(f"La nota promedio es {promedio:.1f} sobre 100; la meta configurada es {meta:.0f}.")
+    if principal:
+        analisis.append(f"Priorizar {principal['nombre']} por concentrar la mayor incidencia de incumplimiento.")
+    if detalle_agentes:
+        prioridad = detalle_agentes[0]
+        analisis.append(f"Foco inicial: {prioridad['nombre']} ({'sin nota evaluable' if prioridad['promedio'] is None else f'{prioridad['promedio']:.1f}'}).")
+    analisis.append(_texto_documento(payload.get("recomendacion"), "Revisar semanalmente el avance por agente y formalizar compromisos de mejora."))
+    analisis_card = _tarjeta_documento("ANALISIS Y RECOMENDACIONES", _p_lineas([f"{i + 1}. {texto}" for i, texto in enumerate(analisis)], estilos["body"]), 131 * mm, estilos,
+                                      "Conclusiones y acciones sugeridas")
+    plan = _tabla_documento([[
+        _p("PLAN DE ACCION", estilos["header"]), _p("HALLAZGO PRIORITARIO", estilos["header"]), _p("RESPONSABLE", estilos["header"]), _p("SEGUIMIENTO", estilos["header"]),
+    ], [
+        _p("Coaching focalizado y seguimiento semanal.", estilos["small"]), _p(principal["nombre"] if principal else "Sin brechas medidas", estilos["small"]),
+        _p("Calidad y jefatura de cartera", estilos["small"]), _p("Registrar avance en el plan de mejora.", estilos["small"]),
+    ]], [43 * mm, 85 * mm, 62 * mm, 74 * mm])
+    historia = encabezado + [Spacer(1, 3), kpis, Table([[evolucion, hitos]], colWidths=[132 * mm, 132 * mm], style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]), agentes_card,
+        Table([[criterios_card, analisis_card]], colWidths=[132 * mm, 132 * mm], style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]), plan]
+    doc.build(historia)
+    return salida.getvalue()
+
+
+def construir_informe_rtf(payload: Dict, tipo: str) -> bytes:
+    """Formato editable que abre directamente en Word, sin requerir otra dependencia."""
+    individual = tipo.upper() == "INDIVIDUAL"
+    titulo = "INFORME DE EVALUACION DE LLAMADA" if individual else "INFORME EJECUTIVO POR CARTERA"
+    lineas = [r"{\rtf1\ansi\deff0", r"{\fonttbl{\f0 Arial;}}", r"\fs24\b " + titulo + r"\b0\par"]
+    if individual:
+        meta = payload.get("meta") or {}
+        lineas += [f"Nota final de la llamada: {_texto_documento(payload.get('score_vigente'), 'No evaluable')} / 100\\par",
+                   f"Agente: {_texto_documento(meta.get('agente'))}\\par",
+                   f"Cartera: {_texto_documento(meta.get('cartera'))}\\par",
+                   f"Resumen: {_texto_documento(payload.get('resumen'))}\\par\\par",
+                   r"\b CRITERIOS Y PUNTAJE OBTENIDO\b0\par"]
+        for fila in payload.get("criterios") or []:
+            nombre = _texto_documento(fila.get("criterio")).replace("\\", "\\\\")
+            puntaje = "No medido" if fila.get("nota") is None else f"{fila.get('nota')} de {fila.get('peso', 0)}"
+            lineas.append(f"{nombre}: {puntaje} | {_texto_documento(fila.get('resultado'))}\\par")
+        lineas += [r"\par\b FEEDBACK DEL EVALUADOR\b0\par", _texto_documento(payload.get("feedback")) + r"\par",
+                   r"\par\b COMPROMISO DEL AGENTE\b0\par", _texto_documento(payload.get("compromiso")) + r"\par\par",
+                   "Calidad: ____________________    Jefatura de cartera (Lourdes): ____________________    Agente: ____________________\\par"]
+    else:
+        lineas += [f"Periodo: {_texto_documento(payload.get('periodo'))}\\par\\par", r"\b DETALLE POR AGENTE\b0\par"]
+        for fila in payload.get("agentes") or []:
+            lineas.append(f"{_texto_documento(fila.get('agente'))}: tendencia {_texto_documento(fila.get('tendencia'))}; brecha recurrente {_texto_documento(fila.get('brecha_repite'))}\\par")
+        lineas += [r"\par\b RECOMENDACION EJECUTIVA\b0\par", _texto_documento(payload.get("recomendacion")) + r"\par"]
+    lineas.append("}")
+    return "\n".join(lineas).encode("latin-1", errors="replace")

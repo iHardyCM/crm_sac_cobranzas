@@ -285,7 +285,7 @@ async function fetchControlHorario(fecha, idcartera, opciones = {}) {
     if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
     params.set("incluir_agente_hora", incluirAgenteHora ? "true" : "false");
 
-    const response = await fetch(`${BASE_URL_CONTROL}/control-horario/resumen?${params.toString()}`, {
+    const response = await fetchConSesion(`${BASE_URL_CONTROL}/control-horario/resumen?${params.toString()}`, {
         cache: "no-store"
     });
     if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
@@ -309,7 +309,7 @@ async function fetchMatrizMensualControl(fecha, idcartera) {
     if (idcartera) params.set("idcartera", idcartera);
     if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
 
-    const response = await fetch(`${BASE_URL_CONTROL}/control-horario/matriz-mensual?${params.toString()}`, {
+    const response = await fetchConSesion(`${BASE_URL_CONTROL}/control-horario/matriz-mensual?${params.toString()}`, {
         cache: "no-store"
     });
     if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
@@ -2118,7 +2118,14 @@ function exportarControlHorario() {
     if (incluirApoyoRecupero()) params.set("incluir_apoyo_recupero", "true");
 
     mostrarToast("Preparando Excel de gestion y recupero...", "info");
-    window.location.href = `${BASE_URL_CONTROL}/control-horario/exportar?${params.toString()}`;
+    // location.href no puede enviar Authorization: se descarga con la sesion.
+    descargarArchivoConSesion(
+        `${BASE_URL_CONTROL}/control-horario/exportar?${params.toString()}`,
+        `control_horario_${fecha || "reporte"}.xlsx`
+    ).catch(error => {
+        if (error instanceof SesionInvalidaError) return;
+        mostrarToast(error.message || "No se pudo generar el Excel.", "error");
+    });
 }
 
 function getIdCartera(row) {

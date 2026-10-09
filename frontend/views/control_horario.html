@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Horario de Gestion y Recupero</title>
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/control_horario.css?v=20260909-friendly-states2">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/control_horario.css?v=82736eee87">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
@@ -22,7 +25,7 @@
             <button class="btn-secondary" type="button" onclick="limpiarFiltrosControl()">Limpiar filtros</button>
             <button class="btn-secondary" type="button" onclick="abrirMatrizMensual()">Matriz mensual</button>
             <button class="btn-secondary" type="button" onclick="exportarControlHorario()">Exportar</button>
-            <button id="btnActualizarControl" class="btn-primary" type="button" onclick="cargarControlHorario()">Actualizar</button>
+            <button id="btnActualizarControl" class="btn-primary" type="button" onclick="cargarControlHorario({ forzar: true })">Actualizar</button>
         </div>
     </section>
 
@@ -71,7 +74,7 @@
             <span id="estadoExperienciaDetalle">Consultando la informacion mas reciente de esta cartera.</span>
         </div>
         <div class="control-experience-actions">
-            <button id="btnReintentarControl" class="btn-secondary hidden" type="button" onclick="cargarControlHorario()">Reintentar</button>
+            <button id="btnReintentarControl" class="btn-secondary hidden" type="button" onclick="cargarControlHorario({ forzar: true })">Reintentar</button>
             <button id="btnRestablecerControl" class="btn-secondary hidden" type="button" onclick="restablecerConsultaControl()">Ver resultados de hoy</button>
         </div>
         <div class="control-experience-skeleton" aria-hidden="true">
@@ -92,7 +95,7 @@
                 </div>
 
                 <div class="table-wrap">
-                    <table>
+                    <table class="tabla-accion-fija">
                         <thead>
                             <tr>
                                 <th><button class="sort-btn" type="button" onclick="ordenarResumen('cartera')">Cartera</button></th>
@@ -123,7 +126,7 @@
                 </div>
 
                 <div class="table-wrap">
-                    <table>
+                    <table class="tabla-accion-fija">
                         <thead>
                             <tr>
                                 <th><button class="sort-btn" type="button" onclick="ordenarAgentes('agente')">Agente</button></th>
@@ -266,8 +269,8 @@
     </div>
 </div>
 
-<script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260923-consumo"></script>
-<script src="../js/control_horario.js?v=20260911-detail-groups1"></script>
+<script src="../js/session.js?v=60298e1520"></script>
+    <script src="../js/app_layout.js?v=876e8f616f"></script>
+<script src="../js/control_horario.js?v=fcfe6fe7d8"></script>
 </body>
 </html>

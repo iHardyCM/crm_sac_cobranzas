@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function cargarCarteras() {
     const select = document.getElementById("carteraSelect");
     try {
-        const res = await fetch(`${BASE_URL}/canales/carteras`);
+        const res = await fetchConSesion(`${BASE_URL}/canales/carteras`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.detail || "No se pudieron cargar carteras.");
 
@@ -65,7 +65,7 @@ async function importarCanal(event) {
         btn.disabled = true;
         btn.innerText = "Importando...";
 
-        const res = await fetch(`${BASE_URL}/canales/importar`, { method: "POST", body: data });
+        const res = await fetchConSesion(`${BASE_URL}/canales/importar`, { method: "POST", body: data });
         const json = await res.json();
 
         if (!res.ok) {
@@ -87,7 +87,7 @@ async function importarCanal(event) {
 
 async function cargarHistorial() {
     try {
-        const res = await fetch(`${BASE_URL}/canales/importaciones`);
+        const res = await fetchConSesion(`${BASE_URL}/canales/importaciones`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.detail || "No se pudo cargar historial.");
         historial = json.data || [];
@@ -133,7 +133,7 @@ function pintarHistorial() {
 
 async function verDetalle(idCarga) {
     try {
-        const res = await fetch(`${BASE_URL}/canales/importaciones/${idCarga}`);
+        const res = await fetchConSesion(`${BASE_URL}/canales/importaciones/${idCarga}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.detail || "No se pudo cargar detalle.");
 

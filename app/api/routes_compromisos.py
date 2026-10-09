@@ -1,5 +1,11 @@
 # routes_compromisos
-from fastapi import APIRouter
+import logging
+from typing import Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.core import autorizacion_carteras as autorizacion
+from app.core.auth_dependencies import requiere_clave_definitiva
+from app.core.permisos_vistas import exigir_vista, tiene_vista
 from app.services.compromisos_service import obtener_compromisos
 from app.core.db_siscob import engine_siscob
 from sqlalchemy import text
@@ -10,6 +16,84 @@ from io import BytesIO
 from datetime import datetime
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Seguridad: todos los endpoints exigen sesion valida (requiere_clave_definitiva).
+# El DNI del supervisor sale del JWT; el "dni" de la query ya no decide la
+# cartera. Ver compromisos de otro agente exige vision global o que la cartera
+# principal del agente este entre las carteras del supervisor.
+# ---------------------------------------------------------------------------
+UsuarioCompromisos = Depends(requiere_clave_definitiva)
+
+MENSAJE_ERROR_TECNICO = "No se pudo completar la consulta de compromisos. Intenta nuevamente."
+MENSAJE_AGENTE_NO_PERMITIDO = "No tienes acceso a los compromisos de ese agente."
+MENSAJE_COMPROMISO_NO_PERMITIDO = "No tienes acceso a este compromiso."
+
+
+def _error_tecnico(contexto: str, usuario: Dict) -> HTTPException:
+    logger.exception("Error en compromisos (%s) usuario=%s", contexto, usuario.get("dni"))
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=MENSAJE_ERROR_TECNICO)
+
+
+def _autorizar_compromisos_de_agente(usuario: Dict, dni_agente: str) -> str:
+    """Devuelve el DNI del agente a consultar si el usuario puede verlo."""
+    if not (tiene_vista(usuario, "compromisos") or tiene_vista(usuario, "gestiones")):
+        exigir_vista(usuario, "compromisos")
+    dni_agente = str(dni_agente or "").strip()
+    if dni_agente == str(usuario.get("dni") or "").strip():
+        return dni_agente
+    if autorizacion.tiene_vision_global(usuario):
+        return dni_agente
+    if tiene_vista(usuario, "gestiones"):
+        try:
+            cartera_agente = autorizacion.cartera_principal_de_usuario(dni_agente)
+        except Exception:
+            raise _error_tecnico("cartera del agente", usuario)
+        if cartera_agente is not None and autorizacion.cartera_permitida(usuario, cartera_agente):
+            return dni_agente
+    logger.info("Compromisos de agente denegados usuario=%s agente=%s", usuario.get("dni"), dni_agente)
+    raise autorizacion.prohibido(MENSAJE_AGENTE_NO_PERMITIDO)
+
+
+def _autorizar_detalle_compromiso(usuario: Dict, id_compromiso: int, dni_agente,
+                                  cartera_agente, cartera_compromiso) -> None:
+    """Autorizacion por objeto del detalle (evita IDOR por id).
+
+    Todo sale de la BD (SISCOB), nunca del navegador:
+      - dni_agente: USUARIO.Usuario del agente que registro la gestion del
+        compromiso (el mismo criterio que usa el listado: U.USUARIO = dni).
+      - cartera_agente: USUARIO.IdCartera de ese agente (misma cartera que usa
+        _autorizar_compromisos_de_agente).
+      - cartera_compromiso: GESTION.IdCartera de la gestion del compromiso.
+
+    Vision global: todo. Cualquier otro perfil: sus propios compromisos.
+    Supervisor: ademas, los de agentes de sus carteras, siempre que la cartera
+    del compromiso tambien este entre las suyas. Sin datos: 403.
+    """
+    if autorizacion.tiene_vision_global(usuario):
+        return
+    dni_agente = str(dni_agente or "").strip()
+    if dni_agente and dni_agente == str(usuario.get("dni") or "").strip():
+        return
+    if (
+        tiene_vista(usuario, "gestiones")
+        and dni_agente
+        and autorizacion.cartera_permitida(usuario, cartera_agente)
+        and autorizacion.cartera_permitida(usuario, cartera_compromiso)
+    ):
+        return
+    logger.info(
+        "Detalle de compromiso denegado usuario=%s id=%s cartera_agente=%s cartera_compromiso=%s",
+        usuario.get("dni"), id_compromiso, cartera_agente, cartera_compromiso,
+    )
+    raise autorizacion.prohibido(MENSAJE_COMPROMISO_NO_PERMITIDO)
+
+
+def _exigir_supervision(usuario: Dict) -> None:
+    """Vista del equipo: perfil base o asignacion individual, siempre por cartera."""
+    exigir_vista(usuario, "gestiones")
+
 
 TABLAS = {
     "compartamos_vigente": "TBL_COMPROMISOS_VIGENTE"
@@ -17,8 +101,9 @@ TABLAS = {
 
 # 🔍 DETALLE
 @router.get("/detalle/{id}")
-def detalle(id: int):
-
+def detalle(id: int, usuario: Dict = UsuarioCompromisos):
+    if not (tiene_vista(usuario, "compromisos") or tiene_vista(usuario, "gestiones")):
+        exigir_vista(usuario, "compromisos")
     from app.core.db_siscob import engine_siscob
     from sqlalchemy import text
 
@@ -39,6 +124,9 @@ def detalle(id: int):
             G.DNI,
             G.TELEFONO,
             G.IDCLIENTE,
+            G.IDCARTERA AS IDCARTERA_GESTION,
+            LTRIM(RTRIM(U.USUARIO)) AS DNI_AGENTE,
+            U.IDCARTERA AS IDCARTERA_AGENTE,
 
             CL.NOMBRECLIENTE,
 
@@ -93,9 +181,11 @@ def detalle(id: int):
 
             if not r:
                 return {"msg": "No encontrado"}
-            
-            # 🔥 DEBUG AQUÍ
-            print("ULT:", r.ULT_GESTION, r.ULT_FECHA, r.ULT_AGENTE)
+
+            # Propietario (agente) + cartera, leidos de SISCOB.
+            _autorizar_detalle_compromiso(
+                usuario, id, r.DNI_AGENTE, r.IDCARTERA_AGENTE, r.IDCARTERA_GESTION,
+            )
 
             return {
                 "id": r.IDCOMPROMISO,
@@ -120,18 +210,27 @@ def detalle(id: int):
                 "ult_indicador": r.ULT_INDICADOR
             }
 
-    except Exception as e:
-        print("ERROR DETALLE:", e)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error en detalle de compromiso id=%s usuario=%s", id, usuario.get("dni"))
         return {"msg": "Error interno"}
 
 
 # 📊 LISTADO
 @router.get("/{dni}")
-def get_compromisos(dni: str):
-    return {"data": obtener_compromisos(dni)}
+def get_compromisos(dni: str, usuario: Dict = UsuarioCompromisos):
+    dni_agente = _autorizar_compromisos_de_agente(usuario, dni)
+    try:
+        return {"data": obtener_compromisos(dni_agente)}
+    except Exception:
+        raise _error_tecnico("listado", usuario)
 
 @router.get("/supervisor/resumen")
-def resumen_supervisor(dni: str):
+def resumen_supervisor(dni: Optional[str] = None, usuario: Dict = UsuarioCompromisos):
+    # El "dni" de la query se ignora: el supervisor es el usuario autenticado.
+    _exigir_supervision(usuario)
+    dni = usuario["dni"]
 
     from app.core.db_siscob import engine_siscob
     from sqlalchemy import text
@@ -146,19 +245,12 @@ def resumen_supervisor(dni: str):
         """)
 
         with engine_siscob.connect() as conn:
-            print("🚀 DNI RECIBIDO FRONT:", dni)
             result_cartera = conn.execute(query_cartera, {"dni": dni}).fetchone()
         
         if not result_cartera:
             return {"ok": False, "msg": "Supervisor no encontrado"}
 
         cartera = result_cartera.IDCARTERA
-
-        print("SUPERVISOR:", dni)
-        print("CARTERA:", cartera)
-
-        print("DNI RECIBIDO:", dni)
-        print("RESULT CARTERA:", result_cartera)
 
         # 🔥 2. QUERY PRINCIPAL (YA SIN HARDCODE)
         query = text("""
@@ -222,15 +314,19 @@ def resumen_supervisor(dni: str):
 
         return {"ok": True, "data": data}
 
-    except Exception as e:
-        print("ERROR SUPERVISOR:", e)
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        logger.exception("Error en resumen de supervisor usuario=%s", dni)
+        return {"ok": False, "error": MENSAJE_ERROR_TECNICO}
 
 
 @router.get("/agente/compromisos")
-def compromisos_agente(agente: str):
+def compromisos_agente(agente: str, usuario: Dict = UsuarioCompromisos):
 
-    data = obtener_compromisos(agente)
+    dni_agente = _autorizar_compromisos_de_agente(usuario, agente)
+    try:
+        data = obtener_compromisos(dni_agente)
+    except Exception:
+        raise _error_tecnico("compromisos de agente", usuario)
 
     return {
         "ok": True,
@@ -239,7 +335,10 @@ def compromisos_agente(agente: str):
 
 
 @router.get("/supervisor/exportar-cartera")
-def exportar_cartera(dni: str):
+def exportar_cartera(dni: Optional[str] = None, usuario: Dict = UsuarioCompromisos):
+    # El "dni" de la query se ignora: se exporta la cartera del usuario autenticado.
+    _exigir_supervision(usuario)
+    dni = usuario["dni"]
 
     query = text("""
 
@@ -333,11 +432,14 @@ def exportar_cartera(dni: str):
 
     """)
 
-    with engine_siscob.connect() as conn:
+    try:
+        with engine_siscob.connect() as conn:
 
-        rows = conn.execute(query, {
-            "dni": dni
-        }).fetchall()
+            rows = conn.execute(query, {
+                "dni": dni
+            }).fetchall()
+    except Exception:
+        raise _error_tecnico("exportar cartera", usuario)
 
     df = pd.DataFrame(rows)
 
@@ -363,6 +465,8 @@ def exportar_cartera(dni: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition":
-            f"attachment; filename={nombre_archivo}"
+            f"attachment; filename={nombre_archivo}",
+            # El frontend descarga con fetch (para enviar Authorization) y lee el nombre.
+            "Access-Control-Expose-Headers": "Content-Disposition",
         }
     )

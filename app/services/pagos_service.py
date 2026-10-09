@@ -7,6 +7,7 @@ import math
 import os
 import re
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from sqlalchemy import text
@@ -75,16 +76,33 @@ FORMATS = {
     "COMPARTAMOS_VIGENTE": {
         "sheet": "base",
         "required": ["Usuario_MesAsig", "MesAsig", "LinNeg", "Recaudo", "Sdo_CON_REC"],
+        "required_extra": ["Operacion", "CtaCliente", "CodCliente"],
         "filter_col": "Usuario_MesAsig",
         "filter_val": "EXTERNO - BIZNESCOB",
         "monto": "Recaudo",
         "capital": "Sdo_CON_REC",
         "fecha": "MesAsig",
         "codmes": "MesAsig",
+        "cod_cliente": "CodCliente",
+        "num_operacion": "Operacion",
+        "num_cuenta": "CtaCliente",
         "tipo_medicion": "CONTENCION",
         "linneg": {"IND": 126, "CCM": 128, "GRU": 133, "CSM": 133},
     },
 }
+
+
+COMPARTAMOS_CAMPOS_COMPARACION = (
+    "monto_pago_soles",
+    "capital_contenido",
+    "cod_cliente",
+    "documento",
+    "num_cuenta",
+    "tipo_producto",
+    "clasificacion_sbs",
+    "segmentacion",
+    "usuario_asignado",
+)
 
 
 CARTERAS = {
@@ -154,21 +172,44 @@ def confirmar_importacion(id_importacion: int):
             for row in staging
         }
 
-        for formato, codmes, idcartera in grupos:
-            desactivar_bi_anterior(conn, formato, codmes, idcartera)
+        formatos = {row.get("formato") for row in staging}
+        cambios_compartamos = None
+
+        if formatos == {"COMPARTAMOS_VIGENTE"}:
+            errores = contar_errores_staging(conn, id_importacion)
+            if errores:
+                raise ValueError(
+                    "La carga incremental de Compartamos Vigente no se puede publicar "
+                    "mientras existan filas con error."
+                )
+            staging, cambios_compartamos = preparar_publicacion_compartamos(conn, staging)
+        else:
+            for formato, codmes, idcartera in grupos:
+                desactivar_bi_anterior(conn, formato, codmes, idcartera)
 
         insertados = publicar_bi(conn, staging)
         totales = calcular_totales_staging(conn, id_importacion)
         actualizar_importacion_publicada(conn, id_importacion, totales)
         actualizar_importaciones_reemplazadas(conn, id_importacion, grupos)
 
-    return {
+    resultado = {
         "ok": True,
         "id_importacion": id_importacion,
         "filas_publicadas": insertados,
         "grupos_reemplazados": len(grupos),
         **totales,
     }
+
+    if cambios_compartamos is not None:
+        resultado.update({
+            "modo_publicacion": "INCREMENTAL",
+            "operaciones_nuevas": cambios_compartamos["nuevas"],
+            "operaciones_actualizadas": cambios_compartamos["actualizadas"],
+            "operaciones_sin_cambio": cambios_compartamos["sin_cambio"],
+            "operaciones_retiradas": cambios_compartamos["retiradas"],
+        })
+
+    return resultado
 
 
 def listar_importaciones(
@@ -277,7 +318,7 @@ def leer_archivo(formato: str, filename: str, content: bytes) -> pd.DataFrame:
     config = FORMATS[formato]
     sheet = config.get("sheet")
     read_options = {"sheet_name": sheet}
-    if formato == "INTERBANK":
+    if formato in {"INTERBANK", "COMPARTAMOS_VIGENTE"}:
         read_options["dtype"] = str
 
     if ext == ".xlsb":
@@ -337,6 +378,10 @@ def aplicar_filtros_formato(df: pd.DataFrame, formato: str, config: Dict) -> pd.
         monto = obtener_columna_real(filtrado, "SUMA_PAGOS_MES")
         filtrado = filtrado[pd.to_numeric(filtrado[monto], errors="coerce").fillna(0) > 0]
 
+    if formato == "COMPARTAMOS_VIGENTE":
+        capital = obtener_columna_real(filtrado, "Sdo_CON_REC")
+        filtrado = filtrado[pd.to_numeric(filtrado[capital], errors="coerce").fillna(0) > 0]
+
     return filtrado
 
 
@@ -348,6 +393,11 @@ def normalizar_registros(
 ) -> List[Dict]:
     config = FORMATS[formato]
     registros = []
+    fecha_operativa_compartamos = (
+        fecha_actual_lima()
+        if formato == "COMPARTAMOS_VIGENTE"
+        else None
+    )
 
     for idx, row in df.iterrows():
         monto_soles = valor_numero(row, df, config.get("monto"))
@@ -359,6 +409,18 @@ def normalizar_registros(
         fecha_pago = obtener_fecha_pago(row, df, config)
         codmes = obtener_codmes(row, df, config, fecha_pago)
         idcartera, motivo_cartera = obtener_idcartera(row, df, formato, config)
+        cod_cliente = (
+            valor_texto(row, df, config.get("cod_cliente"))
+            or valor_texto(row, df, "COD_CLI")
+            or valor_texto(row, df, "codcliente")
+        )
+        num_operacion = (
+            valor_texto(row, df, config.get("num_operacion"))
+            or valor_texto(row, df, "COD_PRE")
+            or valor_texto(row, df, "NUMOPERACION")
+            or valor_texto(row, df, "CodOperacion")
+            or valor_texto(row, df, "OPERACION")
+        )
         estado_fila = "VALIDO"
         motivos = []
 
@@ -374,6 +436,12 @@ def normalizar_registros(
         if formato == "COMPARTAMOS_VIGENTE":
             if monto_soles <= 0 and capital <= 0:
                 motivos.append("Monto pago y capital contenido invalidos o cero.")
+            if not num_operacion:
+                motivos.append("Operacion vacia.")
+            if not cod_cliente:
+                motivos.append("CodCliente vacio.")
+            if not valor_texto(row, df, config.get("num_cuenta")):
+                motivos.append("CtaCliente vacia.")
         elif monto_soles <= 0:
             motivos.append("Monto pago invalido o cero.")
 
@@ -396,18 +464,8 @@ def normalizar_registros(
             "segmentacion": obtener_segmentacion(row, df, formato),
             "usuario_asignado": valor_texto(row, df, config.get("filter_col")),
             "usuario_carga": usuario_carga,
-            "cod_cliente": (
-                valor_texto(row, df, config.get("cod_cliente"))
-                or valor_texto(row, df, "COD_CLI")
-                or valor_texto(row, df, "codcliente")
-            ),
-            "num_operacion": (
-                valor_texto(row, df, config.get("num_operacion"))
-                or valor_texto(row, df, "COD_PRE")
-                or valor_texto(row, df, "NUMOPERACION")
-                or valor_texto(row, df, "CodOperacion")
-                or valor_texto(row, df, "OPERACION")
-            ),
+            "cod_cliente": cod_cliente,
+            "num_operacion": num_operacion,
             "documento": valor_texto(row, df, "DNI") or valor_texto(row, df, "NRO_DOCUMENTO"),
             "cliente": (
                 valor_texto(row, df, config.get("cliente"))
@@ -436,6 +494,17 @@ def normalizar_registros(
                 "num_cuenta": valor_texto(row, df, config.get("num_cuenta")),
                 "fecha_corte": valor_fecha(row, df, config.get("fecha_corte")),
                 "fecha_movimiento": valor_fecha(row, df, config.get("fecha_movimiento")),
+            })
+
+        if formato == "COMPARTAMOS_VIGENTE":
+            fecha_proceso = fecha_pago
+            registro.update({
+                "documento": normalizar_documento_compartamos(cod_cliente),
+                "num_cuenta": valor_texto(row, df, config.get("num_cuenta")),
+                "lin_neg": valor_texto(row, df, "LinNeg"),
+                "fecha_proceso": fecha_proceso,
+                "fecha_corte": fecha_operativa_compartamos,
+                "fecha_pago": fecha_operativa_compartamos,
             })
 
         registros.append(registro)
@@ -506,6 +575,21 @@ def normalizar_identity_code(identity_code: str) -> str:
     return valor
 
 
+def normalizar_documento_compartamos(cod_cliente: str) -> str:
+    valor = str(cod_cliente or "").strip()
+    if not valor:
+        return ""
+    if len(valor) == 15:
+        return valor[-8:]
+    if len(valor) == 16:
+        return valor[-9:]
+    return valor[-11:]
+
+
+def fecha_actual_lima() -> date:
+    return datetime.now(ZoneInfo("America/Lima")).date()
+
+
 def obtener_codmes(row, df, config: Dict, fecha_pago):
     codmes_col = config.get("codmes")
     if codmes_col:
@@ -532,9 +616,14 @@ def construir_resumen_previo(formato: str, filename: str, registros: List[Dict])
         segmentacion = normalizar_segmentacion_resumen(r.get("segmentacion"))
 
         key = segmentacion or "SIN_SEGMENTACION"
+        idcartera_resumen = (
+            r.get("idcartera")
+            if formato == "COMPARTAMOS_VIGENTE"
+            else None
+        )
 
         item = resumen_cartera.setdefault(key, {
-            "idcartera": None,
+            "idcartera": idcartera_resumen,
             "cartera": segmentacion or "Sin segmentación",
             "segmentacion": segmentacion or "Sin segmentación",
             "filas": 0,
@@ -610,6 +699,164 @@ def obtener_staging_valido(conn, id_importacion: int) -> List[Dict]:
             AND UPPER(ISNULL(estado_fila, '')) = 'VALIDO'
     """)
     return [dict(row) for row in conn.execute(query, {"id_importacion": id_importacion}).mappings().all()]
+
+
+def contar_errores_staging(conn, id_importacion: int) -> int:
+    return int(conn.execute(text("""
+        SELECT COUNT(*)
+        FROM dbo.PAGOS_STAGING_NORMALIZADO WITH(NOLOCK)
+        WHERE id_importacion = :id_importacion
+            AND UPPER(ISNULL(estado_fila, '')) <> 'VALIDO'
+    """), {"id_importacion": id_importacion}).scalar() or 0)
+
+
+def preparar_publicacion_compartamos(conn, staging: List[Dict]) -> Tuple[List[Dict], Dict]:
+    activos = obtener_activos_compartamos(conn, staging)
+    cambios = clasificar_cambios_compartamos(staging, activos)
+
+    filas_a_desactivar = cambios["filas_actualizadas_anteriores"] + cambios["filas_retiradas"]
+    desactivar_operaciones_compartamos(conn, filas_a_desactivar)
+
+    filas_publicables = cambios["filas_nuevas"] + cambios["filas_actualizadas"]
+    return filas_publicables, {
+        "nuevas": len(cambios["filas_nuevas"]),
+        "actualizadas": len(cambios["filas_actualizadas"]),
+        "sin_cambio": len(cambios["filas_sin_cambio"]),
+        "retiradas": len(cambios["filas_retiradas"]),
+    }
+
+
+def obtener_activos_compartamos(conn, staging: List[Dict]) -> List[Dict]:
+    codmeses = sorted({str(row.get("codmes") or "").strip() for row in staging if row.get("codmes")})
+    idcarteras = sorted(set(FORMATS["COMPARTAMOS_VIGENTE"]["linneg"].values()))
+    if not codmeses:
+        return []
+
+    params = {}
+    codmes_sql = []
+    cartera_sql = []
+    for idx, codmes in enumerate(codmeses):
+        key = f"codmes_{idx}"
+        params[key] = codmes
+        codmes_sql.append(f":{key}")
+    for idx, idcartera in enumerate(idcarteras):
+        key = f"idcartera_{idx}"
+        params[key] = idcartera
+        cartera_sql.append(f":{key}")
+
+    query = text(f"""
+        SELECT *
+        FROM dbo.PAGOS_BI_NORMALIZADO WITH(UPDLOCK, HOLDLOCK)
+        WHERE formato = 'COMPARTAMOS_VIGENTE'
+            AND ISNULL(activo, 0) = 1
+            AND codmes IN ({', '.join(codmes_sql)})
+            AND idcartera IN ({', '.join(cartera_sql)})
+    """)
+    return [dict(row) for row in conn.execute(query, params).mappings().all()]
+
+
+def clasificar_cambios_compartamos(staging: List[Dict], activos: List[Dict]) -> Dict:
+    entrantes = {}
+    for row in staging:
+        clave = clave_operacion_compartamos(row)
+        if not clave:
+            continue
+        if clave in entrantes:
+            raise ValueError(
+                "El archivo contiene operaciones duplicadas para la misma cartera y periodo: "
+                f"{clave[2]}."
+            )
+        entrantes[clave] = row
+
+    activos_por_clave = {}
+    for row in activos:
+        clave = clave_operacion_compartamos(row)
+        if clave:
+            activos_por_clave[clave] = row
+
+    nuevas = []
+    actualizadas = []
+    actualizadas_anteriores = []
+    sin_cambio = []
+
+    for clave, row in entrantes.items():
+        anterior = activos_por_clave.get(clave)
+        if anterior is None:
+            nuevas.append(row)
+        elif filas_compartamos_difieren(row, anterior):
+            actualizadas.append(row)
+            actualizadas_anteriores.append(anterior)
+        else:
+            sin_cambio.append(row)
+
+    retiradas = [
+        row
+        for clave, row in activos_por_clave.items()
+        if clave not in entrantes
+    ]
+
+    return {
+        "filas_nuevas": nuevas,
+        "filas_actualizadas": actualizadas,
+        "filas_actualizadas_anteriores": actualizadas_anteriores,
+        "filas_sin_cambio": sin_cambio,
+        "filas_retiradas": retiradas,
+    }
+
+
+def clave_operacion_compartamos(row: Dict) -> Optional[Tuple[str, int, str]]:
+    codmes = str(row.get("codmes") or "").strip()
+    operacion = str(row.get("num_operacion") or "").strip()
+    try:
+        idcartera = int(row.get("idcartera"))
+    except (TypeError, ValueError):
+        return None
+    if not codmes or not operacion:
+        return None
+    return codmes, idcartera, operacion
+
+
+def filas_compartamos_difieren(nueva: Dict, anterior: Dict) -> bool:
+    for campo in COMPARTAMOS_CAMPOS_COMPARACION:
+        if campo in {"monto_pago_soles", "capital_contenido"}:
+            if round(primer_valor_numerico(nueva, [campo]), 2) != round(
+                primer_valor_numerico(anterior, [campo]), 2
+            ):
+                return True
+        else:
+            nuevo = str(nueva.get(campo) or "").strip().upper()
+            previo = str(anterior.get(campo) or "").strip().upper()
+            if nuevo != previo:
+                return True
+    return False
+
+
+def desactivar_operaciones_compartamos(conn, rows: List[Dict]):
+    parametros = []
+    claves = set()
+    for row in rows:
+        clave = clave_operacion_compartamos(row)
+        if not clave or clave in claves:
+            continue
+        claves.add(clave)
+        parametros.append({
+            "codmes": clave[0],
+            "idcartera": clave[1],
+            "num_operacion": clave[2],
+        })
+
+    if not parametros:
+        return
+
+    conn.execute(text("""
+        UPDATE dbo.PAGOS_BI_NORMALIZADO
+        SET activo = 0
+        WHERE formato = 'COMPARTAMOS_VIGENTE'
+            AND codmes = :codmes
+            AND idcartera = :idcartera
+            AND num_operacion = :num_operacion
+            AND ISNULL(activo, 0) = 1
+    """), parametros)
 
 
 def desactivar_bi_anterior(conn, formato, codmes, idcartera):

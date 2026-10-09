@@ -19,7 +19,7 @@ os.environ.setdefault("CRM_JWT_SECRET", "secreto-solo-para-tests-no-productivo-0
 from fastapi import HTTPException, Response  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
 
-from app.core import auth_dependencies, security  # noqa: E402
+from app.core import auth_dependencies, permisos_vistas, security  # noqa: E402
 from app.services import admin_accesos_service as servicio  # noqa: E402
 from app.services import auth_service  # noqa: E402
 from app.api import routes_admin_accesos, routes_auth  # noqa: E402
@@ -145,6 +145,7 @@ class BaseAccesosTest(unittest.TestCase):
             patch.object(auth_dependencies, "obtener_identidad_usuario", side_effect=identidad),
             patch.object(auth_dependencies, "cuenta_requiere_cambio_clave",
                          side_effect=lambda d: bool(self.cuentas.get(d, {}).get("FLG_CAMBIO_OBLIGATORIO", True))),
+            patch.object(permisos_vistas, "leer_sobrescrituras", return_value={}),
         ]
         for p in self.parches:
             p.start()
@@ -529,7 +530,9 @@ class HttpAccesosTests(BaseAccesosTest):
     def test_endpoints_admin_sin_token_401_y_no_admin_403(self):
         rutas = [("get", "/admin-accesos/usuarios"), ("post", f"/admin-accesos/{OBJETIVO}/habilitar"),
                  ("post", f"/admin-accesos/{GESTOR}/reset-clave"), ("post", f"/admin-accesos/{GESTOR}/desbloquear"),
-                 ("post", f"/admin-accesos/{GESTOR}/deshabilitar")]
+                 ("post", f"/admin-accesos/{GESTOR}/deshabilitar"),
+                 ("get", f"/admin-accesos/{GESTOR}/vistas"),
+                 ("delete", f"/admin-accesos/{GESTOR}/vistas")]
         for metodo, ruta in rutas:
             with self.subTest(ruta=ruta):
                 self.assertEqual(getattr(self.client, metodo)(ruta).status_code, 401)
@@ -538,6 +541,10 @@ class HttpAccesosTests(BaseAccesosTest):
         # Nada cambio en la BD.
         self.assertNotIn(OBJETIVO, self.cuentas)
         self.assertTrue(self.cuentas[GESTOR]["FLG_ACTIVO"])
+        ruta_vista = f"/admin-accesos/{GESTOR}/vistas/gestiones"
+        self.assertEqual(self.client.put(ruta_vista, json={"permitido": True}).status_code, 401)
+        self.assertEqual(self.client.put(ruta_vista, json={"permitido": True},
+                                         headers=self.auth(GESTOR)).status_code, 403)
 
     def test_admin_con_clave_temporal_bloqueado_hasta_cambiarla(self):
         self.cuentas[ADMIN]["FLG_CAMBIO_OBLIGATORIO"] = True

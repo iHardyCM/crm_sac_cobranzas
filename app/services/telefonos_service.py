@@ -437,7 +437,15 @@ def construir_resumen(rows):
     }
 
 
-def obtener_relacionados_telefono(cursor, telefono):
+def _filtrar_por_carteras(rows, carteras_permitidas):
+    """Autorizacion: None = sin restriccion; si no, solo filas de esas carteras."""
+    if carteras_permitidas is None:
+        return rows
+    permitidas = {int(c) for c in carteras_permitidas}
+    return [row for row in rows if row.get("IDCARTERA") is not None and int(row["IDCARTERA"]) in permitidas]
+
+
+def obtener_relacionados_telefono(cursor, telefono, carteras_permitidas=None):
     cursor.execute(
         """
         SELECT DISTINCT
@@ -455,7 +463,7 @@ def obtener_relacionados_telefono(cursor, telefono):
         telefono
     )
 
-    rows = fetch_resultset(cursor)
+    rows = _filtrar_por_carteras(fetch_resultset(cursor), carteras_permitidas)
 
     for row in rows:
         row["CARTERA"] = CARTERAS.get(int(row["IDCARTERA"]), f"Cartera {row['IDCARTERA']}") if row.get("IDCARTERA") is not None else None
@@ -463,7 +471,10 @@ def obtener_relacionados_telefono(cursor, telefono):
     return rows
 
 
-def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, timbra=None, tipo=None, origen=None):
+def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, timbra=None, tipo=None, origen=None,
+                             carteras_permitidas=None):
+    """carteras_permitidas: None = sin restriccion (vision global); una lista =
+    solo esas carteras (autorizacion por usuario, la decide el router)."""
     q = str(q or "").strip()
 
     if not q:
@@ -489,6 +500,14 @@ def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, tim
         if idcartera and idcartera != "TODOS":
             where += " AND IDCARTERA = ?"
             params.append(idcartera)
+
+        if carteras_permitidas is not None:
+            permitidas = sorted({int(c) for c in carteras_permitidas})
+            if permitidas:
+                where += f" AND IDCARTERA IN ({','.join('?' for _ in permitidas)})"
+                params.extend(permitidas)
+            else:
+                where += " AND 1 = 0"
 
         if osiptel and osiptel != "TODOS":
             where += " AND OSIPTEL = ?"
@@ -590,7 +609,7 @@ def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, tim
         relacionados = []
 
         if detectar_tipo_busqueda(q) == "TELEFONO":
-            relacionados = obtener_relacionados_telefono(cursor, q)
+            relacionados = obtener_relacionados_telefono(cursor, q, carteras_permitidas)
 
         return {
             "ok": True,
@@ -610,7 +629,7 @@ def buscar_telefonos_cliente(q, idcartera=None, osiptel=None, whatsapp=None, tim
             conn.close()
 
 
-def listar_filtros_telefonos():
+def listar_filtros_telefonos(carteras_permitidas=None):
     conn = None
     cursor = None
 
@@ -630,6 +649,7 @@ def listar_filtros_telefonos():
             }
             for row in cursor.fetchall()
             if row[0] is not None and int(row[0]) in CARTERAS_PERMITIDAS
+            and (carteras_permitidas is None or int(row[0]) in {int(c) for c in carteras_permitidas})
         ]
 
         cursor.execute("""
@@ -690,7 +710,7 @@ def listar_filtros_telefonos():
             conn.close()
 
 
-def obtener_detalle_telefono(telefono):
+def obtener_detalle_telefono(telefono, carteras_permitidas=None):
     telefono = str(telefono or "").strip()
 
     if not telefono:
@@ -703,7 +723,7 @@ def obtener_detalle_telefono(telefono):
         conn = get_connection()
         cursor = conn.cursor()
 
-        relacionados = obtener_relacionados_telefono(cursor, telefono)
+        relacionados = obtener_relacionados_telefono(cursor, telefono, carteras_permitidas)
 
         if not relacionados:
             raise ValueError("No se encontraron registros para el teléfono.")

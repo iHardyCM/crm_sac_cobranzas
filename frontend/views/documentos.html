@@ -5,9 +5,13 @@
     <meta charset="UTF-8">
     <title>Documentos Automatizados</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/documentos.css?v=20260920-sip-atencion1">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/documentos.css?v=d1c48c27a5">
+    <link rel="stylesheet" href="../css/documentos_selector.css?v=de5eae3082">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
@@ -260,6 +264,12 @@
                 Fecha del documento y pago
                 <input id="fechaPagoMibanco" type="date">
             </label>
+            <div id="propiaPagosBox" class="documentos-propia-pagos hidden">
+                <label>Cantidad de cuotas<input id="propiaCantidadCuotas" type="number" step="1" min="1" max="120" value="1"></label>
+                <label>Cuota inicial<input id="propiaPrimerPago" type="number" step="0.01" min="0" value="0.00"></label>
+                <label>Fecha inicial<input id="propiaFechaInicial" type="date"></label>
+                <label>Cuota regular calculada<input id="propiaMontoCuota" type="text" readonly></label>
+            </div>
             <div class="documentos-format-box">
                 <span>Formato</span>
                 <div class="documentos-format-toggle" role="group" aria-label="Formato de descarga">
@@ -276,6 +286,16 @@
                 </span>
             </label>
             <button id="btnGenerar" class="documentos-btn download" type="button">Generar y descargar</button>
+        </div>
+
+        <div id="propiaCronogramaBox" class="documentos-installments documentos-propia-cronograma hidden">
+            <div class="documentos-subsection-head compact">
+                <div>
+                    <h4>Cronograma de pagos</h4>
+                    <p>La cuota inicial se suma a las cuotas regulares. El saldo se distribuye automáticamente y la última cuota ajusta los céntimos. Puedes cambiar las fechas.</p>
+                </div>
+            </div>
+            <div id="propiaCronograma" class="documentos-installments-grid"></div>
         </div>
 
         <div id="fechasCuotasCastigoBox" class="documentos-installments hidden">
@@ -378,7 +398,9 @@
     </section>
 </main>
 
-<script src="../js/app_layout.js?v=20260923-consumo"></script>
-    <script src="../js/documentos.js?v=20260921-sip-atencion-nombre-completo1"></script>
+<script src="../js/session.js?v=60298e1520"></script>
+<script src="../js/app_layout.js?v=876e8f616f"></script>
+    <script src="../js/documentos.js?v=6568e47d16"></script>
+    <script src="../js/documentos_selector.js?v=26e3555f8b"></script>
 </body>
 </html>

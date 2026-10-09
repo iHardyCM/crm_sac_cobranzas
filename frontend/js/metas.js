@@ -32,8 +32,8 @@ async function cargarMetas(mostrarToastOk = false) {
 
     try {
         const [resumenRes, detalleRes] = await Promise.all([
-            fetch(`${BASE_URL}/metas/resumen?${params.toString()}`),
-            fetch(`${BASE_URL}/metas/detalle?${params.toString()}`),
+            fetchConSesion(`${BASE_URL}/metas/resumen?${params.toString()}`),
+            fetchConSesion(`${BASE_URL}/metas/detalle?${params.toString()}`),
         ]);
 
         const resumen = await resumenRes.json();
@@ -81,7 +81,7 @@ async function importarMetasMibanco(event) {
         }
         if (resultado) resultado.innerHTML = `<span>Procesando archivo...</span>`;
 
-        const res = await fetch(`${BASE_URL}/metas/importar/mibanco`, {
+        const res = await fetchConSesion(`${BASE_URL}/metas/importar/mibanco`, {
             method: "POST",
             body: formData,
         });

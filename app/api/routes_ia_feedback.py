@@ -16,9 +16,20 @@ from starlette.concurrency import run_in_threadpool
 import re
 
 from app.core.auth_dependencies import normalizar_tipo_usuario, requiere_clave_definitiva
+from app.core.permisos_vistas import exigir_vista
 from app.services.admin_metas_agentes_service import listar_agentes
 from app.services.admin_supervisores_service import listar_carteras
-from app.services.reporte_calidad_export import construir_reporte_calidad_excel
+from app.services.nombres_descarga import nombre_descarga
+from app.services.reporte_calidad_export import (
+    construir_informe_rtf,
+    construir_reporte_calidad_excel,
+)
+# PDF con el diseno 2026-10. Los anteriores siguen en reporte_calidad_export.py
+# (individual) y reporte_cartera_pdf.py (cartera) por si hay que volver atras.
+from app.services.reporte_calidad_pdf import (
+    construir_informe_cartera_pdf,
+    construir_informe_individual_pdf,
+)
 from app.services.ia_consumo_service import obtener_consumo
 from app.services.reporteria_sql_service import obtener_reporteria_sql
 from app.services.ia_analysis_service import (
@@ -60,7 +71,12 @@ logger = logging.getLogger(__name__)
 # pantalla, pero se ignoran.
 # Pendiente: filtrar por idcarteras del usuario (ver docs/autenticacion_fase1.md).
 # ---------------------------------------------------------------------------
-UsuarioIa = Depends(requiere_clave_definitiva)
+def requiere_ia_feedback(usuario: Dict = Depends(requiere_clave_definitiva)) -> Dict:
+    exigir_vista(usuario, "ia_feedback")
+    return usuario
+
+
+UsuarioIa = Depends(requiere_ia_feedback)
 
 
 def _perfil_sesion(usuario: Dict) -> str:
@@ -467,12 +483,51 @@ def exportar_reporteria_excel(payload: dict = Body(...), usuario: Dict = Usuario
     except Exception as exc:
         logger.exception("Error exportando reporte de calidad")
         raise HTTPException(status_code=500, detail=f"No se pudo generar el Excel: {exc}")
-    nombre = f"reporte_calidad_{datetime.now():%Y%m%d_%H%M}.xlsx"
+    nombre = nombre_descarga(payload, "INDIVIDUAL" if str(payload.get("tipo", "")).upper() == "INDIVIDUAL" else "CARTERA", "xlsx", excel=True)
     return Response(
         content=contenido,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
+
+
+@router.post("/reporteria/exportar-documento")
+def exportar_documento_calidad(payload: dict = Body(...), usuario: Dict = UsuarioIa):
+    """PDF o Word editable de una llamada o del consolidado filtrado.
+
+    La evaluacion llega ya resuelta por la pauta; esta capa solo la presenta.
+    """
+    tipo = str(payload.pop("tipo", "CARTERA")).upper()
+    formato = str(payload.pop("formato", "PDF")).upper()
+    if tipo not in {"INDIVIDUAL", "CARTERA"} or formato not in {"PDF", "WORD"}:
+        raise HTTPException(status_code=400, detail="Tipo o formato de informe no válido.")
+    try:
+        if formato == "WORD":
+            try:  # Word real (.docx) con el diseno nuevo; requiere python-docx
+                from app.services.reporte_calidad_word import (
+                    construir_informe_cartera_docx, construir_informe_individual_docx)
+            except ImportError:
+                # Sin python-docx se entrega el RTF anterior para no dejar al usuario sin archivo.
+                logger.warning("python-docx no esta instalado: se entrega el Word en RTF (diseno anterior).")
+                contenido = construir_informe_rtf(payload, tipo)
+                extension, media = "rtf", "application/rtf"
+            else:
+                contenido = (construir_informe_individual_docx(payload) if tipo == "INDIVIDUAL"
+                             else construir_informe_cartera_docx(payload))
+                extension = "docx"
+                media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif tipo == "INDIVIDUAL":
+            contenido = construir_informe_individual_pdf(payload)
+            extension, media = "pdf", "application/pdf"
+        else:
+            contenido = construir_informe_cartera_pdf(payload)
+            extension, media = "pdf", "application/pdf"
+    except Exception as exc:
+        logger.exception("Error exportando informe ejecutivo de calidad")
+        raise HTTPException(status_code=500, detail=f"No se pudo generar el informe: {exc}")
+    nombre = nombre_descarga(payload, tipo, extension)
+    return Response(content=contenido, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
 @router.get("/{id_feedback}/audio")

@@ -658,3 +658,38 @@ body.crm-shell.crm-focus-mode .ia-workspace { padding: 18px 24px 28px !important
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Iconos del menu con color por area (mismo criterio que el Home). */
+.crm-nav-link .crm-nav-icon,
+.crm-nav-disabled .crm-nav-icon {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    border-radius: 9px;
+    background: rgba(96, 165, 250, .16);
+    color: #8cc4ff;
+    transition: background .15s ease, color .15s ease;
+}
+
+.crm-nav-link .crm-nav-icon svg,
+.crm-nav-disabled .crm-nav-icon svg {
+    width: 17px;
+    height: 17px;
+    stroke-width: 2;
+}
+
+.crm-nav-link.tono-calidad .crm-nav-icon, .crm-nav-disabled.tono-calidad .crm-nav-icon { background: rgba(167, 139, 250, .18); color: #c4b5fd; }
+.crm-nav-link.tono-datos .crm-nav-icon, .crm-nav-disabled.tono-datos .crm-nav-icon { background: rgba(52, 211, 153, .16); color: #6ee7b7; }
+.crm-nav-link.tono-admin .crm-nav-icon, .crm-nav-disabled.tono-admin .crm-nav-icon { background: rgba(251, 146, 60, .17); color: #fdba74; }
+
+.crm-nav-link.active .crm-nav-icon {
+    background: rgba(255, 255, 255, .22);
+    color: #ffffff;
+}
+
+.crm-nav-disabled .crm-nav-icon {
+    opacity: .75;
+}
+
+/* Primer montaje del menu: sin animar el desplazamiento del contenido. */
+body.crm-sin-transicion, body.crm-sin-transicion * { transition: none !important; }

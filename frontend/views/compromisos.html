@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compromisos</title>
-    <link rel="stylesheet" href="../css/compromisos.css?v=20260829-apple-structure">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/compromisos.css?v=102381b999">
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
     <link rel="icon" href="logo_i_biznescob.png">
 </head>
 <body>
@@ -146,9 +149,9 @@
     </div>
 </div>
 
-<script src="../js/session.js?v=20260825a"></script>
-<script src="../js/app_layout.js?v=20260923-consumo"></script>
-<script src="../js/compromisos.js?v=20260829-apple-actions"></script>
+<script src="../js/session.js?v=60298e1520"></script>
+<script src="../js/app_layout.js?v=876e8f616f"></script>
+<script src="../js/compromisos.js?v=e90323d854"></script>
 
 </body>
 </html>

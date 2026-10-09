@@ -32,7 +32,7 @@ function obtenerBaseUrlSusurro() {
 
 async function crearSesionSusurro() {
     try {
-        const response = await fetch(`${SUSURRO_BASE}/sesiones`, {
+        const response = await fetchConSesion(`${SUSURRO_BASE}/sesiones`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -54,7 +54,7 @@ async function crearSesionSusurro() {
 
 async function cargarSesionSusurro(sessionId) {
     try {
-        const response = await fetch(`${SUSURRO_BASE}/sesiones/${encodeURIComponent(sessionId)}`);
+        const response = await fetchConSesion(`${SUSURRO_BASE}/sesiones/${encodeURIComponent(sessionId)}`);
         const data = await leerJsonSeguroSusurro(response);
         if (response.status === 404) {
             marcarSesionExpiradaSusurro();
@@ -76,7 +76,7 @@ function iniciarPollingSusurro() {
     pollingSusurro = setInterval(async () => {
         if (!sesionSusurro?.session_id || pollingSuspendidoSusurro || document.hidden) return;
         try {
-            const response = await fetch(`${SUSURRO_BASE}/sesiones/${encodeURIComponent(sesionSusurro.session_id)}`);
+            const response = await fetchConSesion(`${SUSURRO_BASE}/sesiones/${encodeURIComponent(sesionSusurro.session_id)}`);
             const data = await leerJsonSeguroSusurro(response);
             if (response.ok) {
                 sesionSusurro = data;
@@ -121,7 +121,7 @@ async function enviarFragmentoSusurro() {
     if (!texto) return;
 
     try {
-        const response = await fetch(`${SUSURRO_BASE}/fragmentos`, {
+        const response = await fetchConSesion(`${SUSURRO_BASE}/fragmentos`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -148,7 +148,7 @@ async function limpiarSusurro() {
     }
 
     try {
-        const response = await fetch(`${SUSURRO_BASE}/sesiones/${sesionSusurro.session_id}/limpiar`, {
+        const response = await fetchConSesion(`${SUSURRO_BASE}/sesiones/${sesionSusurro.session_id}/limpiar`, {
             method: "POST"
         });
         const data = await leerJsonSeguroSusurro(response);

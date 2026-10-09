@@ -26,6 +26,21 @@ except Exception:
     pass
 
 DEFAULT_API = "http://127.0.0.1:8000/susurro-ia"
+
+# El modulo Susurro IA exige sesion del CRM. El capturador manda este token en
+# cada llamada (se obtiene con --dni/--clave, con --token o con CRM_ACCESS_TOKEN).
+HEADERS_API: dict = {}
+
+
+def iniciar_sesion_crm(api: str, dni: str, clave: str) -> str:
+    base = api.rstrip("/").rsplit("/susurro-ia", 1)[0]
+    response = requests.post(f"{base}/auth/login", json={"dni": dni, "clave": clave}, timeout=15)
+    datos = response.json() if response.content else {}
+    if response.status_code != 200 or not datos.get("access_token"):
+        raise RuntimeError(datos.get("msg") or f"No se pudo iniciar sesion en el CRM (HTTP {response.status_code}).")
+    if datos.get("requiere_cambio_clave"):
+        raise RuntimeError("Tu cuenta debe cambiar la contrasena en el CRM antes de usar el capturador.")
+    return datos["access_token"]
 TRANSCRIPTION_MODEL = os.getenv("SUSURRO_TRANSCRIPTION_MODEL", os.getenv("IA_FEEDBACK_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"))
 
 
@@ -41,7 +56,17 @@ def main():
     parser.add_argument("--min-rms", type=float, default=0.008, help="Volumen minimo para transcribir.")
     parser.add_argument("--agente", default=None, help="Nombre o DNI del agente.")
     parser.add_argument("--cartera", default=None, help="Cartera o contexto.")
+    parser.add_argument("--token", default=os.getenv("CRM_ACCESS_TOKEN"), help="Token de sesion del CRM (o variable CRM_ACCESS_TOKEN).")
+    parser.add_argument("--dni", default=os.getenv("CRM_DNI"), help="DNI para iniciar sesion en el CRM (pide la clave por teclado).")
     args = parser.parse_args()
+
+    token = args.token
+    if not token and args.dni:
+        import getpass
+        token = iniciar_sesion_crm(args.api, args.dni, os.getenv("CRM_CLAVE") or getpass.getpass("Clave del CRM: "))
+    if not token:
+        raise RuntimeError("Susurro IA exige sesion del CRM: usa --dni (pide la clave), --token o CRM_ACCESS_TOKEN.")
+    HEADERS_API["Authorization"] = f"Bearer {token}"
 
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY no esta configurada en .env.")
@@ -62,6 +87,7 @@ def crear_sesion(api: str, agente: Optional[str], cartera: Optional[str]) -> str
     response = requests.post(
         f"{api}/sesiones",
         json={"agente": agente or "capturador_local", "cartera": cartera, "modo": "captura_local"},
+        headers=HEADERS_API,
         timeout=10,
     )
     response.raise_for_status()
@@ -148,6 +174,7 @@ def enviar_fragmento(api: str, session_id: str, text: str, speaker: str, source:
             "speaker": speaker,
             "source": source,
         },
+        headers=HEADERS_API,
         timeout=15,
     )
     response.raise_for_status()

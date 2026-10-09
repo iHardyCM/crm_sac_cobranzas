@@ -1,7 +1,10 @@
 from app.core.database import get_connection
 from app.services.cliente_crm_service import construir_respuesta_crm, resolver_tipo_resultado
 
-def buscar_cliente(valor=None):
+def buscar_cliente(valor=None, verificar_acceso=None):
+    """verificar_acceso(filas): opcional; recibe todas las filas de la entidad
+    (antes de consultar gestion, pagos y PDP) y lanza una excepcion si el
+    usuario no puede verlas. Sin el, el comportamiento es el de siempre."""
 
     # 🚫 seguridad básica
     if not valor:
@@ -47,6 +50,9 @@ def buscar_cliente(valor=None):
         columns = [col[0] for col in cursor.description]
         data = [dict(zip(columns, row)) for row in rows]
         data = resolver_filas_entidad(cursor, data, str(valor).strip())
+
+        if verificar_acceso is not None:
+            verificar_acceso(data)
 
         return construir_respuesta_crm(data, str(valor).strip())
     finally:

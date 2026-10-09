@@ -3,7 +3,10 @@ const BASE_URL_TELEFONOS = `${window.location.protocol}//${window.location.hostn
 let telefonosCache = [];
 let telefonoSeleccionado = null;
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    // Seguridad: nada se consulta hasta que el backend confirme la sesion.
+    if (typeof asegurarSesionBackend !== "function" || !(await asegurarSesionBackend())) return;
+
     cargarFiltros();
 
     document.getElementById("btnBuscar")?.addEventListener("click", buscarTelefonos);
@@ -58,7 +61,7 @@ function actualizarContadorFiltros() {
 
 async function cargarFiltros() {
     try {
-        const response = await fetch(`${BASE_URL_TELEFONOS}/telefonos/filtros`, { cache: "no-store" });
+        const response = await fetchConSesion(`${BASE_URL_TELEFONOS}/telefonos/filtros`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -74,6 +77,7 @@ async function cargarFiltros() {
         cargarSelectSimple("filtroOrigen", data.origen || []);
 
     } catch (error) {
+        if (error instanceof SesionInvalidaError) return;
         console.error("Error cargando filtros:", error);
     }
 }
@@ -136,13 +140,10 @@ async function buscarTelefonos() {
 
     try {
         const url = `${BASE_URL_TELEFONOS}/telefonos/buscar?${params.toString()}`;
-        console.log("Consultando URL:", url);
 
-        const response = await fetch(url, { cache: "no-store" });
+        const response = await fetchConSesion(url);
         const result = await response.json();
 
-        console.log("HTTP status:", response.status);
-        console.log("Respuesta completa:", result);
 
         if (!response.ok) {
             throw new Error(result.detail || "Error consultando teléfonos.");
@@ -164,6 +165,7 @@ async function buscarTelefonos() {
         ocultarEstado();
 
     } catch (error) {
+        if (error instanceof SesionInvalidaError) return;
         console.error("Error real en búsqueda:", error);
         console.error("Stack:", error.stack);
         mostrarEstado(error.message || "Error consultando teléfonos.", "error");

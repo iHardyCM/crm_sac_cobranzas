@@ -7758,6 +7758,25 @@ body.crm-shell .v2-kpi.warn { border-top-color: #d9901a; }
 body.crm-shell .v2-kpi.risk { border-top-color: #d0454f; }
 body.crm-shell .v2-kpi.na { border-top-color: #9aabbd; }
 
+/* Salidas ejecutivas: compactas, formales y disponibles sin ocultar la
+   reportería operativa. */
+body.crm-shell .report-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+}
+body.crm-shell #compromisoAgenteIa {
+    min-height: 118px;
+    resize: vertical;
+    line-height: 1.45;
+}
+@media (max-width: 720px) {
+    body.crm-shell .report-export-actions { justify-content: stretch; width: 100%; }
+    body.crm-shell .report-export-actions button { flex: 1 1 auto; }
+}
+
 /* barra con marca de meta */
 body.crm-shell .v2-bar { position: relative; display: block; height: 7px; min-width: 60px; border-radius: 99px; background: #e8eef5; }
 body.crm-shell .v2-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: #1769c2; }

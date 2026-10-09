@@ -4734,8 +4734,15 @@ function formatoFechaCortaIa(fecha) {
 }
 
 function claveSemanaClienteIa(value) {
-    const fecha = parseFechaIa(value) || new Date();
-    const semanaMes = Math.ceil(fecha.getDate() / 7);
+    const texto = String(value || "");
+    const iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    const local = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const fecha = iso
+        ? new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]))
+        : local ? new Date(Number(local[3]), Number(local[2]) - 1, Number(local[1]))
+            : parseFechaIa(value) || new Date();
+    const primerDia = new Date(fecha.getFullYear(), fecha.getMonth(), 1).getDay();
+    const semanaMes = Math.floor((fecha.getDate() + primerDia - 1) / 7) + 1;
     return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")} S${semanaMes}`;
 }
 

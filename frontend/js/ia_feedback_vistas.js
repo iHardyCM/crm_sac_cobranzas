@@ -246,8 +246,8 @@ function skeletonV2(lineas = 3) {
 
 let cargaReporteriaV2 = null;
 
-// Fuente de la reporteria: "json" (actual, re-aplica guardas en cada lectura)
-// o "sql" (tablas). Mientras se valida con tools/comparar_reporteria.py, la
+// Fuente de la reporteria: "sql" (tablas, por defecto) o "json" (antigua, re-aplica
+// guardas en cada lectura y supera 45 s). Mientras se valida con tools/comparar_reporteria.py, la
 // fuente SQL se activa abriendo la pagina con ?fuente=sql (queda recordada en
 // este navegador) y se vuelve con ?fuente=json.
 function fuenteReporteriaV2() {
@@ -255,9 +255,9 @@ function fuenteReporteriaV2() {
         const url = new URLSearchParams(window.location.search).get("fuente");
         if (url === "sql" || url === "json") localStorage.setItem("iaFuenteReporteria", url);
         const guardada = localStorage.getItem("iaFuenteReporteria");
-        return guardada === "sql" ? "sql" : "json";
+        return guardada === "json" ? "json" : "sql";
     } catch {
-        return "json";
+        return "sql";
     }
 }
 
@@ -995,40 +995,117 @@ function payloadExcelV2(detalle) {
     };
 }
 
-async function exportarReporteIa() {
+function descargarBlobInformeIa(blob, response, fallback) {
+    const disp = response.headers.get("Content-Disposition") || "";
+    const nombre = (disp.match(/filename="?([^";]+)"?/) || [])[1] || fallback;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombre;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function exportarReporteIa(formato = "excel") {
     const rows = detalleReporteIa || [];
     if (!rows.length) {
         mostrarMensajeIa("No hay evaluaciones para exportar con los filtros seleccionados.", "error");
         return;
     }
+    const etiqueta = formato === "excel" ? "Excel" : formato === "word" ? "Word" : "PDF";
     const botones = [...document.querySelectorAll("button[onclick^='exportarReporteIa']")];
-    botones.forEach(b => { b.disabled = true; b.dataset.texto = b.textContent; b.textContent = "Generando Excel…"; });
+    botones.forEach(b => { b.disabled = true; b.dataset.texto = b.textContent; b.textContent = `Generando ${etiqueta}…`; });
     try {
-        const response = await fetchIa(`${IA_FEEDBACK_BASE}/reporteria/exportar-excel`, {
+        const endpoint = formato === "excel" ? "/reporteria/exportar-excel" : "/reporteria/exportar-documento";
+        const payload = payloadExcelV2(rows);
+        if (formato !== "excel") {
+            payload.tipo = "CARTERA";
+            payload.formato = formato.toUpperCase();
+            payload.recomendacion = "Priorizar el criterio con mayor recurrencia, revisar semanalmente el avance por agente y formalizar compromisos de mejora.";
+        }
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}${endpoint}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payloadExcelV2(rows)),
+            body: JSON.stringify(payload),
         }, 90000);
         if (!response.ok) {
             const data = await leerJsonSeguro(response);
             throw new Error(data.detail || "No se pudo generar el Excel.");
         }
         const blob = await response.blob();
-        const disp = response.headers.get("Content-Disposition") || "";
-        const nombre = (disp.match(/filename="?([^"]+)"?/) || [])[1] || `reporte_calidad_${new Date().toISOString().slice(0, 10)}.xlsx`;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = nombre;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        mostrarMensajeIa(`Excel generado con ${formatoNumero(rows.length)} evaluaciones del filtro actual.`, "ok");
+        descargarBlobInformeIa(blob, response, `informe_cartera.${formato === "word" ? "docx" : formato === "pdf" ? "pdf" : "xlsx"}`);
+        mostrarMensajeIa(`${etiqueta} generado con ${formatoNumero(rows.length)} evaluaciones del filtro actual.`, "ok");
     } catch (error) {
         mostrarMensajeIa(error.message || "No se pudo generar el Excel.", "error");
     } finally {
         botones.forEach(b => { b.disabled = false; b.textContent = b.dataset.texto || "Exportar"; });
+    }
+}
+
+function payloadInformeIndividualIa() {
+    const data = resultadoActualIa || {};
+    const criterios = evaluacionCalidadItemsIa(data).map(itemSgcIa).map(item => ({
+        bloque: bloquePautaItemIa(item, data),
+        bloque_nombre: bloquePautaItemIa(item, data),
+        codigo: item.codigo || item.criterio_codigo || "",
+        criterio: item.nombre || item.factor || item.criterio || "",
+        peso: item.peso ?? item.puntaje_maximo ?? 0,
+        nota: item.nota ?? item.puntaje_obtenido ?? null,
+        resultado: item.calificacion || item.resultado || "",
+        evidencia: item.evidencia || "",
+        brecha: Boolean(item.brecha || /NO CUMPLE|PARCIAL/i.test(String(item.calificacion || item.resultado || ""))),
+    }));
+    const aTexto = valor => Array.isArray(valor) ? valor : (valor ? [valor] : []);
+    const brechas = criterios.filter(x => x.brecha).map(x => `${x.criterio}: ${x.resultado}${x.evidencia ? `. ${x.evidencia}` : ""}`);
+    const score = data.score_final ?? data.score_calibrado ?? data.score_calidad ?? null;
+    return {
+        tipo: "INDIVIDUAL",
+        formato: "PDF",
+        score_vigente: score,
+        meta: { agente: data.agente || "Sin asignar", cartera: data.cartera || "—", fecha: data.fecha_llamada || data.fecha_creacion || "—" },
+        resumen: data.resumen || "Sin resumen registrado.",
+        criterios,
+        fortalezas: aTexto(data.fortalezas_lista || data.fortalezas),
+        brechas,
+        feedback: data.feedback_supervisor || data.observacion_supervisor || data.recomendaciones || "Sin feedback registrado.",
+        compromiso: data.compromiso_agente || "Pendiente de registrar con el agente.",
+        // Tambien permite el Excel auditable existente para una sola llamada.
+        evaluaciones: [{
+            id_feedback: data.id_feedback, fecha: data.fecha_llamada || data.fecha_creacion || "",
+            cartera: data.cartera || "", agente: data.agente || "", supervisor: data.supervisor || "",
+            tipo_llamada: data.tipo_llamada || "", nota: score, origen: data.origen_score || "IA",
+            nota_ia: data.score_ia ?? null, evaluable: score == null ? "No" : "Sí",
+            error_critico: data.error_critico ? "Sí" : "No", estado_revision: data.estado_revision || "",
+            ia_pide_revision: data.requiere_revision_humana ? "Sí" : "No", brechas: brechas.join("; "),
+            observacion: data.observacion_supervisor || "",
+        }],
+        foco: { cartera: [], supervisor: [], agente: [] }, agentes: [], catalogo_criterios: criterios.map(x => ({ codigo: x.codigo, criterio: x.criterio })), pareto: criterios.filter(x => x.brecha).map(x => ({ codigo: x.codigo, criterio: x.criterio })),
+    };
+}
+
+async function exportarInformeIndividualIa(formato = "pdf") {
+    if (!resultadoActualIa?.id_feedback) {
+        mostrarMensajeIa("Abre una evaluación antes de generar el informe.", "error");
+        return;
+    }
+    const payload = payloadInformeIndividualIa();
+    payload.formato = formato.toUpperCase();
+    try {
+        const esExcel = formato === "excel";
+        const response = await fetchIa(`${IA_FEEDBACK_BASE}${esExcel ? "/reporteria/exportar-excel" : "/reporteria/exportar-documento"}`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        }, 90000);
+        if (!response.ok) {
+            const data = await leerJsonSeguro(response);
+            throw new Error(data.detail || "No se pudo generar el informe.");
+        }
+        const etiqueta = formato === "word" ? "Word editable" : formato === "excel" ? "Excel" : "PDF";
+        descargarBlobInformeIa(await response.blob(), response, `informe_llamada.${formato === "word" ? "docx" : formato === "excel" ? "xlsx" : "pdf"}`);
+        mostrarMensajeIa(`Informe individual en ${etiqueta} generado.`, "ok");
+    } catch (error) {
+        mostrarMensajeIa(error.message || "No se pudo generar el informe.", "error");
     }
 }
 

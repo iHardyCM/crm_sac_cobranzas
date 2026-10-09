@@ -413,6 +413,13 @@ body {
     line-height: 1.22;
 }
 
+.documentos-preview-page .documentos-preview-status {
+    margin: 36px 0;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #334155;
+}
+
 .documentos-preview-page.documentos-preview-real {
     width: min(100%, 920px);
     min-height: 1100px;
@@ -1455,3 +1462,18 @@ body.crm-shell .documentos-table thead th { position: sticky; top: 0; z-index: 1
 body.crm-shell .documentos-table tbody tr:hover { background: #f5faff; }
 body.crm-shell .documentos-generate { border-color: #b8d9fa; background: linear-gradient(135deg,#fbfdff,#f5faff); }
 body.crm-shell .documentos-group-panel { border-radius: 15px; }
+.documentos-propia-pagos {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.documentos-propia-pagos.hidden { display: none; }
+.documentos-propia-cronograma .documentos-installments-grid { max-width: 700px; }
+.documentos-propia-cronograma .documentos-installments-table th { background: #2b6fd4; color: #fff; }
+.documentos-propia-cronograma .documentos-installments-table td { border-color: #b9d9ec; }
+.documentos-propia-cronograma .monto-propia { font-weight: 800; }
+.credito-propia-check { margin-right: 8px; accent-color: #2b6fd4; }
+@media (max-width: 760px) {
+    .documentos-propia-pagos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

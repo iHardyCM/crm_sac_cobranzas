@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biznescob - Análisis IA</title>
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=20260928-calibracion">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=6b163cde8e">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=9ca9b0c9d5">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
     <main class="ia-page copc-shell">
@@ -23,7 +26,11 @@
                 </div>
                 <button id="btnToggleFiltrosIa" class="btn-light btn-filter-toggle" type="button" onclick="toggleFiltrosResumenIa()">Filtros <span id="contadorFiltrosIa">0</span></button>
                 <button class="btn-primary btn-action" type="button" onclick="nuevaLlamadaIa()">Nueva evaluación</button>
-                <button class="btn-light" type="button" onclick="exportarReporteIa()">Exportar reporte</button>
+                <div class="report-export-actions" aria-label="Exportar informe ejecutivo por cartera">
+                    <button class="btn-light" type="button" onclick="exportarReporteIa('excel')">Excel</button>
+                    <button class="btn-light" type="button" onclick="exportarReporteIa('word')">Word editable</button>
+                    <button class="btn-primary" type="button" onclick="exportarReporteIa('pdf')">Informe PDF</button>
+                </div>
             </div>
         </section>
 
@@ -38,7 +45,7 @@
 
         <section class="summary-filter-strip">
             <div>
-                <span id="estadoDatosResumenIa" class="data-status-dot">Datos actualizados</span>
+                <span id="estadoDatosResumenIa" class="data-status-dot is-loading">Cargando datos…</span>
                 <strong id="periodoResumenIa">-</strong>
             </div>
             <div id="chipsFiltrosIa" class="filter-chip-row"></div>
@@ -152,8 +159,8 @@
             </div>
         </section>
 
-        <section class="ia-grid">
-            <article id="panelCargaIa" class="ia-panel upload-panel">
+        <section class="ia-grid result-mode">
+            <article id="panelCargaIa" class="ia-panel upload-panel oculto">
                 <div class="panel-head">
                     <div>
                         <h3>Nueva llamada</h3>
@@ -216,7 +223,7 @@
                 <div id="procesosIa" class="procesos-ia"></div>
             </article>
 
-            <article id="panelResultadoIa" class="ia-panel result-panel">
+            <article id="panelResultadoIa" class="ia-panel result-panel oculto">
                 <div class="panel-head evaluation-detail-head">
                     <div>
                         <span id="detalleBreadcrumbIa" class="detail-breadcrumb">Evaluaciones / Evaluación</span>
@@ -236,6 +243,9 @@
                     <div class="result-actions">
                         <span id="resultadoNivelIa" class="level-badge">-</span>
                         <button class="btn-light btn-small" type="button" onclick="mostrarVistaEvaluacionesIa()">Volver</button>
+                        <button class="btn-light btn-small" type="button" onclick="exportarInformeIndividualIa('excel')">Excel</button>
+                        <button class="btn-light btn-small" type="button" onclick="exportarInformeIndividualIa('word')">Word editable</button>
+                        <button class="btn-primary btn-small" type="button" onclick="exportarInformeIndividualIa('pdf')">Informe PDF</button>
                         <button id="btnReanalizarDetalleIa" class="btn-light btn-small" type="button" onclick="reanalizarEvaluacionIa()" title="Vuelve a evaluar esta llamada reutilizando la transcripción guardada">Reanalizar</button>
                         <button id="btnGuardarBorradorDetalleIa" class="btn-light btn-small" type="button" onclick="guardarBorradorRevisionIa()">Guardar borrador</button>
                         <button id="btnValidarDetalleIa" class="btn-primary btn-small btn-validar-ficha-ia" type="button" onclick="validarEvaluacionDesdeFichaIa()" disabled>Validar evaluación</button>
@@ -632,7 +642,7 @@
                                     </div>
                                     <div class="field coaching-field-wide">
                                         <label for="compromisoAgenteIa">Compromiso del agente</label>
-                                        <textarea id="compromisoAgenteIa" rows="2" placeholder="Compromiso editable antes de guardar el plan."></textarea>
+                                        <textarea id="compromisoAgenteIa" rows="6" placeholder="Registra el compromiso acordado con el agente: acción, fecha y forma de seguimiento."></textarea>
                                     </div>
                                 </div>
                                 <div class="review-actions coaching-actions">
@@ -724,7 +734,7 @@
             </article>
         </section>
 
-        <section id="historialPanelIa" class="ia-panel">
+        <section id="historialPanelIa" class="ia-panel oculto">
             <div class="history-head">
                 <div>
                     <h3>Historial de análisis</h3>
@@ -753,7 +763,7 @@
             </div>
         </section>
 
-        <section id="reporteriaPanelIa" class="report-view quality-summary-v2 oculto">
+        <section id="reporteriaPanelIa" class="report-view quality-summary-v2">
             <div class="report-head executive-summary-head">
                 <div>
                     <span>Monitoreo ejecutivo</span>
@@ -1285,9 +1295,9 @@
         </section>
     </main>
 
-    <script src="../js/session.js?v=20260929-home"></script>
-    <script src="../js/app_layout.js?v=20260915-supervisor-importacion1"></script>
-    <script src="../js/ia_feedback.js?v=20260929-sesion"></script>
-    <script src="../js/ia_feedback_vistas.js?v=20260929-sesion"></script>
+    <script src="../js/session.js?v=60298e1520"></script>
+    <script src="../js/app_layout.js?v=38918d1f6e"></script>
+    <script src="../js/ia_feedback.js?v=8d35ba65e5"></script>
+    <script src="../js/ia_feedback_vistas.js?v=ebbd7deb33"></script>
 </body>
 </html>

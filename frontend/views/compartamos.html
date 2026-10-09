@@ -3,54 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulta Compartamos</title>
-    <link rel="stylesheet" href="../css/styles.css">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/compartamos.css?v=20260916-mini-crm1">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <title>Radar Compartamos</title>
+    <!-- Oculta el body hasta que app_layout.js monte el menú y la cabecera (evita ver la página "sin shell" un instante). Si algo falla, se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/styles.css?v=272ed0e7de">
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/compartamos.css?v=d5898a5c91">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
 <main class="clientes-page">
     <section class="clientes-search-card clientes-search-card-main">
         <div class="search-copy">
-            <span class="clientes-eyebrow">Base diaria Compartamos</span>
-            <h2>Mini CRM Compartamos</h2>
-            <p>Consulta la situacion contractual, actividad de cobranza, pagos, compromisos y alternativas disponibles para cada cliente o grupo.</p>
+            <h2>Radar Compartamos</h2>
+            <p>Busca un cliente o un grupo y revisa su deuda, mora, gestión y pagos del día.</p>
         </div>
 
         <form class="buscador clientes-search-form" onsubmit="event.preventDefault(); buscar();">
-            <label for="valor">DNI, codigo de cliente, operacion o grupo</label>
+            <label for="valor">DNI, código de cliente, operación o grupo</label>
             <div class="clientes-search-row">
-                <input id="valor" placeholder="Ejemplo: 60895420 / 5884029 / 00000000000018616702" autocomplete="off">
+                <input id="valor" placeholder="Ejemplo: 60895420 / 5884029 / 362951" autocomplete="off">
                 <button class="btn-primary" type="submit">Buscar</button>
                 <button class="btn-secondary" type="button" onclick="limpiarBusqueda()">Limpiar</button>
             </div>
         </form>
 
-        <div class="clientes-hero-tags" aria-label="Informacion disponible">
-            <span>Capitales</span>
-            <span>Deudas</span>
-            <span>Dias mora</span>
-            <span>Cuotas</span>
-            <span>Castigo/Vigente</span>
-        </div>
-
-        <div id="loader" class="loader" role="status" aria-live="polite">Buscando informacion del cliente...</div>
+        <div id="loader" class="loader" role="status" aria-live="polite"><span class="loader-radar" aria-hidden="true"></span>Buscando en la base diaria…</div>
     </section>
 
     <section id="resultado" class="resultado-panel">
         <div class="clientes-empty">
-            <strong>Realiza una busqueda para empezar.</strong>
-            <span>Los resultados apareceran aqui con la ultima informacion diaria enviada por Compartamos para clientes activos.</span>
+            <strong>Escribe un dato para empezar.</strong>
+            <span>El resultado aparece aquí con la última información diaria enviada por Compartamos para clientes activos.</span>
         </div>
     </section>
 </main>
 
-<script src="../js/session.js?v=20260825a"></script>
-<script src="../core/api.js"></script>
-<script src="../js/app_layout.js?v=20260923-consumo"></script>
-<script src="../js/compartamos.js?v=20260916-mini-crm1"></script>
+<script src="../js/session.js?v=60298e1520"></script>
+<script src="../core/api.js?v=07f10c6a4d"></script>
+<script src="../js/app_layout.js?v=876e8f616f"></script>
+<script src="../js/compartamos.js?v=d3a93573d5"></script>
 
 </body>
 </html>

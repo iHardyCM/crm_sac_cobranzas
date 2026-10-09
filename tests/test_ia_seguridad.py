@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("CRM_JWT_SECRET", "secreto-solo-para-tests-no-productivo-0123456789")
 
-from app.core import auth_dependencies, security  # noqa: E402
+from app.core import auth_dependencies, permisos_vistas, security  # noqa: E402
 from app.services import auth_service  # noqa: E402
 from app.api import routes_calibracion, routes_ia_feedback  # noqa: E402
 
@@ -52,6 +52,9 @@ class BaseIaSeguridadTest(unittest.TestCase):
                          side_effect=lambda d: bool(self.cuentas.get(d, {}).get("FLG_ACTIVO"))),
             patch.object(auth_dependencies, "cuenta_requiere_cambio_clave",
                          side_effect=lambda d: bool(self.cuentas.get(d, {}).get("FLG_CAMBIO_OBLIGATORIO", True))),
+            # El gestor de esta batería tiene Análisis IA asignado de forma individual.
+            patch.object(permisos_vistas, "leer_sobrescrituras",
+                         side_effect=lambda d: {"ia_feedback": True} if d == GESTOR else {}),
         ]
         for p in self.parches:
             p.start()
@@ -252,7 +255,8 @@ class AceptacionRevocacionTest(BaseAccesosTest):
         }).status_code, 200)
 
         # 3. Abre IA y ve informacion.
-        with patch.object(routes_ia_feedback, "obtener_bandeja_supervisor", return_value={"en_proceso": []}):
+        with patch.object(permisos_vistas, "leer_sobrescrituras", return_value={"ia_feedback": True}), \
+             patch.object(routes_ia_feedback, "obtener_bandeja_supervisor", return_value={"en_proceso": []}):
             self.assertEqual(client.get("/ia-feedback/bandeja", headers=token).status_code, 200)
 
             # 4. El administrador lo deshabilita.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional
@@ -13,6 +15,38 @@ CT_FORMULAS = {
     "cuota_1": ["CT1", "CT11", "CT12", "CT13", "CT14", "CT15"],
     "cuota_2": ["CT2", "CT21", "CT22", "CT23", "CT24", "CT25"],
     "cuota_3": ["CT3", "CT31", "CT32", "CT33", "CT34", "CT35"],
+}
+
+# Atraso proyectado = dias de atraso al inicio (compartamos_grupal) + este valor.
+DIAS_PROYECCION_ATRASO = 31
+
+# Calificacion de provision (compartamos_grupal.Cal_PROV). Definicion dada por negocio.
+CALIFICACION_PROVISION = {
+    0: "Normal",
+    1: "CPP",
+    2: "Deficiente",
+    3: "Dudoso 1",
+    4: "Dudoso 2",
+    5: "Pérdida",
+}
+
+# Dias de producto -> cuotas que debe pagar el grupo (siempre las mas atrasadas).
+CUOTAS_A_PAGAR_POR_PRODUCTO = {14: 2, 28: 1}
+
+# Columnas de compartamos_grupal que usa el modulo. Los nombres alternativos cubren
+# diferencias de acentos, espacios o simbolos; si ninguno existe se informa.
+CAMPOS_GRUPAL = {
+    "comite": ("COMITÉ", "COMITE"),
+    "fec_ult_pago": ("FecUltPago",),
+    "cal_prov": ("Cal_PROV", "CalPROV"),
+    "producto_camp": ("ProductoCamp",),
+    "pct_campana": ("% Campaña Cliente",),
+    "pct_campana_100": ("% Campaña Cliente 100%",),
+    "pct_cancelacion": ("% Cancelación Cliente", "% Cancelacion Cliente"),
+    "rango_atraso": ("Rang_AtrasoCtaGru",),
+    "dias_atraso_inicio": ("DiasAtraso",),
+    "cuotas_aprobadas": ("NroCuotas_Aprobadas",),
+    "cuotas_pagadas": ("NroCuotasPagadas",),
 }
 
 COMPARTAMOS_CARTERAS = {
@@ -59,6 +93,21 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
     except Exception:
         advertencias.append("No se pudo consultar la fuente operativa de compromisos.")
 
+    cronograma = estructura_cronograma_vacia()
+    grupal: Dict[str, Any] = {"disponible": False, "por_dni": {}, "columnas": set(), "advertencias": []}
+    if tipo_resultado == "GRUPO":
+        codigos = codigos_grupo(rows)
+        try:
+            grupal = construir_datos_grupal(consultar_datos_grupal(codigos))
+            advertencias.extend(grupal.get("advertencias", []))
+        except Exception:
+            advertencias.append("No se pudo consultar compartamos_grupal (rol, último pago, calificación y campañas).")
+        try:
+            cronograma = construir_cronograma_cuotas(consultar_cronograma_grupo(codigos), dnis, grupal.get("por_dni", {}))
+            advertencias.extend(cronograma.pop("advertencias", []))
+        except Exception:
+            advertencias.append("No se pudo consultar el cronograma de cuotas atrasadas del grupo.")
+
     situacion = construir_situacion(operaciones)
     contacto = construir_contacto(rows)
     grupo = construir_contexto_grupo(rows)
@@ -91,7 +140,8 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
         "contacto": contacto,
         "grupo": grupo,
         "operaciones": operaciones,
-        "integrantes": construir_integrantes(operaciones_rows, gestion.get("por_dni", {})) if tipo_resultado == "GRUPO" else [],
+        "integrantes": aplicar_datos_grupal(construir_integrantes(operaciones_rows, gestion.get("por_dni", {})), grupal) if tipo_resultado == "GRUPO" else [],
+        "cronograma_cuotas": cronograma,
         "informacion_adicional": informacion_adicional,
         "fuentes": {
             "asignacion": {"disponible": True, "fuente": "VW_CLIENTE_CRM_SAC"},
@@ -364,6 +414,342 @@ def construir_integrantes(rows: List[Dict[str, Any]], gestion_por_dni: Optional[
     return integrantes
 
 
+def codigos_grupo(rows: List[Dict[str, Any]]) -> List[str]:
+    codigos: List[str] = []
+    for row in rows:
+        value = campo(row, "CodigoGrupo")
+        if identificador_grupo_valido(value) and identificador(value) not in codigos:
+            codigos.append(identificador(value))
+    return codigos
+
+
+def clave_columna(nombre: Any) -> str:
+    """Nombre de columna comparable: sin acentos, espacios ni signos (conserva %)."""
+    base = unicodedata.normalize("NFKD", str(nombre))
+    base = "".join(char for char in base if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9%]", "", base.lower())
+
+
+def indexar_fila(fila: Dict[str, Any]) -> Dict[str, Any]:
+    return {clave_columna(clave): valor for clave, valor in fila.items()}
+
+
+def valor_columna(indice: Dict[str, Any], *nombres: str) -> Any:
+    for nombre in nombres:
+        valor = indice.get(clave_columna(nombre))
+        if not vacio(valor):
+            return valor
+    return None
+
+
+def existe_columna(indice: Dict[str, Any], *nombres: str) -> bool:
+    return any(clave_columna(nombre) in indice for nombre in nombres)
+
+
+def etiqueta_calificacion(valor: Any) -> Optional[str]:
+    numero_cal = entero(valor)
+    if numero_cal in CALIFICACION_PROVISION:
+        return f"{numero_cal}-{CALIFICACION_PROVISION[numero_cal]}"
+    return texto(valor)
+
+
+def consultar_datos_grupal(codigos: List[str]) -> List[Dict[str, Any]]:
+    """Filas de Desarrollo.dbo.compartamos_grupal del grupo (asignacion inicial)."""
+    if not codigos:
+        return []
+    params = {f"grupo_{index}": codigo for index, codigo in enumerate(codigos)}
+    marcadores = ", ".join(f":{key}" for key in params)
+    query = text(f"""
+        SELECT *
+        FROM Desarrollo.DBO.compartamos_grupal C WITH(NOLOCK)
+        WHERE C.CodigoGrupo IN ({marcadores})
+    """)
+    with engine_siscob.connect() as conn:
+        return [dict(row) for row in conn.execute(query, params).mappings().all()]
+
+
+def columna_parecida(indice: Dict[str, Any], campo_id: str) -> Optional[str]:
+    """Respaldo para los % de campana si el nombre real de la columna difiere del esperado."""
+    for clave in indice:
+        if campo_id == "pct_campana_100" and "campana" in clave and "100" in clave:
+            return clave
+        if campo_id == "pct_campana" and "campana" in clave and "cliente" in clave and "100" not in clave:
+            return clave
+        if campo_id == "pct_cancelacion" and "cancelacion" in clave and "cliente" in clave:
+            return clave
+        if campo_id == "rango_atraso" and "rang" in clave and "atraso" in clave:
+            return clave
+    return None
+
+
+def construir_datos_grupal(filas: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Un registro por DNI. Si un DNI trae valores distintos para un campo, no se elige uno."""
+    advertencias: List[str] = []
+    if not filas:
+        return {"disponible": False, "por_dni": {}, "columnas": set(), "advertencias": ["compartamos_grupal no devolvió registros para este grupo."]}
+
+    indices = [indexar_fila(fila) for fila in filas]
+    campos = {campo_id: tuple(nombres) for campo_id, nombres in CAMPOS_GRUPAL.items()}
+    for campo_id, nombres in list(campos.items()):
+        if not existe_columna(indices[0], *nombres):
+            parecida = columna_parecida(indices[0], campo_id)
+            if parecida:
+                campos[campo_id] = nombres + (parecida,)
+                advertencias.append(f"compartamos_grupal: {nombres[0]} se leyó desde la columna '{parecida}'.")
+    columnas = {campo_id for campo_id, nombres in campos.items() if existe_columna(indices[0], *nombres)}
+    faltantes = [campos[campo_id][0] for campo_id in campos if campo_id not in columnas]
+    if faltantes:
+        advertencias.append("No se encontró en compartamos_grupal: " + ", ".join(faltantes) + ".")
+
+    por_dni_filas: Dict[str, List[Dict[str, Any]]] = {}
+    for indice in indices:
+        dni = clave_documento(valor_columna(indice, "NumDocumento", "DNI"))
+        if dni:
+            por_dni_filas.setdefault(dni, []).append(indice)
+
+    por_dni: Dict[str, Dict[str, Any]] = {}
+    conflictos = 0
+    for dni, grupo_filas in por_dni_filas.items():
+        registro: Dict[str, Any] = {}
+        for campo_id, nombres in campos.items():
+            if campo_id not in columnas:
+                continue
+            valores = []
+            for indice in grupo_filas:
+                valor = valor_columna(indice, *nombres)
+                if not vacio(valor) and not any(texto(valor) == texto(previo) for previo in valores):
+                    valores.append(valor)
+            if len(valores) == 1:
+                registro[campo_id] = valores[0]
+            elif len(valores) == 0:
+                registro[campo_id] = None
+            else:
+                registro[campo_id] = None
+                conflictos += 1
+        por_dni[dni] = registro
+    if conflictos:
+        advertencias.append(f"compartamos_grupal: {conflictos} dato(s) con valores distintos para un mismo DNI; no se muestran.")
+    return {"disponible": True, "por_dni": por_dni, "columnas": columnas, "advertencias": advertencias}
+
+
+def formatear_rol(comite: Any) -> str:
+    valor = texto(comite)
+    return valor.capitalize() if valor else "Integrante"
+
+
+def aplicar_datos_grupal(integrantes: List[Dict[str, Any]], grupal: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Rol (COMITÉ), ultimo pago (FecUltPago) y calificacion (Cal_PROV) salen de compartamos_grupal."""
+    if not grupal.get("disponible"):
+        return integrantes
+    columnas = grupal.get("columnas", set())
+    por_dni = grupal.get("por_dni", {})
+    for integrante in integrantes:
+        datos = por_dni.get(clave_documento(integrante.get("dni")))
+        if "comite" in columnas:
+            integrante["rol"] = formatear_rol(datos.get("comite")) if datos is not None else None
+        if "fec_ult_pago" in columnas:
+            integrante["ultimo_pago_asignacion"] = fecha_iso(datos.get("fec_ult_pago")) if datos is not None else None
+        if "cal_prov" in columnas:
+            integrante["calificacion"] = etiqueta_calificacion(datos.get("cal_prov")) if datos is not None else None
+    return integrantes
+
+
+def consultar_cronograma_grupo(codigos: List[str]) -> List[Dict[str, Any]]:
+    """Filas de la carga diaria SAC del grupo (cuotas CT por integrante)."""
+    if not codigos:
+        return []
+    params = {f"grupo_{index}": codigo for index, codigo in enumerate(codigos)}
+    marcadores = ", ".join(f":{key}" for key in params)
+    query = text(f"""
+        SELECT S.*
+        FROM Desarrollo.DBO.SAC_CAR_BIZNESCOB S WITH(NOLOCK)
+        WHERE S.[CodigoGrupo ] IN ({marcadores})
+    """)
+    with engine_siscob.connect() as conn:
+        return [dict(row) for row in conn.execute(query, params).mappings().all()]
+
+
+COLUMNAS_CT_CAPITAL = ("CT 1", "CT 2", "CT 3")
+COLUMNAS_CT_CARGOS = {
+    1: ("CT 11", "CT 12", "CT 13", "CT 14", "CT 15"),
+    2: ("CT 21", "CT 22", "CT 23", "CT 24", "CT 25"),
+    3: ("CT 31", "CT 32", "CT 33", "CT 34", "CT 35"),
+}
+
+
+def valor_unanime(valores: Iterable[Any]) -> tuple:
+    """(valor, ambiguo): el valor si todos los no vacios coinciden."""
+    distintos: List[Any] = []
+    for valor in valores:
+        if not vacio(valor) and not any(texto(valor) == texto(previo) for previo in distintos):
+            distintos.append(valor)
+    if len(distintos) == 1:
+        return distintos[0], False
+    return None, len(distintos) > 1
+
+
+def cuotas_por_producto(producto: Optional[str]) -> Optional[int]:
+    """14 dias -> 2 cuotas; 28 dias -> 1 cuota. Cualquier otro texto: no determinado."""
+    if not producto:
+        return None
+    coincidencia = re.search(r"(?<!\d)(14|28)(?!\d)\s*d[ií]as", producto, re.IGNORECASE)
+    return CUOTAS_A_PAGAR_POR_PRODUCTO.get(int(coincidencia.group(1))) if coincidencia else None
+
+
+def construir_cronograma_cuotas(
+    filas: List[Dict[str, Any]],
+    dnis_autorizados: Iterable[str],
+    grupal_por_dni: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Matriz integrante x numero de cuota.
+
+    Regla: CT 1 corresponde a la cuota Ult_CuotaAtrasada (la mas antigua pendiente),
+    CT 2 a la siguiente y CT 3 a la subsiguiente. Se entregan dos lecturas:
+      - cuotas: solo capital (CT 1, CT 2, CT 3), tal cual llegan;
+      - cuotas_total: total de la cuota con cargos por atraso
+        (CT 1 + CT 11..CT 15, CT 2 + CT 21..CT 25, CT 3 + CT 31..CT 35).
+    Solo se incluyen integrantes ya devueltos (y autorizados) por la consulta principal.
+    """
+    grupal_por_dni = grupal_por_dni or {}
+    advertencias: List[str] = []
+    autorizados = {clave_documento(dni) for dni in dnis_autorizados if clave_documento(dni)}
+
+    por_operacion: Dict[str, Dict[str, Any]] = {}
+    excluidos = 0
+    columnas_ct_faltantes: set = set()
+    for index, fila in enumerate(filas):
+        indice = indexar_fila(fila)
+        dni = clave_documento(valor_columna(indice, "DNI"))
+        if dni not in autorizados:
+            excluidos += 1
+            continue
+        for nombre in list(COLUMNAS_CT_CAPITAL) + [c for grupo in COLUMNAS_CT_CARGOS.values() for c in grupo]:
+            if not existe_columna(indice, nombre):
+                columnas_ct_faltantes.add(nombre)
+        operacion = identificador(valor_columna(indice, "Cod Operación", "CodOperacion"))
+        key = f"{dni}|{operacion or index}"
+        por_operacion.setdefault(key, indice)
+    if excluidos:
+        advertencias.append(
+            f"Cronograma: {excluidos} registro(s) de la carga SAC no figuran entre los integrantes consultados y no se muestran."
+        )
+    if columnas_ct_faltantes:
+        advertencias.append("Cronograma: no se encontraron en la carga SAC las columnas " + ", ".join(sorted(columnas_ct_faltantes)) + "; el total de cuota puede estar incompleto.")
+
+    integrantes = []
+    numeros_cuota = set()
+    sin_ubicacion = 0
+    for key, indice in por_operacion.items():
+        dni = clave_documento(valor_columna(indice, "DNI"))
+        grupal = grupal_por_dni.get(dni) or {}
+        cuota_inicial = entero(valor_columna(indice, "Ult_CuotaAtrasada"))
+        capital = [numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CAPITAL]
+        total = []
+        for posicion in (1, 2, 3):
+            componentes = [capital[posicion - 1]] + [numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CARGOS[posicion]]
+            presentes = [valor for valor in componentes if valor is not None]
+            total.append(sum(presentes) if presentes else None)
+        cuotas: Dict[str, float] = {}
+        cuotas_total: Dict[str, float] = {}
+        if cuota_inicial is not None:
+            for posicion in range(3):
+                if capital[posicion] is not None and capital[posicion] > 0:
+                    cuotas[str(cuota_inicial + posicion)] = round(capital[posicion], 2)
+                    numeros_cuota.add(cuota_inicial + posicion)
+                if total[posicion] is not None and total[posicion] > 0:
+                    cuotas_total[str(cuota_inicial + posicion)] = round(total[posicion], 2)
+                    numeros_cuota.add(cuota_inicial + posicion)
+        elif any((valor or 0) > 0 for valor in capital + total):
+            sin_ubicacion += 1
+        atraso_inicio = entero(grupal.get("dias_atraso_inicio"))
+        integrantes.append({
+            "nombre": texto(valor_columna(indice, "NomCliente")),
+            "dni": texto(valor_columna(indice, "DNI")),
+            "operacion": texto(valor_columna(indice, "Cod Operación", "CodOperacion")),
+            "rol": formatear_rol(grupal.get("comite")) if grupal and "comite" in grupal else None,
+            "producto_camp": texto(grupal.get("producto_camp")),
+            "pct_campana": texto(grupal.get("pct_campana")),
+            "pct_campana_100": texto(grupal.get("pct_campana_100")),
+            "pct_cancelacion": texto(grupal.get("pct_cancelacion")),
+            "rango_atraso": texto(grupal.get("rango_atraso")),
+            "cuota_mas_atrasada": cuota_inicial,
+            "cuotas": cuotas,
+            "cuotas_total": cuotas_total,
+            "dias_atraso_inicio": atraso_inicio,
+            "dias_atraso_hoy": entero(valor_columna(indice, "DiasAtraso")),
+            "dias_atraso_proyectado": atraso_inicio + DIAS_PROYECCION_ATRASO if atraso_inicio is not None else None,
+            "cuotas_aprobadas": entero(grupal.get("cuotas_aprobadas")),
+            "cuotas_pagadas": entero(grupal.get("cuotas_pagadas")),
+        })
+    if sin_ubicacion:
+        advertencias.append(
+            f"Cronograma: {sin_ubicacion} integrante(s) con montos CT pero sin Ult_CuotaAtrasada; sus montos no se ubican en ninguna cuota."
+        )
+
+    integrantes.sort(key=lambda item: (
+        item["cuota_mas_atrasada"] if item["cuota_mas_atrasada"] is not None else float("inf"),
+        -(item["dias_atraso_hoy"] or 0),
+        item["nombre"] or "",
+    ))
+    columnas = sorted(numeros_cuota)
+    totales = {str(n): round(sum(item["cuotas"].get(str(n), 0) for item in integrantes), 2) for n in columnas}
+    totales_total = {str(n): round(sum(item["cuotas_total"].get(str(n), 0) for item in integrantes), 2) for n in columnas}
+
+    # Parametros de campana del grupo (compartamos_grupal): solo si todos coinciden.
+    parametros: Dict[str, Any] = {}
+    ambiguos = []
+    for campo_id in ("producto_camp", "pct_campana", "pct_campana_100", "pct_cancelacion", "rango_atraso"):
+        valor, ambiguo = valor_unanime(grupal_por_dni.get(clave_documento(item["dni"]), {}).get(campo_id) for item in integrantes)
+        parametros[campo_id] = texto(valor)
+        if ambiguo:
+            ambiguos.append(campo_id)
+    if ambiguos:
+        advertencias.append("Cronograma: el grupo tiene valores distintos en " + ", ".join(ambiguos) + "; ese dato no se muestra.")
+
+    plan = construir_plan_pago(columnas, parametros.get("producto_camp"), "producto_camp" in ambiguos)
+    return {
+        "disponible": bool(integrantes),
+        "fuente": "SAC_CAR_BIZNESCOB + compartamos_grupal",
+        "dias_proyeccion": DIAS_PROYECCION_ATRASO,
+        "cuotas": columnas,
+        "integrantes": integrantes,
+        "totales": totales,
+        "totales_total": totales_total,
+        "parametros": parametros,
+        "plan": plan,
+        "advertencias": advertencias,
+    }
+
+
+def construir_plan_pago(cuotas_presentes: List[int], producto: Optional[str], producto_ambiguo: bool) -> Dict[str, Any]:
+    """Cuotas que debe pagar el grupo: las N mas atrasadas, N segun el producto (14 -> 2, 28 -> 1)."""
+    if producto_ambiguo:
+        return {"disponible": False, "motivo": "El grupo tiene más de un ProductoCamp; no se puede determinar cuántas cuotas debe pagar."}
+    if not producto:
+        return {"disponible": False, "motivo": "compartamos_grupal no trae ProductoCamp para este grupo."}
+    cantidad = cuotas_por_producto(producto)
+    if cantidad is None:
+        return {"disponible": False, "producto": producto, "motivo": "ProductoCamp no indica 14 ni 28 días; no se puede determinar cuántas cuotas debe pagar."}
+    if not cuotas_presentes:
+        return {"disponible": False, "producto": producto, "cuotas_por_pagar": cantidad, "motivo": "El grupo no tiene cuotas atrasadas con monto."}
+    return {
+        "disponible": True,
+        "producto": producto,
+        "cuotas_por_pagar": cantidad,
+        "cuotas": cuotas_presentes[:cantidad],
+        "regla": "14 días: 2 cuotas · 28 días: 1 cuota · siempre las más atrasadas del grupo",
+    }
+
+
+def estructura_cronograma_vacia() -> Dict[str, Any]:
+    return {"disponible": False, "fuente": None, "dias_proyeccion": DIAS_PROYECCION_ATRASO, "cuotas": [], "integrantes": [], "totales": {}, "totales_total": {}, "parametros": {}, "plan": {"disponible": False}}
+
+
+def clave_documento(value: Any) -> str:
+    """DNI comparable entre fuentes con tipos distintos (texto con ceros a la izquierda vs numerico)."""
+    return identificador(value).lstrip("0")
+
+
 def consultar_gestiones(dnis: List[str]) -> Dict[str, Any]:
     dnis = [identificador(value) for value in dnis if identificador(value)]
     if not dnis:
@@ -626,6 +1012,12 @@ def vacio(value: Any) -> bool:
 def texto(value: Any) -> Optional[str]:
     if vacio(value):
         return None
+    # VW_CLIENTE_CRM_SAC entrega algunos codigos (CodigoGrupo, CodCreGrupal) como
+    # float: 362951 llega como 362951.0. Un codigo entero se representa sin ".0"
+    # para que se compare y se muestre igual que el valor que escribe el usuario.
+    if isinstance(value, (float, Decimal)) and not isinstance(value, bool):
+        if value == value and value not in (float("inf"), float("-inf")) and value == int(value):
+            return str(int(value))
     return str(value).strip()
 
 

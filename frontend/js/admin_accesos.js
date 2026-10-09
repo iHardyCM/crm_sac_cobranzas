@@ -15,6 +15,9 @@ const ETIQUETAS_ESTADO_ACCESO = {
 };
 
 let usuariosAccesos = [];
+let vistasActualDni = null;
+let vistasActuales = [];
+let vistasGuardando = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
@@ -31,6 +34,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("tablaAccesos").addEventListener("click", manejarAccionTabla);
     document.getElementById("claveTemporalCopiar").addEventListener("click", copiarClaveTemporal);
     document.getElementById("claveTemporalCerrar").addEventListener("click", ocultarClaveTemporal);
+    document.getElementById("vistasUsuarioCerrar").addEventListener("click", cerrarVistasUsuario);
+    document.getElementById("vistasUsuarioRestablecer").addEventListener("click", restablecerVistasUsuario);
+    document.getElementById("vistasUsuarioLista").addEventListener("change", cambiarVistaUsuario);
 
     cargarUsuariosAccesos();
 });
@@ -116,8 +122,9 @@ function botonesAcciones(u) {
     const boton = (accion, texto, clase = "btn-secondary") =>
         `<button type="button" class="${clase}" data-accion="${accion}" data-dni="${dni}">${texto}</button>`;
 
-    if (!u.tiene_acceso) return boton("habilitar", "Habilitar acceso", "btn-primary");
-    if (u.estado_acceso === "DESHABILITADO") return boton("habilitar", "Rehabilitar", "btn-primary");
+    const vistas = boton("vistas", "Vistas");
+    if (!u.tiene_acceso) return vistas + boton("habilitar", "Habilitar acceso", "btn-primary");
+    if (u.estado_acceso === "DESHABILITADO") return vistas + boton("habilitar", "Rehabilitar", "btn-primary");
 
     const botones = [];
     if (u.estado_acceso === "BLOQUEADO" || Number(u.intentos_fallidos) > 0) {
@@ -125,7 +132,7 @@ function botonesAcciones(u) {
     }
     botones.push(boton("reset-clave", "Resetear clave"));
     botones.push(boton("deshabilitar", "Deshabilitar", "btn-peligro"));
-    return botones.join("");
+    return vistas + botones.join("");
 }
 
 const CONFIRMACIONES = {
@@ -162,6 +169,10 @@ async function manejarAccionTabla(event) {
     const accion = boton.dataset.accion;
     const dni = boton.dataset.dni;
     const usuario = usuariosAccesos.find(u => String(u.dni) === String(dni));
+    if (accion === "vistas" && usuario) {
+        await abrirVistasUsuario(usuario);
+        return;
+    }
     if (!usuario || !CONFIRMACIONES[accion]) return;
 
     const confirmado = typeof window.crmConfirm === "function"
@@ -183,6 +194,90 @@ async function manejarAccionTabla(event) {
         mostrarAccesosToast(error.message, "error");
         boton.disabled = false;
     }
+}
+
+async function abrirVistasUsuario(usuario) {
+    if (vistasGuardando) return;
+    vistasActualDni = usuario.dni;
+    document.getElementById("vistasUsuarioTitulo").textContent = `Vistas de ${nombreUsuario(usuario)} · ${usuario.dni}`;
+    document.getElementById("vistasUsuarioPanel").classList.remove("oculto");
+    document.getElementById("vistasUsuarioLista").textContent = "Cargando vistas...";
+    document.getElementById("vistasUsuarioPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+        const respuesta = await fetchAccesos(`/admin-accesos/${encodeURIComponent(usuario.dni)}/vistas`);
+        if (vistasActualDni !== usuario.dni) return;
+        vistasActuales = respuesta.vistas || [];
+        pintarVistasUsuario();
+    } catch (error) {
+        document.getElementById("vistasUsuarioLista").textContent = error.message;
+        mostrarAccesosToast(error.message, "error");
+    }
+}
+
+function pintarVistasUsuario() {
+    document.getElementById("vistasUsuarioLista").innerHTML = vistasActuales.map(vista => `
+        <label class="vista-usuario-fila">
+            <span><strong>${h(vista.nombre)}</strong><small>${vista.habilitable === false ? "Requiere cartera Compartamos" : (vista.personalizado ? "Permiso individual" : "Según perfil")}</small></span>
+            <input type="checkbox" data-vista="${h(vista.clave)}" ${vista.permitido ? "checked" : ""} ${vista.habilitable === false ? "disabled" : ""}
+                aria-label="Permitir ${h(vista.nombre)}">
+        </label>
+    `).join("");
+}
+
+async function cambiarVistaUsuario(event) {
+    const control = event.target.closest("input[data-vista]");
+    if (!control || !vistasActualDni || vistasGuardando) return;
+    const clave = control.dataset.vista;
+    const dni = vistasActualDni;
+    vistasGuardando = true;
+    document.querySelectorAll("#vistasUsuarioLista input").forEach(input => input.disabled = true);
+    try {
+        const respuesta = await fetchAccesos(`/admin-accesos/${encodeURIComponent(dni)}/vistas/${encodeURIComponent(clave)}`, {
+            method: "PUT", body: JSON.stringify({ permitido: control.checked })
+        });
+        if (vistasActualDni !== dni) return;
+        const vista = vistasActuales.find(item => item.clave === clave);
+        if (vista) {
+            vista.permitido = respuesta.permitido;
+            vista.personalizado = respuesta.personalizado;
+        }
+        pintarVistasUsuario();
+        mostrarAccesosToast("Permiso actualizado.", "ok");
+    } catch (error) {
+        control.checked = !control.checked;
+        mostrarAccesosToast(error.message, "error");
+    } finally {
+        vistasGuardando = false;
+        document.querySelectorAll("#vistasUsuarioLista input").forEach(input => input.disabled = false);
+    }
+}
+
+async function restablecerVistasUsuario() {
+    if (!vistasActualDni || vistasGuardando) return;
+    const dni = vistasActualDni;
+    const confirmado = typeof window.crmConfirm === "function"
+        ? await window.crmConfirm({ title: "Restablecer vistas", message: "Se quitarán los permisos individuales y volverán los del perfil.", acceptText: "Restablecer" })
+        : window.confirm("Se quitarán los permisos individuales y volverán los del perfil.");
+    if (!confirmado || vistasActualDni !== dni) return;
+    vistasGuardando = true;
+    try {
+        await fetchAccesos(`/admin-accesos/${encodeURIComponent(dni)}/vistas`, { method: "DELETE" });
+        vistasGuardando = false;
+        const usuario = usuariosAccesos.find(item => item.dni === dni);
+        if (usuario) await abrirVistasUsuario(usuario);
+        mostrarAccesosToast("Permisos del perfil restablecidos.", "ok");
+    } catch (error) {
+        mostrarAccesosToast(error.message, "error");
+    } finally {
+        vistasGuardando = false;
+    }
+}
+
+function cerrarVistasUsuario() {
+    if (vistasGuardando) return;
+    vistasActualDni = null;
+    vistasActuales = [];
+    document.getElementById("vistasUsuarioPanel").classList.add("oculto");
 }
 
 function mensajeExito(accion, respuesta) {

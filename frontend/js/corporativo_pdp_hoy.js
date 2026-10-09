@@ -46,7 +46,7 @@ async function cargarPdpHoy() {
         : (idcartera ? `?idcartera=${encodeURIComponent(idcartera)}` : "");
 
     try {
-        const response = await fetch(`${BASE_URL}/corporativo/pdp-hoy${query}`);
+        const response = await fetchConSesion(`${BASE_URL}/corporativo/pdp-hoy${query}`);
 
         if (!response.ok) {
             throw new Error("Error al consultar PDP hoy");

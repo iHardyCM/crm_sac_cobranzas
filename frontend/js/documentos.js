@@ -10,8 +10,9 @@ let agenciasDestinoCastigo = [];
 let previewRealUrl = null;
 let previewRealTimer = null;
 let previewRealRequest = 0;
+let previewRealContext = null;
 
-const CARTERA_GRUPOS = ["Mibanco", "Compartamos Banco", "Financiera OH", "Interbank", "Propia Biznescob"];
+const CARTERA_GRUPOS = ["Mibanco", "Compartamos Banco", "Financiera OH", "Propia Biznescob"];
 
 document.addEventListener("DOMContentLoaded", () => {
     inicializarCatalogosDocumento();
@@ -54,6 +55,12 @@ document.addEventListener("DOMContentLoaded", () => {
         actualizarModoDocumento();
     });
     document.getElementById("cancelacion")?.addEventListener("input", () => {
+        if (esDocumentoPropia()) {
+            sincronizarCronogramaPropia();
+            actualizarCondonacion();
+            pintarPreviewDocumento();
+            return;
+        }
         if (esDocumentoSipConstancia()) {
             actualizarResumenSipConstancia();
             pintarPreviewDocumento();
@@ -163,6 +170,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
     document.getElementById("fechaPagoMibanco")?.addEventListener("change", () => {
+        if (esDocumentoPropia()) {
+            if (esDocumentoPropiaCuotas()) {
+                document.getElementById("propiaFechaInicial").value = document.getElementById("fechaPagoMibanco").value;
+                sincronizarCronogramaPropia(false);
+            }
+            pintarPreviewDocumento();
+            return;
+        }
         if (esDocumentoSipAtencion()) {
             pintarPreviewDocumento();
             programarPreviewReal();
@@ -176,6 +191,29 @@ document.addEventListener("DOMContentLoaded", () => {
             sincronizarPagosMibanco(false);
             pintarPreviewDocumento();
         }
+    });
+    ["propiaCantidadCuotas", "propiaPrimerPago"].forEach(id => {
+        document.getElementById(id)?.addEventListener("input", () => {
+            sincronizarCronogramaPropia();
+            pintarPreviewDocumento();
+        });
+    });
+    document.getElementById("propiaFechaInicial")?.addEventListener("change", () => {
+        sincronizarCronogramaPropia(false);
+        pintarPreviewDocumento();
+    });
+    document.getElementById("propiaCronograma")?.addEventListener("change", event => {
+        if (event.target.matches(".fecha-propia")) pintarPreviewDocumento();
+    });
+    document.getElementById("tbodyResultados")?.addEventListener("change", event => {
+        if (!event.target.matches(".credito-propia-check")) return;
+        if (!creditosPropiaSeleccionados().length) {
+            event.target.checked = true;
+            mostrarEstado("Selecciona al menos un crédito para el acuerdo.", "warning");
+            return;
+        }
+        actualizarResumenCreditosPropia();
+        pintarPreviewDocumento();
     });
     ["cancelacion", "inicialCastigo", "cuotaPagoCastigo"].forEach(id => {
         document.getElementById(id)?.addEventListener("change", () => {
@@ -191,8 +229,8 @@ document.addEventListener("DOMContentLoaded", () => {
 async function inicializarCatalogosDocumento() {
     try {
         const [tiposResponse, carterasResponse] = await Promise.all([
-            fetch(`${BASE_URL_DOCUMENTOS}/documentos/tipos`, { cache: "no-store" }),
-            fetch(`${BASE_URL_DOCUMENTOS}/documentos/carteras`, { cache: "no-store" }),
+            fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/tipos`, { cache: "no-store" }),
+            fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/carteras`, { cache: "no-store" }),
         ]);
         const tiposResult = await tiposResponse.json();
         const carterasResult = await carterasResponse.json();
@@ -378,6 +416,205 @@ function esDocumentoSipCualquiera() {
     return esDocumentoSip() || esDocumentoSipConstancia() || esDocumentoSipAtencion();
 }
 
+function esDocumentoPropia() {
+    return (document.getElementById("documentoTipo")?.value || "").startsWith("propia_");
+}
+
+function esDocumentoPropiaSip() {
+    return (document.getElementById("documentoTipo")?.value || "").startsWith("propia_sip_");
+}
+
+function esDocumentoPropiaCuotas() {
+    return esDocumentoPropia() && (document.getElementById("documentoTipo")?.value || "").endsWith("_cuotas");
+}
+
+function esDocumentoPropiaCancelacion() {
+    return esDocumentoPropia() && (document.getElementById("documentoTipo")?.value || "").endsWith("_cancelacion");
+}
+
+function creditosPropiaSeleccionados() {
+    if (!esDocumentoPropiaCancelacion()) return [];
+    return Array.from(document.querySelectorAll(".credito-propia-check:checked"))
+        .map(input => documentosResultados[Number(input.dataset.index)])
+        .filter(Boolean);
+}
+
+function actualizarResumenCreditosPropia() {
+    const seleccionados = creditosPropiaSeleccionados();
+    const deuda = seleccionados.reduce((sum, item) => sum + montoEnCentimos(Number(item.DeudaTotal || 0)), 0);
+    const referencia = seleccionados.reduce((sum, item) => sum + montoEnCentimos(Number(esDocumentoPropiaSip()
+        ? item.MontoReferenciaPropia || 0 : item.MtoCancelacionCliente || 0)), 0);
+    const cancelacion = document.getElementById("cancelacion");
+    if (cancelacion) {
+        cancelacion.value = referencia > 0 ? numeroInputValue(referencia / 100) : "";
+        cancelacion.max = deuda > 0 ? numeroInputValue(deuda / 100) : "";
+    }
+    document.getElementById("montoMinimo").textContent = referencia > 0 ? money(referencia / 100) : "--";
+    document.getElementById("deudaTotal").textContent = deuda > 0 ? money(deuda / 100) : "--";
+    document.getElementById("operacionSeleccionada").textContent = `${seleccionados.length} obligación${seleccionados.length === 1 ? "" : "es"} seleccionada${seleccionados.length === 1 ? "" : "s"}`;
+    if (seleccionados.length) documentoSeleccionado = seleccionados[0];
+    actualizarCondonacion();
+}
+
+function distribuirCancelacionPropia(seleccionados, totalCentimos) {
+    if (!seleccionados.length || totalCentimos <= 0) return seleccionados.map(() => 0);
+    const deudas = seleccionados.map(item => montoEnCentimos(Number(item.DeudaTotal)));
+    if (deudas.some(deuda => !Number.isFinite(deuda) || deuda < 1)
+        || totalCentimos < seleccionados.length
+        || totalCentimos > deudas.reduce((sum, deuda) => sum + deuda, 0)) return null;
+    const referencias = seleccionados.map(item => montoEnCentimos(Number(esDocumentoPropiaSip()
+        ? item.MontoReferenciaPropia : item.MtoCancelacionCliente)));
+    const minimoSip = esDocumentoPropiaSip() && referencias.every((ref, index) => ref > 0 && ref <= deudas[index])
+        && totalCentimos >= referencias.reduce((sum, ref) => sum + ref, 0);
+    const montos = minimoSip ? [...referencias] : seleccionados.map(() => 1);
+    let restante = totalCentimos - montos.reduce((sum, monto) => sum + monto, 0);
+    while (restante > 0) {
+        const disponibles = montos.map((monto, index) => ({index, capacidad: deudas[index] - monto}))
+            .filter(item => item.capacidad > 0);
+        if (!disponibles.length) return null;
+        const pesoTotal = disponibles.reduce((sum, item) => sum + Math.max(1, referencias[item.index] || deudas[item.index]), 0);
+        const cuotas = disponibles.map(item => ({...item,
+            exacta: restante * Math.max(1, referencias[item.index] || deudas[item.index]) / pesoTotal}));
+        let asignado = 0;
+        for (const item of cuotas) {
+            const adicional = Math.min(item.capacidad, Math.floor(item.exacta));
+            montos[item.index] += adicional;
+            asignado += adicional;
+        }
+        restante -= asignado;
+        if (restante && asignado === 0) {
+            cuotas.sort((a, b) => (b.exacta % 1) - (a.exacta % 1) || a.index - b.index);
+            montos[cuotas[0].index] += 1;
+            restante -= 1;
+        }
+    }
+    return montos;
+}
+
+
+function sincronizarCronogramaPropia(preservarFechas = true) {
+    if (!esDocumentoPropiaCuotas()) return;
+    const box = document.getElementById("propiaCronograma");
+    if (!box) return;
+    const cantidad = Number(document.getElementById("propiaCantidadCuotas")?.value);
+    if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 120) {
+        box.innerHTML = "";
+        document.getElementById("propiaMontoCuota").value = "";
+        return;
+    }
+    const total = Number(document.getElementById("cancelacion")?.value || 0);
+    const inicial = Number(document.getElementById("propiaPrimerPago")?.value || 0);
+    const totalCentimos = Number.isFinite(total) && total > 0 ? montoEnCentimos(total) : 0;
+    const inicialCentimos = Number.isFinite(inicial) && inicial >= 0 ? montoEnCentimos(inicial) : 0;
+    const saldo = totalCentimos - inicialCentimos;
+    const cuotaCentimos = saldo >= cantidad ? Math.floor(saldo / cantidad) : 0;
+    const cuotaInput = document.getElementById("propiaMontoCuota");
+    if (cuotaInput) cuotaInput.value = cuotaCentimos > 0 ? numeroInputValue(cuotaCentimos / 100) : "";
+    const fechasActuales = preservarFechas ? Array.from(box.querySelectorAll(".fecha-propia")).map(input => input.value) : [];
+    const fechaInicio = document.getElementById("propiaFechaInicial")?.value || document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy();
+    const fechaBase = parseDateInput(fechaInicio);
+    const filas = Array.from({ length: cantidad + 1 }, (_, index) => {
+        const centimos = index === 0 ? inicialCentimos : cuotaCentimos > 0
+            ? index === cantidad ? saldo - cuotaCentimos * (cantidad - 1) : cuotaCentimos
+            : 0;
+        const monto = (index === 0 && Number.isFinite(inicial) && inicial >= 0) || (index > 0 && centimos > 0)
+            ? numeroInputValue(centimos / 100) : "";
+        const fecha = fechasActuales[index] || fechaInputValue(ajustarFechaPagoCastigo(sumarMeses(fechaBase, index)));
+        return `<tr><td>${index === 0 ? "Cuota inicial" : `Cuota ${index}`}</td><td class="monto-propia" data-monto="${escapeAttr(monto)}">${monto ? escapeHtml(monto) : "—"}</td><td><input class="fecha-propia" type="date" value="${escapeAttr(fecha)}"></td></tr>`;
+    }).join("");
+    box.innerHTML = `<div class="documentos-installments-table-wrap"><table class="documentos-installments-table"><thead><tr><th>Pago</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+}
+
+
+function datosAcuerdoPropia() {
+    const montoIngresado = Number(document.getElementById("cancelacion")?.value || 0);
+    const cancelacion = Number.isFinite(montoIngresado) && montoIngresado > 0 ? montoIngresado : null;
+    const seleccionados = esDocumentoPropiaCancelacion() ? creditosPropiaSeleccionados() : [];
+    const montos = distribuirCancelacionPropia(seleccionados, montoEnCentimos(cancelacion || 0));
+    const fechaComun = document.getElementById("fechaPagoMibanco")?.value || "";
+    const creditos = seleccionados.map((item, index) => {
+        return {operacion: String(item.Operacion), deuda: Number(item.DeudaTotal),
+            referencia: Number(item.MontoReferenciaPropia),
+            monto: montos ? montos[index] / 100 : 0,
+            fecha: fechaComun};
+    });
+    const deudaTotal = esDocumentoPropiaCancelacion()
+        ? creditos.reduce((sum, item) => sum + item.deuda, 0) : Number(documentoSeleccionado?.DeudaTotal);
+    const referenciaSip = documentoSeleccionado?.MontoReferenciaPropia == null ? null : Number(documentoSeleccionado.MontoReferenciaPropia);
+    const cantidad = esDocumentoPropiaCuotas() ? Number(document.getElementById("propiaCantidadCuotas")?.value) : null;
+    const pagos = esDocumentoPropiaCuotas()
+        ? Array.from(document.querySelectorAll("#propiaCronograma tbody tr"), (row, index) => ({
+            numero: index,
+            monto: Number(row.querySelector(".monto-propia")?.dataset.monto || 0),
+            fecha: row.querySelector(".fecha-propia")?.value || "",
+        })) : [];
+    let errorPreview = null;
+    const inicial = Number(document.getElementById("propiaPrimerPago")?.value || 0);
+    if (esDocumentoPropiaCancelacion() && !creditos.length) {
+        errorPreview = "Selecciona al menos un crédito para el acuerdo.";
+    } else if (montoIngresado < 0) {
+        errorPreview = "La cancelación no puede ser negativa.";
+    } else if (cancelacion && Math.abs(cancelacion * 100 - montoEnCentimos(cancelacion)) > 0.000001) {
+        errorPreview = "La cancelación admite como máximo dos decimales.";
+    } else if (esDocumentoPropiaCancelacion() && cancelacion && !montos) {
+        errorPreview = "La cancelación total debe permitir un importe positivo por cada crédito y no superar la deuda total.";
+    } else if (cancelacion && (!Number.isFinite(deudaTotal) || deudaTotal <= 0)) {
+        errorPreview = "La asignación no tiene una deuda total válida para limitar la cancelación.";
+    } else if (cancelacion && montoEnCentimos(cancelacion) > montoEnCentimos(deudaTotal)) {
+        errorPreview = `La cancelación no puede superar la deuda total de ${money(deudaTotal)}.`;
+    } else if (esDocumentoPropiaCancelacion() && creditos.some(item => item.monto > 0 && (!Number.isFinite(item.deuda) || item.deuda <= 0 || montoEnCentimos(item.monto) > montoEnCentimos(item.deuda)))) {
+        errorPreview = "La cancelación de un crédito no puede superar su deuda total.";
+    } else if (esDocumentoPropiaCancelacion() && esDocumentoPropiaSip() && creditos.some(item => item.monto > 0 && (!Number.isFinite(item.referencia) || item.referencia <= 0))) {
+        errorPreview = "Un crédito SIP no tiene capital válido para calcular el 50 % de referencia.";
+    } else if (esDocumentoPropiaCancelacion() && esDocumentoPropiaSip() && !tieneExcepcion() && creditos.some(item => item.monto > 0 && montoEnCentimos(item.monto) < montoEnCentimos(item.referencia))) {
+        errorPreview = "La cancelación de un crédito es menor al 50 % de su capital. Marca Excepción para permitirla.";
+    } else if (!esDocumentoPropiaCancelacion() && esDocumentoPropiaSip() && cancelacion && (!Number.isFinite(referenciaSip) || referenciaSip <= 0)) {
+        errorPreview = "La asignación SIP no tiene un capital válido para calcular el 50 % de referencia.";
+    } else if (!esDocumentoPropiaCancelacion() && esDocumentoPropiaSip() && cancelacion && montoEnCentimos(cancelacion) < montoEnCentimos(referenciaSip) && !tieneExcepcion()) {
+        errorPreview = `La cancelación es menor al 50 % del capital (${money(referenciaSip)}). Marca Excepción para permitirla.`;
+    } else if (esDocumentoPropiaCuotas() && (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 120)) {
+        errorPreview = "Ingresa una cantidad de cuotas entre 1 y 120.";
+    } else if (esDocumentoPropiaCuotas() && (!Number.isFinite(inicial) || inicial < 0)) {
+        errorPreview = "La cuota inicial no puede ser negativa.";
+    } else if (esDocumentoPropiaCuotas() && cancelacion && montoEnCentimos(inicial) >= montoEnCentimos(cancelacion)) {
+        errorPreview = "La cuota inicial debe ser menor que la cancelación acordada.";
+    }
+    let error = errorPreview;
+    if (!error && !cancelacion) error = "Ingresa la cancelación acordada para generar el documento.";
+    if (!error && esDocumentoPropiaCancelacion() && creditos.some(item => item.monto <= 0 || !item.fecha)) {
+        error = "Ingresa la cancelación total y la fecha de pago.";
+    }
+    if (!error && esDocumentoPropiaCuotas()) {
+        if (pagos.length !== cantidad + 1 || pagos.some((pago, index) => (index > 0 && pago.monto <= 0) || !pago.fecha)) {
+            error = "Completa el cronograma: cada cuota regular debe ser mayor a cero y tener fecha.";
+        } else if (pagos.some((pago, index) => index > 0 && pago.fecha < pagos[index - 1].fecha)) {
+            error = "Las fechas del cronograma deben estar en orden.";
+        } else if (pagos.reduce((sum, pago) => sum + montoEnCentimos(pago.monto), 0) !== montoEnCentimos(cancelacion)) {
+            error = "La cuota inicial y las cuotas regulares deben sumar la cancelación acordada.";
+        }
+    }
+    return { cancelacion, cantidad, pagos, creditos, error, errorPreview };
+}
+
+
+function mostrarMensajePreviewPropia(mensaje) {
+    const preview = document.getElementById("documentoPreview");
+    if (!preview) return;
+    if (previewRealUrl) URL.revokeObjectURL(previewRealUrl);
+    previewRealUrl = null;
+    previewRealContext = null;
+    preview.className = "documentos-preview-page";
+    preview.innerHTML = `<p class="documentos-preview-status" role="status">${escapeHtml(mensaje)}</p>`;
+}
+
+
+function contextoPreviewPropia() {
+    const operaciones = esDocumentoPropiaCancelacion()
+        ? creditosPropiaSeleccionados().map(item => item.Operacion).join(",")
+        : documentoSeleccionado?.Operacion;
+    return [document.getElementById("documentoTipo")?.value, documentoSeleccionado?.NumDocumento, operaciones].join("|");
+}
+
 
 function esDocumentoCastigoFormatos() {
     return (document.getElementById("documentoTipo")?.value || "").endsWith("_formatos");
@@ -397,6 +634,11 @@ function actualizarModoDocumento() {
     const esSipConstancia = esDocumentoSipConstancia();
     const esSipAtencion = esDocumentoSipAtencion();
     const esSipCualquiera = esDocumentoSipCualquiera();
+    const esPropia = esDocumentoPropia();
+    const esPropiaCuotas = esDocumentoPropiaCuotas();
+    const esPropiaCancelacion = esDocumentoPropiaCancelacion();
+    if (!esPropia) document.getElementById("cancelacion")?.removeAttribute("max");
+    if (document.getElementById("cancelacion")) document.getElementById("cancelacion").readOnly = false;
     const usaCronogramaSIP = esMibancoCuotas || esSip;
     cancelacionLabel?.classList.toggle("hidden", esDocumentoGrupal() || (esMibanco && !esMibancoCuotas) || esSipAtencion);
     if (cancelacionLabel?.firstChild) {
@@ -405,6 +647,7 @@ function actualizarModoDocumento() {
         if (esDocumentoCastigoCorreo() || esDocumentoMibanco()) textoMonto = "Monto total a cancelar\n";
         if (esSip) textoMonto = "Monto del convenio\n";
         if (esSipConstancia) textoMonto = "Monto pagado\n";
+        if (esPropia) textoMonto = esPropiaCancelacion ? "Cancelación acordada total\n" : "Cancelación acordada\n";
         cancelacionLabel.firstChild.textContent = textoMonto;
     }
     document.getElementById("panelGrupal")?.classList.toggle("hidden", !esDocumentoGrupal() || !documentoSeleccionado);
@@ -442,22 +685,34 @@ function actualizarModoDocumento() {
             ? "Fecha de solicitud\n"
             : esSip
                 ? "Fecha de solicitud / pago\n"
+                : esPropia
+                    ? esPropiaCancelacion ? "Fecha de pago\n" : "Fecha del acuerdo\n"
                 : "Fecha del documento y pago\n";
     }
     if (usaCronogramaSIP) sincronizarPagosMibanco(false);
     else sincronizarFechasCuotasCastigo(false);
     document.querySelector(".documentos-format-box")?.classList.toggle("hidden", esDocumentoSoloCorreo());
-    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || esSipConstancia || esSipAtencion || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
+    document.querySelector(".documentos-exception-box")?.classList.toggle("hidden", esDocumentoMibancoCuotas() || esSipConstancia || esSipAtencion || (esPropia && !esDocumentoPropiaSip()) || (esDocumentoSoloCorreo() && !esDocumentoCastigoAcuerdo()));
+    const excepcionAyuda = document.querySelector(".documentos-exception-box small");
+    if (excepcionAyuda) excepcionAyuda.textContent = esDocumentoPropiaSip()
+        ? "Permite una cancelación menor al 50 % del capital."
+        : "Permite monto menor al Mto CancelacionCliente.";
     document.getElementById("btnGenerar")?.classList.toggle("hidden", esDocumentoSoloCorreo());
     document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo() || esDocumentoMibancoCuotas());
-    document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera);
-    document.getElementById("fechaPagoMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSipCualquiera));
+    document.getElementById("fechaDocumentoBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera || esPropia);
+    document.getElementById("fechaPagoMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSipCualquiera || esPropia));
+    document.getElementById("propiaPagosBox")?.classList.toggle("hidden", !esPropiaCuotas);
+    document.getElementById("propiaCronogramaBox")?.classList.toggle("hidden", !esPropiaCuotas);
     document.getElementById("btnDirectorioAgencias")?.classList.toggle("hidden", esMibanco);
-    document.getElementById("codigoGrupoBusquedaBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera);
-    document.getElementById("codCreGrupalBusquedaBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera);
+    document.getElementById("codigoGrupoBusquedaBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera || esPropia);
+    document.getElementById("codCreGrupalBusquedaBox")?.classList.toggle("hidden", esMibanco || esSipCualquiera || esPropia);
     document.getElementById("codigoClienteMibancoBox")?.classList.toggle("hidden", !esMibanco);
-    document.getElementById("nombreClienteMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSipCualquiera));
-    document.querySelector(".documentos-form-grid")?.classList.toggle("mibanco-form-grid", esMibanco || esSipCualquiera);
+    document.getElementById("nombreClienteMibancoBox")?.classList.toggle("hidden", !(esMibanco || esSipCualquiera || esPropia));
+    document.querySelector(".documentos-form-grid")?.classList.toggle("mibanco-form-grid", esMibanco || esSipCualquiera || esPropia);
+    const deudaHeader = document.querySelector("#panelResultados th:nth-child(5)");
+    if (deudaHeader) deudaHeader.textContent = "Deuda total";
+    const importeHeader = document.querySelector("#panelResultados th:nth-child(6)");
+    if (importeHeader) importeHeader.textContent = esDocumentoPropiaSip() ? "Referencia 50 % capital" : esPropia ? "Importe sugerido" : "Monto mínimo";
     const regla = document.querySelector(".documentos-rule");
     if (regla && esMibanco) {
         regla.innerHTML = "Cada operación debe registrar su <strong>monto a pagar</strong>. El pago debe ser igual o mayor a la campaña de esa operación; marca <strong>Excepción</strong> solo si se permitirá un monto menor.";
@@ -471,6 +726,9 @@ function actualizarModoDocumento() {
     if (regla && esSipAtencion) {
         regla.innerHTML = "Los datos del cliente y la tarjeta se obtienen de <strong>Desarrollo.dbo.actualizacionfoh</strong>. La fecha de solicitud propone la fecha actual de Lima, pero puede modificarse; el canal es siempre <strong>CALL CENTER</strong>.";
     }
+    if (regla && esPropia) regla.textContent = esDocumentoPropiaSip()
+        ? "El total se distribuye entre los créditos seleccionados. Cada crédito tiene como referencia el 50 % de su capital; un monto menor requiere marcar Excepción."
+        : "La cancelación total se distribuye entre los créditos seleccionados sin superar la deuda de cada uno. Confirma la fecha antes de descargar.";
     const tituloPersona = document.getElementById("tituloPersonaGrupal");
     if (tituloPersona) tituloPersona.textContent = esDocumentoCuotaGrupal() ? "Datos del fiador" : "Datos del encargado";
     const ayudaMontos = document.getElementById("ayudaMontosGrupales");
@@ -512,6 +770,10 @@ function setSummaryLabels() {
         summary[0].textContent = "Campaña MEJOR_LTD";
         summary[1].textContent = "Deuda total";
         summary[2].textContent = "Monto pagado";
+    } else if (esDocumentoPropia()) {
+        summary[0].textContent = esDocumentoPropiaSip() ? "Referencia total: 50 % del capital" : "Importe sugerido total";
+        summary[1].textContent = esDocumentoPropiaCancelacion() ? "Deuda total (suma)" : "Deuda total";
+        summary[2].textContent = esDocumentoPropiaCancelacion() ? "Cancelación total" : "Cancelación acordada";
     } else if (esDocumentoSipAtencion()) {
         summary[0].textContent = "Tipo de documento";
         summary[1].textContent = "Nro. documento";
@@ -581,6 +843,8 @@ async function buscarDatosDocumento() {
             ? "Ingresa DNI, operación, código de cliente o nombre para buscar en Mibanco."
             : esDocumentoSipCualquiera()
                 ? "Ingresa documento, nombre u operación para buscar en Financiera OH - SIP."
+            : esDocumentoPropia()
+                ? "Ingresa documento, cuenta o nombre para buscar en cartera propia."
             : "Ingresa DNI, operación, cta grupal o cod grupal para buscar.", "warning");
         return;
     }
@@ -595,7 +859,7 @@ async function buscarDatosDocumento() {
         });
         params.append("cartera_id", carteraId);
 
-        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/buscar?${params.toString()}`, { cache: "no-store" });
+        const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/buscar?${params.toString()}`, { cache: "no-store" });
         const result = await response.json();
 
         if (!response.ok) {
@@ -640,6 +904,7 @@ function pintarResultados(rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>
+                ${esDocumentoPropiaCancelacion() ? `<input class="credito-propia-check" type="checkbox" data-index="${index}" aria-label="Incluir crédito ${escapeAttr(item.Operacion)}">` : ""}
                 <strong>${escapeHtml(item.NomCliente)}</strong>
                 <small>${escapeHtml(item.DireccionPrincipal || "")}</small>
             </td>
@@ -650,8 +915,9 @@ function pintarResultados(rows) {
                 <small>${escapeHtml(item.CodCreGrupal || item.NomGrupo || "")}</small>
             </td>
             <td>${money(item.DeudaTotal)}</td>
-            <td>${money(item.MtoCancelacionCliente)}</td>
-            <td><button class="documentos-mini-btn" type="button" data-index="${index}">${esDocumentoGrupal() ? "Usar grupo" : esDocumentoSoloCorreo() ? "Usar correo" : "Seleccionar"}</button></td>
+            <td>${(esDocumentoPropiaSip() ? item.MontoReferenciaPropia : item.MtoCancelacionCliente) == null
+                ? "--" : money(esDocumentoPropiaSip() ? item.MontoReferenciaPropia : item.MtoCancelacionCliente)}</td>
+            <td><button class="documentos-mini-btn" type="button" data-index="${index}">${esDocumentoGrupal() ? "Usar grupo" : esDocumentoPropiaCancelacion() ? "Usar cliente" : esDocumentoSoloCorreo() ? "Usar correo" : "Seleccionar"}</button></td>
         `;
         tbody.appendChild(tr);
     });
@@ -668,6 +934,39 @@ function seleccionarDocumento(index) {
 
     document.getElementById("panelGeneracion")?.classList.remove("hidden");
     actualizarModoDocumento();
+
+    if (esDocumentoPropia()) {
+        const excepcion = document.getElementById("excepcionDocumento");
+        if (excepcion) excepcion.checked = false;
+        document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
+        document.getElementById("operacionSeleccionada").textContent = `Obligación ${valueOrDash(documentoSeleccionado.Operacion)}`;
+        document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
+        if (esDocumentoPropiaCancelacion()) {
+            document.querySelectorAll(".credito-propia-check").forEach(check => {
+                const item = documentosResultados[Number(check.dataset.index)];
+                check.checked = String(item?.NumDocumento || "") === String(documentoSeleccionado.NumDocumento);
+                check.disabled = !check.checked;
+            });
+            actualizarResumenCreditosPropia();
+            pintarPreviewDocumento();
+            return;
+        }
+        const sugerido = esDocumentoPropiaSip() ? documentoSeleccionado.MontoReferenciaPropia : documentoSeleccionado.MtoCancelacionCliente;
+        document.getElementById("montoMinimo").textContent = sugerido == null ? "--" : money(sugerido);
+        document.getElementById("deudaTotal").textContent = documentoSeleccionado.DeudaTotal == null ? "--" : money(documentoSeleccionado.DeudaTotal);
+        const monto = document.getElementById("cancelacion");
+        if (monto) {
+            monto.max = documentoSeleccionado.DeudaTotal == null ? "" : numeroInputValue(documentoSeleccionado.DeudaTotal);
+            monto.value = sugerido == null ? "" : numeroInputValue(sugerido);
+        }
+        document.getElementById("propiaCantidadCuotas").value = "1";
+        document.getElementById("propiaFechaInicial").value = document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy();
+        document.getElementById("propiaPrimerPago").value = "0.00";
+        sincronizarCronogramaPropia(false);
+        actualizarCondonacion();
+        pintarPreviewDocumento();
+        return;
+    }
 
     if (esDocumentoMibanco()) {
         document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - DNI ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
@@ -1092,6 +1391,12 @@ function actualizarCondonacion() {
     const target = document.getElementById("condonacionEstimada");
     if (!target || !documentoSeleccionado) return;
 
+    if (esDocumentoPropia()) {
+        const monto = Number(document.getElementById("cancelacion")?.value || 0);
+        target.textContent = monto > 0 ? money(monto) : "--";
+        return;
+    }
+
     if (esDocumentoCastigoCorreo()) {
         document.getElementById("montoMinimo").textContent = money(documentoSeleccionado.MtoCancelacionCliente);
         document.getElementById("deudaTotal").textContent = money(documentoSeleccionado.DeudaTotal);
@@ -1138,7 +1443,16 @@ function pintarPreviewDocumento() {
     if (!esDocumentoSipConstancia() && !esDocumentoSipAtencion()) {
         document.getElementById("documentoPreview")?.classList.remove("sip-constancia-page", "sip-atencion-page");
     }
-    if (esDocumentoSipAtencion()) {
+    if (esDocumentoPropia()) {
+        const preview = document.getElementById("documentoPreview");
+        document.getElementById("panelPreview")?.classList.remove("hidden");
+        document.querySelector(".documentos-mail-preview")?.classList.add("hidden");
+        const error = datosAcuerdoPropia().errorPreview;
+        if (error) mostrarMensajePreviewPropia(error);
+        else if (preview && (!preview.querySelector("iframe") || previewRealContext !== contextoPreviewPropia())) {
+            mostrarMensajePreviewPropia("Preparando vista previa del acuerdo...");
+        }
+    } else if (esDocumentoSipAtencion()) {
         pintarPreviewSipAtencion();
     } else if (esDocumentoSipConstancia()) {
         pintarPreviewSipConstancia();
@@ -1159,7 +1473,7 @@ function pintarPreviewDocumento() {
     } else {
         pintarPreviewIndividual();
     }
-    if (!esDocumentoSoloCorreo() && !esDocumentoMibanco()) pintarPreviewCorreo();
+    if (!esDocumentoSoloCorreo() && !esDocumentoMibanco() && !esDocumentoPropia()) pintarPreviewCorreo();
     programarPreviewReal();
 }
 
@@ -2352,7 +2666,7 @@ async function cargarAgenciasDestinoCastigo() {
     try {
         if (!agenciasDestinoCastigo.length) {
             const params = new URLSearchParams({ limit: "1000" });
-            const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/agencias?${params.toString()}`, { cache: "no-store" });
+            const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/agencias?${params.toString()}`, { cache: "no-store" });
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || "No se pudo cargar el directorio.");
             agenciasDestinoCastigo = result.data || [];
@@ -2633,7 +2947,7 @@ async function cargarDirectorioAgencias() {
         const params = new URLSearchParams();
         if (q) params.set("q", q);
         params.set("limit", "500");
-        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/agencias?${params.toString()}`, { cache: "no-store" });
+        const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/agencias?${params.toString()}`, { cache: "no-store" });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "No se pudo cargar el directorio.");
 
@@ -2682,7 +2996,7 @@ async function importarDirectorioAgencias(event) {
     estado.textContent = "Importando directorio. Esto puede tardar unos segundos...";
 
     try {
-        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/agencias/importar`, {
+        const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/agencias/importar`, {
             method: "POST",
             body: formData,
         });
@@ -2747,7 +3061,7 @@ async function generarDocumento() {
     mostrarEstado(`Generando documento ${formato.toUpperCase()}...`, "info");
 
     try {
-        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/generar`, {
+        const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/generar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -2771,7 +3085,9 @@ async function generarDocumento() {
 
 function programarPreviewReal() {
     clearTimeout(previewRealTimer);
+    ++previewRealRequest;
     if (!documentoSeleccionado || esDocumentoSoloCorreo()) return;
+    if (esDocumentoPropia() && datosAcuerdoPropia().errorPreview) return;
     previewRealTimer = setTimeout(() => previsualizarDocumentoReal(true), 650);
 }
 
@@ -2779,15 +3095,18 @@ function programarPreviewReal() {
 async function previsualizarDocumentoReal(silencioso = false) {
     if (!documentoSeleccionado) return;
 
-    const payload = construirPayloadGeneracion("pdf", silencioso);
-    if (!payload) return;
+    const payload = construirPayloadGeneracion("pdf", silencioso, esDocumentoPropia());
+    if (!payload) {
+        if (esDocumentoPropia()) mostrarMensajePreviewPropia(datosAcuerdoPropia().errorPreview || "No se pudo preparar el acuerdo.");
+        return;
+    }
 
     const preview = document.getElementById("documentoPreview");
     if (!preview) return;
     const requestId = ++previewRealRequest;
 
     try {
-        const response = await fetch(`${BASE_URL_DOCUMENTOS}/documentos/preview`, {
+        const response = await fetchConSesion(`${BASE_URL_DOCUMENTOS}/documentos/preview`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -2796,27 +3115,45 @@ async function previsualizarDocumentoReal(silencioso = false) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.detail || "No se pudo generar la vista previa real.");
         }
+        if (!response.headers.get("content-type")?.includes("application/pdf")) {
+            throw new Error("El servidor no devolvió el PDF del acuerdo.");
+        }
 
         const pdf = await response.blob();
+        if (!pdf.size) throw new Error("El PDF del acuerdo llegó vacío.");
         if (requestId !== previewRealRequest) return;
         if (previewRealUrl) URL.revokeObjectURL(previewRealUrl);
         previewRealUrl = URL.createObjectURL(pdf);
+        previewRealContext = esDocumentoPropia() ? contextoPreviewPropia() : null;
         preview.className = "documentos-preview-page documentos-preview-real";
         preview.innerHTML = `<iframe title="Vista previa real del PDF" src="${previewRealUrl}"></iframe>`;
         document.getElementById("panelPreview")?.classList.remove("hidden");
     } catch (error) {
-        if (!silencioso) mostrarEstado(error.message || "No se pudo generar la vista previa real.", "error");
+        if (requestId !== previewRealRequest) return;
+        if (esDocumentoPropia()) mostrarMensajePreviewPropia(error.message || "No se pudo cargar el acuerdo.");
+        else if (!silencioso) mostrarEstado(error.message || "No se pudo generar la vista previa real.", "error");
     }
 }
 
 
-function construirPayloadGeneracion(formato, silencioso = false) {
+function construirPayloadGeneracion(formato, silencioso = false, permitirBorrador = false) {
     const avisar = (mensaje, tipo) => {
         if (!silencioso) mostrarEstado(mensaje, tipo);
     };
     if (esDocumentoCorreoPagoDirecto()) {
         avisar("Este tipo solo muestra los correos de pago directo para copiar.", "info");
         return null;
+    }
+    if (esDocumentoPropia()) {
+        const { cancelacion, cantidad, pagos, creditos, error, errorPreview } = datosAcuerdoPropia();
+        if (errorPreview || error && !permitirBorrador) { avisar(errorPreview || error, "warning"); return null; }
+        return {documento_tipo: document.getElementById("documentoTipo")?.value,
+            dni: String(documentoSeleccionado.NumDocumento || ""),
+            operacion: String(creditos[0]?.operacion || documentoSeleccionado.Operacion || ""),
+            cancelacion, fecha_pago: document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy(),
+            formato, cantidad_cuotas: cantidad, pagos_mibanco: pagos,
+            creditos_propia: creditos.map(({operacion, monto, fecha}) => ({operacion, monto: monto > 0 ? monto : null, fecha})),
+            excepcion: esDocumentoPropiaSip() && tieneExcepcion()};
     }
 
     if (esDocumentoGrupal()) {
@@ -3149,6 +3486,11 @@ function limpiarResultados() {
 
 
 function limpiarSeleccion() {
+    clearTimeout(previewRealTimer);
+    ++previewRealRequest;
+    if (previewRealUrl) URL.revokeObjectURL(previewRealUrl);
+    previewRealUrl = null;
+    previewRealContext = null;
     documentoSeleccionado = null;
     document.getElementById("panelGeneracion")?.classList.add("hidden");
     document.getElementById("panelPreview")?.classList.add("hidden");

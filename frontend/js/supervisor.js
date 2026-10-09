@@ -1,33 +1,33 @@
-const supervisor =
-    new URLSearchParams(window.location.search).get("agente")
-    || localStorage.getItem("agente")
-    || "Supervisor";
-
-if (!exigirSesion()) {
-    throw new Error("Sesion invalida");
-}
-
-document.getElementById("usuario").innerText =
-    `👤 Supervisor: ${supervisor}`;
-
+// Seguridad: la pagina no muestra ni consulta nada hasta que el backend
+// confirme la sesion. El supervisor (y su cartera) salen del JWT en el backend:
+// el "dni" de la URL ya no decide que cartera se ve.
 let dataGlobal = [];
 let ordenCampo = null;
 let ordenDireccion = "desc";
-
-document.getElementById("usuario").innerText =
-    `Supervisor: ${supervisor}`;
 
 const BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
 
 async function cargarSupervisor() {
 
-    const params = new URLSearchParams(window.location.search);
-    const dni = params.get("dni") || localStorage.getItem("dni");
+    const usuarioSesion = await asegurarSesionBackend();
+    if (!usuarioSesion) return;
 
-    const res = await fetch(`${BASE_URL}/compromisos/supervisor/resumen?dni=${dni}`);
+    document.getElementById("usuario").innerText =
+        `Equipo: ${usuarioSesion.agente || usuarioSesion.dni}`;
+
+    let res;
+    try {
+        res = await fetchConSesion(`${BASE_URL}/compromisos/supervisor/resumen`);
+    } catch (error) {
+        if (error instanceof SesionInvalidaError) return;
+        throw error;
+    }
+    if (res.status === 403) {
+        alert(await mensajeErrorRespuesta(res, "Tu perfil no tiene acceso a esta vista."));
+        return;
+    }
     const data = await res.json();
 
-    console.log("DATA SUPERVISOR:", data);
 
     if (!data.ok) {
         alert("Error cargando datos");
@@ -90,7 +90,6 @@ async function cargarSupervisor() {
 
 function verAgente(agente) {
 
-    console.log("AGENTE SELECCIONADO:", agente);
 
     localStorage.setItem("agente_filtro", agente);
 
@@ -201,12 +200,30 @@ function ordenarPor(campo){
     renderTablaSupervisor(dataGlobal);
 }
 
-function exportarCartera(){
+// window.open no puede enviar Authorization: se descarga con fetch y se guarda.
+async function exportarCartera(){
 
-    const params = new URLSearchParams(window.location.search);
-    const dni = params.get("dni") || localStorage.getItem("dni");
+    try {
+        const res = await fetchConSesion(`${BASE_URL}/compromisos/supervisor/exportar-cartera`);
+        if (!res.ok) {
+            alert(await mensajeErrorRespuesta(res, "No se pudo exportar la cartera."));
+            return;
+        }
+        const disposicion = res.headers.get("Content-Disposition") || "";
+        const coincide = disposicion.match(/filename=([^;]+)/i);
+        const nombre = coincide ? coincide[1].replace(/"/g, "").trim() : "Compromisos_cartera.xlsx";
 
-    window.open(
-        `${BASE_URL}/compromisos/supervisor/exportar-cartera?dni=${dni}`
-    );
+        const url = URL.createObjectURL(await res.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = nombre;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        if (error instanceof SesionInvalidaError) return;
+        console.error("ERROR EXPORTAR:", error);
+        alert("No se pudo exportar la cartera.");
+    }
 }

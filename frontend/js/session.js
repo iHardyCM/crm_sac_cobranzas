@@ -135,8 +135,23 @@ const SESION_API_BASE = `${window.location.protocol}//${window.location.hostname
 const MENSAJE_SESION_REVOCADA = "Tu sesión ya no está habilitada. Inicia sesión nuevamente.";
 const MENSAJE_CAMBIO_CLAVE_BACKEND = "Debes cambiar tu contraseña antes de continuar.";
 
+// Codigo estable que el backend envia en los 403 (cabecera X-CRM-Codigo-Error).
+const HEADER_CODIGO_ERROR = "X-CRM-Codigo-Error";
+const CODIGOS_ERROR_BACKEND = Object.freeze({
+    CAMBIO_CLAVE_OBLIGATORIO: "CAMBIO_CLAVE_OBLIGATORIO",
+    ACCESO_DENEGADO: "ACCESO_DENEGADO",
+});
+
 let _promesaSesionBackend = null;
 let _redireccionSesionEnCurso = false;
+window.crmPermisosVistas = null;
+
+function puedeUsarVista(clave) {
+    const permisos = window.crmPermisosVistas;
+    return permisos && Object.prototype.hasOwnProperty.call(permisos, clave)
+        ? permisos[clave] === true
+        : null;
+}
 
 // Resultado de la ultima validacion (para que las paginas distingan los casos).
 const ESTADOS_SESION_BACKEND = Object.freeze({
@@ -202,9 +217,22 @@ function irACambioClaveObligatorio() {
     redirigirSesionUnaVez("cambiar_clave.html");
 }
 
-// true si la respuesta es el 403 estable del cambio de clave obligatorio.
-function esRespuestaCambioClave(status, data) {
-    return status === 403 && data && data.detail === MENSAJE_CAMBIO_CLAVE_BACKEND;
+// Codigo de error del backend ("" si la respuesta no lo trae).
+function codigoErrorRespuesta(response) {
+    try {
+        return (response && response.headers && response.headers.get(HEADER_CODIGO_ERROR)) || "";
+    } catch (error) {
+        return "";
+    }
+}
+
+// true solo para el 403 de cambio de clave obligatorio. Si la respuesta trae
+// codigo, decide el codigo (un 403 ACCESO_DENEGADO nunca manda a cambiar la
+// clave). Sin codigo (endpoints aun no migrados) se compara el detail exacto.
+function esRespuestaCambioClave(status, data, codigo = "") {
+    if (status !== 403) return false;
+    if (codigo) return codigo === CODIGOS_ERROR_BACKEND.CAMBIO_CLAVE_OBLIGATORIO;
+    return !!data && data.detail === MENSAJE_CAMBIO_CLAVE_BACKEND;
 }
 
 // Error tecnico: no se asume sesion valida, pero tampoco se borran credenciales.
@@ -264,7 +292,7 @@ async function _consultarSesionBackend() {
         cerrarSesionPorInvalidez(MENSAJE_SESION_REVOCADA);
         return { estado: ESTADOS_SESION_BACKEND.REVOCADA };
     }
-    if (esRespuestaCambioClave(response.status, data)) {
+    if (esRespuestaCambioClave(response.status, data, codigoErrorRespuesta(response))) {
         irACambioClaveObligatorio();
         return { estado: ESTADOS_SESION_BACKEND.CAMBIO_OBLIGATORIO };
     }
@@ -281,6 +309,7 @@ async function _consultarSesionBackend() {
     localStorage.setItem("tipo", data.tipo || "");
     localStorage.setItem("idcartera", data.idcartera || idcarteras[0] || "");
     localStorage.setItem("idcarteras", idcarteras.join(","));
+    window.crmPermisosVistas = data.permisos_vistas || null;
 
     // El backend informa el cambio obligatorio; si no lo informa (version
     // anterior), se usa el indicador que guardo el login.
@@ -302,4 +331,94 @@ function asegurarSesionBackend() {
         _promesaSesionBackend = validarSesionBackend();
     }
     return _promesaSesionBackend;
+}
+
+// ---------------------------------------------------------------------------
+// fetch autenticado para los modulos migrados (Cliente, Compromisos, Telefonos).
+// Agrega Authorization: Bearer (sin pisar headers existentes ni el Content-Type
+// de FormData).
+//   401                          -> limpia la sesion y va a login.html
+//   403 CAMBIO_CLAVE_OBLIGATORIO -> va a cambiar_clave.html
+//   (en ambos lanza SesionInvalidaError para que la pagina no siga)
+//   403 ACCESO_DENEGADO u otro   -> se devuelve la respuesta: la pagina se queda,
+//                                   muestra el mensaje y la sesion no se toca.
+// ---------------------------------------------------------------------------
+class SesionInvalidaError extends Error {}
+
+async function fetchConSesion(url, opciones = {}) {
+    const response = await fetch(url, {
+        cache: "no-store",
+        ...opciones,
+        headers: agregarAuthorizationHeader(opciones.headers),
+    });
+
+    if (response.status === 401) {
+        cerrarSesionPorInvalidez(MENSAJE_SESION_REVOCADA);
+        throw new SesionInvalidaError(MENSAJE_SESION_REVOCADA);
+    }
+    if (response.status === 403) {
+        let data = null;
+        try {
+            data = await response.clone().json();
+        } catch (error) {
+            data = null;
+        }
+        if (esRespuestaCambioClave(403, data, codigoErrorRespuesta(response))) {
+            irACambioClaveObligatorio();
+            throw new SesionInvalidaError(MENSAJE_CAMBIO_CLAVE_BACKEND);
+        }
+    }
+    return response;
+}
+
+// true si la respuesta es un 403 de permisos (perfil/cartera): la sesion sigue valida.
+function esAccesoDenegado(response) {
+    return !!response && response.status === 403
+        && codigoErrorRespuesta(response) !== CODIGOS_ERROR_BACKEND.CAMBIO_CLAVE_OBLIGATORIO;
+}
+
+// Mensaje del backend (detail/msg) o uno por defecto, para mostrar al usuario.
+async function mensajeErrorRespuesta(response, porDefecto) {
+    try {
+        const data = await response.clone().json();
+        return data?.detail || data?.msg || porDefecto;
+    } catch (error) {
+        return porDefecto;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Descarga de archivos protegidos. window.open / location.href / <a href> no
+// pueden enviar Authorization: se baja con fetchConSesion y se guarda el blob.
+// El backend debe exponer Content-Disposition (Access-Control-Expose-Headers)
+// para que se conserve el nombre; si no, se usa nombrePorDefecto.
+// Lanza Error con el mensaje del backend si la respuesta no es correcta
+// (SesionInvalidaError si la sesion no es valida: la pagina ya redirige).
+// ---------------------------------------------------------------------------
+async function descargarArchivoConSesion(url, nombrePorDefecto = "descarga") {
+    const response = await fetchConSesion(url);
+    if (!response.ok) {
+        throw new Error(await mensajeErrorRespuesta(response, "No se pudo descargar el archivo."));
+    }
+
+    const disposicion = response.headers.get("Content-Disposition") || "";
+    const codificado = disposicion.match(/filename\*=UTF-8''([^;]+)/i);
+    const simple = disposicion.match(/filename="?([^";]+)"?/i);
+    let nombre = nombrePorDefecto;
+    try {
+        if (codificado) nombre = decodeURIComponent(codificado[1].trim());
+        else if (simple) nombre = simple[1].trim();
+    } catch (error) {
+        nombre = nombrePorDefecto;
+    }
+
+    const urlBlob = URL.createObjectURL(await response.blob());
+    const enlace = document.createElement("a");
+    enlace.href = urlBlob;
+    enlace.download = nombre;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    setTimeout(() => URL.revokeObjectURL(urlBlob), 1000);
+    return nombre;
 }

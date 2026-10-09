@@ -426,7 +426,8 @@ def exportar(
         archivo["stream"],
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="{archivo["filename"]}"'
+            "Content-Disposition": f'attachment; filename="{archivo["filename"]}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
 

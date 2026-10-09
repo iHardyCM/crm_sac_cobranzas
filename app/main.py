@@ -4,10 +4,11 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.core.auth_dependencies import requiere_sesion_api
 from app.api.routes_auth import router as auth_router
 from app.api.routes_admin_accesos import router as admin_accesos_router
 from app.api.routes_admin_metas_agentes import router as admin_metas_agentes_router
@@ -64,6 +65,12 @@ def configurar_logging():
 
 configurar_logging()
 
+# Modulos protegidos a nivel de router: sesion valida + clave definitiva.
+# La pagina HTML de cada modulo (GET sobre el prefijo) queda libre; ver
+# requiere_sesion_api. Los demas routers (auth, admin-accesos, calibracion,
+# cliente, compromisos, ia-feedback, telefonos) ya se protegen por endpoint.
+SESION_API = [Depends(requiere_sesion_api)]
+
 app = FastAPI(title="CRM COBRANZAS")
 
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
@@ -73,27 +80,30 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sin esto el navegador (front en :5500, API en :8000) no puede leer el
+    # nombre de archivo que manda el servidor y descarga con el nombre generico.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(admin_accesos_router, prefix="/admin-accesos", tags=["Administracion Accesos"])
-app.include_router(admin_metas_agentes_router, prefix="/admin-metas-agentes", tags=["Administracion Metas Agentes"])
-app.include_router(admin_pautas_evaluacion_router, prefix="/admin-pautas-evaluacion", tags=["Administracion Pautas Evaluacion"])
-app.include_router(admin_supervisores_router, prefix="/admin-supervisores", tags=["Administracion Supervisores"])
+app.include_router(admin_metas_agentes_router, prefix="/admin-metas-agentes", tags=["Administracion Metas Agentes"], dependencies=SESION_API)
+app.include_router(admin_pautas_evaluacion_router, prefix="/admin-pautas-evaluacion", tags=["Administracion Pautas Evaluacion"], dependencies=SESION_API)
+app.include_router(admin_supervisores_router, prefix="/admin-supervisores", tags=["Administracion Supervisores"], dependencies=SESION_API)
 app.include_router(calibracion_router, prefix="/calibracion", tags=["Calibracion IA"])
-app.include_router(canales_router, prefix="/canales", tags=["Canales Alternos"])
+app.include_router(canales_router, prefix="/canales", tags=["Canales Alternos"], dependencies=SESION_API)
 app.include_router(cliente_router, prefix="/cliente", tags=["Cliente"])
 app.include_router(compromisos_router, prefix="/compromisos", tags=["Compromisos"])
-app.include_router(corporativo_router, prefix="/corporativo", tags=["Corporativo"])
-app.include_router(control_horario_router, prefix="/control-horario", tags=["Control Horario"])
-app.include_router(documentos_router, prefix="/documentos", tags=["Documentos Automatizados"])
-app.include_router(importacion_router, prefix="/importacion", tags=["Importacion de Cartera"])
+app.include_router(corporativo_router, prefix="/corporativo", tags=["Corporativo"], dependencies=SESION_API)
+app.include_router(control_horario_router, prefix="/control-horario", tags=["Control Horario"], dependencies=SESION_API)
+app.include_router(documentos_router, prefix="/documentos", tags=["Documentos Automatizados"], dependencies=SESION_API)
+app.include_router(importacion_router, prefix="/importacion", tags=["Importacion de Cartera"], dependencies=SESION_API)
 app.include_router(ia_feedback_router, prefix="/ia-feedback", tags=["Analisis IA"])
-app.include_router(susurro_ia_router, prefix="/susurro-ia", tags=["Susurro IA"])
-app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"])
-app.include_router(planes_mejora_router, prefix="/planes-mejora", tags=["Planes de mejora IA"])
-app.include_router(metas_router, prefix="/metas", tags=["Metas"])
-app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"])
+app.include_router(susurro_ia_router, prefix="/susurro-ia", tags=["Susurro IA"], dependencies=SESION_API)
+app.include_router(pagos_router, prefix="/pagos", tags=["Pagos"], dependencies=SESION_API)
+app.include_router(planes_mejora_router, prefix="/planes-mejora", tags=["Planes de mejora IA"], dependencies=SESION_API)
+app.include_router(metas_router, prefix="/metas", tags=["Metas"], dependencies=SESION_API)
+app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"], dependencies=SESION_API)
 app.include_router(telefonos_router, prefix="/telefonos", tags=["Validación de Teléfonos"])
 
 @app.get("/")

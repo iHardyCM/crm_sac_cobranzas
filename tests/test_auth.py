@@ -20,7 +20,7 @@ from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
 
 from app.services import auth_service  # noqa: E402
 from app.core import security  # noqa: E402
-from app.core import auth_dependencies  # noqa: E402
+from app.core import auth_dependencies, permisos_vistas  # noqa: E402
 from app.api import routes_auth  # noqa: E402
 
 
@@ -107,6 +107,7 @@ class BaseAuthTest(unittest.TestCase):
                 "cuenta_requiere_cambio_clave",
                 side_effect=lambda dni: bool(self.cuentas.get(dni, {}).get("FLG_CAMBIO_OBLIGATORIO", True)),
             ),
+            patch.object(permisos_vistas, "leer_sobrescrituras", return_value={}),
         ]
         for p in self.parches:
             p.start()

@@ -1,3 +1,8 @@
+import copy
+import logging
+import os
+import threading
+import time
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -40,8 +45,151 @@ GRUPOS_CARTERA = {
     137: {"id": "137", "nombre": "INTERBANK CEDIDA", "ids": [137]},
 }
 
+# Procedimiento que alimenta el control horario. Por defecto el original; la version
+# optimizada se activa con CONTROL_HORARIO_SP=dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO_V2
+# (solo despues de validarla con tools/comparar_sp_control_horario.py).
+_SP_CONTROL_PERMITIDOS = {
+    "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO",
+    "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO_V2",
+}
+SP_CONTROL_HORARIO = os.getenv("CONTROL_HORARIO_SP", "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO").strip()
+if SP_CONTROL_HORARIO not in _SP_CONTROL_PERMITIDOS:
+    SP_CONTROL_HORARIO = "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO"
 PERFILES_RECUPERO_APOYO = {"ADM", "SUPERVISOR", "JEFE"}
 CARTERAS_EXCLUIDAS_CONTROL = {120, 139, 141, 146}
+
+logger = logging.getLogger("control_horario")
+
+# Cache corta del resultado "crudo" del SP (y de los mapas de usuarios/dotacion).
+# El SP no depende de incluir_apoyo_recupero: ese flag solo filtra en Python, asi que
+# marcar/desmarcar "Incluir apoyo operativo" reutiliza el mismo resultado.
+# 0 desactiva la cache. Se puede ajustar con la variable de entorno.
+try:
+    SP_CACHE_SEGUNDOS = max(0, int(os.getenv("CONTROL_HORARIO_CACHE_SEGUNDOS", "30")))
+except ValueError:
+    SP_CACHE_SEGUNDOS = 30
+SP_CACHE_MAX_ENTRADAS = 60
+
+_sp_cache = {}
+_sp_cache_lock = threading.Lock()
+_sp_cache_key_locks = {}
+
+
+def _limpiar_cache_vencida(ahora):
+    vencidas = [k for k, (ts, _) in _sp_cache.items() if ahora - ts > SP_CACHE_SEGUNDOS]
+    for k in vencidas:
+        _sp_cache.pop(k, None)
+    while len(_sp_cache) > SP_CACHE_MAX_ENTRADAS:
+        mas_antigua = min(_sp_cache, key=lambda k: _sp_cache[k][0])
+        _sp_cache.pop(mas_antigua, None)
+
+
+def _leer_cache_sp(key):
+    if SP_CACHE_SEGUNDOS <= 0:
+        return None
+    with _sp_cache_lock:
+        item = _sp_cache.get(key)
+    if item and time.monotonic() - item[0] <= SP_CACHE_SEGUNDOS:
+        return item[1]
+    return None
+
+
+def _guardar_cache_sp(key, payload):
+    if SP_CACHE_SEGUNDOS <= 0:
+        return
+    ahora = time.monotonic()
+    with _sp_cache_lock:
+        _sp_cache[key] = (ahora, payload)
+        _limpiar_cache_vencida(ahora)
+
+
+def _lock_por_clave(key):
+    with _sp_cache_lock:
+        lock = _sp_cache_key_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _sp_cache_key_locks[key] = lock
+        return lock
+
+
+def _cargar_base_sp(fecha, idcartera, idusuario, incluir_agente_hora, tiempos):
+    """Ejecuta el SP + mapas de usuarios/dotacion (lo que no depende del flag de apoyo)."""
+    conn = None
+    cursor = None
+    try:
+        t0 = time.perf_counter()
+        conn = get_connection()
+        cursor = conn.cursor()
+        tiempos["conexion"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
+        cursor.execute(
+            f"""
+            EXEC {SP_CONTROL_HORARIO}
+                @Fecha = ?,
+                @IdCartera = ?,
+                @IdUsuario = ?
+            """,
+            fecha,
+            idcartera,
+            idusuario
+        )
+
+        resultsets = []
+        resultset_index = 0
+
+        while True:
+            if cursor.description is not None:
+                if incluir_agente_hora or resultset_index != 6:
+                    resultsets.append(fetch_resultset(cursor))
+                else:
+                    resultsets.append([])
+                resultset_index += 1
+
+            if not cursor.nextset():
+                break
+        tiempos["sp"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
+        mapa_id, mapa_usuario = obtener_mapa_usuarios(cursor)
+        dotacion_grupos = obtener_dotacion_grupos(cursor)
+        tiempos["usuarios_dotacion"] = round((time.perf_counter() - t0) * 1000)
+
+        return {
+            "resultsets": resultsets,
+            "mapa_id": mapa_id,
+            "mapa_usuario": mapa_usuario,
+            "dotacion_grupos": dotacion_grupos,
+        }
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
+def obtener_base_sp_control(fecha, idcartera, idusuario, incluir_agente_hora, refrescar, tiempos):
+    key = (fecha or "", idcartera, idusuario, bool(incluir_agente_hora))
+
+    if not refrescar:
+        base = _leer_cache_sp(key)
+        if base is not None:
+            tiempos["cache_sp"] = 1
+            return base
+
+    # Un solo calculo por clave: si dos pedidos iguales llegan juntos, el segundo espera al primero.
+    with _lock_por_clave(key):
+        if not refrescar:
+            base = _leer_cache_sp(key)
+            if base is not None:
+                tiempos["cache_sp"] = 1
+                return base
+
+        base = _cargar_base_sp(fecha, idcartera, idusuario, incluir_agente_hora, tiempos)
+        _guardar_cache_sp(key, base)
+        tiempos["cache_sp"] = 0
+        return base
+
 
 
 def serialize_value(value):
@@ -577,43 +725,21 @@ def aplicar_compromisos_activos(detalle, compromisos_activos):
         row["AVANCE"] = (pago * 100 / proyectado) if proyectado else 0
 
 
-def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False, incluir_agente_hora=True):
+def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, incluir_apoyo_recupero=False, incluir_agente_hora=True, refrescar=False):
+    tiempos = {}
+    t_total = time.perf_counter()
+
+    base_sp = obtener_base_sp_control(fecha, idcartera, idusuario, incluir_agente_hora, refrescar, tiempos)
+    resultsets = base_sp["resultsets"]
+    mapa_id = base_sp["mapa_id"]
+    mapa_usuario = base_sp["mapa_usuario"]
+    dotacion_grupos = base_sp["dotacion_grupos"]
+
     conn = None
     cursor = None
 
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            EXEC dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO
-                @Fecha = ?,
-                @IdCartera = ?,
-                @IdUsuario = ?
-            """,
-            fecha,
-            idcartera,
-            idusuario
-        )
-
-        resultsets = []
-        resultset_index = 0
-
-        while True:
-            if cursor.description is not None:
-                if incluir_agente_hora or resultset_index != 6:
-                    resultsets.append(fetch_resultset(cursor))
-                else:
-                    resultsets.append([])
-                resultset_index += 1
-
-            if not cursor.nextset():
-                break
-
-        mapa_id, mapa_usuario = obtener_mapa_usuarios(cursor)
-        dotacion_grupos = obtener_dotacion_grupos(cursor)
-
+        t0 = time.perf_counter()
         detalle = enriquecer_por_usuario(
             resultsets[0] if len(resultsets) > 0 else [],
             mapa_id,
@@ -626,6 +752,11 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             mapa_usuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         ) if incluir_agente_hora else []
+        tiempos["enriquecer"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
+        conn = get_connection()
+        cursor = conn.cursor()
         clientes_unicos = obtener_clientes_unicos_control(
             cursor,
             fecha=fecha,
@@ -633,6 +764,9 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             idusuario=idusuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         )
+        tiempos["clientes_unicos"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
         compromisos_activos = obtener_compromisos_activos_control(
             cursor,
             fecha=fecha,
@@ -640,6 +774,9 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             idusuario=idusuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         )
+        tiempos["compromisos_activos"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
         compromisos_hora = obtener_compromisos_hora_control(
             cursor,
             fecha=fecha,
@@ -647,13 +784,24 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             idusuario=idusuario,
             incluir_apoyo_recupero=incluir_apoyo_recupero
         )
+        tiempos["compromisos_hora"] = round((time.perf_counter() - t0) * 1000)
+
+        t0 = time.perf_counter()
         aplicar_clientes_unicos(detalle, clientes_unicos)
         aplicar_compromisos_activos(detalle, compromisos_activos)
-        horas = resultsets[5] if len(resultsets) > 5 else []
+        # "horas" se modifica en el lugar: se copia para no alterar el resultado guardado en cache.
+        horas = copy.deepcopy(resultsets[5]) if len(resultsets) > 5 else []
         completar_cartera_horas(horas, idcartera=idcartera)
         aplicar_compromisos_hora(horas, compromisos_hora, por_agente=False)
         if incluir_agente_hora:
             aplicar_compromisos_hora(agente_hora, compromisos_hora, por_agente=True)
+        tiempos["armado"] = round((time.perf_counter() - t0) * 1000)
+
+        tiempos["total"] = round((time.perf_counter() - t_total) * 1000)
+        logger.info(
+            "resumen fecha=%s cartera=%s apoyo=%s agente_hora=%s tiempos_ms=%s",
+            fecha, idcartera, incluir_apoyo_recupero, incluir_agente_hora, tiempos
+        )
 
         return {
             "detalle": detalle,
@@ -665,6 +813,7 @@ def obtener_resumen_control_horario(fecha=None, idcartera=None, idusuario=None, 
             "agente_hora": agente_hora,
             "agente_hora_cargado": bool(incluir_agente_hora),
             "dotacion_grupos": dotacion_grupos,
+            "_tiempos_ms": tiempos,
         }
 
     finally:
@@ -928,8 +1077,8 @@ def generar_excel_control_horario(fecha=None, idcarteras=None, idusuario=None, i
 
 def ejecutar_sp_control_horario(cursor, fecha=None, idcartera=None, idusuario=None):
     cursor.execute(
-        """
-        EXEC dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO
+        f"""
+        EXEC {SP_CONTROL_HORARIO}
             @Fecha = ?,
             @IdCartera = ?,
             @IdUsuario = ?

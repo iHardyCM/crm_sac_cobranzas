@@ -61,7 +61,7 @@ async function fetchMatrizPage(fecha, idcartera) {
     if (idcartera) params.set("idcartera", idcartera);
     if (pageParams.get("incluir_apoyo_recupero") === "true") params.set("incluir_apoyo_recupero", "true");
 
-    const response = await fetch(`${BASE_URL_MATRIZ}/control-horario/matriz-mensual?${params.toString()}`, {
+    const response = await fetchConSesion(`${BASE_URL_MATRIZ}/control-horario/matriz-mensual?${params.toString()}`, {
         cache: "no-store"
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

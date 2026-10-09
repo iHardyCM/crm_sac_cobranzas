@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <title>Panel Corporativo - CRM Cobranzas</title>
 
-    <link rel="stylesheet" href="../css/corporativo.css?v=20260829-apple-corporate2">
-    <link rel="stylesheet" href="../css/app_layout.css?v=20260830-shell3">
-    <link rel="stylesheet" href="../css/apple_theme.css?v=20260829b">
+    <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/corporativo.css?v=352911d265">
+    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
 
@@ -207,8 +210,8 @@
 
     </main>
 
-    <script src="../js/session.js?v=20260825a"></script>
-    <script src="../js/app_layout.js?v=20260923-consumo"></script>
-    <script src="../js/corporativo.js"></script>
+    <script src="../js/session.js?v=60298e1520"></script>
+    <script src="../js/app_layout.js?v=876e8f616f"></script>
+    <script src="../js/corporativo.js?v=d4f74da5ac"></script>
 </body>
 </html>
