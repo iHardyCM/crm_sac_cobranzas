@@ -27,6 +27,10 @@ class VistaRequest(BaseModel):
     permitido: bool
 
 
+class CarteraRequest(BaseModel):
+    permitido: bool
+
+
 def _ejecutar(accion: str, admin: Dict, funcion, *args, **kwargs):
     try:
         return funcion(*args, **kwargs)
@@ -48,10 +52,12 @@ def listar_usuarios(
     response: Response,
     q: Optional[str] = Query(default=None, max_length=100),
     limite: int = Query(default=100, ge=1, le=servicio.LIMITE_MAXIMO_LISTADO),
+    idcartera: Optional[int] = None,
     admin: Dict = Depends(requiere_administrador),
 ):
     _sin_cache(response)
-    data = _ejecutar("LISTAR", admin, servicio.listar_usuarios, q=q, limite=limite)
+    data = _ejecutar("LISTAR", admin, servicio.listar_usuarios,
+                     q=q, limite=limite, idcartera=idcartera)
     return {"data": data}
 
 
@@ -97,3 +103,17 @@ def guardar_vista(dni: str, clave: str, payload: VistaRequest, response: Respons
 def restablecer_vistas(dni: str, response: Response, admin: Dict = Depends(requiere_administrador)):
     _sin_cache(response)
     return _ejecutar("RESTABLECER_VISTAS", admin, servicio.restablecer_vistas, dni, admin["dni"])
+
+
+@router.get("/{dni}/carteras")
+def listar_carteras_usuario(dni: str, response: Response, admin: Dict = Depends(requiere_administrador)):
+    _sin_cache(response)
+    return _ejecutar("LISTAR_CARTERAS", admin, servicio.listar_carteras_usuario, dni)
+
+
+@router.put("/{dni}/carteras/{idcartera}")
+def guardar_cartera_usuario(dni: str, idcartera: int, payload: CarteraRequest, response: Response,
+                            admin: Dict = Depends(requiere_administrador)):
+    _sin_cache(response)
+    return _ejecutar("GUARDAR_CARTERA", admin, servicio.guardar_cartera_usuario,
+                     dni, idcartera, payload.permitido, admin["dni"])

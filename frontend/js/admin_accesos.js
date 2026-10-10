@@ -18,6 +18,9 @@ let usuariosAccesos = [];
 let vistasActualDni = null;
 let vistasActuales = [];
 let vistasGuardando = false;
+let carterasActualDni = null;
+let carterasActuales = [];
+let carterasGuardando = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!exigirSesion()) return;
@@ -31,15 +34,30 @@ document.addEventListener("DOMContentLoaded", () => {
         cargarUsuariosAccesos();
     });
     document.getElementById("accesosActualizar").addEventListener("click", cargarUsuariosAccesos);
+    document.getElementById("accesosCartera").addEventListener("change", cargarUsuariosAccesos);
     document.getElementById("tablaAccesos").addEventListener("click", manejarAccionTabla);
     document.getElementById("claveTemporalCopiar").addEventListener("click", copiarClaveTemporal);
     document.getElementById("claveTemporalCerrar").addEventListener("click", ocultarClaveTemporal);
     document.getElementById("vistasUsuarioCerrar").addEventListener("click", cerrarVistasUsuario);
     document.getElementById("vistasUsuarioRestablecer").addEventListener("click", restablecerVistasUsuario);
     document.getElementById("vistasUsuarioLista").addEventListener("change", cambiarVistaUsuario);
+    document.getElementById("carterasUsuarioCerrar").addEventListener("click", cerrarCarterasUsuario);
+    document.getElementById("carterasUsuarioLista").addEventListener("change", cambiarCarteraUsuario);
 
+    cargarCatalogoCarteras();
     cargarUsuariosAccesos();
 });
+
+async function cargarCatalogoCarteras() {
+    try {
+        const respuesta = await fetchAccesos("/admin-supervisores/carteras");
+        const select = document.getElementById("accesosCartera");
+        select.innerHTML = `<option value="">Todas las carteras</option>` +
+            (respuesta.data || []).map(c => `<option value="${h(c.idcartera)}">${h(c.cartera)} (${h(c.idcartera)})</option>`).join("");
+    } catch (error) {
+        mostrarAccesosToast(`No se pudo cargar el filtro de carteras: ${error.message}`, "error");
+    }
+}
 
 async function fetchAccesos(path, options = {}) {
     const response = await fetch(`${BASE_URL_ACCESOS}${path}`, {
@@ -75,8 +93,10 @@ async function fetchAccesos(path, options = {}) {
 
 async function cargarUsuariosAccesos() {
     const q = document.getElementById("accesosBusqueda").value.trim();
-    const params = new URLSearchParams({ limite: "150" });
+    const idcartera = document.getElementById("accesosCartera").value;
+    const params = new URLSearchParams({ limite: "200" });
     if (q) params.set("q", q);
+    if (idcartera) params.set("idcartera", idcartera);
 
     try {
         mostrarAccesosToast("Cargando usuarios...", "info");
@@ -122,7 +142,7 @@ function botonesAcciones(u) {
     const boton = (accion, texto, clase = "btn-secondary") =>
         `<button type="button" class="${clase}" data-accion="${accion}" data-dni="${dni}">${texto}</button>`;
 
-    const vistas = boton("vistas", "Vistas");
+    const vistas = boton("vistas", "Vistas") + boton("carteras", "Carteras");
     if (!u.tiene_acceso) return vistas + boton("habilitar", "Habilitar acceso", "btn-primary");
     if (u.estado_acceso === "DESHABILITADO") return vistas + boton("habilitar", "Rehabilitar", "btn-primary");
 
@@ -173,6 +193,10 @@ async function manejarAccionTabla(event) {
         await abrirVistasUsuario(usuario);
         return;
     }
+    if (accion === "carteras" && usuario) {
+        await abrirCarterasUsuario(usuario);
+        return;
+    }
     if (!usuario || !CONFIRMACIONES[accion]) return;
 
     const confirmado = typeof window.crmConfirm === "function"
@@ -198,6 +222,7 @@ async function manejarAccionTabla(event) {
 
 async function abrirVistasUsuario(usuario) {
     if (vistasGuardando) return;
+    cerrarCarterasUsuario();
     vistasActualDni = usuario.dni;
     document.getElementById("vistasUsuarioTitulo").textContent = `Vistas de ${nombreUsuario(usuario)} · ${usuario.dni}`;
     document.getElementById("vistasUsuarioPanel").classList.remove("oculto");
@@ -278,6 +303,69 @@ function cerrarVistasUsuario() {
     vistasActualDni = null;
     vistasActuales = [];
     document.getElementById("vistasUsuarioPanel").classList.add("oculto");
+}
+
+async function abrirCarterasUsuario(usuario) {
+    if (carterasGuardando) return;
+    cerrarVistasUsuario();
+    carterasActualDni = usuario.dni;
+    document.getElementById("carterasUsuarioTitulo").textContent = `Carteras de ${nombreUsuario(usuario)} · ${usuario.dni}`;
+    document.getElementById("carterasUsuarioPanel").classList.remove("oculto");
+    document.getElementById("carterasUsuarioLista").textContent = "Cargando carteras...";
+    document.getElementById("carterasUsuarioPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+        const respuesta = await fetchAccesos(`/admin-accesos/${encodeURIComponent(usuario.dni)}/carteras`);
+        if (carterasActualDni !== usuario.dni) return;
+        carterasActuales = respuesta.carteras || [];
+        pintarCarterasUsuario();
+    } catch (error) {
+        document.getElementById("carterasUsuarioLista").textContent = error.message;
+        mostrarAccesosToast(error.message, "error");
+    }
+}
+
+function pintarCarterasUsuario() {
+    document.getElementById("carterasUsuarioLista").innerHTML = carterasActuales.map(cartera => `
+        <label class="vista-usuario-fila">
+            <span><strong>${h(cartera.nombre)} (${h(cartera.idcartera)})</strong><small>${cartera.principal ? "Cartera principal de SISCOB" : (cartera.permitido ? "Cartera adicional asignada" : "Sin asignación adicional")}</small></span>
+            <input type="checkbox" data-cartera="${h(cartera.idcartera)}" ${cartera.permitido ? "checked" : ""} ${cartera.principal ? "disabled" : ""}
+                aria-label="Permitir cartera ${h(cartera.nombre)}">
+        </label>
+    `).join("");
+}
+
+async function cambiarCarteraUsuario(event) {
+    const control = event.target.closest("input[data-cartera]");
+    if (!control || !carterasActualDni || carterasGuardando) return;
+    const dni = carterasActualDni;
+    const idcartera = Number(control.dataset.cartera);
+    carterasGuardando = true;
+    document.querySelectorAll("#carterasUsuarioLista input").forEach(input => input.disabled = true);
+    try {
+        const respuesta = await fetchAccesos(`/admin-accesos/${encodeURIComponent(dni)}/carteras/${idcartera}`, {
+            method: "PUT", body: JSON.stringify({ permitido: control.checked })
+        });
+        if (carterasActualDni !== dni) return;
+        const cartera = carterasActuales.find(item => Number(item.idcartera) === idcartera);
+        if (cartera) cartera.permitido = respuesta.permitido;
+        pintarCarterasUsuario();
+        mostrarAccesosToast("Cartera actualizada.", "ok");
+    } catch (error) {
+        control.checked = !control.checked;
+        mostrarAccesosToast(error.message, "error");
+    } finally {
+        carterasGuardando = false;
+        document.querySelectorAll("#carterasUsuarioLista input[data-cartera]").forEach(input => {
+            if (!carterasActuales.find(c => Number(c.idcartera) === Number(input.dataset.cartera))?.principal) input.disabled = false;
+        });
+    }
+}
+
+function cerrarCarterasUsuario() {
+    if (carterasGuardando) return;
+    carterasActualDni = null;
+    carterasActuales = [];
+    document.getElementById("carterasUsuarioPanel").classList.add("oculto");
 }
 
 function mensajeExito(accion, respuesta) {

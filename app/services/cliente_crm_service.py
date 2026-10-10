@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
 from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import text
 
 from app.core.db_siscob import engine_siscob
 
+logger = logging.getLogger(__name__)
+
+# Prefiltro por indice en gestiones/compromisos. El filtro exacto original (LTRIM/RTRIM) se conserva en la
+# consulta; el prefiltro solo reduce las filas que SQL Server debe revisar. Poner False para volver al comportamiento anterior.
+RADAR_PREFILTRO_SARGABLE = True
 
 CT_FORMULAS = {
     "cuota_1": ["CT1", "CT11", "CT12", "CT13", "CT14", "CT15"],
@@ -58,7 +66,10 @@ COMPARTAMOS_CARTERAS = {
 }
 
 
-def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> Dict[str, Any]:
+def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
+                           carteras_por_dni: Optional[Dict[str, set[int]]] = None) -> Dict[str, Any]:
+    inicio = perf_counter()
+    tiempos_fuentes: Dict[str, float] = {}
     tipo_resultado = resolver_tipo_resultado(rows, valor_buscado)
     operaciones_rows = deduplicar_operaciones(rows)
     operaciones = [normalizar_operacion(row) for row in operaciones_rows]
@@ -77,36 +88,74 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
     gestion = estructura_gestion_vacia()
     pagos = estructura_pagos_vacia()
     pdp = estructura_pdp_vacia()
-
-    try:
-        gestion = consultar_gestiones(dnis)
-    except Exception:
-        advertencias.append("No se pudo consultar la actividad de cobranza en SISCOB.")
-
-    try:
-        pagos = consultar_pagos(dni, codcliente, codigos_operacion)
-    except Exception:
-        advertencias.append("No se pudo consultar la fuente operativa de pagos.")
-
-    try:
-        pdp = consultar_pdp(dni, codigos_operacion)
-    except Exception:
-        advertencias.append("No se pudo consultar la fuente operativa de compromisos.")
-
     cronograma = estructura_cronograma_vacia()
     grupal: Dict[str, Any] = {"disponible": False, "por_dni": {}, "columnas": set(), "advertencias": []}
-    if tipo_resultado == "GRUPO":
+
+    # Las fuentes son independientes entre si: se consultan a la vez (cada una con su conexion).
+    def medir_fuente(clave: str, funcion):
+        inicio_f = perf_counter()
+        try:
+            return funcion()
+        finally:
+            tiempos_fuentes[clave] = (perf_counter() - inicio_f) * 1000
+
+    def fuente_grupal():
         codigos = codigos_grupo(rows)
+        avisos: List[str] = []
+        datos = grupal
         try:
-            grupal = construir_datos_grupal(consultar_datos_grupal(codigos))
-            advertencias.extend(grupal.get("advertencias", []))
+            datos = medir_fuente("grupal_ms", lambda: construir_datos_grupal(consultar_datos_grupal(codigos)))
+            avisos.extend(datos.get("advertencias", []))
         except Exception:
-            advertencias.append("No se pudo consultar compartamos_grupal (rol, último pago, calificación y campañas).")
+            avisos.append("No se pudo consultar compartamos_grupal (rol, último pago, calificación y campañas).")
+        crono = cronograma
         try:
-            cronograma = construir_cronograma_cuotas(consultar_cronograma_grupo(codigos), dnis, grupal.get("por_dni", {}))
-            advertencias.extend(cronograma.pop("advertencias", []))
+            crono = medir_fuente("cronograma_ms", lambda: construir_cronograma_cuotas(consultar_cronograma_grupo(codigos), dnis, datos.get("por_dni", {})))
+            avisos.extend(crono.pop("advertencias", []))
         except Exception:
-            advertencias.append("No se pudo consultar el cronograma de cuotas atrasadas del grupo.")
+            avisos.append("No se pudo consultar el cronograma de cuotas atrasadas del grupo.")
+        return datos, crono, avisos
+
+    tareas: Dict[str, Any] = {
+        "gestion": lambda: medir_fuente("gestion_ms", lambda: consultar_gestiones(dnis, carteras_por_dni=carteras_por_dni)),
+        "pagos": lambda: medir_fuente("pagos_ms", lambda: consultar_pagos(dni, codcliente, codigos_operacion)),
+        "pdp": lambda: medir_fuente("pdp_ms", lambda: consultar_pdp(dni, codigos_operacion)),
+        "cal": lambda: medir_fuente("calificacion_ms", lambda: consultar_calificacion_asignacion(dnis)),
+    }
+    if tipo_resultado == "GRUPO":
+        tareas["grupal"] = fuente_grupal
+    with ThreadPoolExecutor(max_workers=len(tareas)) as pool:
+        futuros = {nombre: pool.submit(tarea) for nombre, tarea in tareas.items()}
+        resultados: Dict[str, Any] = {}
+        for nombre, futuro in futuros.items():
+            try:
+                resultados[nombre] = futuro.result()
+            except Exception:
+                resultados[nombre] = None
+    if resultados.get("gestion") is not None:
+        gestion = resultados["gestion"]
+    else:
+        advertencias.append("No se pudo consultar la actividad de cobranza en SISCOB.")
+    if resultados.get("pagos") is not None:
+        pagos = resultados["pagos"]
+    else:
+        advertencias.append("No se pudo consultar la fuente operativa de pagos.")
+    if resultados.get("pdp") is not None:
+        pdp = resultados["pdp"]
+    else:
+        advertencias.append("No se pudo consultar la fuente operativa de compromisos.")
+    if tipo_resultado == "GRUPO" and resultados.get("grupal") is not None:
+        grupal, cronograma, avisos_grupo = resultados["grupal"]
+        advertencias.extend(avisos_grupo)
+    if resultados.get("cal") is not None:
+        asignacion_cal = resultados["cal"]
+        advertencias.extend(asignacion_cal.pop("advertencias", []))
+    else:
+        asignacion_cal = {"por_dni": {}}
+        advertencias.append("No se pudo consultar la calificación/segmentación en las tablas de asignación.")
+    for fila_op, operacion_item in zip(operaciones_rows, operaciones):
+        aplicar_calificacion(operacion_item, clave_documento(campo(fila_op, "DNI")), operacion_item.get("operacion"),
+                             asignacion_cal, grupal)
 
     situacion = construir_situacion(operaciones)
     contacto = construir_contacto(rows)
@@ -114,6 +163,17 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
     campanas = construir_campanas(operaciones)
     contencion = construir_contencion(pagos)
     cliente = construir_cliente(rows, operaciones)
+    if operaciones:
+        # Cada operacion trae su propia calificacion/cartera. En la cabecera solo se muestra un valor
+        # si todas las operaciones coinciden; si no, se remite al detalle por operacion.
+        claves = {(o.get("tipo_calificacion"), o.get("calificacion"), o.get("cartera_calificacion")) for o in operaciones}
+        if len(claves) == 1:
+            for campo_cal in ("calificacion", "tipo_calificacion", "fuente_calificacion", "cartera_calificacion"):
+                cliente[campo_cal] = operaciones[0].get(campo_cal)
+        else:
+            cliente["calificacion"] = "Según operación"
+            cliente["tipo_calificacion"] = "Calificación"
+            cliente["cartera_calificacion"] = None
     informacion_adicional = construir_informacion_adicional(rows)
 
     respuesta = {
@@ -140,7 +200,9 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
         "contacto": contacto,
         "grupo": grupo,
         "operaciones": operaciones,
-        "integrantes": aplicar_datos_grupal(construir_integrantes(operaciones_rows, gestion.get("por_dni", {})), grupal) if tipo_resultado == "GRUPO" else [],
+        "integrantes": aplicar_calificacion_integrantes(
+            aplicar_datos_grupal(construir_integrantes(operaciones_rows, gestion.get("por_dni", {})), grupal),
+            asignacion_cal, grupal) if tipo_resultado == "GRUPO" else [],
         "cronograma_cuotas": cronograma,
         "informacion_adicional": informacion_adicional,
         "fuentes": {
@@ -152,7 +214,13 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str) -> D
         "advertencias": advertencias,
         "total": len(operaciones),
     }
-    return serializar(respuesta)
+    resultado = serializar(respuesta)
+    total_ms = (perf_counter() - inicio) * 1000
+    if total_ms >= 2000:
+        logger.warning("Radar detalle lento tipo=%s integrantes=%d fuentes_ms=%s total_ms=%.0f",
+                       tipo_resultado, len(dnis),
+                       {nombre: round(ms) for nombre, ms in tiempos_fuentes.items()}, total_ms)
+    return resultado
 
 
 def resolver_tipo_resultado(rows: List[Dict[str, Any]], valor_buscado: str) -> str:
@@ -225,7 +293,8 @@ def normalizar_operacion(row: Dict[str, Any]) -> Dict[str, Any]:
         "territorio": texto(campo(row, "Territorio")),
         "segmento": texto(campo(row, "SEGMENTO", "Segmento")),
         "condicion": texto(campo(row, "Condicion")),
-        "calificacion": texto(campo(row, "Calificacion")),
+        "calificacion": None,
+        "tipo_calificacion": None,
         "score": numero(campo(row, "SCORE", "Score")),
         "tramo": texto(campo(row, "Tramo")),
         "dias_atraso": numero(campo(row, "DiasAtraso")),
@@ -282,7 +351,8 @@ def construir_cliente(rows: List[Dict[str, Any]], operaciones: List[Dict[str, An
         "segmento": texto(campo(principal, "SEGMENTO", "Segmento")),
         "linea_negocio": texto(campo(principal, "Linea_Negocio", "LineaNegocio")),
         "producto_principal": texto(campo(principal, "Producto")),
-        "calificacion": texto(campo(principal, "Calificacion")),
+        "calificacion": None,
+        "tipo_calificacion": None,
         "condicion": texto(campo(principal, "Condicion")),
         "score": numero(campo(principal, "SCORE", "Score")),
         "tiene_grupo": construir_contexto_grupo(rows).get("disponible", False),
@@ -407,7 +477,8 @@ def construir_integrantes(rows: List[Dict[str, Any]], gestion_por_dni: Optional[
             "mora": maximo_conocido(item.get("dias_atraso") for item in operaciones),
             "cuotas_vencidas": maximo_conocido(item.get("cuotas_vencidas") for item in operaciones),
             "ultimo_pago_asignacion": max_fecha(item.get("fecha_ultimo_pago_asignacion") for item in operaciones),
-            "calificacion": texto(campo(principal, "Calificacion")),
+            "calificacion": None,
+        "tipo_calificacion": None,
             "contencion": {"disponible": False},
             "gestion": gestion_por_dni.get(identificador(dni), {"gestionado_hoy": False, "gestionado_mes": 0}),
         })
@@ -549,8 +620,141 @@ def aplicar_datos_grupal(integrantes: List[Dict[str, Any]], grupal: Dict[str, An
             integrante["rol"] = formatear_rol(datos.get("comite")) if datos is not None else None
         if "fec_ult_pago" in columnas:
             integrante["ultimo_pago_asignacion"] = fecha_iso(datos.get("fec_ult_pago")) if datos is not None else None
-        if "cal_prov" in columnas:
-            integrante["calificacion"] = etiqueta_calificacion(datos.get("cal_prov")) if datos is not None else None
+    return integrantes
+
+
+# Calificacion / segmentacion: salen de las tablas de asignacion, NO de SAC.
+#   (tabla, columnas DNI posibles, columnas operacion posibles, columna valor, tipo)
+#   grupal -> compartamos_grupal (Cal_PROV, via construir_datos_grupal)
+FUENTES_ASIGNACION = (
+    ("compartamos_individual", ("NumDoc", "DNI"), ("Operacion", "CodOperacion"), "Calif_Provisiones", "CALIFICACION"),
+    ("compartamos_ccm", ("NumDoc", "DNI"), ("Operacion", "CodOperacion"), "Calif_Provisiones", "CALIFICACION"),
+    ("compartamos_castigo", ("NumDoc", "DNI"), ("Operacion", "CodOperacion"), "Segmentacion", "SEGMENTACION"),
+    ("compartamos_grupal_castigo", ("NumDoc", "DNI"), ("Operacion", "CodOperacion"), "Segmentacion", "SEGMENTACION"),
+)
+CARTERA_ASIGNACION = {
+    "compartamos_individual": "Individual", "compartamos_ccm": "CCM", "compartamos_grupal": "Grupal",
+    "compartamos_castigo": "Castigo individual", "compartamos_grupal_castigo": "Castigo grupal",
+}
+SEGMENTACION_ETIQUETA = {"verde": "Verde", "ambar": "Ámbar", "rojo": "Rojo"}
+_columnas_asignacion_cache: Dict[str, Dict[str, str]] = {}
+
+
+def etiqueta_segmentacion(valor: Any) -> Optional[str]:
+    base = texto(valor)
+    if base is None:
+        return None
+    clave = clave_columna(base)
+    return SEGMENTACION_ETIQUETA.get(clave, base)
+
+
+def columnas_reales_tabla(conn, tabla: str) -> Dict[str, str]:
+    """Nombre real (con su capitalizacion/espacios) de cada columna, indexado por clave_columna."""
+    if tabla not in _columnas_asignacion_cache:
+        filas = conn.execute(text(
+            "SELECT COLUMN_NAME FROM Desarrollo.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :t"), {"t": tabla}).all()
+        _columnas_asignacion_cache[tabla] = {clave_columna(f[0]): f[0] for f in filas}
+    return _columnas_asignacion_cache[tabla]
+
+
+def variantes_documento(dnis: List[str]) -> List[str]:
+    """Formas en que un DNI puede estar guardado (con/sin ceros a la izquierda) para comparar sin funciones sobre la columna."""
+    variantes: List[str] = []
+    for dni in dnis:
+        for valor in (dni, dni.lstrip("0"), dni.lstrip("0").zfill(8)):
+            if valor and valor not in variantes:
+                variantes.append(valor)
+    return variantes
+
+
+def consultar_tabla_asignacion(tabla: str, cols_dni: tuple, cols_op: tuple, col_valor: str, tipo: str,
+                               variantes: List[str]) -> Dict[str, Any]:
+    """Una tabla de asignacion, en su propia conexion (se ejecuta en paralelo con las demas)."""
+    salida: Dict[str, Any] = {"filas": [], "advertencia": None}
+    params = {f"d{i}": valor for i, valor in enumerate(variantes)}
+    # CAST del lado del parametro: asi la columna no se convierte y el filtro puede usar indice.
+    marcadores = ", ".join(f"CAST(:{key} AS VARCHAR(40))" for key in params)
+    try:
+        with engine_siscob.connect() as conn:
+            reales = columnas_reales_tabla(conn, tabla)
+            col_dni = next((reales[clave_columna(c)] for c in cols_dni if clave_columna(c) in reales), None)
+            col_op = next((reales[clave_columna(c)] for c in cols_op if clave_columna(c) in reales), None)
+            col_val = reales.get(clave_columna(col_valor))
+            if not col_dni or not col_val:
+                salida["advertencia"] = f"{tabla}: no se encontró la columna de documento o de {col_valor}."
+                return salida
+            sel_op = f"[{col_op}]" if col_op else "NULL"
+            query = text(f"""
+                SELECT [{col_dni}] AS dni, {sel_op} AS operacion, [{col_val}] AS valor
+                FROM Desarrollo.dbo.{tabla} WITH(NOLOCK)
+                WHERE [{col_dni}] IN ({marcadores})
+            """)
+            for fila in conn.execute(query, params).mappings().all():
+                valor = etiqueta_segmentacion(fila["valor"]) if tipo == "SEGMENTACION" else etiqueta_calificacion(fila["valor"])
+                if valor is None:
+                    continue
+                salida["filas"].append({
+                    "dni": clave_documento(fila["dni"]), "tabla": tabla,
+                    "tipo": "Segmentación" if tipo == "SEGMENTACION" else "Calificación",
+                    "valor": valor, "operacion": clave_documento(fila["operacion"]),
+                })
+    except Exception:
+        logger.exception("No se pudo leer %s para calificación/segmentación", tabla)
+        salida["advertencia"] = f"No se pudo consultar {tabla} (calificación/segmentación)."
+    return salida
+
+
+def consultar_calificacion_asignacion(dnis: List[str]) -> Dict[str, Any]:
+    """{'por_dni': {dni_sin_ceros: [{tabla, tipo, valor, operacion}]}, 'advertencias': [...]}
+    Las 4 tablas se consultan en paralelo."""
+    dnis = [identificador(value) for value in dnis if identificador(value)]
+    resultado: Dict[str, Any] = {"por_dni": {}, "advertencias": []}
+    if not dnis:
+        return resultado
+    variantes = variantes_documento(dnis)
+    with ThreadPoolExecutor(max_workers=len(FUENTES_ASIGNACION)) as pool:
+        futuros = [pool.submit(consultar_tabla_asignacion, *fuente, variantes) for fuente in FUENTES_ASIGNACION]
+        for futuro in futuros:
+            salida = futuro.result()
+            if salida["advertencia"]:
+                resultado["advertencias"].append(salida["advertencia"])
+            for fila in salida["filas"]:
+                dni = fila.pop("dni")
+                resultado["por_dni"].setdefault(dni, []).append(fila)
+    return resultado
+
+
+def resolver_calificacion(dni: str, operacion: Any, asignacion: Dict[str, Any], grupal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Prioridad: 1) misma operacion en una tabla de asignacion; 2) compartamos_grupal (Cal_PROV) si es integrante;
+    3) unico registro del DNI en las tablas de asignacion. Si no hay dato, None (no se inventa)."""
+    candidatos = asignacion.get("por_dni", {}).get(dni, [])
+    clave_op = clave_documento(operacion)
+    if clave_op:
+        for item in candidatos:
+            if item["operacion"] == clave_op:
+                return {**item, "fuente": item["tabla"]}
+    datos = grupal.get("por_dni", {}).get(dni) if grupal.get("disponible") else None
+    if datos is not None and not vacio(datos.get("cal_prov")):
+        return {"tipo": "Calificación", "valor": etiqueta_calificacion(datos.get("cal_prov")), "fuente": "compartamos_grupal"}
+    distintos = {(item["tabla"], item["tipo"], item["valor"]) for item in candidatos}
+    if len(distintos) == 1:
+        item = candidatos[0]
+        return {**item, "fuente": item["tabla"]}
+    return None
+
+
+def aplicar_calificacion(destino: Dict[str, Any], dni: str, operacion: Any, asignacion: Dict[str, Any], grupal: Dict[str, Any]) -> None:
+    encontrado = resolver_calificacion(dni, operacion, asignacion, grupal)
+    destino["calificacion"] = encontrado["valor"] if encontrado else None
+    destino["tipo_calificacion"] = encontrado["tipo"] if encontrado else None
+    destino["fuente_calificacion"] = encontrado["fuente"] if encontrado else None
+    destino["cartera_calificacion"] = CARTERA_ASIGNACION.get(encontrado["fuente"]) if encontrado else None
+
+
+def aplicar_calificacion_integrantes(integrantes: List[Dict[str, Any]], asignacion: Dict[str, Any], grupal: Dict[str, Any]) -> List[Dict[str, Any]]:
+    for integrante in integrantes:
+        operaciones = integrante.get("operaciones") or [{}]
+        aplicar_calificacion(integrante, clave_documento(integrante.get("dni")), operaciones[0].get("operacion"), asignacion, grupal)
     return integrantes
 
 
@@ -750,7 +954,21 @@ def clave_documento(value: Any) -> str:
     return identificador(value).lstrip("0")
 
 
-def consultar_gestiones(dnis: List[str]) -> Dict[str, Any]:
+def prefiltro_gestiones(cantidad_dnis: int) -> str:
+    """Gestiones candidatas por DNI usando IX_gestion_dni_* (GESTION.DNI) e IX_Cliente (CLIENTE.Dni).
+    El CAST va del lado del parametro para no convertir la columna (y asi poder usar el indice)."""
+    if not RADAR_PREFILTRO_SARGABLE or cantidad_dnis <= 0:
+        return ""
+    lista = ", ".join(f"CAST(:dni_{i} AS VARCHAR(40))" for i in range(cantidad_dnis))
+    return f"""AND G.IdGestion IN (
+              SELECT G1.IdGestion FROM SISCOB.DBO.GESTION G1 WITH(NOLOCK) WHERE G1.DNI IN ({lista})
+              UNION
+              SELECT G2.IdGestion FROM SISCOB.DBO.CLIENTE C2 WITH(NOLOCK)
+              INNER JOIN SISCOB.DBO.GESTION G2 WITH(NOLOCK) ON G2.IdCliente = C2.IdCliente
+              WHERE C2.Dni IN ({lista}))"""
+
+
+def consultar_gestiones(dnis: List[str], carteras_por_dni: Optional[Dict[str, set[int]]] = None) -> Dict[str, Any]:
     dnis = [identificador(value) for value in dnis if identificador(value)]
     if not dnis:
         return estructura_gestion_vacia()
@@ -785,20 +1003,30 @@ def consultar_gestiones(dnis: List[str]) -> Dict[str, Any]:
         LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK) ON U.IdUsuario = G.IdUsuario
         WHERE CL.IdCartera IN (124, 126, 128, 133, 144)
           AND ({condiciones})
+          {prefiltro}
         ORDER BY G.Fecha DESC, G.Hora DESC, G.IdGestion DESC
-    """.format(condiciones=" OR ".join(condiciones)))
-    query_carteras = text("""
-        SELECT DISTINCT CL.IdCartera AS id_cartera
-        FROM SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
-        WHERE CL.IdCartera IN (124, 126, 128, 133, 144)
-          AND ({condiciones})
-    """.format(condiciones=" OR ".join(
-        f"LTRIM(RTRIM(ISNULL(CL.Dni, ''))) = :dni_{index}"
-        for index in range(len(dnis))
-    )))
+    """.format(condiciones=" OR ".join(condiciones), prefiltro=prefiltro_gestiones(len(dnis))))
+    query_carteras = None
+    if carteras_por_dni is None:
+        query_carteras = text("""
+            SELECT DISTINCT CL.IdCartera AS id_cartera
+            FROM SISCOB.DBO.CLIENTE CL WITH(NOLOCK)
+            WHERE CL.IdCartera IN (124, 126, 128, 133, 144)
+              AND ({condiciones})
+        """.format(condiciones=" OR ".join(
+            f"LTRIM(RTRIM(ISNULL(CL.Dni, ''))) = :dni_{index}"
+            for index in range(len(dnis))
+        )))
     with engine_siscob.connect() as conn:
         rows = [dict(row) for row in conn.execute(query, params).mappings().all()]
-        carteras_rows = [dict(row) for row in conn.execute(query_carteras, params).mappings().all()]
+        if query_carteras is not None:
+            carteras_rows = [dict(row) for row in conn.execute(query_carteras, params).mappings().all()]
+        else:
+            carteras_rows = [
+                {"id_cartera": cartera}
+                for carteras in carteras_por_dni.values()
+                for cartera in carteras
+            ]
 
     hoy = date.today()
     inicio_mes = hoy.replace(day=1)
@@ -909,6 +1137,29 @@ def consultar_pagos(dni: Optional[str], codcliente: Optional[str], operaciones: 
     }
 
 
+def prefiltro_pdp(dni: Optional[str], operaciones: List[str]) -> str:
+    """Compromisos candidatos: por operacion (COMPROMISO es chica), por GESTION.DNI -> idxcp1(idGestion)
+    y por CLIENTE.Dni (directo o via gestion). El filtro exacto original sigue aplicandose despues."""
+    if not RADAR_PREFILTRO_SARGABLE or not (dni or operaciones):
+        return ""
+    ramas: List[str] = []
+    if operaciones:
+        lista_op = ", ".join(f":pdp_op_{i}" for i in range(len(operaciones)))
+        ramas.append(f"SELECT C1.IdCompromiso FROM SISCOB.DBO.COMPROMISO C1 WITH(NOLOCK) WHERE LTRIM(RTRIM(ISNULL(C1.NumOperacion, ''))) IN ({lista_op})")
+    if dni:
+        ramas.append("""SELECT C2.IdCompromiso FROM SISCOB.DBO.GESTION G2 WITH(NOLOCK)
+              INNER JOIN SISCOB.DBO.COMPROMISO C2 WITH(NOLOCK) ON C2.IdGestion = G2.IdGestion
+              WHERE G2.DNI = CAST(:dni AS VARCHAR(40))""")
+        ramas.append("""SELECT C3.IdCompromiso FROM SISCOB.DBO.CLIENTE L3 WITH(NOLOCK)
+              INNER JOIN SISCOB.DBO.COMPROMISO C3 WITH(NOLOCK) ON C3.IdCliente = L3.IdCliente
+              WHERE L3.Dni = CAST(:dni AS VARCHAR(40))""")
+        ramas.append("""SELECT C4.IdCompromiso FROM SISCOB.DBO.CLIENTE L4 WITH(NOLOCK)
+              INNER JOIN SISCOB.DBO.GESTION G4 WITH(NOLOCK) ON G4.IdCliente = L4.IdCliente
+              INNER JOIN SISCOB.DBO.COMPROMISO C4 WITH(NOLOCK) ON C4.IdGestion = G4.IdGestion
+              WHERE L4.Dni = CAST(:dni AS VARCHAR(40))""")
+    return "AND C.IdCompromiso IN (" + " UNION ".join(ramas) + ")"
+
+
 def consultar_pdp(dni: Optional[str], operaciones: List[str]) -> Dict[str, Any]:
     condiciones = ["1 = 0"]
     params: Dict[str, Any] = {}
@@ -937,6 +1188,7 @@ def consultar_pdp(dni: Optional[str], operaciones: List[str]) -> Dict[str, Any]:
         LEFT JOIN SISCOB.DBO.USUARIO U WITH(NOLOCK) ON U.IdUsuario = G.IdUsuario
         WHERE CL.IdCartera IN (124, 126, 128, 133, 144)
           AND ({' OR '.join(condiciones)})
+          {prefiltro_pdp(dni, operaciones)}
         ORDER BY C.FechaCompromiso DESC, C.IdCompromiso DESC
     """)
     with engine_siscob.connect() as conn:

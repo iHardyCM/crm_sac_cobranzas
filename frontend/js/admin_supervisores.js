@@ -122,7 +122,6 @@ async function guardarAdminSupervisores() {
         const payload = {
             usuario,
             idcarteras,
-            usuario_actualizacion: localStorage.getItem("dni") || "SIN_USUARIO",
         };
 
         await fetchJson("/admin-supervisores/asignaciones", {

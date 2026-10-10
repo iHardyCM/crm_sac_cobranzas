@@ -110,6 +110,7 @@ async def buscar_documentos(
             codigo_cliente=codigo_cliente,
             nombre_cliente=nombre_cliente,
             cartera_id=cartera_id,
+            **({"limit": 200} if cartera_id == 133 and (codigo_grupo or cod_cre_grupal) else {}),
         )
         return {"ok": True, "data": rows}
     except ValueError as exc:

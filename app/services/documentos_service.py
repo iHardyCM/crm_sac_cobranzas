@@ -35,15 +35,15 @@ PROPIA_TEMPLATES = {
 DOCUMENT_TYPES = {
     "transaccion_cancelacion": {
         "id": "transaccion_cancelacion",
-        "nombre": "Transaccion extrajudicial y cancelacion de deuda",
-        "descripcion": "Carta de transaccion extrajudicial, cancelacion y nota de abono.",
+        "nombre": "Convenio de Cancelación",
+        "descripcion": "Convenio de cancelación de deuda y nota de abono.",
         "cartera_id": 133,
         "cartera_nombre": "Compartamos vigente grupal",
         "plantilla_correo": "vigente_grupal_transaccion_cancelacion",
     },
     "cancelacion_grupal": {
         "id": "cancelacion_grupal",
-        "nombre": "Convenio de pago y cancelacion de deuda grupal",
+        "nombre": "Convenio de pago y cancelación de deuda grupal",
         "descripcion": "Convenio grupal con encargado, integrantes, montos manuales y nota de abono.",
         "cartera_id": 133,
         "cartera_nombre": "Compartamos vigente grupal",
@@ -51,8 +51,8 @@ DOCUMENT_TYPES = {
     },
     "compromiso_cuota_grupal": {
         "id": "compromiso_cuota_grupal",
-        "nombre": "Compromiso de pago producto grupal",
-        "descripcion": "Compromiso grupal por cuota con fiador, cuotas calculadas y monto manual.",
+        "nombre": "Convenio de cancelación cuota grupo",
+        "descripcion": "Convenio de cuota grupal con fiador, cuotas calculadas y monto manual.",
         "cartera_id": 133,
         "cartera_nombre": "Compartamos vigente grupal",
         "plantilla_correo": "vigente_grupal_compromiso_cuota",
@@ -60,7 +60,7 @@ DOCUMENT_TYPES = {
     "compromiso_cuota_individual": {
         "id": "compromiso_cuota_individual",
         "nombre": "Convenio cuota individual grupal",
-        "descripcion": "Compromiso por cuota para un integrante de credito grupal.",
+        "descripcion": "Convenio por cuota para un integrante de crédito grupal.",
         "cartera_id": 133,
         "cartera_nombre": "Compartamos vigente grupal",
         "plantilla_correo": "vigente_grupal_compromiso_cuota_individual",
@@ -263,19 +263,19 @@ DOCUMENT_QUERY_SCOPES = {
 
 EMAIL_TEMPLATE_SCOPES = {
     "vigente_grupal_transaccion_cancelacion": {
-        "asunto": "Transaccion extrajudicial y cancelacion de deuda - {cliente}",
+        "asunto": "MITIGACION_CSM_CANCELACION_{cliente}_{agencia}_OPERACION_{operacion}",
         "requiere_adjunto": True,
     },
     "vigente_grupal_cancelacion_grupal": {
-        "asunto": "Convenio de pago y cancelacion de deuda grupal - {grupo}",
+        "asunto": "MITIGACION_CSM_CANCELACION_VIGENTE GRUPAL_{grupo}_{credito}",
         "requiere_adjunto": True,
     },
     "vigente_grupal_compromiso_cuota": {
-        "asunto": "Compromiso de pago producto grupal - {grupo}",
+        "asunto": "MITIGACION CUOTA_CSM_VIGENTE GRUPAL_{grupo}_{credito}_{codigo_grupo}",
         "requiere_adjunto": True,
     },
     "vigente_grupal_compromiso_cuota_individual": {
-        "asunto": "MITIGACION_CUOTA_VIGENTE GRUPAL_{cliente}_{operacion}",
+        "asunto": "CSM_VIGENTE_CAMPAÑA_CUOTAS_{cliente}_{agencia}_OPERACION_{operacion}",
         "requiere_adjunto": True,
     },
     "vigente_grupal_pago_directo_cancelacion": {
@@ -2013,7 +2013,7 @@ def horizontal_rule_xml(before=80, after=85):
 
 def document_xml(context):
     paragraphs = [
-        title_xml("Transacción extrajudicial y Cancelación de Deuda"),
+        title_xml(context.get("titulo_documento", "Transacción extrajudicial y Cancelación de Deuda")),
         paragraph_xml(
             "Conste por el presente documento una Transacción Extrajudicial y Cancelación de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -2120,7 +2120,7 @@ def document_xml(context):
 
 def document_cuota_individual_xml(context):
     paragraphs = [
-        title_xml("COMPROMISO DE PAGO"),
+        title_xml(context.get("titulo_documento", "COMPROMISO DE PAGO")),
         paragraph_xml(
             "Conste por el presente documento una Transaccion Extrajudicial y Cancelacion de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -2375,7 +2375,7 @@ def document_cuota_grupal_xml(context):
     col_widths = [1250, 1350, 900, 3450, 1200]
 
     paragraphs = [
-        title_xml("Compromiso de pago Producto Grupal"),
+        title_xml("Convenio de cancelación cuota grupo"),
         paragraph_xml(
             "Conste por el presente documento una Transacción Extrajudicial y Cancelación de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -2963,7 +2963,7 @@ def generar_pdf_limpio(output_path, context):
         return table
 
     story = [
-        p("Transacción extrajudicial y Cancelación de Deuda", title),
+        p(context.get("titulo_documento", "Transacción extrajudicial y Cancelación de Deuda"), title),
         p(
             "Conste por el presente documento una Transacción Extrajudicial y Cancelación de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -3427,7 +3427,7 @@ def generar_pdf_cuota_individual_limpio(output_path, context):
         return table
 
     story = [
-        p("COMPROMISO DE PAGO", title),
+        p(context.get("titulo_documento", "COMPROMISO DE PAGO"), title),
         p(
             "Conste por el presente documento una Transaccion Extrajudicial y Cancelacion de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -4025,7 +4025,7 @@ def generar_pdf_cuota_grupal_limpio(output_path, context):
     )
 
     story = [
-        p("Compromiso de pago Producto Grupal", title),
+        p("Convenio de cancelación cuota grupo", title),
         p(
             "Conste por el presente documento una Transacción Extrajudicial y Cancelación de Deuda, que celebran "
             "de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas "
@@ -4869,6 +4869,8 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
             excepcion=excepcion,
             cuotas_individual=cuotas_individual,
         )
+        if documento_tipo == "compromiso_cuota_individual":
+            context["titulo_documento"] = config["nombre"]
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         formato = str(formato or "docx").lower()
@@ -4906,6 +4908,8 @@ def generar_documento(documento_tipo, dni=None, operacion=None, codigo_grupo=Non
         "fecha_corta": hoy.strftime("%d/%m/%Y"),
         "fecha_larga": fecha_larga_hoy(),
     }
+    if documento_tipo == "transaccion_cancelacion":
+        context["titulo_documento"] = config["nombre"]
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     formato = str(formato or "docx").lower()

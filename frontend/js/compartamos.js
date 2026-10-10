@@ -14,12 +14,20 @@ function renderCliente(payload) {
 
     resultado.innerHTML = `
         ${renderRegresoContextual()}
+        ${renderAvisoOtraCartera(payload)}
         ${payload.tipo_resultado === "GRUPO" ? renderCRMGrupo(payload) : renderCRMCliente(payload)}
         ${renderAdvertenciasFuentes(payload)}
     `;
 }
 
-function renderCRMCliente(data) {
+function renderAvisoOtraCartera(data) {
+    const otras = Array.isArray(data?.otras_carteras_compartamos) ? data.otras_carteras_compartamos : [];
+    if (!otras.length) return "";
+    const nombres = otras.map(cartera => `${cartera.nombre} (${cartera.id})`).join(", ");
+    return `<aside class="crm-other-portfolio"><strong>Consulta entre carteras Compartamos</strong><span>El resultado incluye carteras fuera de tu asignación: ${h(nombres)}. Puedes consultarlas desde Radar; tu asignación operativa no cambia.</span></aside>`;
+}
+
+function renderCRMClienteAnterior(data) {
     const operacion = data.operaciones[0];
     return `
         ${renderCabeceraClienteCRM(data)}
@@ -39,6 +47,129 @@ function renderCRMCliente(data) {
         ${renderMasInformacionCRM(data.informacion_adicional)}
     `;
 }
+
+// ---------------------------------------------------------------------------
+// Vista de cliente ordenada por lo que se necesita al llamar (2026-10).
+// Mismos datos que antes; lo secundario queda plegado. La anterior sigue en renderCRMClienteAnterior.
+// ---------------------------------------------------------------------------
+function renderCRMCliente(data) {
+    const operacion = data.operaciones[0];
+    return `
+        ${renderCabeceraClienteV2(data)}
+        ${renderSituacionClienteV2(data)}
+        <div class="crm-v2-grid">
+            ${renderAlternativasCobro(data.operaciones).replace("crm-span-2", "")}
+            ${renderContactoCRM(data.contacto)}
+        </div>
+        <div class="crm-v2-grid">
+            ${renderUltimaGestionV2(data.gestion)}
+            ${renderCompromisosPagosV2(data.pagos_pdp)}
+        </div>
+        ${renderTablaOperacionesCRM(data.operaciones)}
+        <details class="crm-v2-plegable" id="detalleOperacionWrap">
+            <summary id="detalleOperacionResumen">Detalle de la operación ${h(operacion.operacion)}</summary>
+            <div id="detalleOperacionSeleccionada" class="detalle-operacion-host is-visible" aria-live="polite">
+                ${renderDetalleOperacionCRM(operacion)}
+            </div>
+        </details>
+        ${renderMasDatosClienteV2(data)}
+    `;
+}
+
+function renderCabeceraClienteV2(data) {
+    const cliente = data.cliente || {};
+    const grupo = data.grupo || {};
+    const buscarGrupo = grupo.codigo_grupo || grupo.credito_grupal;
+    const metadatos = [
+        ["DNI", cliente.dni], ["Código cliente", cliente.codigo_cliente],
+        ["Oficina", cliente.oficina], ["Producto", cliente.producto_principal]
+    ].filter(([, value]) => tieneValor(value));
+    return `
+        <section class="crm-entidad-header crm-cliente-header" aria-labelledby="tituloClienteCRM">
+            <div class="crm-entidad-principal">
+                <div class="avatar avatar-entidad" aria-hidden="true">${initials(cliente.nombre)}</div>
+                <div>
+                    <div class="crm-titulo-linea"><h2 id="tituloClienteCRM">${h(cliente.nombre)}</h2><span class="crm-tipo">Cliente</span></div>
+                    <div class="crm-identidad-linea">${metadatos.map(([label, value]) => `<span><b>${h(label)}</b>${h(value)}</span>`).join("")}</div>
+                    ${grupo.disponible && tieneValor(grupo.nombre) ? `<div class="crm-v2-grupo"><span>Grupo</span><strong>${h(grupo.nombre)}</strong>${buscarGrupo ? `<button class="crm-link-button" type="button" data-buscar-entidad="${attr(buscarGrupo)}">Ver grupo</button>` : ""}</div>` : ""}
+                </div>
+            </div>
+            <div class="crm-estado-destacado" aria-label="Estado contractual de asignacion">
+                ${estadoCalificacionCRM(cliente)}
+                ${estadoDestacado("Condición", cliente.condicion)}
+            </div>
+        </section>
+    `;
+}
+
+function cifraV2(etiqueta, valor, sub, alerta = false) {
+    return `<div class="crm-v2-cifra${alerta ? " is-alerta" : ""}"><span>${h(etiqueta)}</span><b>${h(valor)}</b>${tieneValor(sub) ? `<small>${h(sub)}</small>` : ""}</div>`;
+}
+
+function renderSituacionClienteV2(data) {
+    const s = data.situacion || {};
+    const ops = numeroValido(s.cantidad_operaciones);
+    return `<section class="crm-v2-situacion" aria-label="Situación consolidada del cliente">
+        ${cifraV2("Deuda total", money(s.deuda_actual), tieneValor(s.capital) ? `Capital ${money(s.capital)}` : null)}
+        ${cifraV2("Capital vencido", money(s.capital_vencido), null, true)}
+        ${cifraV2("Mora máxima", tieneValor(s.mora_maxima) ? `${format(s.mora_maxima)} días` : "—", ops !== null ? `Entre ${format(ops)} operación${ops === 1 ? "" : "es"}` : null, true)}
+        ${cifraV2("Último pago", formatFecha(s.ultimo_pago_asignacion), "Según asignación")}
+    </section>`;
+}
+
+function renderUltimaGestionV2(gestion = {}) {
+    if (!gestion.disponible) return "";
+    const u = gestion.ultima_gestion || {};
+    const detalle = [["Contacto", u.contacto], ["Agente", u.agente], ["Canal", u.canal]].filter(([, v]) => tieneValor(v));
+    return `<section class="crm-operativo-card crm-v2-card" aria-labelledby="tituloGestionCRM">
+        ${encabezadoBloque("Actividad de cobranza", "Última gestión", "tituloGestionCRM")}
+        ${tieneValor(u.fecha) || tieneValor(u.resultado) ? `
+            <p class="crm-v2-principal"><b>${h(fechaDato(u.fecha))}</b>${tieneValor(u.resultado) ? ` · ${h(u.resultado)}` : ""}</p>
+            <p class="crm-v2-linea">${detalle.map(([l, v]) => `<span>${h(l)} <b>${h(v)}</b></span>`).join("")}</p>`
+            : `<p class="crm-v2-vacio">Sin gestiones registradas.</p>`}
+        <p class="crm-v2-linea crm-v2-linea-suave"><span>Gestionado hoy <b>${gestion.gestionado_hoy ? "Sí" : "No"}</b></span><span>Gestiones del mes <b>${h(gestion.gestionado_mes ?? 0)}</b></span></p>
+        ${gestion.historial?.length ? `<details class="crm-details"><summary>Ver historial</summary>${renderHistorialGestion(gestion.historial)}</details>` : ""}
+    </section>`;
+}
+
+function renderCompromisosPagosV2(pagosPdp = {}) {
+    const pagos = pagosPdp.pagos || {};
+    const pdp = pagosPdp.pdp || {};
+    if (!pagos.disponible && !pdp.disponible) return "";
+    const bloquePdp = !pdp.disponible ? "" : pdp.tiene_datos ? `
+        <p class="crm-v2-principal"><b>PDP ${pdp.pdp_vigente ? "vigente" : "no vigente"}</b>${tieneValor(pdp.monto_pdp) ? ` · ${h(money(pdp.monto_pdp))}` : ""}${tieneValor(pdp.fecha_compromiso) ? ` · para el ${h(formatFecha(pdp.fecha_compromiso))}` : ""}</p>
+        <p class="crm-v2-linea">${[["Estado", pdp.estado_pdp], ["Agente", pdp.agente_pdp]].filter(([, v]) => tieneValor(v)).map(([l, v]) => `<span>${h(l)} <b>${h(v)}</b></span>`).join("")}</p>`
+        : `<p class="crm-v2-vacio">Sin PDP registrado.</p>`;
+    const bloquePagos = !pagos.disponible ? "" : pagos.tiene_datos ? `
+        <p class="crm-v2-linea crm-v2-linea-suave"><span>Último pago real <b>${h(fechaDato(pagos.ultimo_pago_real))}${tieneValor(pagos.monto_ultimo_pago) ? ` · ${h(money(pagos.monto_ultimo_pago))}` : ""}</b></span><span>Acumulado del mes <b>${h(money(pagos.pago_acumulado_mes ?? 0))}</b></span></p>`
+        : `<p class="crm-v2-linea crm-v2-linea-suave"><span>Pagos reales <b>Sin registros</b></span></p>`;
+    return `<section class="crm-operativo-card crm-v2-card" aria-labelledby="tituloPagosPdpCRM">
+        ${encabezadoBloque("Fuente operativa", "Compromiso y pagos", "tituloPagosPdpCRM")}
+        ${bloquePdp}${bloquePagos}
+    </section>`;
+}
+
+function renderMasDatosClienteV2(data) {
+    const c = data.cliente || {};
+    const s = data.situacion || {};
+    const ident = itemsDisponibles([
+        ["Edad", tieneValor(c.edad) ? `${format(c.edad)} años` : null], ["Sexo", c.sexo], ["Territorio", c.territorio],
+        ["Segmento", c.segmento], ["Línea", c.linea_negocio], ["Desembolso total", moneyDato(s.monto_desembolso)]
+    ]);
+    const contencion = renderContencionCRM(data.contencion);
+    const grupo = renderContextoGrupoCRM(data.grupo);
+    const mas = renderMasInformacionCRM(data.informacion_adicional);
+    if (!ident.length && !contencion && !grupo && !mas) return "";
+    return `<details class="crm-v2-plegable crm-v2-mas">
+        <summary>Más datos del cliente <small>contención, grupo, perfil y datos de asignación</small></summary>
+        <div class="crm-v2-mas-cuerpo">
+            ${ident.length ? renderGrupoDetalle("Perfil", ident) : ""}
+            ${contencion || grupo ? `<div class="crm-v2-grid">${contencion}${grupo}</div>` : ""}
+            ${mas}
+        </div>
+    </details>`;
+}
+
 
 function renderCabeceraClienteCRM(data) {
     const cliente = data.cliente || {};
@@ -64,7 +195,7 @@ function renderCabeceraClienteCRM(data) {
                 </div>
             </div>
             <div class="crm-estado-destacado" aria-label="Estado contractual de asignacion">
-                ${estadoDestacado("Calificación", cliente.calificacion)}
+                ${estadoCalificacionCRM(cliente)}
                 ${estadoDestacado("Condición", cliente.condicion)}
                 ${estadoDestacado("Mora máxima", tieneValor(situacion.mora_maxima) ? `${format(situacion.mora_maxima)} días` : null)}
             </div>
@@ -191,7 +322,7 @@ function renderTablaOperacionesCRM(operaciones) {
     return `<section class="cuentas-tabla-panel crm-operaciones-panel" aria-labelledby="tituloTablaOperaciones">
         ${cabeceraTabla("Operaciones del cliente", operaciones.length, "Selecciona una operación para revisar su detalle contractual y alternativas.", "tituloTablaOperaciones")}
         <div class="cuentas-tabla-scroll"><table class="cuentas-tabla cuentas-tabla-individual crm-tabla-operaciones">
-            <thead><tr><th>Operación</th><th>Producto</th><th>Estado</th><th class="numero">Mora</th><th class="numero">Capital</th><th>Qué cobrar</th><th>Contención</th><th>Acción</th></tr></thead>
+            <thead><tr><th>Operación</th><th>Producto</th><th>Estado</th><th>Calificación / cartera</th><th class="numero">Mora</th><th class="numero">Capital</th><th>Qué cobrar</th><th>Contención</th><th>Acción</th></tr></thead>
             <tbody>${operaciones.map((item, index) => renderFilaOperacionCRM(item, index)).join("")}</tbody>
         </table></div>
     </section>`;
@@ -203,7 +334,8 @@ function renderFilaOperacionCRM(item, index) {
     return `<tr class="cuenta-fila${seleccionada ? " is-selected" : ""}" data-cuenta-index="${index}">
         <td data-label="Operación"><button class="cuenta-operacion" type="button" data-seleccionar-operacion="${index}" aria-current="${seleccionada}"><strong>${h(item.operacion)}</strong><span aria-hidden="true">›</span></button></td>
         <td data-label="Producto"><strong>${h(item.producto)}</strong><span class="cuenta-secundario">${h(item.linea_negocio)}</span></td>
-        <td data-label="Estado">${h(item.condicion || item.calificacion)}</td>
+        <td data-label="Estado">${h(item.condicion)}</td>
+        <td data-label="Calificación / cartera">${celdaCalificacionOperacionCRM(item)}</td>
         <td data-label="Mora" class="numero">${tieneValor(item.dias_atraso) ? `${format(item.dias_atraso)} días` : "—"}</td>
         <td data-label="Capital" class="numero">${money(item.capital)}</td>
         <td data-label="Qué cobrar">${alternativas.length ? `<span class="crm-count-pill">${alternativas.length} alternativa${alternativas.length === 1 ? "" : "s"}</span>` : "—"}</td>
@@ -216,7 +348,7 @@ function renderDetalleOperacionCRM(item = {}) {
     const contrato = itemsDisponibles([
         ["Producto", item.producto], ["Línea", item.linea_negocio], ["Oficina", item.oficina],
         ["Territorio", item.territorio], ["Segmento", item.segmento], ["Condición", item.condicion],
-        ["Calificación", item.calificacion], ["Score", item.score], ["Tramo", item.tramo]
+        [item.tipo_calificacion || "Calificación", item.calificacion], ["Cartera de la calificación", item.cartera_calificacion], ["Score", item.score], ["Tramo", item.tramo]
     ]);
     const credito = itemsDisponibles([
         ["Desembolso", moneyDato(item.monto_desembolso)], ["Fecha desembolso", fechaDato(item.fecha_desembolso)],
@@ -279,8 +411,8 @@ function renderTablaIntegrantesCRM(integrantes, gestionDisponible) {
     const pillMora = value => tieneValor(value) ? `<span class="crm-pill ${moraMax !== null && numeroValido(value) === moraMax ? "crm-pill-alerta" : "crm-pill-neutra"}">${format(value)} días</span>` : "—";
     const pillGestion = item => !gestionDisponible ? `<span class="crm-pill crm-pill-neutra">No conectado</span>` : item.gestion?.gestionado_mes ? `<span class="crm-pill crm-pill-ok">Gestionado</span>` : `<span class="crm-pill crm-pill-alerta">Sin gestión</span>`;
     return `<section class="cuentas-tabla-panel crm-integrantes-panel" aria-labelledby="tituloIntegrantesCRM">${cabeceraTabla("Integrantes", integrantes.length, "Abre el CRM del cliente sin perder el contexto del grupo.", "tituloIntegrantesCRM")}
-        <div class="cuentas-tabla-scroll"><table class="cuentas-tabla crm-tabla-integrantes"><thead><tr><th>Integrante</th><th>DNI</th><th>Rol</th><th>Operación</th><th class="numero">Deuda</th><th class="numero">Capital</th><th class="numero">Mora</th><th class="numero">Cuotas vencidas</th><th>Último pago</th><th>Gestión</th><th>Calificación</th><th>Contención</th><th>Acción</th></tr></thead><tbody>
-            ${integrantes.map(item => `<tr class="cuenta-fila"><td data-label="Integrante"><strong>${h(item.nombre)}</strong></td><td data-label="DNI">${h(item.dni)}</td><td data-label="Rol"${tieneValor(item.rol) ? "" : ' class="sin-dato"'}>${h(item.rol)}</td><td data-label="Operación" class="crm-operacion-larga">${h(item.operaciones?.[0]?.operacion)}</td><td data-label="Deuda" class="numero">${money(item.deuda)}</td><td data-label="Capital" class="numero">${money(item.capital)}</td><td data-label="Mora" class="numero">${pillMora(item.mora)}</td><td data-label="Cuotas vencidas" class="numero">${h(item.cuotas_vencidas)}</td><td data-label="Último pago"${tieneValor(item.ultimo_pago_asignacion) ? "" : ' class="sin-dato"'}>${formatFecha(item.ultimo_pago_asignacion)}</td><td data-label="Gestión">${pillGestion(item)}</td><td data-label="Calificación"><span class="crm-pill crm-pill-neutra">${h(item.calificacion)}</span></td><td data-label="Contención"${item.contencion?.disponible ? "" : ' class="sin-dato"'}>${item.contencion?.disponible ? "Disponible" : "—"}</td><td data-label="Acción"><button class="cuenta-ver-detalle" type="button" data-buscar-entidad="${attr(item.dni || item.codigo_cliente)}">Ver cliente</button></td></tr>`).join("")}
+        <div class="cuentas-tabla-scroll"><table class="cuentas-tabla crm-tabla-integrantes"><thead><tr><th>Integrante</th><th>DNI</th><th>Rol</th><th>Operación</th><th class="numero">Deuda</th><th class="numero">Capital</th><th class="numero">Mora</th><th class="numero">Cuotas vencidas</th><th>Último pago</th><th>Gestión</th><th>Calificación / segmentación</th><th>Contención</th><th>Acción</th></tr></thead><tbody>
+            ${integrantes.map(item => `<tr class="cuenta-fila"><td data-label="Integrante"><strong>${h(item.nombre)}</strong></td><td data-label="DNI">${h(item.dni)}</td><td data-label="Rol"${tieneValor(item.rol) ? "" : ' class="sin-dato"'}>${h(item.rol)}</td><td data-label="Operación" class="crm-operacion-larga">${h(item.operaciones?.[0]?.operacion)}</td><td data-label="Deuda" class="numero">${money(item.deuda)}</td><td data-label="Capital" class="numero">${money(item.capital)}</td><td data-label="Mora" class="numero">${pillMora(item.mora)}</td><td data-label="Cuotas vencidas" class="numero">${h(item.cuotas_vencidas)}</td><td data-label="Último pago"${tieneValor(item.ultimo_pago_asignacion) ? "" : ' class="sin-dato"'}>${formatFecha(item.ultimo_pago_asignacion)}</td><td data-label="Gestión">${pillGestion(item)}</td><td data-label="Calificación / segmentación">${pildoraCalificacionCRM(item)}</td><td data-label="Contención"${item.contencion?.disponible ? "" : ' class="sin-dato"'}>${item.contencion?.disponible ? "Disponible" : "—"}</td><td data-label="Acción"><button class="cuenta-ver-detalle" type="button" data-buscar-entidad="${attr(item.dni || item.codigo_cliente)}">Ver cliente</button></td></tr>`).join("")}
         </tbody></table></div></section>`;
 }
 
@@ -521,7 +653,9 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
     const pieC = cuotas.length ? `<tfoot><tr><th scope="row" colspan="5">Total</th><td class="numero">${money(sumaArriba(capitales))}</td><td class="numero">${celdaCampana(pctCuota)}</td><td class="numero">${baseTotalCuota === null ? "—" : money(baseTotalCuota)}</td><td class="numero">${pctPropCuota === null ? "—" : money(sumaArriba(capitales.map(montoPropuesto)))}</td><td class="numero">${celdaPropuesta(pctPropCuota)}</td><td></td></tr></tfoot>` : "";
     const entradaCuota = cuotas.length ? `<div class="crm-propuesta-barra">${entrada("cuota", "Monto que ofrece el grupo", true)}${aviso(propCuota, baseTotalCuota)}<small>${pctPropCuota === null ? "Escribe el monto de negociación para calcular el % propuesta y lo que paga cada cuota." : `El grupo pagaría ${pctEntero(pctPropCuota)} del capital (descuento de ${pctEntero(100 - pctPropCuota)}); cada cuota paga su capital × ese %.`}</small></div>` : "";
 
-    const cuadro = (titulo, cabeceras, filas, pie = "", extra = "") => `<section class="crm-cuadro"><h4>${h(titulo)}</h4>${extra}<div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla"><thead><tr>${cabeceras.map(c => `<th scope="col"${/saldo|capital|integrantes|campaña|%|propuesta|camp\./i.test(c) ? ' class="numero"' : ""}>${h(c)}</th>`).join("")}</tr></thead><tbody>${filas}</tbody>${pie}</table></div></section>`;
+    const cuadro = (titulo, cabeceras, filas, pie = "", extra = "", footer = "") => `<section class="crm-cuadro"><h4>${h(titulo)}</h4>${extra}<div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla"><thead><tr>${cabeceras.map(c => `<th scope="col"${/saldo|capital|integrantes|campaña|%|propuesta|camp\./i.test(c) ? ' class="numero"' : ""}>${h(c)}</th>`).join("")}</tr></thead><tbody>${filas}</tbody>${pie}</table></div>${footer}</section>`;
+    const preparacion = prepararDocumentoCuotasCRM(data, cronograma, propCuota);
+    const accionDocumento = cuotas.length && puedePrepararDocumentoGrupoCRM() ? `<div class="crm-documento-cuotas"><button type="button" data-abrir-documentos-grupo${preparacion ? "" : " disabled"}>Preparar compromiso grupal</button><small>${preparacion ? `${preparacion.pagos.length} integrante${preparacion.pagos.length === 1 ? "" : "s"} de las cuotas ${cuotas.join(" y ")} · ${money(propCuota)}. Se abrirá en otra pestaña para revisar los montos antes de generar.` : "Ingresa una propuesta válida y verifica las cuotas para preparar el compromiso."}</small></div>` : "";
     const faltaPct = pctCuota === null || pctCancel === null || pctCliente === null ? `<p class="crm-modal-aviso crm-aviso-pct"><strong>No se pudo leer: ${[pctCliente === null ? "% Campaña Cliente" : "", pctCuota === null ? "% Campaña Cliente 100%" : "", pctCancel === null ? "% Cancelación Cliente" : ""].filter(Boolean).join(", ")}.</strong><span>La columna no existe, viene vacía o tiene valores distintos entre integrantes de compartamos_grupal. Sin ese % no se calcula la campaña.</span></p>` : "";
     return `<div class="crm-cuadros">
         ${faltaPct}<ul class="crm-cuadros-nota">
@@ -533,8 +667,81 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
         </ul>
         ${cuadro("Detalle por cliente", ["Cuenta cliente", "Campaña cancelación", "Propuesta", "% Propuesta", "Rango atraso", "Campaña", "Saldo capital", "Top_NroGru", "N° integrantes", "Saldo grupo", "Prioridad"], filasA)}
         ${cuadro("Cancelación grupo", ["Nombre grupo", "Cred. grupal", "Saldo grupo", "Rango atraso", "Camp. cancelación", "% Campaña", "Propuesta", "% Propuesta", "Top_NroGru"], filaB)}
-        ${cuadro("Cuota grupo", ["Nombre grupo", "Cred. grupal", "Saldo grupo", "Rango atraso", "N° cuota", "Capital cuota", "% campaña", "Campaña cuota", "Propuesta", "% Propuesta", "Top_NroGru"], filasC || `<tr><td colspan="11" class="sin-dato">${h(plan.motivo || "Sin cuotas a pagar determinadas.")}</td></tr>`, pieC, entradaCuota)}
+        ${cuadro("Cuota grupo", ["Nombre grupo", "Cred. grupal", "Saldo grupo", "Rango atraso", "N° cuota", "Capital cuota", "% campaña", "Campaña cuota", "Propuesta", "% Propuesta", "Top_NroGru"], filasC || `<tr><td colspan="11" class="sin-dato">${h(plan.motivo || "Sin cuotas a pagar determinadas.")}</td></tr>`, pieC, entradaCuota, accionDocumento)}
     </div>`;
+}
+
+function puedePrepararDocumentoGrupoCRM() {
+    const permiso = typeof puedeUsarVista === "function" ? puedeUsarVista("documentos") : null;
+    if (permiso !== null) return permiso;
+    const tipo = typeof normalizarTipoUsuario === "function"
+        ? normalizarTipoUsuario(localStorage.getItem("tipo"))
+        : String(localStorage.getItem("tipo") || "").trim().toUpperCase();
+    return (typeof esSupervisor === "function" && esSupervisor(tipo)) ||
+        ["ADMINISTRADOR", "JEFE DE CARTERA", "JEFE DE CARTERAS", "JEFE CARTERA"].includes(tipo);
+}
+
+function prepararDocumentoCuotasCRM(data, cronograma, propuesta) {
+    const cuotas = cronograma?.plan?.disponible ? (cronograma.plan.cuotas || []).map(String) : [];
+    const grupo = data?.grupo || {};
+    const total = cuotas.reduce((suma, cuota) => suma + (numeroValido(cronograma.totales?.[cuota]) || 0), 0);
+    const totalCentimos = Math.round(total * 100);
+    const propuestaCentimos = Math.round(Number(propuesta) * 100);
+    if (!cuotas.length || !totalCentimos || !Number.isFinite(propuestaCentimos) || propuestaCentimos <= 0 ||
+        Math.abs(Number(propuesta) * 100 - propuestaCentimos) > 1e-7 ||
+        (!grupo.codigo_grupo && !grupo.credito_grupal)) return null;
+
+    const integrantes = (cronograma.integrantes || []).map(item => ({
+        operacion: String(item.operacion || "").trim(),
+        dni: String(item.dni || "").trim(),
+        capitalCentimos: Math.round(cuotas.reduce((suma, cuota) => suma + (numeroValido(item.cuotas?.[cuota]) || 0), 0) * 100),
+    })).filter(item => item.capitalCentimos > 0);
+    if (!integrantes.length || integrantes.some(item => !item.operacion || !item.dni) ||
+        new Set(integrantes.map(item => item.operacion)).size !== integrantes.length ||
+        integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0) !== totalCentimos) return null;
+
+    // Distribuye los centimos residuales por la mayor fraccion para conservar exactamente la oferta del grupo.
+    const pagos = integrantes.map(item => {
+        const exacto = propuestaCentimos * item.capitalCentimos / totalCentimos;
+        return { ...item, centimos: Math.floor(exacto), fraccion: exacto - Math.floor(exacto) };
+    });
+    let residuo = propuestaCentimos - pagos.reduce((suma, item) => suma + item.centimos, 0);
+    pagos.sort((a, b) => b.fraccion - a.fraccion || a.operacion.localeCompare(b.operacion));
+    for (let index = 0; index < residuo; index += 1) pagos[index].centimos += 1;
+    const seleccionados = pagos.filter(item => item.centimos > 0).map(item => ({
+        operacion: item.operacion, dni: item.dni, monto: (item.centimos / 100).toFixed(2),
+    }));
+    if (!seleccionados.length) return null;
+    return {
+        version: 1,
+        creado: Date.now(),
+        usuario: String(localStorage.getItem("dni") || ""),
+        codigo_grupo: String(grupo.codigo_grupo || ""),
+        cod_cre_grupal: String(grupo.credito_grupal || ""),
+        cuotas,
+        propuesta: (propuestaCentimos / 100).toFixed(2),
+        pagos: seleccionados,
+    };
+}
+
+function abrirDocumentosGrupoCRM() {
+    if (!puedePrepararDocumentoGrupoCRM()) return;
+    const data = window._consultaCompartamosCRM;
+    const propuesta = numeroValido(window._cronogramaEstado?.propuestas?.cuota);
+    const preparacion = prepararDocumentoCuotasCRM(data, data?.cronograma_cuotas, propuesta);
+    if (!preparacion) return;
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    const identificador = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+    const clave = `crm_documento_cuotas_grupo:${identificador}`;
+    try {
+        localStorage.setItem(clave, JSON.stringify(preparacion));
+        // El fragmento lleva solo un identificador aleatorio; los datos quedan en el navegador.
+        window.open(`documentos.html#radar_cuotas=${identificador}`, "_blank", "noopener");
+    } catch (error) {
+        try { localStorage.removeItem(clave); } catch (_) { /* almacenamiento no disponible */ }
+        window.alert("No se pudo abrir el compromiso grupal. Revisa el almacenamiento del navegador e inténtalo otra vez.");
+    }
 }
 
 function montoArriba(value) {
@@ -565,6 +772,12 @@ function seleccionarOperacion(index) {
     if (!item || !host) return;
     window._indiceOperacionSeleccionada = Number(index);
     actualizarSeleccionTabla(Number(index));
+    const envoltorio = document.getElementById("detalleOperacionWrap");
+    if (envoltorio) {
+        envoltorio.open = true;
+        const resumen = document.getElementById("detalleOperacionResumen");
+        if (resumen) resumen.textContent = `Detalle de la operación ${item.operacion ?? ""}`;
+    }
     host.classList.remove("is-visible");
     host.innerHTML = renderDetalleOperacionCRM(item);
     requestAnimationFrame(() => host.classList.add("is-visible"));
@@ -624,6 +837,37 @@ function fechaDato(value) { return tieneValor(value) ? formatFecha(value) : null
 
 function encabezadoBloque(kicker, titulo, id) { return `<header class="crm-card-header"><span class="section-kicker">${h(kicker)}</span><h3 id="${attr(id)}">${h(titulo)}</h3></header>`; }
 function miniDato(label, value) { return tieneValor(value) ? `<div><span>${h(label)}</span><strong>${h(value)}</strong></div>` : ""; }
+function claseSegmentacionCRM(valor) {
+    const k = String(valor ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+    return ["verde", "ambar", "rojo"].includes(k) ? `crm-seg crm-seg-${k}` : "";
+}
+function pildoraCalificacionCRM(entidad) {
+    const valor = entidad?.calificacion;
+    if (!tieneValor(valor)) return `<span class="crm-pill crm-pill-neutra">${h(valor)}</span>`;
+    const clase = entidad.tipo_calificacion === "Segmentación" ? claseSegmentacionCRM(valor) : "";
+    return clase ? `<span class="${clase}">${h(valor)}</span>` : `<span class="crm-pill crm-pill-neutra">${h(valor)}</span>`;
+}
+function claseCarteraCRM(cartera) {
+    const k = String(cartera ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
+    return k ? `crm-cartera crm-cartera-${k}` : "crm-cartera";
+}
+function celdaCalificacionOperacionCRM(item) {
+    if (!tieneValor(item?.calificacion)) return "—";
+    const cartera = tieneValor(item.cartera_calificacion) ? `<span class="${claseCarteraCRM(item.cartera_calificacion)}">${h(item.cartera_calificacion)}</span>` : "";
+    return `<div class="crm-cal-celda">${pildoraCalificacionCRM(item)}${cartera}</div>`;
+}
+function carteraCalificacionTextoCRM(entidad) {
+    return tieneValor(entidad?.cartera_calificacion) ? `<span class="${claseCarteraCRM(entidad.cartera_calificacion)}">${h(entidad.cartera_calificacion)}</span>` : "";
+}
+function estadoCalificacionCRM(entidad) {
+    const tipo = entidad?.tipo_calificacion || "Calificación";
+    if (tipo === "Segmentación" && tieneValor(entidad?.calificacion)) {
+        return `<div><span>${h(tipo)}</span><strong>${pildoraCalificacionCRM(entidad)}</strong>${carteraCalificacionTextoCRM(entidad)}</div>`;
+    }
+    return tieneValor(entidad?.calificacion)
+        ? `<div><span>${h(tipo)}</span><strong>${h(entidad.calificacion)}</strong>${carteraCalificacionTextoCRM(entidad)}</div>`
+        : estadoDestacado(tipo, entidad?.calificacion);
+}
 function estadoDestacado(label, value) { return `<div><span>${h(label)}</span><strong>${h(value)}</strong></div>`; }
 function datoLinea(label, value) { return tieneValor(value) ? `<span><b>${h(label)}</b>${h(value)}</span>` : ""; }
 function detalleDato(label, value) { return `<div class="cuenta-detalle-item"><span>${h(label)}</span><strong>${h(value)}</strong></div>`; }
@@ -685,6 +929,7 @@ function configurarConsultaCompartamos() {
         if (tabCrono) { cambiarCronogramaCRM({ tab: tabCrono.dataset.cronoTab }); return; }
         const modoCrono = event.target.closest("[data-crono-modo]");
         if (modoCrono && !modoCrono.disabled) { cambiarCronogramaCRM({ modo: modoCrono.dataset.cronoModo }); return; }
+        if (event.target.closest("[data-abrir-documentos-grupo]:not([disabled])")) { abrirDocumentosGrupoCRM(); return; }
         if (event.target.id === "cronogramaModalCRM") { cerrarCronogramaCRM(); return; }
         const fila = event.target.closest("[data-cuenta-index]");
         if (fila && !event.target.closest("a, button, input, select, textarea")) seleccionarOperacion(fila.dataset.cuentaIndex);

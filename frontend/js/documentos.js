@@ -248,6 +248,7 @@ async function inicializarCatalogosDocumento() {
         poblarCarterasDocumento();
         poblarTiposDocumento();
         actualizarModoDocumento();
+        await cargarPreparacionCuotasGrupo();
     } catch (error) {
         mostrarEstado(error.message, "error");
     }
@@ -696,6 +697,8 @@ function actualizarModoDocumento() {
     const excepcionAyuda = document.querySelector(".documentos-exception-box small");
     if (excepcionAyuda) excepcionAyuda.textContent = esDocumentoPropiaSip()
         ? "Permite una cancelación menor al 50 % del capital."
+        : esDocumentoCuotaGrupal()
+            ? "Permite un monto menor a la cuota calculada con cargos."
         : "Permite monto menor al Mto CancelacionCliente.";
     document.getElementById("btnGenerar")?.classList.toggle("hidden", esDocumentoSoloCorreo());
     document.querySelector(".documentos-rule")?.classList.toggle("hidden", esDocumentoSoloCorreo() || esDocumentoMibancoCuotas());
@@ -714,6 +717,9 @@ function actualizarModoDocumento() {
     const importeHeader = document.querySelector("#panelResultados th:nth-child(6)");
     if (importeHeader) importeHeader.textContent = esDocumentoPropiaSip() ? "Referencia 50 % capital" : esPropia ? "Importe sugerido" : "Monto mínimo";
     const regla = document.querySelector(".documentos-rule");
+    if (regla && esDocumentoCuotaGrupal()) {
+        regla.innerHTML = "Cada monto debe ser mayor a la <strong>cuota calculada con cargos</strong>; si es menor, marca <strong>Excepción</strong> antes de generar. Revisa el fiador y la provincia.";
+    }
     if (regla && esMibanco) {
         regla.innerHTML = "Cada operación debe registrar su <strong>monto a pagar</strong>. El pago debe ser igual o mayor a la campaña de esa operación; marca <strong>Excepción</strong> solo si se permitirá un monto menor.";
     }
@@ -829,7 +835,7 @@ function obtenerFiltros() {
 }
 
 
-async function buscarDatosDocumento() {
+async function buscarDatosDocumento({ preparacion = null } = {}) {
     const filtros = obtenerFiltros();
     const carteraId = document.getElementById("documentoCartera")?.value || "";
 
@@ -875,11 +881,112 @@ async function buscarDatosDocumento() {
         }
 
         pintarResultados(documentosResultados);
-        seleccionarDocumento(0);
-        ocultarEstado();
+        if (preparacion) {
+            const error = validarPreparacionCuotasGrupo(preparacion, documentosResultados);
+            if (error) {
+                mostrarEstado(error, "warning");
+                return;
+            }
+            seleccionarDocumento(0);
+            aplicarPreparacionCuotasGrupo(preparacion);
+            mostrarEstado(`Propuesta del Radar cargada para ${preparacion.pagos.length} integrante(s) de las cuotas ${preparacion.cuotas.join(" y ")}. Los importes usan solo capital; la cuota calculada del documento incluye cargos. Revisa montos, fiador, provincia y excepción antes de generar.`, "info");
+        } else {
+            seleccionarDocumento(0);
+            ocultarEstado();
+        }
     } catch (error) {
         mostrarEstado(error.message || "No se pudo completar la consulta.", "error");
     }
+}
+
+async function cargarPreparacionCuotasGrupo() {
+    const preparacion = extraerPreparacionCuotasGrupo();
+    if (!preparacion) return;
+
+    const cartera = document.getElementById("documentoCartera");
+    const tipo = document.getElementById("documentoTipo");
+    document.getElementById("documentoEntidad").value = "Compartamos Banco";
+    poblarCarterasDocumento();
+    if (!Array.from(cartera?.options || []).some(opcion => opcion.value === "133" && !opcion.disabled)) {
+        mostrarEstado("La cartera grupal 133 no está disponible en Documentos Automatizados.", "warning");
+        return;
+    }
+    cartera.value = "133";
+    poblarTiposDocumento();
+    if (!Array.from(tipo?.options || []).some(opcion => opcion.value === "compromiso_cuota_grupal")) {
+        mostrarEstado("El convenio de cancelación cuota grupo no está disponible para la cartera 133.", "warning");
+        return;
+    }
+    tipo.value = "compromiso_cuota_grupal";
+    actualizarModoDocumento();
+    document.dispatchEvent(new Event("documentos:seleccion-desde-radar"));
+    document.getElementById("codigoGrupo").value = preparacion.codigo_grupo || "";
+    document.getElementById("codCreGrupal").value = preparacion.codigo_grupo ? "" : (preparacion.cod_cre_grupal || "");
+    await buscarDatosDocumento({ preparacion });
+}
+
+function extraerPreparacionCuotasGrupo() {
+    const fragmento = /^#radar_cuotas=([a-f0-9]{32})$/.exec(window.location.hash || "");
+    if (!fragmento) return null;
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    const clave = `crm_documento_cuotas_grupo:${fragmento[1]}`;
+    const guardado = localStorage.getItem(clave);
+    if (!guardado) return null;
+    localStorage.removeItem(clave);
+    let preparacion;
+    try { preparacion = JSON.parse(guardado); } catch (_) { return null; }
+    if (preparacion?.version !== 1 || !Number.isFinite(preparacion.creado) ||
+        Date.now() - preparacion.creado > 15 * 60 * 1000 || preparacion.creado > Date.now() ||
+        preparacion.usuario !== String(localStorage.getItem("dni") || "") ||
+        !Array.isArray(preparacion.pagos) || !preparacion.pagos.length) return null;
+    return preparacion;
+}
+
+function claveIntegranteDocumento(valor) {
+    return String(valor || "").trim().replace(/\.0+$/, "").replace(/^0+(?=\d)/, "");
+}
+
+function validarPreparacionCuotasGrupo(preparacion, resultados) {
+    const codigo = claveIntegranteDocumento(preparacion.codigo_grupo);
+    const credito = claveIntegranteDocumento(preparacion.cod_cre_grupal);
+    const grupoCoincide = item => codigo
+        ? claveIntegranteDocumento(item.CodigoGrupo) === codigo
+        : credito && claveIntegranteDocumento(item.CodCreGrupal) === credito;
+    if (!resultados.length || resultados.some(item => !grupoCoincide(item))) {
+        return "El grupo consultado en Documentos no coincide con el cronograma. Revisa la búsqueda antes de continuar.";
+    }
+    const operaciones = new Set();
+    for (const pago of preparacion.pagos) {
+        const operacion = claveIntegranteDocumento(pago.operacion);
+        const coincidencias = resultados.filter(item =>
+            claveIntegranteDocumento(item.Operacion) === operacion &&
+            claveIntegranteDocumento(item.NumDocumento) === claveIntegranteDocumento(pago.dni));
+        if (!operacion || coincidencias.length !== 1 || operaciones.has(operacion) ||
+            !/^\d+\.\d{2}$/.test(String(pago.monto)) || Number(pago.monto) <= 0) {
+            return "No se pudieron verificar todos los integrantes y montos del cronograma con la consulta de Documentos. No se aplicó la propuesta.";
+        }
+        operaciones.add(operacion);
+    }
+    const total = preparacion.pagos.reduce((suma, pago) => suma + Math.round(Number(pago.monto) * 100), 0);
+    if (total !== Math.round(Number(preparacion.propuesta) * 100)) {
+        return "Los importes del cronograma no suman la propuesta del grupo. No se aplicó la selección.";
+    }
+    return "";
+}
+
+function aplicarPreparacionCuotasGrupo(preparacion) {
+    const porOperacion = new Map(preparacion.pagos.map(pago => [claveIntegranteDocumento(pago.operacion), pago.monto]));
+    document.querySelectorAll(".integrante-activo-input").forEach(input => {
+        input.checked = porOperacion.has(claveIntegranteDocumento(input.dataset.operacion));
+    });
+    document.querySelectorAll(".monto-grupal-input").forEach(input => {
+        input.value = porOperacion.get(claveIntegranteDocumento(input.dataset.operacion)) || "";
+    });
+    const encargado = documentosResultados.find(item => porOperacion.has(claveIntegranteDocumento(item.Operacion)));
+    const selectEncargado = document.getElementById("encargadoParticipante");
+    if (encargado && selectEncargado) selectEncargado.value = String(encargado.Operacion);
+    actualizarCondonacion();
+    pintarPreviewDocumento();
 }
 
 
@@ -1678,7 +1785,7 @@ function pintarPreviewIndividual() {
 
     panel.classList.remove("hidden");
     preview.innerHTML = `
-        <h1>Transaccion extrajudicial y Cancelacion de Deuda</h1>
+        <h1>${document.getElementById("documentoTipo")?.value === "transaccion_cancelacion" ? "Convenio de Cancelación" : "Transaccion extrajudicial y Cancelacion de Deuda"}</h1>
         <p>Conste por el presente documento una Transaccion Extrajudicial y Cancelacion de Deuda, que celebran de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas 284 la victoria y representado por el sr(a) LUIS PORTUGUEZ BERROCAL identificado con DNI 10416012, por encargo de COMPARTAMOS BANCO S.A.,  en adelante COMPARTAMOS, con domicilio en Av. Paseo de la Republica N° 5895 - Interior 1301, distrito de Mira flores, provincia y departamento de Lima, inscrita en la Partida Nro. 13777030 del Registro de Personas Juridicas de la Zona Registral Nro. IX - Sede Lima y de otra parte el/la Sr (a) <strong>${escapeHtml(documentoSeleccionado.NomCliente)}</strong> identificado con DNI N°.<strong>${escapeHtml(documentoSeleccionado.NumDocumento)}</strong>, con domicilio en ${escapeHtml(documentoSeleccionado.DireccionPrincipal || "")}, distrito de ${escapeHtml(distrito)}, a quien en adelante se le denominara  EL/LA/DEUDOR/A, en los terminos y condiciones siguientes:</p>
         <p><strong><u>PRIMERA.-</u></strong> EL DEUDOR reconoce adeudar a COMPARTAMOS BANCO el credito <strong>${escapeHtml(documentoSeleccionado.Operacion)}</strong>, cuyo  importe asciende  a la suma total de S/  <strong>${moneyNumber(documentoSeleccionado.DeudaTotal)}</strong>,  segun liquidacion a la fecha.</p>
         <p><strong><u>SEGUNDA-</u></strong> De conformidad con lo senalado en la clausula anterior EL DEUDOR se obliga a cancelar a   COMPARTAMOS BANCO la deuda antes descrita de la siguiente manera:</p>
@@ -1719,7 +1826,7 @@ function pintarPreviewCuotaIndividual() {
 
     panel.classList.remove("hidden");
     preview.innerHTML = `
-        <h1>COMPROMISO DE PAGO</h1>
+        <h1>${esDocumentoCuotaIndividualGrupal() ? "Convenio cuota individual grupal" : "COMPROMISO DE PAGO"}</h1>
         <p>Conste por el presente documento una Transaccion Extrajudicial y Cancelacion de Deuda, que celebran de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas 284 la victoria y representado por el sr(a) LUIS PORTUGUEZ BERROCAL identificado con DNI 10416012, por encargo de COMPARTAMOS BANCO S.A., en adelante COMPARTAMOS, con domicilio en Av. Paseo de la Republica Nro. 5895 - Interior 1301, distrito de Miraflores, provincia y departamento de Lima, inscrita en la Partida Nro. 13777030 del Registro de Personas Juridicas de la Zona Registral Nro. IX - Sede Lima y de otra parte el/la Sr(a) <strong>${escapeHtml(documentoSeleccionado.NomCliente)}</strong> identificado con DNI Nro. <strong>${escapeHtml(documentoSeleccionado.NumDocumento)}</strong>, con domicilio en ${escapeHtml(documentoSeleccionado.DireccionPrincipal || "")}, distrito de ${escapeHtml(distrito)}, a quien en adelante se le denominara EL/LA/DEUDOR/A, en los terminos y condiciones siguientes:</p>
         <p><strong><u>PRIMERA.-</u></strong> EL DEUDOR reconoce adeudar a COMPARTAMOS BANCO el(los) credito(s) <strong>${escapeHtml(documentoSeleccionado.Operacion)}</strong>, cuyo importe asciende a la suma total de S/ <strong>${moneyNumber(deuda)}</strong>. Segun liquidacion a la fecha.</p>
         <p>Asimismo, detallamos que el importe de las cuotas vencidas Nro. ${escapeHtml(nroCuotaDocumento(documentoSeleccionado))}, asciende a S/. ${moneyNumber(cuota)}.</p>
@@ -1826,7 +1933,7 @@ function pintarPreviewCuotaGrupal() {
 
     panel.classList.remove("hidden");
     preview.innerHTML = `
-        <h1>Compromiso de pago Producto Grupal</h1>
+        <h1>Convenio de cancelación cuota grupo</h1>
         <p>Conste por el presente documento una Transaccion Extrajudicial y Cancelacion de Deuda, que celebran de una parte la Empresa de cobranza BIZNESCOB, con RUC 20602593640, con domicilio en Enrique Encinas 284 la victoria y representado por el sr(a) LUIS PORTUGUEZ BERROCAL identificado con DNI 10416012, por encargo de COMPARTAMOS BANCO S.A.,  en adelante COMPARTAMOS, con domicilio en Av. Paseo de la Republica N° 5895 - Interior 1301, distrito de Miraflores, provincia y departamento de Lima, inscrita en la Partida Nro. 13777030 del Registro de Personas Juridicas de la Zona Registral Nro. IX - Sede Lima y de otra parte en representacion del grupo <strong>${escapeHtml(documentoSeleccionado.NomGrupo)}</strong>  el Sr/Sra. <strong>${escapeHtml(fiador.nombre)}</strong>  identificado con DNI N° <strong>${escapeHtml(fiador.dni)}</strong>, con domicilio ${escapeHtml(fiador.direccion)}, distrito de ${escapeHtml(fiador.distrito)}  y provincia ${escapeHtml(fiador.provincia)}, en adelante se denominara EL/LA/DEUDOR/A, en los terminos y condiciones siguientes:</p>
         <p><strong><u>Primera:</u></strong> EL/LA/DEUDOR/A, reconoce adeudar a COMPARTAMOS, el(los) credito(s) N° ${escapeHtml(credito)}, cuyo importe asciende a la suma total de S/${moneyNumber(deudaTotal)}, segun liquidacion a la fecha.</p>
         <p>Asimismo, detallamos que el importe de las cuotas vencidas a pagar asciende a S/.${moneyNumber(totalCuota)}.</p>
@@ -1927,7 +2034,7 @@ function correoBaseCastigo(agencia = null, incluirOrigenCc = false) {
 
 function correoBaseAgenciaDestino(agencia = null) {
     return {
-        destinatarios: destinatariosCastigo(agencia),
+        destinatarios: destinatariosVigente(agencia),
         cc: ccAgenciaOrigenCastigo(agencia),
     };
 }
@@ -2516,7 +2623,7 @@ function correoCancelacionIndividual() {
     ].join("");
     return correoConHtml({
         ...correoBaseAgenciaDestino(destino),
-        asunto: `MITIGACION_VIG_CANCELACION_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
+        asunto: `${esCarteraVigenteGrupal() ? "MITIGACION_CSM_CANCELACION" : "MITIGACION_VIG_CANCELACION"}_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
 
@@ -2552,7 +2659,7 @@ function correoCuotaIndividual() {
     ].join("");
     return correoConHtml({
         ...correoBaseAgenciaDestino(destino),
-        asunto: `IND_VIGENTE_CAMPAÑA_CUOTAS_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
+        asunto: `${esCarteraVigenteGrupal() ? "CSM" : "IND"}_VIGENTE_CAMPAÑA_CUOTAS_${cliente}_${agenciaNombre}_OPERACION_${operacion}`,
     }, html);
 }
 
@@ -2733,6 +2840,24 @@ function agenciasCastigoDiferentes(origen = null, destino = null) {
 
 
 function destinatariosCastigo(agencia = null) {
+    return destinatariosCompartamosConAgencia(agencia, "Cesar Eloy Surichaqui Chirinos <supervisor.compartamos@biznescob.pe>");
+}
+
+
+function esCarteraVigenteGrupal() {
+    return Number(document.getElementById("documentoCartera")?.value) === 133;
+}
+
+
+function destinatariosVigente(agencia = null) {
+    const supervisor = esCarteraVigenteGrupal()
+        ? "Jhoslyl Venales Martinez <supervisor2.compartamos@biznescob.pe>"
+        : "María de los Angeles Perez Castro <supervisor3.compartamos@biznescob.pe>";
+    return destinatariosCompartamosConAgencia(agencia, supervisor);
+}
+
+
+function destinatariosCompartamosConAgencia(agencia = null, supervisor) {
     const destino = agencia || agenciaDestinoCastigo();
     const correosAgencia = [destino.correoGa, destino.correoAgencia].filter(Boolean);
     return correosUnicos([
@@ -2740,7 +2865,7 @@ function destinatariosCastigo(agencia = null) {
         "Evelyn Vanessa Tello Rosales <etello@compartamos.pe>",
         "Maryoreth Alisson Avalos Inciso <mavalosi@compartamos.pe>",
         "normalizacion <normalizacion@compartamos.pe>",
-        "Cesar Eloy Surichaqui Chirinos <supervisor.compartamos@biznescob.pe>",
+        supervisor,
         "administrativo@biznescob.pe",
     ]).join("; ");
 }

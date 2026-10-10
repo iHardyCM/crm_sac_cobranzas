@@ -2294,6 +2294,24 @@ body.crm-shell .metric-item { border-radius: 11px; }
     flex: 0 0 auto;
 }
 
+.crm-other-portfolio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 9px;
+    margin: 12px 0;
+    padding: 11px 13px;
+    border: 1px solid rgba(18, 101, 177, .22);
+    border-radius: 12px;
+    color: #174a76;
+    background: #f3f9ff;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.crm-other-portfolio strong {
+    flex: 0 0 auto;
+}
+
 @media (max-width: 1100px) {
     .crm-entidad-header {
         grid-template-columns: 1fr;
@@ -4061,6 +4079,11 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-cuadro-tabla td span { display: block; font-size: 10px; color: #5f6f86; }
 .crm-cuadro-tabla td.sin-dato { color: #9aa8bb; text-align: center; }
 .crm-cuadro-tabla tfoot th, .crm-cuadro-tabla tfoot td { font-weight: 800; background: #f3f7fb; }
+.crm-documento-cuotas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 0 0; }
+.crm-documento-cuotas button { border: 1px solid #b9d3ec; border-radius: 8px; padding: 6px 10px; background: #f7fbff; color: #0f4c81; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.crm-documento-cuotas button:hover:not(:disabled), .crm-documento-cuotas button:focus-visible { background: #eaf4ff; border-color: #0f4c81; }
+.crm-documento-cuotas button:disabled { opacity: .55; cursor: not-allowed; }
+.crm-documento-cuotas small { color: #5f6f86; font-size: 10.5px; line-height: 1.35; }
 
 @container (max-width: 700px) {
     .crm-cuadro-tabla thead { display: none; }
@@ -4135,3 +4158,52 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-modal-tabs button { border: 1px solid transparent; border-radius: 10px; padding: 8px 16px; margin-bottom: 0; }
 .crm-modal-tabs button[aria-selected="true"] { margin-bottom: 0; background: #fff; border-color: #d3deea; box-shadow: inset 0 -3px 0 #e8861f, 0 1px 2px rgba(15, 42, 77, .08); }
 @media (max-width: 720px) { .crm-modal-tabs { padding: 8px 10px; } }
+
+/* ===== Radar: vista de cliente ordenada por lo que se necesita al llamar (2026-10) ===== */
+.crm-v2-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.crm-v2-grid > :only-child { grid-column: 1 / -1; }
+.crm-v2-situacion { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.crm-v2-cifra { min-width: 0; padding: 15px 18px 14px; border: 1px solid rgba(148, 163, 184, .23); border-radius: 16px; background: #fff; box-shadow: 0 9px 23px rgba(15, 23, 42, .045); }
+.crm-v2-cifra span { display: block; color: #718197; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.crm-v2-cifra b { display: block; margin-top: 6px; color: #13283f; font-size: 26px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crm-v2-cifra small { display: block; margin-top: 4px; color: #718197; font-size: 11px; }
+.crm-v2-cifra.is-alerta { border-color: #f6d9bb; background: #fff7ee; }
+.crm-v2-cifra.is-alerta b { color: #8a3d0a; }
+.crm-v2-card .crm-card-header { padding-bottom: 8px; }
+.crm-v2-principal { margin: 0; padding: 2px 17px 4px; color: #13283f; font-size: 15px; line-height: 1.35; }
+.crm-v2-linea { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; padding: 2px 17px 12px; color: #5f6f86; font-size: 12px; }
+.crm-v2-linea b { color: #13283f; font-weight: 700; }
+.crm-v2-linea-suave { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, .19); }
+.crm-v2-vacio { margin: 0; padding: 2px 17px 12px; color: #718197; font-size: 12.5px; }
+.crm-v2-grupo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: #5f6f86; }
+.crm-v2-grupo strong { color: #13283f; }
+.crm-v2-plegable { margin: 12px 0; overflow: hidden; border: 1px solid rgba(148, 163, 184, .23); border-radius: 15px; background: #fff; }
+.crm-v2-plegable > summary { padding: 13px 16px; color: #0a66d8; cursor: pointer; font-size: 12px; font-weight: 850; }
+.crm-v2-plegable > summary small { margin-left: 8px; color: #718197; font-size: 11px; font-weight: 500; }
+.crm-v2-plegable[open] > summary { border-bottom: 1px solid rgba(148, 163, 184, .19); }
+.crm-v2-plegable .detalle-operacion-panel { border: 0; box-shadow: none; border-radius: 0; margin: 0; }
+.crm-v2-mas-cuerpo { display: grid; gap: 12px; padding: 12px; }
+.crm-v2-mas-cuerpo .crm-mas-informacion { margin-top: 0; }
+@media (max-width: 900px) {
+    .crm-v2-grid { grid-template-columns: minmax(0, 1fr); }
+    .crm-v2-situacion { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .crm-v2-cifra b { font-size: 22px; }
+}
+
+
+/* Segmentación de castigo (verde / ámbar / rojo) */
+.crm-seg { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 1.5; border: 1px solid transparent; }
+.crm-seg-verde { background: #e3f6ea; color: #14683a; border-color: #b6e3c7; }
+.crm-seg-ambar { background: #fff1d6; color: #8a5300; border-color: #f2d596; }
+.crm-seg-rojo { background: #fde4e4; color: #a12222; border-color: #f4b9b9; }
+.crm-estado-destacado .crm-seg { font-size: 13px; }
+
+/* Cartera de origen de la calificación */
+.crm-cal-celda { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.crm-cartera { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #eef2f7; color: #43536b; }
+.crm-cartera-individual { background: #e6f0ff; color: #1b4f9c; }
+.crm-cartera-ccm { background: #efe8fb; color: #5a2fa0; }
+.crm-cartera-grupal { background: #e0f5f3; color: #0d6b63; }
+.crm-cartera-castigo-individual { background: #fde9e0; color: #a1411a; }
+.crm-cartera-castigo-grupal { background: #fbe3ef; color: #9b2060; }
+.crm-estado-destacado .crm-cartera { margin-top: 4px; align-self: flex-start; }

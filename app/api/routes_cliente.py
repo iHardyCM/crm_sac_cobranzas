@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core import autorizacion_carteras as autorizacion
 from app.core.auth_dependencies import requiere_clave_definitiva
 from app.core.permisos_vistas import exigir_vista
-from app.services.cliente_crm_service import campo, identificador
+from app.services.cliente_crm_service import COMPARTAMOS_CARTERAS, campo, identificador
 from app.services.cliente_service import buscar_cliente
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def _denegar(usuario: Dict, motivo: str, carteras: Optional[List[int]] = None) -
     raise autorizacion.prohibido(MENSAJE_CLIENTE_NO_PERMITIDO)
 
 
-def _verificador_de_acceso(usuario: Dict) -> Optional[Callable[[List[Dict]], None]]:
+def _verificador_de_acceso(usuario: Dict, contexto: Optional[Dict] = None) -> Optional[Callable[[List[Dict]], Dict[str, set[int]]]]:
     """Regla fail closed para usuarios sin vision global.
 
     VW_CLIENTE_CRM_SAC no expone la cartera de cada operacion, asi que no se
@@ -38,14 +38,18 @@ def _verificador_de_acceso(usuario: Dict) -> Optional[Callable[[List[Dict]], Non
     completa (todas las filas que se devolverian):
       - todas las filas deben tener DNI;
       - cada DNI debe tener al menos una cartera Compartamos en SISCOB;
-      - todas esas carteras deben estar asignadas al usuario.
+      - un usuario asignado a Compartamos puede consultar cualquiera de sus
+        carteras en Radar; las otras carteras siguen fuera de su alcance.
     Si algo no se cumple o no se puede determinar: 403 y no se devuelve nada.
     """
     if autorizacion.tiene_vision_global(usuario):
         return None
-    permitidas = autorizacion.carteras_permitidas(usuario) or set()
+    asignadas = autorizacion.carteras_usuario(usuario)
+    permitidas = set(asignadas)
+    if asignadas & autorizacion.CARTERAS_COMPARTAMOS:
+        permitidas.update(autorizacion.CARTERAS_COMPARTAMOS)
 
-    def verificar(filas: List[Dict]) -> None:
+    def verificar(filas: List[Dict]) -> Dict[str, set[int]]:
         dnis = {identificador(campo(fila, "DNI")) for fila in filas}
         if not filas or "" in dnis:
             _denegar(usuario, "filas_sin_dni")
@@ -58,6 +62,11 @@ def _verificador_de_acceso(usuario: Dict) -> Optional[Callable[[List[Dict]], Non
         ajenas = carteras_cliente - permitidas
         if ajenas:
             _denegar(usuario, "cartera_no_asignada", sorted(ajenas))
+
+        if contexto is not None:
+            contexto["otras_carteras"] = sorted(carteras_cliente - asignadas)
+
+        return carteras_por_dni
 
     return verificar
 
@@ -74,7 +83,14 @@ def buscar(valor: str = Query(None), usuario: Dict = Depends(requiere_clave_defi
         raise autorizacion.prohibido(autorizacion.MENSAJE_SIN_ACCESO_MODULO)
 
     try:
-        return buscar_cliente(valor=valor, verificar_acceso=_verificador_de_acceso(usuario))
+        contexto = {}
+        resultado = buscar_cliente(valor=valor, verificar_acceso=_verificador_de_acceso(usuario, contexto))
+        if resultado.get("encontrado") and contexto.get("otras_carteras"):
+            resultado["otras_carteras_compartamos"] = [
+                {"id": cartera, "nombre": COMPARTAMOS_CARTERAS[cartera]}
+                for cartera in contexto["otras_carteras"]
+            ]
+        return resultado
     except HTTPException:
         raise
     except Exception:

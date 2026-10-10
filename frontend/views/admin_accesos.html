@@ -9,7 +9,7 @@
     <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
     <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
     <link rel="stylesheet" href="../css/admin_supervisores.css?v=9f7bb1993d">
-    <link rel="stylesheet" href="../css/admin_accesos.css?v=d0ca36c9ad">
+    <link rel="stylesheet" href="../css/admin_accesos.css?v=20261009a">
     <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
@@ -19,9 +19,20 @@
         <div>
             <span>Seguridad</span>
             <h2>Usuarios y accesos</h2>
-            <p>Gestiona cuentas y activa o quita vistas a cada usuario en pocos clics.</p>
+            <p>Gestiona cuentas, vistas y carteras adicionales de cada usuario en pocos clics.</p>
         </div>
         <button class="btn-primary" type="button" id="accesosActualizar">Actualizar</button>
+    </section>
+
+    <section id="carterasUsuarioPanel" class="card vistas-usuario-panel oculto" aria-labelledby="carterasUsuarioTitulo">
+        <div class="section-head">
+            <div>
+                <h3 id="carterasUsuarioTitulo">Carteras del usuario</h3>
+                <p>La cartera principal viene de SISCOB. Cada interruptor guarda una cartera adicional para los módulos que aplican control por cartera. Radar Compartamos comparte sus carteras automáticamente.</p>
+            </div>
+            <button class="btn-secondary" type="button" id="carterasUsuarioCerrar">Cerrar</button>
+        </div>
+        <div id="carterasUsuarioLista" class="vistas-usuario-lista" aria-live="polite"></div>
     </section>
 
     <div id="adminAccesosToast" class="admin-toast"></div>
@@ -49,12 +60,15 @@
         <div class="section-head">
             <div>
                 <h3>Usuarios activos en SISCOB</h3>
-                <p>Busca por DNI, nombres o apellidos. Solo se listan usuarios con estado A.</p>
+                <p>Busca por DNI, nombres o apellidos y filtra por cartera principal. Solo se listan usuarios con estado A.</p>
             </div>
         </div>
 
         <form id="accesosBuscarForm" class="accesos-busqueda">
             <input id="accesosBusqueda" type="search" maxlength="100" placeholder="DNI, nombres o apellidos" autocomplete="off">
+            <select id="accesosCartera" aria-label="Filtrar por cartera principal">
+                <option value="">Todas las carteras</option>
+            </select>
             <button class="btn-primary" type="submit">Buscar</button>
         </form>
 
@@ -98,12 +112,13 @@
         Las contraseñas se guardan solo como hash; nadie puede consultarlas.
         Deshabilitar la cuenta revoca la autenticación en las APIs protegidas.
         Los interruptores de vistas se aplican en las APIs de esas vistas en la siguiente petición.
+        Las carteras adicionales se reflejan en los módulos protegidos por cartera en la siguiente petición.
         La cuenta y su historial no se borran.
     </section>
 </main>
 
 <script src="../js/session.js?v=60298e1520"></script>
 <script src="../js/app_layout.js?v=876e8f616f"></script>
-<script src="../js/admin_accesos.js?v=1130dbd15b"></script>
+<script src="../js/admin_accesos.js?v=20261009a"></script>
 </body>
 </html>

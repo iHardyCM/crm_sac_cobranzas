@@ -138,7 +138,7 @@ class RepositorioAdminAccesos:
     def __init__(self, conn):
         self.conn = conn
 
-    def listar_usuarios(self, q: Optional[str], limite: int) -> List[Dict]:
+    def listar_usuarios(self, q: Optional[str], limite: int, idcartera: Optional[int] = None) -> List[Dict]:
         filtro = ""
         params = {"limite": int(limite)}
         if q:
@@ -150,6 +150,9 @@ class RepositorioAdminAccesos:
                  OR (ISNULL(U.Nombres, '') + ' ' + ISNULL(U.Apellidos, '')) LIKE :q
               )"""
             params["q"] = _texto_busqueda_like(q)
+        if idcartera is not None:
+            filtro += " AND U.IDCARTERA = :idcartera"
+            params["idcartera"] = idcartera
 
         rows = self.conn.execute(text(f"""
             SELECT TOP (:limite)
@@ -263,11 +266,12 @@ def _exigir_cuenta(repo: RepositorioAdminAccesos, dni: str) -> Dict:
 # Casos de uso
 # ---------------------------------------------------------------------------
 
-def listar_usuarios(q: Optional[str] = None, limite: int = 100) -> List[Dict]:
+def listar_usuarios(q: Optional[str] = None, limite: int = 100,
+                    idcartera: Optional[int] = None) -> List[Dict]:
     q = (q or "").strip()[:100] or None
     limite = max(1, min(int(limite or 100), LIMITE_MAXIMO_LISTADO))
     with _transaccion() as repo:
-        filas = repo.listar_usuarios(q, limite)
+        filas = repo.listar_usuarios(q, limite, idcartera)
     return [_armar_fila_listado(f) for f in filas]
 
 
@@ -433,3 +437,75 @@ def restablecer_vistas(dni: str, admin: str) -> Dict:
         """), {"dni": dni})
     _registrar("VISTAS_RESTABLECER", admin, dni, "OK")
     return {"ok": True, "dni": dni}
+
+
+# Carteras adicionales por usuario. Reutiliza la asignacion que auth_service
+# incorpora a la identidad en cada peticion; la cartera principal sigue en SISCOB.
+def listar_carteras_usuario(dni: str) -> Dict:
+    from app.services.admin_supervisores_service import listar_carteras
+
+    dni = validar_dni(dni)
+    usuario = _exigir_usuario_siscob_activo(dni)
+    catalogo = {int(c["idcartera"]): c["cartera"] for c in listar_carteras()}
+    with engine_siscob.begin() as conn:
+        auth_service.asegurar_tabla_supervisor_cartera(conn)
+        rows = conn.execute(text("""
+            SELECT idcartera
+            FROM CobAuto.dbo.CRM_SUPERVISOR_CARTERA
+            WHERE LTRIM(RTRIM(usuario)) = :dni AND activo = 1
+        """), {"dni": dni}).fetchall()
+    adicionales = {int(row.idcartera) for row in rows}
+    principal = int(usuario["idcartera"]) if usuario.get("idcartera") is not None else None
+    for cartera in adicionales:
+        catalogo.setdefault(cartera, f"Cartera {cartera}")
+    if principal is not None:
+        catalogo.setdefault(principal, f"Cartera {principal}")
+    return {
+        "dni": dni,
+        "cartera_principal": principal,
+        "carteras": [
+            {"idcartera": cartera, "nombre": nombre, "principal": cartera == principal,
+             "permitido": cartera == principal or cartera in adicionales}
+            for cartera, nombre in sorted(catalogo.items(), key=lambda item: item[1])
+        ],
+    }
+
+
+def guardar_cartera_usuario(dni: str, idcartera: int, permitido: bool, admin: str) -> Dict:
+    from app.services.admin_supervisores_service import listar_carteras
+
+    dni = validar_dni(dni)
+    usuario = _exigir_usuario_siscob_activo(dni)
+    catalogo = {int(c["idcartera"]) for c in listar_carteras()}
+    if idcartera not in catalogo:
+        raise ErrorAccesos("La cartera indicada no está en el catálogo.", 400)
+    principal = int(usuario["idcartera"]) if usuario.get("idcartera") is not None else None
+    if idcartera == principal:
+        if not permitido:
+            raise ErrorAccesos("La cartera principal se administra en SISCOB.", 409)
+        return {"ok": True, "dni": dni, "idcartera": idcartera, "permitido": True, "principal": True}
+
+    with engine_siscob.begin() as conn:
+        auth_service.asegurar_tabla_supervisor_cartera(conn)
+        row = conn.execute(text("""
+            SELECT TOP 1 id
+            FROM CobAuto.dbo.CRM_SUPERVISOR_CARTERA WITH (UPDLOCK, HOLDLOCK)
+            WHERE LTRIM(RTRIM(usuario)) = :dni AND idcartera = :idcartera
+            ORDER BY id DESC
+        """), {"dni": dni, "idcartera": idcartera}).fetchone()
+        if row:
+            conn.execute(text("""
+                UPDATE CobAuto.dbo.CRM_SUPERVISOR_CARTERA
+                SET activo = :activo, usuario_actualizacion = :admin,
+                    fecha_actualizacion = GETDATE()
+                WHERE LTRIM(RTRIM(usuario)) = :dni AND idcartera = :idcartera
+            """), {"dni": dni, "idcartera": idcartera, "activo": int(permitido), "admin": admin})
+        elif permitido:
+            conn.execute(text("""
+                INSERT INTO CobAuto.dbo.CRM_SUPERVISOR_CARTERA
+                    (usuario, idcartera, activo, usuario_actualizacion, fecha_actualizacion)
+                VALUES (:dni, :idcartera, 1, :admin, GETDATE())
+            """), {"dni": dni, "idcartera": idcartera, "admin": admin})
+    _registrar("CARTERA_" + ("PERMITIR" if permitido else "DENEGAR"), admin, dni, str(idcartera))
+    return {"ok": True, "dni": dni, "idcartera": idcartera,
+            "permitido": permitido, "principal": False}

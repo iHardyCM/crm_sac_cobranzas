@@ -60,11 +60,13 @@ class BaseFalsa:
         )
 
     # --- RepositorioAdminAccesos ---
-    def listar_usuarios(self, q, limite):
+    def listar_usuarios(self, q, limite, idcartera=None):
         filas = []
         for dni, u in sorted(self.usuarios.items()):
             texto = f"{dni} {u['nombres']} {u['apellidos']}".lower()
             if q and q.lower() not in texto:
+                continue
+            if idcartera is not None and u["idcartera"] != idcartera:
                 continue
             c = self.cuentas.get(dni) or {}
             filas.append({
@@ -241,6 +243,12 @@ class ListadoTests(BaseAccesosTest):
     def test_busqueda_por_nombre(self):
         data = routes_admin_accesos.listar_usuarios(Response(), q="olga", limite=100, admin=self.admin())["data"]
         self.assertEqual([f["dni"] for f in data], [OBJETIVO])
+
+    def test_filtro_por_cartera_principal(self):
+        data = routes_admin_accesos.listar_usuarios(
+            Response(), q=None, limite=100, idcartera=112, admin=self.admin(),
+        )["data"]
+        self.assertEqual([f["dni"] for f in data], [GESTOR])
 
     def test_estados_derivados(self):
         d = servicio.derivar_estado_acceso
@@ -532,7 +540,8 @@ class HttpAccesosTests(BaseAccesosTest):
                  ("post", f"/admin-accesos/{GESTOR}/reset-clave"), ("post", f"/admin-accesos/{GESTOR}/desbloquear"),
                  ("post", f"/admin-accesos/{GESTOR}/deshabilitar"),
                  ("get", f"/admin-accesos/{GESTOR}/vistas"),
-                 ("delete", f"/admin-accesos/{GESTOR}/vistas")]
+                 ("delete", f"/admin-accesos/{GESTOR}/vistas"),
+                 ("get", f"/admin-accesos/{GESTOR}/carteras")]
         for metodo, ruta in rutas:
             with self.subTest(ruta=ruta):
                 self.assertEqual(getattr(self.client, metodo)(ruta).status_code, 401)
@@ -544,6 +553,10 @@ class HttpAccesosTests(BaseAccesosTest):
         ruta_vista = f"/admin-accesos/{GESTOR}/vistas/gestiones"
         self.assertEqual(self.client.put(ruta_vista, json={"permitido": True}).status_code, 401)
         self.assertEqual(self.client.put(ruta_vista, json={"permitido": True},
+                                         headers=self.auth(GESTOR)).status_code, 403)
+        ruta_cartera = f"/admin-accesos/{GESTOR}/carteras/128"
+        self.assertEqual(self.client.put(ruta_cartera, json={"permitido": True}).status_code, 401)
+        self.assertEqual(self.client.put(ruta_cartera, json={"permitido": True},
                                          headers=self.auth(GESTOR)).status_code, 403)
 
     def test_admin_con_clave_temporal_bloqueado_hasta_cambiarla(self):

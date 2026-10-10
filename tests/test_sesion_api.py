@@ -115,6 +115,16 @@ class SesionApiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {"ok": 1})
 
+    def test_mantenedor_supervisores_rechaza_a_agente(self):
+        p = self._parches()
+        with p[0], p[1], p[2], p[3]:
+            respuesta = self.client.post(
+                "/admin-supervisores/asignaciones", headers=self._headers(),
+                json={"usuario": DNI, "idcarteras": [128]},
+            )
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertEqual(respuesta.headers.get("X-CRM-Codigo-Error"), "ACCESO_DENEGADO")
+
 
 if __name__ == "__main__":
     unittest.main()

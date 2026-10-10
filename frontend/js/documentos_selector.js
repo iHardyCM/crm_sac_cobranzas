@@ -52,6 +52,15 @@
             new MutationObserver(programarRender).observe(select, { childList: true, subtree: true, attributes: true });
         });
         tarjeta.classList.add("doc-pick-activo", "doc-pick-incompleto");
+        document.addEventListener("documentos:seleccion-desde-radar", () => {
+            if (NIVELES.some(def => !document.getElementById(def.id)?.value)) return;
+            NIVELES.forEach((def, i) => { previo[i] = document.getElementById(def.id).value; });
+            nivel = COMPLETO;
+            consulta = "";
+            animar = false;
+            guardarRuta();
+            programarRender();
+        });
         programarRender();
     }
 

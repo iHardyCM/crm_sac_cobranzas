@@ -216,12 +216,13 @@ class ClienteCarteraTests(BaseModulosTest):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["encontrado"])
 
-    def test_permiso_individual_habilita_monitor_solo_en_su_cartera(self):
+    def test_permiso_individual_habilita_monitor_en_compartamos(self):
         self.vistas_individuales[MONITOR] = {"clientes": True}
         propia, _, _ = self.buscar(MONITOR, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {126}})
         ajena, _, _ = self.buscar(MONITOR, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {124}})
         self.assertEqual(propia.status_code, 200)
-        self.assert_denegado(ajena)
+        self.assertEqual(ajena.status_code, 200)
+        self.assertEqual([c["id"] for c in ajena.json()["otras_carteras_compartamos"]], [124])
 
     def test_quitar_vista_cliente_bloquea_antes_de_consultar(self):
         self.vistas_individuales[GESTOR_126] = {"clientes": False}
@@ -229,30 +230,32 @@ class ClienteCarteraTests(BaseModulosTest):
         self.assert_denegado(resp)
         buscar.assert_not_called()
 
-    def test_cliente_de_otra_cartera_403(self):
-        resp, _, _ = self.buscar(GESTOR_126, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {124}})
-        self.assert_denegado(resp)
+    def test_agente_compartamos_ve_otra_cartera_con_aviso(self):
+        resp, _, _ = self.buscar(GESTOR_126, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {128}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["otras_carteras_compartamos"][0]["id"], 128)
 
-    def test_multicartera_con_una_cartera_no_asignada_403(self):
-        # Antes se devolvian todas las operaciones si una cartera coincidia.
+    def test_multicartera_compartamos_se_ve_con_aviso(self):
         filas = [fila(DNI_CLIENTE_A, "OP1"), fila(DNI_CLIENTE_A, "OP2")]
         resp, _, _ = self.buscar(GESTOR_126, filas, {DNI_CLIENTE_A: {124, 126}})
-        self.assert_denegado(resp)
-        self.assertNotIn("OP2", resp.text)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([c["id"] for c in resp.json()["otras_carteras_compartamos"]], [124])
 
     def test_multicartera_con_todas_asignadas_se_ve(self):
         resp, _, _ = self.buscar(SUPER_126_128, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {126, 128}})
         self.assertEqual(resp.status_code, 200)
 
-    def test_grupo_con_un_integrante_de_otra_cartera_403(self):
+    def test_grupo_con_integrantes_de_dos_carteras_compartamos_se_ve(self):
         filas = [fila(DNI_CLIENTE_A, "OP1"), fila(DNI_CLIENTE_B, "OP2")]
         resp, _, _ = self.buscar(GESTOR_126, filas, {DNI_CLIENTE_A: {126}, DNI_CLIENTE_B: {124}})
-        self.assert_denegado(resp)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([c["id"] for c in resp.json()["otras_carteras_compartamos"]], [124])
 
     def test_grupo_con_todos_en_su_cartera_se_ve(self):
         filas = [fila(DNI_CLIENTE_A, "OP1"), fila(DNI_CLIENTE_B, "OP2")]
         resp, _, _ = self.buscar(GESTOR_126, filas, {DNI_CLIENTE_A: {126}, DNI_CLIENTE_B: {126}})
         self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("otras_carteras_compartamos", resp.json())
 
     def test_cartera_no_determinable_403(self):
         # SISCOB no registra el DNI en ninguna cartera Compartamos.
@@ -277,14 +280,14 @@ class ClienteCarteraTests(BaseModulosTest):
         self.assertNotIn("SISCOB", resp.text)
 
     def test_idcartera_idcarteras_o_perfil_del_navegador_no_amplian(self):
-        query = "?valor=12345678&idcartera=124&idcarteras=124,128&perfil=ADMINISTRADOR&tipo=ADMINISTRADOR"
-        resp, buscar, _ = self.buscar(GESTOR_126, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {124}}, query)
+        query = "?valor=12345678&idcartera=112&idcarteras=112,128&perfil=ADMINISTRADOR&tipo=ADMINISTRADOR"
+        resp, buscar, _ = self.buscar(GESTOR_126, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {112}}, query)
         self.assert_denegado(resp)
         self.assertEqual(buscar.call_args.kwargs["valor"], "12345678")
         self.assertIsNotNone(buscar.call_args.kwargs["verificar_acceso"])
 
     def test_supervisor_con_carteras_adicionales_opera_en_ambas(self):
-        for cartera, esperado in ((126, 200), (128, 200), (124, 403)):
+        for cartera, esperado in ((126, 200), (128, 200), (124, 200)):
             with self.subTest(cartera=cartera):
                 resp, _, _ = self.buscar(SUPER_126_128, [fila(DNI_CLIENTE_A)], {DNI_CLIENTE_A: {cartera}})
                 self.assertEqual(resp.status_code, esperado)
@@ -350,6 +353,67 @@ class ClienteServicioTests(unittest.TestCase):
              patch.object(cliente_service, "construir_respuesta_crm", return_value={"encontrado": True}) as construir:
             self.assertEqual(cliente_service.buscar_cliente(valor="41000001"), {"encontrado": True})
         construir.assert_called_once()
+
+    def test_reutiliza_carteras_verificadas_al_armar_respuesta(self):
+        from app.services import cliente_service
+
+        cursor = MagicMock()
+        cursor.description = [("DNI",), ("codcliente",), ("CodOperacion",)]
+        cursor.fetchall.side_effect = [[("41000001", "C1", "OP1")], [("41000001", "C1", "OP1")]]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        carteras = {"41000001": {126, 128}}
+        with patch.object(cliente_service, "get_connection", return_value=conn), \
+             patch.object(cliente_service, "construir_respuesta_crm", return_value={"encontrado": True}) as construir:
+            cliente_service.buscar_cliente("41000001", verificar_acceso=lambda filas: carteras)
+        self.assertEqual(construir.call_args.kwargs["carteras_por_dni"], carteras)
+
+    def test_gestiones_no_repite_consulta_de_carteras_verificadas(self):
+        from app.services import cliente_crm_service
+
+        conn = MagicMock()
+        conn.execute.return_value.mappings.return_value.all.return_value = []
+        engine = MagicMock()
+        engine.connect.return_value.__enter__.return_value = conn
+        with patch.object(cliente_crm_service, "engine_siscob", engine):
+            gestion = cliente_crm_service.consultar_gestiones(["41000001"], {"41000001": {128}})
+        self.assertEqual(conn.execute.call_count, 1)
+        self.assertEqual(gestion["carteras_siscob"], [{"id": 128, "nombre": "VIGENTE CCM"}])
+
+    def test_gestiones_sin_verificador_conserva_consulta_de_carteras(self):
+        from app.services import cliente_crm_service
+
+        gestiones = MagicMock()
+        gestiones.mappings.return_value.all.return_value = []
+        carteras = MagicMock()
+        carteras.mappings.return_value.all.return_value = [{"id_cartera": 126}]
+        conn = MagicMock()
+        conn.execute.side_effect = [gestiones, carteras]
+        engine = MagicMock()
+        engine.connect.return_value.__enter__.return_value = conn
+        with patch.object(cliente_crm_service, "engine_siscob", engine):
+            gestion = cliente_crm_service.consultar_gestiones(["41000001"])
+        self.assertEqual(conn.execute.call_count, 2)
+        self.assertEqual(gestion["carteras_siscob"], [{"id": 126, "nombre": "VIGENTE INDIVIDUAL"}])
+
+    def test_grupo_usa_primera_consulta_y_descarta_colisiones_de_cliente(self):
+        from app.services import cliente_service
+
+        cursor = MagicMock()
+        cursor.description = [(nombre,) for nombre in ("DNI", "codcliente", "CodOperacion", "CodigoGrupo", "CodCreGrupal", "DiasAtraso", "Deuda_Total")]
+        cursor.fetchall.return_value = [
+            ("41000001", "341738", "OP0", None, None, 80, 999),
+            ("41000002", "C2", "OP2", "341738", "21201544", 50, 100),
+            ("41000003", "C3", "OP3", "341738", "21201544", 40, 90),
+        ]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        recibidas = []
+        with patch.object(cliente_service, "get_connection", return_value=conn), \
+             patch.object(cliente_service, "construir_respuesta_crm", return_value={"encontrado": True}):
+            cliente_service.buscar_cliente("341738", verificar_acceso=lambda filas: recibidas.extend(filas))
+        self.assertEqual([fila["CodOperacion"] for fila in recibidas], ["OP2", "OP3"])
+        self.assertEqual(cursor.execute.call_count, 1)
 
 
 class CarterasPorDniTests(unittest.TestCase):

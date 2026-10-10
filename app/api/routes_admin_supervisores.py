@@ -1,9 +1,11 @@
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+from app.core.auth_dependencies import requiere_administrador
 
 from app.services.admin_supervisores_service import (
     guardar_asignaciones,
@@ -19,7 +21,6 @@ router = APIRouter()
 class AsignacionPayload(BaseModel):
     usuario: str
     idcarteras: List[int]
-    usuario_actualizacion: str | None = None
 
 
 @router.get("")
@@ -29,7 +30,7 @@ def vista_admin_supervisores():
 
 
 @router.get("/supervisores")
-def obtener_supervisores():
+def obtener_supervisores(admin: Dict = Depends(requiere_administrador)):
     try:
         return {"data": listar_supervisores()}
     except Exception as exc:
@@ -37,7 +38,7 @@ def obtener_supervisores():
 
 
 @router.get("/carteras")
-def obtener_carteras():
+def obtener_carteras(admin: Dict = Depends(requiere_administrador)):
     try:
         return {"data": listar_carteras()}
     except Exception as exc:
@@ -45,7 +46,7 @@ def obtener_carteras():
 
 
 @router.get("/asignaciones")
-def obtener_asignaciones(usuario: str | None = None):
+def obtener_asignaciones(usuario: str | None = None, admin: Dict = Depends(requiere_administrador)):
     try:
         return {"data": listar_asignaciones(usuario)}
     except Exception as exc:
@@ -53,12 +54,12 @@ def obtener_asignaciones(usuario: str | None = None):
 
 
 @router.post("/asignaciones")
-def actualizar_asignaciones(payload: AsignacionPayload):
+def actualizar_asignaciones(payload: AsignacionPayload, admin: Dict = Depends(requiere_administrador)):
     try:
         return guardar_asignaciones(
             usuario=payload.usuario,
             idcarteras=payload.idcarteras,
-            usuario_actualizacion=payload.usuario_actualizacion or "",
+            usuario_actualizacion=admin["dni"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

@@ -17,6 +17,15 @@
     border-radius: 7px;
 }
 
+.accesos-busqueda select {
+    min-width: 210px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #c8d8ea;
+    border-radius: 7px;
+    background: #fff;
+}
+
 body.crm-shell .accesos-busqueda { margin: 0 20px 16px; }
 
 .estado-acceso {
@@ -135,4 +144,5 @@ body.crm-shell .accesos-busqueda { margin: 0 20px 16px; }
 
 @media (max-width: 720px) {
     .accesos-busqueda { flex-direction: column; }
+    .accesos-busqueda select { width: 100%; }
 }
