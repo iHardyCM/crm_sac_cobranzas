@@ -318,6 +318,62 @@ class ClienteServicioTests(unittest.TestCase):
     """buscar_cliente verifica el acceso con TODAS las filas y antes de
     consultar gestion, pagos y PDP."""
 
+    def setUp(self):
+        # La lectura de compartamos_grupal no es parte de estas pruebas: pasa las filas tal cual.
+        from app.services import cliente_service
+
+        parche = patch.object(cliente_service, "incorporar_asignacion_grupal", side_effect=lambda cursor, filas, valor: filas)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def test_operacion_de_la_asignacion_grupal_llega_al_verificador_y_a_la_respuesta(self):
+        """Si SAC trae CodigoGrupo 0 pero compartamos_grupal reconoce la operacion, se trata como grupal."""
+        from app.services import cliente_service
+
+        cursor = MagicMock()
+        cursor.description = [(nombre,) for nombre in ("DNI", "codcliente", "CodOperacion", "CodigoGrupo", "CodCreGrupal", "DiasAtraso", "Deuda_Total")]
+        cursor.fetchall.return_value = [("41000002", "C2", "OP2", "341738", "21201544", 50, 100)]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        integrante_sac_en_cero = {"DNI": "32130767", "codcliente": "C9", "CodOperacion": "OP9", "CodigoGrupo": "341738",
+                                  "CodCreGrupal": "21201544", "DiasAtraso": 70, "Deuda_Total": 800}
+        recibidas = []
+        with patch.object(cliente_service, "get_connection", return_value=conn), \
+             patch.object(cliente_service, "incorporar_asignacion_grupal",
+                          side_effect=lambda cur, filas, valor: [integrante_sac_en_cero] + filas) as incorporar, \
+             patch.object(cliente_service, "construir_respuesta_crm", return_value={"encontrado": True}) as construir:
+            cliente_service.buscar_cliente("341738", verificar_acceso=lambda filas: recibidas.extend(filas))
+        incorporar.assert_called_once()
+        self.assertEqual([fila["CodOperacion"] for fila in recibidas], ["OP9", "OP2"])
+        self.assertEqual([fila["CodOperacion"] for fila in construir.call_args.args[0]], ["OP9", "OP2"])
+
+    def test_grupo_sin_filas_en_la_vista_se_arma_solo_con_la_asignacion(self):
+        from app.services import cliente_service
+
+        cursor = MagicMock()
+        cursor.description = [("DNI",)]
+        cursor.fetchall.return_value = []
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        fila = {"DNI": "32130767", "CodOperacion": "OP9", "CodigoGrupo": "169336"}
+        with patch.object(cliente_service, "get_connection", return_value=conn), \
+             patch.object(cliente_service, "incorporar_asignacion_grupal", return_value=[fila]), \
+             patch.object(cliente_service, "construir_respuesta_crm", return_value={"encontrado": True}) as construir:
+            self.assertEqual(cliente_service.buscar_cliente("169336"), {"encontrado": True})
+        self.assertEqual(construir.call_args.args[0], [fila])
+
+    def test_sin_filas_ni_asignacion_no_encuentra(self):
+        from app.services import cliente_service
+
+        cursor = MagicMock()
+        cursor.description = [("DNI",)]
+        cursor.fetchall.return_value = []
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        with patch.object(cliente_service, "get_connection", return_value=conn), \
+             patch.object(cliente_service, "incorporar_asignacion_grupal", return_value=[]):
+            self.assertEqual(cliente_service.buscar_cliente("999999"), {"encontrado": False})
+
     def test_verificacion_antes_de_armar_la_respuesta(self):
         from app.services import cliente_service
 

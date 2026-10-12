@@ -7,6 +7,7 @@ from app.services.cliente_crm_service import (
     construir_respuesta_crm,
     identificador,
     identificador_grupo_valido,
+    incorporar_asignacion_grupal,
     resolver_tipo_resultado,
 )
 
@@ -59,17 +60,21 @@ def buscar_cliente(valor=None, verificar_acceso=None):
         cursor.execute(query, params)
         rows = cursor.fetchall()
         fin_vista = perf_counter()
-
-        if not rows:
-            if fin_vista - inicio >= 2:
-                logger.warning("Radar búsqueda lenta sin resultados vista_ms=%.0f total_ms=%.0f",
-                               (fin_vista - inicio) * 1000, (fin_vista - inicio) * 1000)
-            return {"encontrado": False}
-
-        columns = [col[0] for col in cursor.description]
+        columns = [col[0] for col in cursor.description] if rows else []
         data = [dict(zip(columns, row)) for row in rows]
-        data = resolver_filas_entidad(cursor, data, str(valor).strip())
+
+        if data:
+            data = resolver_filas_entidad(cursor, data, str(valor).strip())
+        # Si la operacion esta en la asignacion grupal, se trata como grupal aunque SAC traiga CodigoGrupo 0.
+        # Tambien cubre un grupo cuyos integrantes SAC no asocia a ese codigo.
+        data = incorporar_asignacion_grupal(cursor, data, str(valor).strip())
         fin_entidad = perf_counter()
+
+        if not data:
+            if fin_entidad - inicio >= 2:
+                logger.warning("Radar búsqueda lenta sin resultados vista_ms=%.0f total_ms=%.0f",
+                               (fin_vista - inicio) * 1000, (fin_entidad - inicio) * 1000)
+            return {"encontrado": False}
 
         carteras_por_dni = verificar_acceso(data) if verificar_acceso is not None else None
         fin_acceso = perf_counter()

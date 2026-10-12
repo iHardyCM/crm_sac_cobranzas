@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.cliente_crm_service import (  # noqa: E402
     DIAS_PROYECCION_ATRASO,
+    aplicar_calificacion_integrantes,
     aplicar_datos_grupal,
     construir_cronograma_cuotas,
     construir_datos_grupal,
@@ -60,10 +61,16 @@ class DatosGrupalTest(unittest.TestCase):
                        {"dni": "11111111", "rol": "x", "ultimo_pago_asignacion": "x", "calificacion": "x"}]
         aplicar_datos_grupal(integrantes, datos)
         self.assertEqual(integrantes[0]["rol"], "Tesorera")
-        self.assertEqual(integrantes[0]["calificacion"], "2-Deficiente")
         self.assertEqual(integrantes[0]["ultimo_pago_asignacion"][:10], "2026-09-21")
         # Sin registro en compartamos_grupal no se inventa un valor.
         self.assertIsNone(integrantes[1]["rol"])
+        # La calificacion ya no la fija aplicar_datos_grupal: sale de la asignacion (Cal_PROV para grupal).
+        for integrante in integrantes:
+            integrante["operaciones"] = [{"operacion": None}]
+        aplicar_calificacion_integrantes(integrantes, {"por_dni": {}}, datos)
+        self.assertEqual(integrantes[0]["calificacion"], "2-Deficiente")
+        self.assertEqual(integrantes[0]["tipo_calificacion"], "Calificación")
+        self.assertEqual(integrantes[0]["cartera_calificacion"], "Grupal")
         self.assertIsNone(integrantes[1]["calificacion"])
 
     def test_valores_en_conflicto_no_se_eligen(self):

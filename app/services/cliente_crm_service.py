@@ -76,6 +76,12 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
     principal = operaciones_rows[0]
     advertencias: List[str] = []
 
+    if operaciones_grupo_por_asignacion(rows):
+        advertencias.append(
+            "Una o más operaciones se tratan como grupales porque figuran en compartamos_grupal, "
+            "aunque SAC las trae con código de grupo 0 o vacío."
+        )
+
     dni = texto(campo(principal, "DNI"))
     dnis = []
     for row in rows:
@@ -101,6 +107,7 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
 
     def fuente_grupal():
         codigos = codigos_grupo(rows)
+        operaciones_grupo = operaciones_grupo_por_asignacion(rows)
         avisos: List[str] = []
         datos = grupal
         try:
@@ -110,7 +117,7 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
             avisos.append("No se pudo consultar compartamos_grupal (rol, último pago, calificación y campañas).")
         crono = cronograma
         try:
-            crono = medir_fuente("cronograma_ms", lambda: construir_cronograma_cuotas(consultar_cronograma_grupo(codigos), dnis, datos.get("por_dni", {})))
+            crono = medir_fuente("cronograma_ms", lambda: construir_cronograma_cuotas(consultar_cronograma_grupo(codigos, operaciones_grupo), dnis, datos.get("por_dni", {})))
             avisos.extend(crono.pop("advertencias", []))
         except Exception:
             avisos.append("No se pudo consultar el cronograma de cuotas atrasadas del grupo.")
@@ -485,6 +492,143 @@ def construir_integrantes(rows: List[Dict[str, Any]], gestion_por_dni: Optional[
     return integrantes
 
 
+MARCA_GRUPO_ASIGNACION = "_grupo_asignacion"
+
+
+def operaciones_grupo_por_asignacion(rows: List[Dict[str, Any]]) -> List[str]:
+    """Codigos de operacion (tal como los trae SAC) cuyo grupo se tomo de compartamos_grupal."""
+    ops: List[str] = []
+    for row in rows:
+        if row.get(MARCA_GRUPO_ASIGNACION):
+            op = identificador(campo(row, "CodOperacion", "Operacion"))
+            if op and op not in ops:
+                ops.append(op)
+    return ops
+
+
+def clave_dni_operacion(row: Dict[str, Any]) -> tuple:
+    return (clave_documento(campo(row, "DNI", "NumDocumento")), clave_documento(campo(row, "CodOperacion", "Operacion")))
+
+
+def consultar_asignacion_grupal(dnis: List[str], grupo: Optional[str]) -> List[Dict[str, Any]]:
+    """Filas de compartamos_grupal de los DNI dados y/o del grupo (CodigoGrupo o CodCreGrupal) buscado."""
+    dnis = [identificador(value) for value in dnis if identificador(value)]
+    if not dnis and not grupo:
+        return []
+    with engine_siscob.connect() as conn:
+        reales = columnas_reales_tabla(conn, "compartamos_grupal")
+
+        def col(*nombres: str) -> Optional[str]:
+            return next((reales[clave_columna(n)] for n in nombres if clave_columna(n) in reales), None)
+
+        c_dni, c_op = col("NumDocumento", "DNI"), col("Operacion", "CodOperacion")
+        c_grupo, c_cred, c_nombre = col("CodigoGrupo"), col("CodCreGrupal"), col("NomGrupo", "NombreGrupo")
+        if not c_dni or not c_op:
+            raise RuntimeError("compartamos_grupal no tiene las columnas de documento u operación esperadas")
+        sel = lambda c: f"[{c}]" if c else "NULL"  # noqa: E731
+        params: Dict[str, Any] = {}
+        condiciones: List[str] = []
+        if dnis:
+            variantes = variantes_documento(dnis)
+            params.update({f"d{i}": v for i, v in enumerate(variantes)})
+            condiciones.append(f"[{c_dni}] IN (" + ", ".join(f"CAST(:d{i} AS VARCHAR(40))" for i in range(len(variantes))) + ")")
+        if grupo and (c_grupo or c_cred):
+            params["g"] = grupo
+            for c in (c_grupo, c_cred):
+                if c:
+                    condiciones.append(f"[{c}] = CAST(:g AS VARCHAR(40))")
+        if not condiciones:
+            return []
+        query = text(f"""
+            SELECT {sel(c_dni)} AS dni, {sel(c_op)} AS operacion, {sel(c_grupo)} AS codigo_grupo,
+                   {sel(c_cred)} AS credito_grupal, {sel(c_nombre)} AS nombre_grupo
+            FROM Desarrollo.dbo.compartamos_grupal WITH(NOLOCK)
+            WHERE {" OR ".join(condiciones)}
+        """)
+        return [dict(row) for row in conn.execute(query, params).mappings().all()]
+
+
+def aplicar_grupo_asignacion(fila: Dict[str, Any], asignacion: Dict[str, Any]) -> None:
+    """Completa el grupo de la fila con el de compartamos_grupal cuando SAC lo trae en 0 o vacio.
+    Nunca pisa un codigo de grupo valido de SAC."""
+    completo = False
+    for destino, origen in (("CodigoGrupo", "codigo_grupo"), ("CodCreGrupal", "credito_grupal"), ("NombreGrupo", "nombre_grupo")):
+        nuevo = asignacion.get(origen)
+        if not identificador_grupo_valido(nuevo):
+            continue
+        clave = next((k for k in fila if clave_columna(k) == clave_columna(destino)), destino)
+        if not identificador_grupo_valido(fila.get(clave)):
+            fila[clave] = texto(nuevo)
+            completo = True
+    if completo:
+        fila[MARCA_GRUPO_ASIGNACION] = True
+
+
+def consultar_filas_vista_por_operacion(cursor, faltantes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filas de VW_CLIENTE_CRM_SAC de operaciones concretas (se busca por DNI y se filtra por operacion)."""
+    dnis = []
+    for item in faltantes:
+        dni = identificador(item.get("dni"))
+        if dni and dni not in dnis:
+            dnis.append(dni)
+    if not dnis:
+        return []
+    variantes = variantes_documento(dnis)
+    cursor.execute(
+        "SELECT * FROM VW_CLIENTE_CRM_SAC WITH(NOLOCK) WHERE DNI IN (" + ", ".join("?" for _ in variantes) + ")",
+        variantes,
+    )
+    columnas = [c[0] for c in cursor.description]
+    quiero = {clave_dni_operacion(item) for item in faltantes}
+    return [fila for fila in (dict(zip(columnas, r)) for r in cursor.fetchall()) if clave_dni_operacion(fila) in quiero]
+
+
+def incorporar_asignacion_grupal(cursor, filas: List[Dict[str, Any]], valor: Any) -> List[Dict[str, Any]]:
+    """Regla de negocio: si la operacion esta en la asignacion grupal (compartamos_grupal), es grupal,
+    aunque SAC la traiga con CodigoGrupo 0.
+      1) a las filas que ya trae la vista se les completa el grupo desde compartamos_grupal;
+      2) si se busca un grupo, se agregan los integrantes que SAC no asocia a ese grupo."""
+    buscado = identificador(valor)
+    dnis = []
+    for fila in filas:
+        dni = identificador(campo(fila, "DNI"))
+        if dni and dni not in dnis:
+            dnis.append(dni)
+    grupo = buscado if buscado.isdigit() else None
+    try:
+        asignaciones = consultar_asignacion_grupal(dnis, grupo)
+    except Exception:
+        logger.exception("No se pudo leer compartamos_grupal para completar el grupo del Radar")
+        return filas
+    por_clave: Dict[tuple, Dict[str, Any]] = {}
+    for item in asignaciones:
+        por_clave.setdefault(clave_dni_operacion(item), item)
+    for fila in filas:
+        item = por_clave.get(clave_dni_operacion(fila))
+        if item:
+            aplicar_grupo_asignacion(fila, item)
+    if not grupo:
+        return filas
+    presentes = {clave_dni_operacion(fila) for fila in filas}
+    faltantes = [
+        item for clave, item in por_clave.items()
+        if clave not in presentes and grupo in (identificador(item.get("codigo_grupo")), identificador(item.get("credito_grupal")))
+    ]
+    if not faltantes:
+        return filas
+    try:
+        nuevas = consultar_filas_vista_por_operacion(cursor, faltantes)
+    except Exception:
+        logger.exception("No se pudieron leer de la vista los integrantes de compartamos_grupal")
+        return filas
+    asignacion_de = {clave_dni_operacion(item): item for item in faltantes}
+    for fila in nuevas:
+        aplicar_grupo_asignacion(fila, asignacion_de[clave_dni_operacion(fila)])
+    combinadas = filas + nuevas
+    combinadas.sort(key=lambda f: (-(numero(campo(f, "DiasAtraso")) or 0), -(numero(campo(f, "Deuda_Total")) or 0)))
+    return combinadas
+
+
 def codigos_grupo(rows: List[Dict[str, Any]]) -> List[str]:
     codigos: List[str] = []
     for row in rows:
@@ -758,16 +902,26 @@ def aplicar_calificacion_integrantes(integrantes: List[Dict[str, Any]], asignaci
     return integrantes
 
 
-def consultar_cronograma_grupo(codigos: List[str]) -> List[Dict[str, Any]]:
-    """Filas de la carga diaria SAC del grupo (cuotas CT por integrante)."""
-    if not codigos:
+def consultar_cronograma_grupo(codigos: List[str], operaciones: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Filas de la carga diaria SAC del grupo (cuotas CT por integrante).
+
+    `operaciones`: operaciones que la asignacion grupal (compartamos_grupal) reconoce como del grupo pero que
+    SAC trae con CodigoGrupo 0; se buscan por su codigo de operacion para que entren en el cronograma."""
+    operaciones = [op for op in (operaciones or []) if op]
+    if not codigos and not operaciones:
         return []
-    params = {f"grupo_{index}": codigo for index, codigo in enumerate(codigos)}
-    marcadores = ", ".join(f":{key}" for key in params)
+    params: Dict[str, Any] = {}
+    condiciones: List[str] = []
+    if codigos:
+        params.update({f"grupo_{index}": codigo for index, codigo in enumerate(codigos)})
+        condiciones.append("S.[CodigoGrupo ] IN (" + ", ".join(f":grupo_{index}" for index in range(len(codigos))) + ")")
+    if operaciones:
+        params.update({f"op_{index}": op for index, op in enumerate(operaciones)})
+        condiciones.append("S.[Cod Operación] IN (" + ", ".join(f":op_{index}" for index in range(len(operaciones))) + ")")
     query = text(f"""
         SELECT S.*
         FROM Desarrollo.DBO.SAC_CAR_BIZNESCOB S WITH(NOLOCK)
-        WHERE S.[CodigoGrupo ] IN ({marcadores})
+        WHERE {" OR ".join(condiciones)}
     """)
     with engine_siscob.connect() as conn:
         return [dict(row) for row in conn.execute(query, params).mappings().all()]
