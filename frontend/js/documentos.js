@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         actualizarResumenCreditosPropia();
+        if (esDocumentoPropiaCuotas()) sincronizarCronogramaPropia();
         pintarPreviewDocumento();
     });
     ["cancelacion", "inicialCastigo", "cuotaPagoCastigo"].forEach(id => {
@@ -433,8 +434,12 @@ function esDocumentoPropiaCancelacion() {
     return esDocumentoPropia() && (document.getElementById("documentoTipo")?.value || "").endsWith("_cancelacion");
 }
 
+function esDocumentoPropiaConSeleccion() {
+    return esDocumentoPropiaCancelacion() || esDocumentoPropiaCuotas();
+}
+
 function creditosPropiaSeleccionados() {
-    if (!esDocumentoPropiaCancelacion()) return [];
+    if (!esDocumentoPropiaConSeleccion()) return [];
     return Array.from(document.querySelectorAll(".credito-propia-check:checked"))
         .map(input => documentosResultados[Number(input.dataset.index)])
         .filter(Boolean);
@@ -530,18 +535,19 @@ function sincronizarCronogramaPropia(preservarFechas = true) {
 function datosAcuerdoPropia() {
     const montoIngresado = Number(document.getElementById("cancelacion")?.value || 0);
     const cancelacion = Number.isFinite(montoIngresado) && montoIngresado > 0 ? montoIngresado : null;
-    const seleccionados = esDocumentoPropiaCancelacion() ? creditosPropiaSeleccionados() : [];
-    const montos = distribuirCancelacionPropia(seleccionados, montoEnCentimos(cancelacion || 0));
+    const seleccionados = creditosPropiaSeleccionados();
+    const montos = esDocumentoPropiaCancelacion()
+        ? distribuirCancelacionPropia(seleccionados, montoEnCentimos(cancelacion || 0)) : [];
     const fechaComun = document.getElementById("fechaPagoMibanco")?.value || "";
     const creditos = seleccionados.map((item, index) => {
         return {operacion: String(item.Operacion), deuda: Number(item.DeudaTotal),
             referencia: Number(item.MontoReferenciaPropia),
-            monto: montos ? montos[index] / 100 : 0,
+            monto: esDocumentoPropiaCancelacion() ? (montos ? montos[index] / 100 : 0) : null,
             fecha: fechaComun};
     });
-    const deudaTotal = esDocumentoPropiaCancelacion()
-        ? creditos.reduce((sum, item) => sum + item.deuda, 0) : Number(documentoSeleccionado?.DeudaTotal);
-    const referenciaSip = documentoSeleccionado?.MontoReferenciaPropia == null ? null : Number(documentoSeleccionado.MontoReferenciaPropia);
+    const deudaTotal = seleccionados.reduce((sum, item) => sum + Number(item.DeudaTotal), 0);
+    const referenciaSip = seleccionados.length && seleccionados.every(item => Number(item.MontoReferenciaPropia) > 0)
+        ? seleccionados.reduce((sum, item) => sum + montoEnCentimos(item.MontoReferenciaPropia), 0) / 100 : null;
     const cantidad = esDocumentoPropiaCuotas() ? Number(document.getElementById("propiaCantidadCuotas")?.value) : null;
     const pagos = esDocumentoPropiaCuotas()
         ? Array.from(document.querySelectorAll("#propiaCronograma tbody tr"), (row, index) => ({
@@ -551,7 +557,7 @@ function datosAcuerdoPropia() {
         })) : [];
     let errorPreview = null;
     const inicial = Number(document.getElementById("propiaPrimerPago")?.value || 0);
-    if (esDocumentoPropiaCancelacion() && !creditos.length) {
+    if (esDocumentoPropiaConSeleccion() && !creditos.length) {
         errorPreview = "Selecciona al menos un crédito para el acuerdo.";
     } else if (montoIngresado < 0) {
         errorPreview = "La cancelación no puede ser negativa.";
@@ -610,7 +616,7 @@ function mostrarMensajePreviewPropia(mensaje) {
 
 
 function contextoPreviewPropia() {
-    const operaciones = esDocumentoPropiaCancelacion()
+    const operaciones = esDocumentoPropiaConSeleccion()
         ? creditosPropiaSeleccionados().map(item => item.Operacion).join(",")
         : documentoSeleccionado?.Operacion;
     return [document.getElementById("documentoTipo")?.value, documentoSeleccionado?.NumDocumento, operaciones].join("|");
@@ -732,9 +738,17 @@ function actualizarModoDocumento() {
     if (regla && esSipAtencion) {
         regla.innerHTML = "Los datos del cliente y la tarjeta se obtienen de <strong>Desarrollo.dbo.actualizacionfoh</strong>. La fecha de solicitud propone la fecha actual de Lima, pero puede modificarse; el canal es siempre <strong>CALL CENTER</strong>.";
     }
-    if (regla && esPropia) regla.textContent = esDocumentoPropiaSip()
-        ? "El total se distribuye entre los créditos seleccionados. Cada crédito tiene como referencia el 50 % de su capital; un monto menor requiere marcar Excepción."
-        : "La cancelación total se distribuye entre los créditos seleccionados sin superar la deuda de cada uno. Confirma la fecha antes de descargar.";
+    if (regla && esPropia) regla.textContent = esPropiaCuotas
+        ? esDocumentoPropiaSip()
+            ? "El monto del convenio usa las obligaciones seleccionadas. Si es menor al 50 % del capital total, marca Excepción."
+            : "El monto del convenio y el cronograma usan las obligaciones seleccionadas y no pueden superar su deuda total."
+        : esDocumentoPropiaSip()
+            ? "El total se distribuye entre los créditos seleccionados. Cada crédito tiene como referencia el 50 % de su capital; un monto menor requiere marcar Excepción."
+            : "La cancelación total se distribuye entre los créditos seleccionados sin superar la deuda de cada uno. Confirma la fecha antes de descargar.";
+    const ayudaResultados = document.querySelector("#panelResultados .documentos-section-head p");
+    if (ayudaResultados) ayudaResultados.textContent = esDocumentoPropiaConSeleccion()
+        ? "Marca las operaciones que incluirá el acuerdo. Al elegir el cliente se marcan todas sus operaciones."
+        : "Selecciona la operación que se usará para completar la carta.";
     const tituloPersona = document.getElementById("tituloPersonaGrupal");
     if (tituloPersona) tituloPersona.textContent = esDocumentoCuotaGrupal() ? "Datos del fiador" : "Datos del encargado";
     const ayudaMontos = document.getElementById("ayudaMontosGrupales");
@@ -778,7 +792,7 @@ function setSummaryLabels() {
         summary[2].textContent = "Monto pagado";
     } else if (esDocumentoPropia()) {
         summary[0].textContent = esDocumentoPropiaSip() ? "Referencia total: 50 % del capital" : "Importe sugerido total";
-        summary[1].textContent = esDocumentoPropiaCancelacion() ? "Deuda total (suma)" : "Deuda total";
+        summary[1].textContent = "Deuda total (suma)";
         summary[2].textContent = esDocumentoPropiaCancelacion() ? "Cancelación total" : "Cancelación acordada";
     } else if (esDocumentoSipAtencion()) {
         summary[0].textContent = "Tipo de documento";
@@ -1011,7 +1025,7 @@ function pintarResultados(rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>
-                ${esDocumentoPropiaCancelacion() ? `<input class="credito-propia-check" type="checkbox" data-index="${index}" aria-label="Incluir crédito ${escapeAttr(item.Operacion)}">` : ""}
+                ${esDocumentoPropiaConSeleccion() ? `<input class="credito-propia-check" type="checkbox" data-index="${index}" aria-label="Incluir crédito ${escapeAttr(item.Operacion)}">` : ""}
                 <strong>${escapeHtml(item.NomCliente)}</strong>
                 <small>${escapeHtml(item.DireccionPrincipal || "")}</small>
             </td>
@@ -1024,12 +1038,12 @@ function pintarResultados(rows) {
             <td>${money(item.DeudaTotal)}</td>
             <td>${(esDocumentoPropiaSip() ? item.MontoReferenciaPropia : item.MtoCancelacionCliente) == null
                 ? "--" : money(esDocumentoPropiaSip() ? item.MontoReferenciaPropia : item.MtoCancelacionCliente)}</td>
-            <td><button class="documentos-mini-btn" type="button" data-index="${index}">${esDocumentoGrupal() ? "Usar grupo" : esDocumentoPropiaCancelacion() ? "Usar cliente" : esDocumentoSoloCorreo() ? "Usar correo" : "Seleccionar"}</button></td>
+            <td><button class="documentos-mini-btn" type="button" data-index="${index}">${esDocumentoGrupal() ? "Usar grupo" : esDocumentoPropiaConSeleccion() ? "Usar cliente" : esDocumentoSoloCorreo() ? "Usar correo" : "Seleccionar"}</button></td>
         `;
         tbody.appendChild(tr);
     });
 
-    tbody.querySelectorAll("[data-index]").forEach(button => {
+    tbody.querySelectorAll("button[data-index]").forEach(button => {
         button.addEventListener("click", () => seleccionarDocumento(Number(button.dataset.index)));
     });
 }
@@ -1048,31 +1062,22 @@ function seleccionarDocumento(index) {
         document.getElementById("clienteSeleccionado").textContent = `${valueOrDash(documentoSeleccionado.NomCliente)} - ${valueOrDash(documentoSeleccionado.NumDocumento)}`;
         document.getElementById("operacionSeleccionada").textContent = `Obligación ${valueOrDash(documentoSeleccionado.Operacion)}`;
         document.getElementById("panelOperacionesMibanco")?.classList.add("hidden");
-        if (esDocumentoPropiaCancelacion()) {
+        if (esDocumentoPropiaConSeleccion()) {
             document.querySelectorAll(".credito-propia-check").forEach(check => {
                 const item = documentosResultados[Number(check.dataset.index)];
                 check.checked = String(item?.NumDocumento || "") === String(documentoSeleccionado.NumDocumento);
                 check.disabled = !check.checked;
             });
+            if (esDocumentoPropiaCuotas()) {
+                document.getElementById("propiaCantidadCuotas").value = "1";
+                document.getElementById("propiaFechaInicial").value = document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy();
+                document.getElementById("propiaPrimerPago").value = "0.00";
+            }
             actualizarResumenCreditosPropia();
+            if (esDocumentoPropiaCuotas()) sincronizarCronogramaPropia(false);
             pintarPreviewDocumento();
             return;
         }
-        const sugerido = esDocumentoPropiaSip() ? documentoSeleccionado.MontoReferenciaPropia : documentoSeleccionado.MtoCancelacionCliente;
-        document.getElementById("montoMinimo").textContent = sugerido == null ? "--" : money(sugerido);
-        document.getElementById("deudaTotal").textContent = documentoSeleccionado.DeudaTotal == null ? "--" : money(documentoSeleccionado.DeudaTotal);
-        const monto = document.getElementById("cancelacion");
-        if (monto) {
-            monto.max = documentoSeleccionado.DeudaTotal == null ? "" : numeroInputValue(documentoSeleccionado.DeudaTotal);
-            monto.value = sugerido == null ? "" : numeroInputValue(sugerido);
-        }
-        document.getElementById("propiaCantidadCuotas").value = "1";
-        document.getElementById("propiaFechaInicial").value = document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy();
-        document.getElementById("propiaPrimerPago").value = "0.00";
-        sincronizarCronogramaPropia(false);
-        actualizarCondonacion();
-        pintarPreviewDocumento();
-        return;
     }
 
     if (esDocumentoMibanco()) {
@@ -2840,7 +2845,7 @@ function agenciasCastigoDiferentes(origen = null, destino = null) {
 
 
 function destinatariosCastigo(agencia = null) {
-    return destinatariosCompartamosConAgencia(agencia, "Cesar Eloy Surichaqui Chirinos <supervisor.compartamos@biznescob.pe>");
+    return destinatariosCompartamosConAgencia(agencia, "Cesar Eloy Surichaqui Chirinos <supervisor4.compartamos@biznescob.com.pe>");
 }
 
 
@@ -3277,7 +3282,9 @@ function construirPayloadGeneracion(formato, silencioso = false, permitirBorrado
             operacion: String(creditos[0]?.operacion || documentoSeleccionado.Operacion || ""),
             cancelacion, fecha_pago: document.getElementById("fechaPagoMibanco")?.value || fechaInputLimaHoy(),
             formato, cantidad_cuotas: cantidad, pagos_mibanco: pagos,
-            creditos_propia: creditos.map(({operacion, monto, fecha}) => ({operacion, monto: monto > 0 ? monto : null, fecha})),
+            creditos_propia: esDocumentoPropiaCuotas()
+                ? creditos.map(({operacion}) => ({operacion}))
+                : creditos.map(({operacion, monto, fecha}) => ({operacion, monto: monto > 0 ? monto : null, fecha})),
             excepcion: esDocumentoPropiaSip() && tieneExcepcion()};
     }
 

@@ -4653,8 +4653,6 @@ def generar_pdf_acuerdo_propia(docx_path, output_path, context, es_cuotas):
 def generar_documento_propia(config, dni=None, operacion=None, cancelacion=None, fecha_pago=None, formato="docx", pagos=None, cantidad_cuotas=None, permitir_preview=False, excepcion=False, creditos_propia=None):
     cartera_id = config["cartera_id"]
     es_cuotas = config["document_kind"] == "propia_cuotas"
-    if es_cuotas and creditos_propia:
-        raise ValueError("La selección de varios créditos solo está disponible para acuerdos de cancelación.")
     solicitudes = list(creditos_propia or [])
     if len(solicitudes) > 20:
         raise ValueError("Selecciona como máximo 20 créditos para un acuerdo.")
@@ -4686,12 +4684,12 @@ def generar_documento_propia(config, dni=None, operacion=None, cancelacion=None,
     for asignacion, solicitud in zip(rows, solicitudes):
         cuenta = limpiar_texto(asignacion.get("CuentaOrigen") if cartera_id == 148 else asignacion.get("Operacion"))
         deuda = decimal_value(asignacion.get("DeudaTotal"))
-        pago = decimal_value(solicitud.get("monto"))
+        pago = None if es_cuotas else decimal_value(solicitud.get("monto"))
         if not cuenta or deuda is None or deuda <= 0:
             raise ValueError("La asignación no contiene obligación o deuda total válida.")
         if limpiar_texto(asignacion.get("Moneda")).upper() not in ("S", "SOLES", "PEN", "1"):
             raise ValueError("Este modelo en soles no admite la moneda de la obligación seleccionada.")
-        if pago is None or pago <= 0:
+        if not es_cuotas and (pago is None or pago <= 0):
             if not permitir_preview:
                 raise ValueError(f"Ingresa una cancelación mayor a cero para el crédito {cuenta}.")
             pago = None
@@ -4705,23 +4703,40 @@ def generar_documento_propia(config, dni=None, operacion=None, cancelacion=None,
                 raise ValueError(f"El crédito {cuenta} no tiene capital válido para calcular el 50 % de referencia.")
             if pago < referencia_credito and not excepcion:
                 raise ValueError(f"La cancelación del crédito {cuenta} es menor al 50 % del capital (S/ {format_money(referencia_credito)}). Marca Excepción para permitirla.")
-        if creditos_propia and not permitir_preview and not limpiar_texto(solicitud.get("fecha")):
+        if creditos_propia and not es_cuotas and not permitir_preview and not limpiar_texto(solicitud.get("fecha")):
             raise ValueError(f"Ingresa la fecha de pago del crédito {cuenta}.")
-        fecha_credito = _fecha_propia(solicitud.get("fecha") or fecha_pago)
+        fecha_credito = fecha if es_cuotas else _fecha_propia(solicitud.get("fecha") or fecha_pago)
         if fecha_credito != fecha:
             raise ValueError("Todos los créditos de la cancelación deben tener la misma fecha de pago.")
         creditos.append({"row": asignacion, "operacion": cuenta, "deuda": deuda,
                          "monto": pago, "fecha": fecha_credito, "referencia": referencia_credito})
     deuda_total = sum((item["deuda"] for item in creditos), Decimal("0"))
-    monto = sum((item["monto"] or Decimal("0") for item in creditos), Decimal("0")) or None
     monto_solicitado = decimal_value(cancelacion)
     if creditos_propia and not permitir_preview and monto_solicitado is None:
         raise ValueError("Ingresa la cancelación total de los créditos seleccionados.")
-    if monto_solicitado is not None and monto_solicitado != monto:
-        raise ValueError("La cancelación total debe coincidir con la suma de los créditos seleccionados.")
+    referencias_validas = cartera_id == 148 and all(
+        item["referencia"] is not None and item["referencia"] > 0 for item in creditos
+    )
+    referencia = sum((item["referencia"] for item in creditos), Decimal("0")) if referencias_validas else None
+    if es_cuotas:
+        monto = monto_solicitado
+        if monto is not None and monto != monto.quantize(Decimal("0.01")):
+            raise ValueError("La cancelación admite como máximo dos decimales.")
+        if monto is not None and monto > deuda_total:
+            raise ValueError(f"La cancelación no puede superar la deuda total de S/ {format_money(deuda_total)}.")
+        if cartera_id == 148 and monto is not None:
+            if referencia is None or referencia <= 0:
+                raise ValueError("Una obligación SIP no tiene capital válido para calcular el 50 % de referencia.")
+            if monto < referencia and not excepcion:
+                raise ValueError(f"La cancelación es menor al 50 % del capital total (S/ {format_money(referencia)}). Marca Excepción para permitirla.")
+    else:
+        monto = sum((item["monto"] or Decimal("0") for item in creditos), Decimal("0")) or None
+        if monto_solicitado is not None and monto_solicitado != monto:
+            raise ValueError("La cancelación total debe coincidir con la suma de los créditos seleccionados.")
     if monto is None and not permitir_preview:
         raise ValueError("Ingresa un monto de cancelación mayor a cero.")
-    referencia = sum((item["referencia"] for item in creditos), Decimal("0")) if cartera_id == 148 and all(item["referencia"] is not None for item in creditos) else None
+    if monto is not None and monto <= 0 and not permitir_preview:
+        raise ValueError("Ingresa un monto de cancelación mayor a cero.")
     tipo_sql = limpiar_texto(row.get("TipoDocumento")).upper()
     if tipo_sql == "D" or "DNI" in tipo_sql:
         tipo_documento = "DNI"
