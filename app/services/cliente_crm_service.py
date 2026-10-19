@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
+from collections import Counter
 import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
@@ -946,12 +948,38 @@ def valor_unanime(valores: Iterable[Any]) -> tuple:
     return None, len(distintos) > 1
 
 
-def cuotas_por_producto(producto: Optional[str]) -> Optional[int]:
-    """14 dias -> 2 cuotas; 28 dias -> 1 cuota. Cualquier otro texto: no determinado."""
+def dias_producto(producto: Optional[str]) -> Optional[int]:
+    """Periodo entre cuotas segun ProductoCamp: 14 o 28 dias. Cualquier otro texto: no determinado."""
     if not producto:
         return None
     coincidencia = re.search(r"(?<!\d)(14|28)(?!\d)\s*d[ií]as", producto, re.IGNORECASE)
-    return CUOTAS_A_PAGAR_POR_PRODUCTO.get(int(coincidencia.group(1))) if coincidencia else None
+    return int(coincidencia.group(1)) if coincidencia else None
+
+
+def cuotas_por_producto(producto: Optional[str]) -> Optional[int]:
+    """14 dias -> 2 cuotas; 28 dias -> 1 cuota. Cualquier otro texto: no determinado."""
+    dias = dias_producto(producto)
+    return CUOTAS_A_PAGAR_POR_PRODUCTO.get(dias) if dias else None
+
+
+def fecha_sac(value: Any) -> Optional[date]:
+    """UltFecVen de SAC llega como float AAAAMMDD (20260812.0); tambien acepta date/datetime."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    entero_fecha = entero(value)
+    if entero_fecha is None or not 19000101 <= entero_fecha <= 99991231:
+        return None
+    try:
+        return date(entero_fecha // 10000, entero_fecha // 100 % 100, entero_fecha % 100)
+    except ValueError:
+        return None
+
+
+def redondear_sql(valor: float) -> int:
+    """ROUND(x, 0) de SQL Server (mitades lejos de cero); round() de Python redondea al par."""
+    return int(math.copysign(math.floor(abs(valor) + 0.5), valor))
 
 
 def construir_cronograma_cuotas(
@@ -967,6 +995,11 @@ def construir_cronograma_cuotas(
       - cuotas_total: total de la cuota con cargos por atraso
         (CT 1 + CT 11..CT 15, CT 2 + CT 21..CT 25, CT 3 + CT 31..CT 35).
     Solo se incluyen integrantes ya devueltos (y autorizados) por la consulta principal.
+
+    La matriz se muestra por NUMERO de cuota. Lo que el grupo debe pagar (plan) se decide
+    por FECHA DE VENCIMIENTO (2026-10-13, misma regla que Biznescob Analytics V1):
+    integrantes con distinto desembolso pueden deber cuotas de distinto numero que vencen
+    el mismo dia, y todos deben pagar para que el grupo contenga. Ver plan_pago_por_vencimiento.
     """
     grupal_por_dni = grupal_por_dni or {}
     advertencias: List[str] = []
@@ -995,6 +1028,7 @@ def construir_cronograma_cuotas(
         advertencias.append("Cronograma: no se encontraron en la carga SAC las columnas " + ", ".join(sorted(columnas_ct_faltantes)) + "; el total de cuota puede estar incompleto.")
 
     integrantes = []
+    ubicacion: List[Dict[str, Any]] = []
     numeros_cuota = set()
     sin_ubicacion = 0
     for key, indice in por_operacion.items():
@@ -1020,6 +1054,8 @@ def construir_cronograma_cuotas(
         elif any((valor or 0) > 0 for valor in capital + total):
             sin_ubicacion += 1
         atraso_inicio = entero(grupal.get("dias_atraso_inicio"))
+        ubicacion.append({"cuota_inicial": cuota_inicial, "capital": capital, "total": total,
+                          "fecha_ct1": fecha_sac(valor_columna(indice, "UltFecVen"))})
         integrantes.append({
             "nombre": texto(valor_columna(indice, "NomCliente")),
             "dni": texto(valor_columna(indice, "DNI")),
@@ -1038,7 +1074,9 @@ def construir_cronograma_cuotas(
             "dias_atraso_proyectado": atraso_inicio + DIAS_PROYECCION_ATRASO if atraso_inicio is not None else None,
             "cuotas_aprobadas": entero(grupal.get("cuotas_aprobadas")),
             "cuotas_pagadas": entero(grupal.get("cuotas_pagadas")),
+            "fecha_vencimiento_ct1": fecha_iso(ubicacion[-1]["fecha_ct1"]),
         })
+        integrantes[-1]["_ubicacion"] = ubicacion[-1]
     if sin_ubicacion:
         advertencias.append(
             f"Cronograma: {sin_ubicacion} integrante(s) con montos CT pero sin Ult_CuotaAtrasada; sus montos no se ubican en ninguna cuota."
@@ -1064,7 +1102,7 @@ def construir_cronograma_cuotas(
     if ambiguos:
         advertencias.append("Cronograma: el grupo tiene valores distintos en " + ", ".join(ambiguos) + "; ese dato no se muestra.")
 
-    plan = construir_plan_pago(columnas, parametros.get("producto_camp"), "producto_camp" in ambiguos)
+    plan = plan_pago_por_vencimiento(integrantes, parametros.get("producto_camp"), "producto_camp" in ambiguos, advertencias)
     return {
         "disponible": bool(integrantes),
         "fuente": "SAC_CAR_BIZNESCOB + compartamos_grupal",
@@ -1077,6 +1115,114 @@ def construir_cronograma_cuotas(
         "plan": plan,
         "advertencias": advertencias,
     }
+
+
+def plan_pago_por_vencimiento(integrantes: List[Dict[str, Any]], producto: Optional[str], producto_ambiguo: bool,
+                              advertencias: List[str]) -> Dict[str, Any]:
+    """Cuotas que debe pagar el grupo, alineadas por FECHA DE VENCIMIENTO (2026-10-13).
+
+    Misma regla que Biznescob Analytics (V1 y obligacion en cuotas):
+      1. Vencimiento de CT 1 = UltFecVen; CT 2 = + 1 periodo; CT 3 = + 2 (14 o 28 dias segun producto).
+      2. D1 = vencimiento mas antiguo del grupo entre integrantes con CT 1 > 0.
+      3. Posicion de cada CT = 1 + ROUND((vencimiento - D1) / periodo).
+      4. Cuotas exigidas = las 1 (28 dias) o 2 (14 dias) posiciones mas antiguas con capital.
+      5. Cada integrante debe sus CT en esas posiciones, aunque su numero de cuota sea otro.
+    Ejemplo real: grupo 44011, una integrante debe su N.o 2 y cinco su N.o 3, todas vencen el
+    12/08/2026: deben pagar las seis. Por numero solo se exigia la N.o 2 (1 de 6).
+
+    Agrega a cada integrante: a_pagar / a_pagar_total (por numero de cuota, para marcar la matriz)
+    y a_pagar_detalle (una fila por cuota exigida: fecha, numero, capital y total con cargos).
+    Quita el campo interno _ubicacion.
+    """
+    periodo = dias_producto(producto)
+    datos = [item.pop("_ubicacion", None) or {} for item in integrantes]
+    for item in integrantes:
+        item.update(a_pagar={}, a_pagar_total={}, a_pagar_detalle=[])
+
+    def positivo(valor: Optional[float]) -> bool:
+        return valor is not None and valor > 0
+
+    candidatos = [d["fecha_ct1"] for d in datos
+                  if d.get("fecha_ct1") and (d.get("cuota_inicial") or 0) > 0 and positivo((d.get("capital") or [None])[0])]
+    d1 = min(candidatos) if candidatos else None
+
+    posiciones: Dict[int, Dict[str, Any]] = {}
+    sin_fecha = 0
+    for d in datos:
+        d["pos1"] = None
+        con_capital = any(positivo(v) for v in d.get("capital") or [])
+        if d.get("cuota_inicial") is None or not con_capital:
+            continue
+        if not d.get("fecha_ct1") or d1 is None or periodo is None:
+            if d.get("fecha_ct1") is None:
+                sin_fecha += 1
+            continue
+        d["pos1"] = 1 + redondear_sql((d["fecha_ct1"] - d1).days / periodo)
+        for k in range(3):
+            capital_k = d["capital"][k]
+            if not positivo(capital_k):
+                continue
+            pos = d["pos1"] + k
+            info = posiciones.setdefault(pos, {"capital": 0.0, "total": 0.0, "fecha": None, "numeros": Counter()})
+            info["capital"] += capital_k
+            if positivo(d["total"][k]):
+                info["total"] += d["total"][k]
+            vence = date.fromordinal(d["fecha_ct1"].toordinal() + k * periodo)
+            info["fecha"] = vence if info["fecha"] is None or vence < info["fecha"] else info["fecha"]
+            info["numeros"][d["cuota_inicial"] + k] += 1
+    if sin_fecha:
+        advertencias.append(
+            f"Cuotas a pagar: {sin_fecha} integrante(s) sin fecha de vencimiento (UltFecVen) en la carga SAC; "
+            "no se puede saber qué cuota les corresponde y no se incluyen en lo que debe pagar el grupo."
+        )
+
+    plan = construir_plan_pago(sorted(posiciones), producto, producto_ambiguo)
+    if not plan.get("disponible"):
+        if not posiciones and sin_fecha and plan.get("motivo") == "El grupo no tiene cuotas atrasadas con monto.":
+            plan["motivo"] = "La carga SAC no trae la fecha de vencimiento (UltFecVen); no se puede determinar qué cuotas debe pagar el grupo."
+        return plan
+
+    seleccion = plan["cuotas"]
+    vencimientos = []
+    for pos in seleccion:
+        info = posiciones[pos]
+        # Numero que se muestra: el mas frecuente en esa fecha (empate: el menor). Solo informativo.
+        numero_mostrado = sorted(info["numeros"].items(), key=lambda par: (-par[1], par[0]))[0][0]
+        vencimientos.append({
+            "posicion": pos,
+            "fecha_vencimiento": info["fecha"].isoformat(),
+            "cuota": numero_mostrado,
+            "numeros": sorted(info["numeros"]),
+            "integrantes": sum(info["numeros"].values()),
+            "capital": round(info["capital"], 2),
+            "total": round(info["total"], 2),
+        })
+    fecha_por_pos = {v["posicion"]: v["fecha_vencimiento"] for v in vencimientos}
+    for item, d in zip(integrantes, datos):
+        if d.get("pos1") is None:
+            continue
+        for k in range(3):
+            pos = d["pos1"] + k
+            if pos not in fecha_por_pos:
+                continue
+            if not positivo(d["capital"][k]):
+                continue  # misma condicion que la seleccion: una cuota sin capital no se exige
+            numero_k = d["cuota_inicial"] + k
+            capital_k = round(d["capital"][k], 2)
+            total_k = round(d["total"][k], 2) if positivo(d["total"][k]) else None
+            item["a_pagar"][str(numero_k)] = capital_k
+            if total_k is not None:
+                item["a_pagar_total"][str(numero_k)] = total_k
+            item["a_pagar_detalle"].append({"fecha_vencimiento": fecha_por_pos[pos], "cuota": numero_k,
+                                            "capital": capital_k, "total": total_k})
+    plan.update(
+        cuotas=[v["cuota"] for v in vencimientos],
+        vencimientos=vencimientos,
+        alineado=all(len(v["numeros"]) == 1 for v in vencimientos),
+        regla=("14 días: 2 cuotas · 28 días: 1 cuota · las más atrasadas del grupo por fecha de vencimiento: "
+               "pagan todos los integrantes con cuota en esa fecha, aunque el número de su cuota sea otro"),
+    )
+    return plan
 
 
 def construir_plan_pago(cuotas_presentes: List[int], producto: Optional[str], producto_ambiguo: bool) -> Dict[str, Any]:

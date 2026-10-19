@@ -4207,3 +4207,9 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-cartera-castigo-individual { background: #fde9e0; color: #a1411a; }
 .crm-cartera-castigo-grupal { background: #fbe3ef; color: #9b2060; }
 .crm-estado-destacado .crm-cartera { margin-top: 4px; align-self: flex-start; }
+
+/* Cuotas a pagar por fecha de vencimiento (2026-10-13) */
+.crm-cronograma-tabla td.col-pagar .crm-cuota-numero { display: block; margin-top: 1px; font-size: 9.5px; font-weight: 600; color: #b45f0b; }
+.crm-cronograma-tabla th small { display: block; font-size: 9.5px; font-weight: 600; color: #5f6f86; }
+.crm-resumen-cuota small { display: block; margin-top: 2px; font-size: 10px; color: #5f6f86; }
+.crm-pagar-nota { margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; background: #fff7ec; color: #8a4b08; font-size: 11.5px; }

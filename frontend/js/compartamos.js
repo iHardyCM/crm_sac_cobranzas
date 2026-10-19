@@ -478,8 +478,7 @@ function pintarCronogramaCRM() {
     const parametros = cronograma.parametros || {};
     const chip = (etiqueta, valor, resaltar = false) => `<span class="crm-chip${resaltar ? " crm-chip-resalta" : ""}"><i>${h(etiqueta)}</i><b>${h(valor)}</b></span>`;
     const pct = value => tieneValor(value) ? (String(value).includes("%") ? value : `${value}%`) : null;
-    const cuotasPlan = plan.disponible ? (plan.cuotas || []) : [];
-    const textoPlan = cuotasPlan.length ? cuotasPlan.join(" y ") : null;
+    const textoPlan = plan.disponible ? textoCuotasPlanCRM(plan) : null;
     const chips = [
         chip("Producto", parametros.producto_camp),
         chip("Cuotas a pagar", textoPlan ? `${plan.cuotas_por_pagar} (${textoPlan})` : null, !!textoPlan),
@@ -515,10 +514,13 @@ function renderLeyendaCronogramaCRM(cronograma, modo) {
 // Matriz integrantes x cuota. `soloCuotas` limita las columnas (pestaña "Cuotas a pagar").
 function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     const plan = cronograma.plan || {};
-    const marcadas = new Set(plan.disponible ? (plan.cuotas || []).map(String) : []);
     const cuotas = (soloCuotas || cronograma.cuotas || []).map(String);
     const integrantes = cronograma.integrantes || [];
     const montos = item => (modo === "total" ? item.cuotas_total : item.cuotas) || {};
+    // La matriz sigue por número de cuota; lo que se paga se marca celda por celda (por fecha de
+    // vencimiento: un integrante puede pagar su N.° 2 y otro su N.° 3 si vencen el mismo día).
+    const aPagar = (item, numero) => plan.disponible && Object.prototype.hasOwnProperty.call(item.a_pagar || {}, numero);
+    const marcadas = new Set(cuotas.filter(numero => integrantes.some(item => aPagar(item, numero))));
     const diasTexto = value => tieneValor(value) ? `${format(value)} d` : "—";
     // Redondeo siempre hacia arriba; los totales suman lo que se ve en pantalla para que la tabla cuadre.
     const celda = (item, numero) => numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero]);
@@ -527,6 +529,7 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     const maximoFila = Math.max(0, ...totalesPorFila);
     const totalGrupo = totalesPorFila.reduce((acc, value) => acc + value, 0);
     const clasePagar = numero => marcadas.has(numero) && !soloCuotas ? " col-pagar" : "";
+    const clasePagarCelda = (item, numero) => aPagar(item, numero) && !soloCuotas ? " col-pagar" : "";
     const filas = integrantes.map((item, index) => {
         const total = totalesPorFila[index];
         const ancho = maximoFila > 0 && total > 0 ? Math.max(6, Math.round(total / maximoFila * 100)) : 0;
@@ -536,7 +539,7 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
         ${cuotas.map(numero => {
             const monto = montos(item)[numero];
             const rango = tieneValor(monto) && tieneValor(item.cuota_mas_atrasada) ? Math.min(Math.max(Number(numero) - Number(item.cuota_mas_atrasada), 0), 2) : null;
-            return `<td data-label="Cuota ${h(numero)}" class="numero ${rango === null ? "sin-monto" : `rango-${rango}`}${clasePagar(numero)}"${rango === null ? "" : ` title="${attr(money(monto))}"`}>${rango === null ? "—" : montoEntero(monto)}</td>`;
+            return `<td data-label="Cuota ${h(numero)}" class="numero ${rango === null ? "sin-monto" : `rango-${rango}`}${clasePagarCelda(item, numero)}"${rango === null ? "" : ` title="${attr(money(monto) + (aPagar(item, numero) ? " · a pagar" : ""))}"`}>${rango === null ? "—" : montoEntero(monto)}</td>`;
         }).join("")}
         <td data-label="Total" class="numero crm-cronograma-total"><b>${total > 0 ? montoEntero(total) : "—"}</b><i style="--w:${ancho}%"></i></td>
         ${soloCuotas ? "" : `<td data-label="Atraso inicio" class="numero crm-cronograma-corte">${diasTexto(item.dias_atraso_inicio)}</td>
@@ -559,21 +562,69 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     </section>`;
 }
 
+// Texto corto de una cuota exigida: "N.° 3 · vence 12/08/2026" o, si los números difieren
+// entre integrantes, "N.° 2 y 3 · vence 12/08/2026".
+function etiquetaVencimientoCRM(venc) {
+    const numeros = (venc.numeros && venc.numeros.length ? venc.numeros : [venc.cuota]).map(n => format(n));
+    return `N.° ${numeros.join(" y ")} · vence ${formatFecha(venc.fecha_vencimiento)}`;
+}
+
+function textoCuotasPlanCRM(plan) {
+    const vencimientos = plan.vencimientos || [];
+    if (vencimientos.length) return vencimientos.map(etiquetaVencimientoCRM).join(" · ");
+    return (plan.cuotas || []).length ? plan.cuotas.join(" y ") : null;
+}
+
+// Cuotas a pagar del grupo por FECHA DE VENCIMIENTO (regla 2026-10-13): una columna por cuota
+// exigida; cada integrante paga su cuota de esa fecha, aunque su número sea otro.
 function renderCronogramaPagarCRM(cronograma, modo) {
     const plan = cronograma.plan || {};
     if (!plan.disponible) return `<div class="crm-modal-aviso"><strong>No se puede determinar las cuotas a pagar.</strong><span>${h(plan.motivo || "Sin información suficiente.")}</span></div>`;
-    const cuotas = (plan.cuotas || []).map(String);
+    const vencimientos = plan.vencimientos || [];
     const integrantes = cronograma.integrantes || [];
-    const montos = item => (modo === "total" ? item.cuotas_total : item.cuotas) || {};
-    const sumaCuota = numero => integrantes.reduce((acc, item) => acc + (numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero])), 0);
-    const total = integrantes.reduce((acc, item) => acc + cuotas.reduce((a, numero) => a + (numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero])), 0), 0);
-    const resumen = cuotas.map(numero => `<div class="crm-resumen-cuota"><span>Cuota ${h(numero)}</span><b>${montoEntero(sumaCuota(numero))}</b></div>`).join("");
+    const detalle = (item, venc) => (item.a_pagar_detalle || []).find(d => d.fecha_vencimiento === venc.fecha_vencimiento) || null;
+    const monto = (item, venc) => { const d = detalle(item, venc); return d ? numeroValido(modo === "total" ? d.total : d.capital) : null; };
+    const celda = (item, venc) => { const m = monto(item, venc); return m === null ? 0 : montoArriba(m); };
+    const totalesFila = integrantes.map(item => vencimientos.reduce((acc, venc) => acc + celda(item, venc), 0));
+    const totalVenc = venc => integrantes.reduce((acc, item) => acc + celda(item, venc), 0);
+    const total = totalesFila.reduce((acc, value) => acc + value, 0);
+    const maximo = Math.max(0, ...totalesFila);
+    const pagan = venc => integrantes.filter(item => monto(item, venc) !== null).length;
+    const resumen = vencimientos.map(venc => `<div class="crm-resumen-cuota"><span>${h(etiquetaVencimientoCRM(venc))}</span><b>${montoEntero(totalVenc(venc))}</b><small>${h(format(pagan(venc)))} de ${h(format(integrantes.length))} integrantes</small></div>`).join("");
+    const filas = integrantes.map((item, index) => {
+        const totalFila = totalesFila[index];
+        const ancho = maximo > 0 && totalFila > 0 ? Math.max(6, Math.round(totalFila / maximo * 100)) : 0;
+        const rol = tieneValor(item.rol) && String(item.rol).toLowerCase() !== "integrante" ? `<em class="crm-rol">${h(item.rol)}</em>` : "";
+        return `<tr style="--i:${index}">
+        <th scope="row" data-label="Integrante"><strong>${h(item.nombre)}</strong><span>${h(item.dni)}${rol}</span></th>
+        ${vencimientos.map(venc => {
+            const d = detalle(item, venc);
+            const m = monto(item, venc);
+            return m === null
+                ? `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero sin-monto">—</td>`
+                : `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero col-pagar" title="${attr(`${money(m)} · cuota N.° ${d.cuota}`)}">${montoEntero(m)}<small class="crm-cuota-numero">N.° ${h(format(d.cuota))}</small></td>`;
+        }).join("")}
+        <td data-label="Total" class="numero crm-cronograma-total"><b>${totalFila > 0 ? montoEntero(totalFila) : "—"}</b><i style="--w:${ancho}%"></i></td>
+    </tr>`;
+    }).join("");
+    const titulo = modo === "total" ? "A pagar · total de la cuota (S/)" : "A pagar · cuota capital (S/)";
+    const aviso = plan.alineado === false ? `<p class="crm-pagar-nota">Los integrantes tienen cronogramas desplazados: en una misma fecha vencen cuotas de distinto número. Pagan todos los que tienen cuota en esa fecha.</p>` : "";
     return `<div class="crm-pagar-resumen">
-            <p><b>${h(plan.cuotas_por_pagar)} cuota${plan.cuotas_por_pagar === 1 ? "" : "s"} por pagar</b> · producto ${h(plan.producto)} · siempre las más atrasadas del grupo</p>
+            <p><b>${h(plan.cuotas_por_pagar)} cuota${plan.cuotas_por_pagar === 1 ? "" : "s"} por pagar</b> · producto ${h(plan.producto)} · las más atrasadas del grupo por fecha de vencimiento</p>
+            ${aviso}
             <div class="crm-resumen-fila">${resumen}<div class="crm-resumen-cuota crm-resumen-total"><span>A cobrar al grupo</span><b>${montoEntero(total)}</b></div></div>
         </div>
-        ${renderMatrizCronogramaCRM(cronograma, modo, cuotas)}
-        <footer class="crm-cronograma-leyenda"><span class="crm-leyenda-nota">${modo === "total" ? "Incluye capital y otros cargos por atraso de cada cuota." : "Solo cuota capital."} Redondeado hacia arriba al sol por integrante; el exacto aparece al pasar el cursor.</span></footer>`;
+        <section class="crm-cronograma-panel" aria-label="${attr(titulo)}">
+            <table class="crm-cronograma-tabla">
+                <thead>
+                    <tr><th scope="col" rowspan="2" class="crm-col-nombre">Integrante</th><th scope="colgroup" colspan="${vencimientos.length + 1}" class="numero">${h(titulo)}</th></tr>
+                    <tr>${vencimientos.map(venc => `<th scope="col" class="numero">Vence ${h(formatFecha(venc.fecha_vencimiento))}<small>N.° ${h(((venc.numeros && venc.numeros.length) ? venc.numeros : [venc.cuota]).join(" y "))}</small></th>`).join("")}<th scope="col" class="numero">Total</th></tr>
+                </thead>
+                <tbody>${filas}</tbody>
+                <tfoot><tr><th scope="row" data-label="Total">Total</th>${vencimientos.map(venc => `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero">${montoEntero(totalVenc(venc))}</td>`).join("")}<td data-label="Total" class="numero">${montoEntero(total)}</td></tr></tfoot>
+            </table>
+        </section>
+        <footer class="crm-cronograma-leyenda"><span class="crm-leyenda-nota">${modo === "total" ? "Incluye capital y otros cargos por atraso de cada cuota." : "Solo cuota capital."} Debajo de cada monto, el número de la cuota de ese integrante. Redondeado hacia arriba al sol por integrante; el exacto aparece al pasar el cursor.</span></footer>`;
 }
 
 // Primer número de un texto como "45% Capital" -> 45. Sin número legible no se calcula nada.
@@ -636,9 +687,11 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
     const filaB = `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(vencidoGrupo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="Camp. cancelación" class="numero">${solCuadro(baseCancel)}</td><td data-label="% Campaña" class="numero">${celdaCampana(pctCancel)}</td><td data-label="Propuesta" class="numero">${entrada("cancelacion", "Propuesta")}${aviso(propCancel, baseCancel)}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCancel)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
 
     const saldo = hayCapital ? Math.round(saldoGrupo * 100) / 100 : null;
-    // Cuota grupo: por cada cuota a pagar, suma del capital de todos los integrantes (lo mismo que ve el gestor en la matriz).
-    const cuotas = plan.disponible ? (plan.cuotas || []).map(String) : [];
-    const capitales = cuotas.map(n => numeroValido(cronograma.totales?.[n]));
+    // Cuota grupo: por cada cuota a pagar (fecha de vencimiento), suma del capital de los integrantes
+    // que tienen cuota en esa fecha, aunque su número de cuota sea distinto (regla 2026-10-13).
+    const vencimientos = plan.disponible ? (plan.vencimientos || []) : [];
+    const cuotas = vencimientos.map(etiquetaVencimientoCRM);
+    const capitales = vencimientos.map(v => numeroValido(v.capital));
     const capitalTotal = capitales.reduce((acc, v) => acc + (v || 0), 0);
     const baseCuotas = capitales.map(v => base(v, pctCuota));
     const baseTotalCuota = pctCuota === null ? null : Math.round(baseCuotas.reduce((acc, v) => acc + (v || 0), 0) * 100) / 100;
@@ -647,7 +700,7 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
     const montoPropuesto = capital => pctPropCuota !== null && capital !== null ? capital * pctPropCuota / 100 : null;
     const filasC = cuotas.map((n, i) => {
         const capital = capitales[i];
-        return `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(saldo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="N° cuota">${h(`${n}.ª cuota`)}</td><td data-label="Capital cuota" class="numero">${solCuadro(capital)}</td><td data-label="% campaña" class="numero">${celdaCampana(pctCuota)}</td><td data-label="Campaña cuota" class="numero">${solCuadro(baseCuotas[i])}</td><td data-label="Propuesta" class="numero">${solCuadro(montoPropuesto(capital))}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCuota)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
+        return `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(saldo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="N° cuota">${h(n)}</td><td data-label="Capital cuota" class="numero">${solCuadro(capital)}</td><td data-label="% campaña" class="numero">${celdaCampana(pctCuota)}</td><td data-label="Campaña cuota" class="numero">${solCuadro(baseCuotas[i])}</td><td data-label="Propuesta" class="numero">${solCuadro(montoPropuesto(capital))}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCuota)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
     }).join("");
     const sumaArriba = valores => Math.round(valores.reduce((acc, v) => acc + (v === null ? 0 : v), 0) * 100) / 100;
     const pieC = cuotas.length ? `<tfoot><tr><th scope="row" colspan="5">Total</th><td class="numero">${money(sumaArriba(capitales))}</td><td class="numero">${celdaCampana(pctCuota)}</td><td class="numero">${baseTotalCuota === null ? "—" : money(baseTotalCuota)}</td><td class="numero">${pctPropCuota === null ? "—" : money(sumaArriba(capitales.map(montoPropuesto)))}</td><td class="numero">${celdaPropuesta(pctPropCuota)}</td><td></td></tr></tfoot>` : "";
@@ -655,7 +708,7 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
 
     const cuadro = (titulo, cabeceras, filas, pie = "", extra = "", footer = "") => `<section class="crm-cuadro"><h4>${h(titulo)}</h4>${extra}<div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla"><thead><tr>${cabeceras.map(c => `<th scope="col"${/saldo|capital|integrantes|campaña|%|propuesta|camp\./i.test(c) ? ' class="numero"' : ""}>${h(c)}</th>`).join("")}</tr></thead><tbody>${filas}</tbody>${pie}</table></div>${footer}</section>`;
     const preparacion = prepararDocumentoCuotasCRM(data, cronograma, propCuota);
-    const accionDocumento = cuotas.length && puedePrepararDocumentoGrupoCRM() ? `<div class="crm-documento-cuotas"><button type="button" data-abrir-documentos-grupo${preparacion ? "" : " disabled"}>Preparar compromiso grupal</button><small>${preparacion ? `${preparacion.pagos.length} integrante${preparacion.pagos.length === 1 ? "" : "s"} de las cuotas ${cuotas.join(" y ")} · ${money(propCuota)}. Se abrirá en otra pestaña para revisar los montos antes de generar.` : "Ingresa una propuesta válida y verifica las cuotas para preparar el compromiso."}</small></div>` : "";
+    const accionDocumento = cuotas.length && puedePrepararDocumentoGrupoCRM() ? `<div class="crm-documento-cuotas"><button type="button" data-abrir-documentos-grupo${preparacion ? "" : " disabled"}>Preparar compromiso grupal</button><small>${preparacion ? `${preparacion.pagos.length} integrante${preparacion.pagos.length === 1 ? "" : "s"} · ${cuotas.join(" y ")} · ${money(propCuota)}. Se abrirá en otra pestaña para revisar los montos antes de generar.` : "Ingresa una propuesta válida y verifica las cuotas para preparar el compromiso."}</small></div>` : "";
     const faltaPct = pctCuota === null || pctCancel === null || pctCliente === null ? `<p class="crm-modal-aviso crm-aviso-pct"><strong>No se pudo leer: ${[pctCliente === null ? "% Campaña Cliente" : "", pctCuota === null ? "% Campaña Cliente 100%" : "", pctCancel === null ? "% Cancelación Cliente" : ""].filter(Boolean).join(", ")}.</strong><span>La columna no existe, viene vacía o tiene valores distintos entre integrantes de compartamos_grupal. Sin ese % no se calcula la campaña.</span></p>` : "";
     return `<div class="crm-cuadros">
         ${faltaPct}<ul class="crm-cuadros-nota">
@@ -682,9 +735,12 @@ function puedePrepararDocumentoGrupoCRM() {
 }
 
 function prepararDocumentoCuotasCRM(data, cronograma, propuesta) {
-    const cuotas = cronograma?.plan?.disponible ? (cronograma.plan.cuotas || []).map(String) : [];
+    // Cuotas exigidas por fecha de vencimiento (regla 2026-10-13); cada integrante aporta el capital
+    // de SU cuota en esas fechas (a_pagar), no el de un mismo número de cuota.
+    const vencimientos = cronograma?.plan?.disponible ? (cronograma.plan.vencimientos || []) : [];
+    const cuotas = vencimientos.map(etiquetaVencimientoCRM);
     const grupo = data?.grupo || {};
-    const total = cuotas.reduce((suma, cuota) => suma + (numeroValido(cronograma.totales?.[cuota]) || 0), 0);
+    const total = vencimientos.reduce((suma, venc) => suma + (numeroValido(venc.capital) || 0), 0);
     const totalCentimos = Math.round(total * 100);
     const propuestaCentimos = Math.round(Number(propuesta) * 100);
     if (!cuotas.length || !totalCentimos || !Number.isFinite(propuestaCentimos) || propuestaCentimos <= 0 ||
@@ -694,15 +750,17 @@ function prepararDocumentoCuotasCRM(data, cronograma, propuesta) {
     const integrantes = (cronograma.integrantes || []).map(item => ({
         operacion: String(item.operacion || "").trim(),
         dni: String(item.dni || "").trim(),
-        capitalCentimos: Math.round(cuotas.reduce((suma, cuota) => suma + (numeroValido(item.cuotas?.[cuota]) || 0), 0) * 100),
+        capitalCentimos: Math.round(Object.values(item.a_pagar || {}).reduce((suma, monto) => suma + (numeroValido(monto) || 0), 0) * 100),
     })).filter(item => item.capitalCentimos > 0);
     if (!integrantes.length || integrantes.some(item => !item.operacion || !item.dni) ||
         new Set(integrantes.map(item => item.operacion)).size !== integrantes.length ||
-        integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0) !== totalCentimos) return null;
+        // Tolerancia de 1 céntimo por integrante: el total por fecha y el de cada integrante se redondean por separado.
+        Math.abs(integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0) - totalCentimos) > integrantes.length) return null;
 
     // Distribuye los centimos residuales por la mayor fraccion para conservar exactamente la oferta del grupo.
+    const baseCentimos = integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0);
     const pagos = integrantes.map(item => {
-        const exacto = propuestaCentimos * item.capitalCentimos / totalCentimos;
+        const exacto = propuestaCentimos * item.capitalCentimos / baseCentimos;
         return { ...item, centimos: Math.floor(exacto), fraccion: exacto - Math.floor(exacto) };
     });
     let residuo = propuestaCentimos - pagos.reduce((suma, item) => suma + item.centimos, 0);
