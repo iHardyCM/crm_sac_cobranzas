@@ -99,6 +99,19 @@ def asegurar_tablas_pautas(conn) -> None:
             );
         END;
     """))
+    # Puntaje parcial (calibracion 28/10/2026). Columnas agregadas sobre la
+    # tabla existente: las pautas anteriores quedan con admite_parcial = 0 y
+    # siguen evaluandose exactamente igual que antes.
+    conn.execute(text("""
+        IF COL_LENGTH('CobAuto.dbo.CRM_IA_PAUTA_CRITERIO', 'admite_parcial') IS NULL
+            ALTER TABLE CobAuto.dbo.CRM_IA_PAUTA_CRITERIO
+                ADD admite_parcial BIT NOT NULL
+                    CONSTRAINT DF_CRM_IA_PAUTA_CRITERIO_ADMITE_PARCIAL DEFAULT 0;
+
+        IF COL_LENGTH('CobAuto.dbo.CRM_IA_PAUTA_CRITERIO', 'regla_parcial') IS NULL
+            ALTER TABLE CobAuto.dbo.CRM_IA_PAUTA_CRITERIO
+                ADD regla_parcial NVARCHAR(MAX) NULL;
+    """))
 
 
 def _limpiar_texto(value: Any, limite: Optional[int] = None) -> str:
@@ -149,6 +162,9 @@ def _normalizar_criterio(item: Dict, orden: int) -> Dict:
         "regla_cumple": _limpiar_texto(item.get("regla_cumple")),
         "regla_no_cumple": _limpiar_texto(item.get("regla_no_cumple")),
         "regla_aplicabilidad": _limpiar_texto(item.get("regla_aplicabilidad")),
+        # Un anulante no puntua, asi que tampoco puede puntuar a medias.
+        "admite_parcial": tipo != TIPO_ANULANTE_BLOQUE and _normalizar_bool(item.get("admite_parcial")),
+        "regla_parcial": _limpiar_texto(item.get("regla_parcial")),
         "criticidad": _limpiar_texto(item.get("criticidad"), 80),
         "fuente_evidencia": fuente,
         "requiere_evidencia": _normalizar_bool(item.get("requiere_evidencia")),
@@ -225,6 +241,10 @@ def validar_pauta(payload: Dict, requiere_total: bool = False) -> Dict:
                 errores.append(f"{codigo or 'Criterio'} tiene una fuente de evidencia no válida.")
             if not criterio["regla_evaluacion"]:
                 errores.append(f"{codigo or 'Criterio'} requiere una regla de evaluación.")
+            # Un parcial sin condicion escrita lo decide la IA a criterio propio,
+            # y entonces deja de ser reproducible y de poder calibrarse.
+            if criterio["admite_parcial"] and not criterio["regla_parcial"]:
+                errores.append(f"{codigo or 'Criterio'} admite parcial: define cuándo es parcial.")
     if not pauta["bloques"]:
         errores.append("La pauta debe incluir al menos un bloque.")
     if requiere_total and round(total, 2) != 100.0:
@@ -253,7 +273,7 @@ def _obtener_pauta_conn(conn, id_pauta: int) -> Optional[Dict]:
         SELECT id_bloque, codigo_criterio, nombre, tipo_criterio, peso, detalle,
                regla_evaluacion, regla_cumple, regla_no_cumple, regla_aplicabilidad,
                criticidad, fuente_evidencia, requiere_evidencia, puede_descalificar,
-               recomendacion, orden, activo
+               recomendacion, orden, activo, admite_parcial, regla_parcial
         FROM CobAuto.dbo.CRM_IA_PAUTA_CRITERIO
         WHERE id_pauta = :id_pauta
         ORDER BY orden, id_criterio
@@ -265,6 +285,7 @@ def _obtener_pauta_conn(conn, id_pauta: int) -> Optional[Dict]:
         item["requiere_evidencia"] = bool(item.get("requiere_evidencia"))
         item["puede_descalificar"] = bool(item.get("puede_descalificar"))
         item["activo"] = bool(item.get("activo"))
+        item["admite_parcial"] = bool(item.get("admite_parcial"))
         criterios_por_bloque[item.pop("id_bloque")].append(item)
     data["bloques"] = []
     for bloque in bloques:
@@ -382,12 +403,12 @@ def guardar_borrador(payload: Dict, usuario_actualizacion: str = "") -> Dict:
                         (id_pauta, id_bloque, codigo_criterio, nombre, tipo_criterio, peso, detalle,
                          regla_evaluacion, regla_cumple, regla_no_cumple, regla_aplicabilidad,
                          criticidad, fuente_evidencia, requiere_evidencia, puede_descalificar,
-                         recomendacion, orden, activo)
+                         recomendacion, orden, activo, admite_parcial, regla_parcial)
                     VALUES
                         (:id_pauta, :id_bloque, :codigo_criterio, :nombre, :tipo_criterio, :peso, :detalle,
                          :regla_evaluacion, :regla_cumple, :regla_no_cumple, :regla_aplicabilidad,
                          :criticidad, :fuente_evidencia, :requiere_evidencia, :puede_descalificar,
-                         :recomendacion, :orden, :activo)
+                         :recomendacion, :orden, :activo, :admite_parcial, :regla_parcial)
                 """), {**criterio, "id_pauta": id_pauta, "id_bloque": id_bloque})
         guardada = _obtener_pauta_conn(conn, int(id_pauta))
     return {"ok": True, "pauta": guardada, "validacion": validar_pauta(guardada, requiere_total=False)}
@@ -595,25 +616,69 @@ def criterios_pauta_publicada_para_cartera(cartera: Optional[str]) -> Optional[L
     return criterios
 
 
-def aplicar_anulantes_bloque(criterios: List[Dict]) -> List[Dict]:
-    """Un anulante confirmado pone a cero el bloque, sin falsear estados individuales."""
-    anulantes = {
-        str(item.get("bloque") or item.get("subcategoria") or "")
+# --- Puntaje por estado ------------------------------------------------------
+#
+# UNA sola tabla para todo el modulo: motor, calibracion y reporteria. Si cada
+# uno tuviera su propia regla, la nota IA, la nota calibrada y la del reporte
+# podrian diferir para la misma llamada sin que nadie se entere.
+#
+# PARCIAL_MEDIO es el unico parcial que usan las pautas dinamicas (50% del
+# peso). ALTO y BAJO existen solo por el pipeline historico sin pauta.
+FACTOR_PUNTAJE_ESTADO = {
+    "CUMPLE": 1.0,
+    "PARCIAL_ALTO": 0.75,
+    "PARCIAL_MEDIO": 0.5,
+    "PARCIAL_BAJO": 0.25,
+}
+ESTADO_PARCIAL_PAUTA = "PARCIAL_MEDIO"
+
+
+def puntaje_por_estado(estado: Any, peso: Any) -> float:
+    factor = FACTOR_PUNTAJE_ESTADO.get(str(estado or "").strip().upper(), 0.0)
+    return round(_numero(peso) * factor, 2)
+
+
+def bloques_anulados(criterios: Iterable[Dict], estado_de=None, bloque_de=None) -> set:
+    """Bloques con un criterio anulante en NO_CUMPLE.
+
+    estado_de / bloque_de permiten usarlo sobre filas de tabla (resultado
+    vigente, codigo_bloque) y no solo sobre los criterios del motor.
+    """
+    estado_de = estado_de or (lambda item: item.get("estado"))
+    bloque_de = bloque_de or (lambda item: item.get("bloque") or item.get("subcategoria"))
+    return {
+        str(bloque_de(item) or "")
         for item in criterios
         if str(item.get("tipo_criterio") or "").upper() == TIPO_ANULANTE_BLOQUE
-        and str(item.get("estado") or "").upper() == "NO_CUMPLE"
+        and str(estado_de(item) or "").upper() == "NO_CUMPLE"
     }
-    if not anulantes:
-        return criterios
+
+
+def aplicar_anulantes_bloque(criterios: List[Dict]) -> List[Dict]:
+    """Un anulante confirmado pone a cero el bloque, sin falsear estados individuales.
+
+    Es idempotente y reversible: se ejecuta despues de cada pasada de guardas
+    (tambien al releer la ficha). Si el anulante deja de estar en NO_CUMPLE
+    -por ejemplo, una guarda lo confirma como CUMPLE-, los criterios del
+    bloque recuperan el puntaje que les corresponde por su estado.
+    """
+    anulantes = bloques_anulados(criterios)
     for item in criterios:
         bloque = str(item.get("bloque") or item.get("subcategoria") or "")
-        if bloque not in anulantes:
-            continue
-        item["bloque_anulado"] = True
-        item["puntaje_obtenido"] = 0.0
-        item["nota"] = 0.0
-        item["nota_ia"] = 0.0
-        item["nota_final"] = 0.0
-        if str(item.get("tipo_criterio") or "").upper() != TIPO_ANULANTE_BLOQUE:
-            item["motivo_bloque_anulado"] = "El bloque fue anulado por un criterio anulante incumplido."
+        if bloque in anulantes:
+            item["bloque_anulado"] = True
+            item["puntaje_obtenido"] = 0.0
+            item["nota"] = 0.0
+            item["nota_ia"] = 0.0
+            item["nota_final"] = 0.0
+            if str(item.get("tipo_criterio") or "").upper() != TIPO_ANULANTE_BLOQUE:
+                item["motivo_bloque_anulado"] = "El bloque fue anulado por un criterio anulante incumplido."
+        elif item.get("bloque_anulado"):
+            puntaje = puntaje_por_estado(item.get("estado"), item.get("peso"))
+            item["bloque_anulado"] = False
+            item["motivo_bloque_anulado"] = ""
+            item["puntaje_obtenido"] = puntaje
+            item["nota"] = puntaje
+            item["nota_ia"] = puntaje
+            item["nota_final"] = puntaje
     return criterios

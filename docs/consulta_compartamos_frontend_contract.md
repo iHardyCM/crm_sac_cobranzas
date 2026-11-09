@@ -145,6 +145,19 @@ Reglas (definidas por negocio, solo capital sin intereses ni cargos):
 - Sin porcentaje legible no se calcula (se avisa en el modal). No se bloquea una propuesta menor a la campaña; solo se señala como excepción.
 - Rango atraso, Top_NroGru, Prioridad y la propuesta por cliente quedan en "—" hasta definir reglas.
 
+## Estado de cuenta individual / CCM (solo `CLIENTE`)
+
+Bloque `operaciones[i].estado_cuenta`, visible en un modal abierto con el botón "Estado de cuenta" (fila de la operación y detalle). Especificación completa: `docs/estado_cuenta_individual_compartamos.md`. Referencia visual: `docs/prototipos/estado_cuenta_individual.html`.
+
+- Aplica solo si el número de operación figura en `Desarrollo.dbo.compartamos_individual` o `Desarrollo.dbo.compartamos_ccm` (cruce con `clave_documento`, sin ceros a la izquierda). Si no, `{"aplica": false}` y no hay botón. Grupal y castigo no aplican.
+- Montos y fechas de `SAC_CAR_BIZNESCOB` (filtrado por DNI): misma ubicación que el cronograma grupal (`CT 1` en `Ult_CuotaAtrasada`, `CT 2` y `CT 3` en las siguientes). Capital `CT k`; "Intereses, moras y gastos" = `CT k1..k5` sumados (el desglose va en el tooltip).
+- Vencimiento de `CT 1` = `UltFecVen`. `CT 2` y `CT 3` se proyectan al mismo día de los meses siguientes y se marcan como estimados (≈), hasta que Compartamos confirme la frecuencia (`MESES_ENTRE_CUOTAS_ESTIMADO`).
+- Fecha de corte = `UltFecVen + DiasAtraso`, así la cuota más antigua tiene exactamente `DiasAtraso` días. "Si paga hasta aquí" = días de la siguiente cuota vencida (0 = al día). Solo se calcula si la carga trae todas las cuotas vencidas (`Nro_CuotasVencidas`) y hay fechas.
+- Conciliación informativa: cuotas en la carga vs. vencidas, y capital de las cuotas vs. `SdoCapitalVencido`. No se ajusta ningún monto.
+- Pantalla: capital y cargos se redondean hacia arriba al sol por separado y el total de la cuota es la suma de lo mostrado; el exacto va en el tooltip y en el payload.
+- Pestaña "Campañas": `Camp1..4Cuota%`, `Campaña Final 1..4 Cuota`, `Cancelación%` y `Cancelacion` tal como llegan en la asignación. La campaña es sobre la cuota capital; la referencia es el capital de esas cuotas.
+- Si SAC trae dos filas distintas para la misma operación, no se elige una: `disponible = false` con motivo.
+
 ## Campos no conectados
 
 La inspección real de `VW_CLIENTE_CRM_SAC` confirmó que actualmente no entrega:

@@ -36,6 +36,21 @@ CONFIG_COLUMNS = [
     "tabla_actual_es_mensual",
 ]
 
+# Conversiones de valor confirmadas por negocio para el cierre historico.
+# Clave: (nombre de la tabla historica, columna del historico), ambos
+# normalizados con normalizar_columna. El historico guarda el indicador como
+# numero y la asignacion actual lo trae como letra.
+TRANSFORMACIONES_VALOR_HISTORICO: Dict[Tuple[str, str], Dict[str, int]] = {
+    # Compartamos Vigente Individual: FLG_CliRef N -> 0, R -> 1 (confirmado 2026-11-02).
+    ("hist_compartamos_individual", "flg_cliref"): {"N": 0, "R": 1},
+}
+
+TIPOS_NUMERICOS_SQL = {
+    "float", "real", "decimal", "numeric", "money", "smallmoney",
+    "int", "bigint", "smallint", "tinyint",
+}
+TIPOS_TEXTO_SQL = {"varchar", "nvarchar", "char", "nchar", "text", "ntext"}
+
 VALORES_FILA_TECNICA = {
     "",
     "-",
@@ -1302,7 +1317,9 @@ def validar_cierre_historico(id_config: int, periodo: str) -> Dict[str, Any]:
         tabla_origen=tabla_origen,
         tabla_historica=tabla_historica,
         alertas=alertas,
+        producto=config.get("producto"),
     )
+    ruta_invalida = any(a.get("tipo") == "error" for a in alertas)
 
     mapa_historico = mapa_normalizado([col["column_name"] for col in columnas_historico])
     campo_periodo_historico = mapa_historico.get(normalizar_columna(campo_periodo)) if campo_periodo else None
@@ -1322,10 +1339,44 @@ def validar_cierre_historico(id_config: int, periodo: str) -> Dict[str, Any]:
                 "mensaje": f"El campo_periodo_historico '{campo_periodo}' no existe en la tabla historica.",
             })
 
+    if columnas_origen and columnas_historico:
+        _, ambiguas = emparejar_columnas_cierre(columnas_origen, columnas_historico)
+        if ambiguas:
+            alertas.append({
+                "tipo": "advertencia",
+                "mensaje": (
+                    "Estas columnas del historico no se cargaran porque su nombre coincide con "
+                    "varias columnas del origen: " + ", ".join(ambiguas)
+                ),
+            })
+
+    if columnas_origen and columnas_historico and not any(a.get("tipo") == "error" for a in alertas):
+        for problema in detectar_valores_no_numericos(
+            tabla_origen=tabla_origen,
+            tabla_historica=tabla_historica,
+            columnas_origen=columnas_origen,
+            columnas_historico=columnas_historico,
+            campo_periodo=campo_periodo_historico,
+        ):
+            ejemplos = ", ".join(f"'{valor}'" for valor in problema["ejemplos"])
+            alertas.append({
+                "tipo": "error",
+                "mensaje": (
+                    f"La columna {problema['columna_historico']} del historico es numerica "
+                    f"({problema['tipo_historico']}) y el origen trae {problema['filas']} filas "
+                    f"con valores no numericos (ejemplos: {ejemplos}). "
+                    "Defina la conversion de esos valores antes de cerrar."
+                ),
+            })
+
     total_origen = contar_tabla(tabla_origen) if columnas_origen else 0
     periodo_convertido = valor_periodo_configurado(config, periodo) if campo_periodo_historico else periodo
     total_existente = 0
-    if columnas_historico and campo_periodo_historico:
+    if ruta_invalida:
+        # Configuracion invalida: no se consulta el historico (evita errores de
+        # conversion sobre una tabla que no corresponde).
+        total_existente = 0
+    elif columnas_historico and campo_periodo_historico:
         total_existente = contar_periodo_historico(
             tabla_historica=tabla_historica,
             campo_periodo=campo_periodo_historico,
@@ -1394,6 +1445,7 @@ def ejecutar_cierre_historico(id_config: int, periodo: str, usuario: Optional[st
         campo_periodo=campo_periodo,
         config=config,
         periodo=periodo,
+        tabla_historica=tabla_historica,
     )
 
     if faltantes_obligatorias:
@@ -1886,17 +1938,77 @@ def condicion_periodo_historico(
     }
 
 
+def emparejar_columnas_cierre(
+    columnas_origen: List[Dict[str, Any]],
+    columnas_historico: List[Dict[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+    """Empareja cada columna del historico con UNA columna del origen.
+
+    1. Primero por nombre exacto (sin distinguir mayusculas ni espacios extremos).
+    2. Solo si no hay nombre exacto, por nombre normalizado (sin tildes ni
+       simbolos), y solo cuando hay un unico candidato que ninguna otra columna
+       del historico haya tomado por nombre exacto.
+
+    Antes se emparejaba solo por nombre normalizado y 'Cancelación%' quedaba
+    igual a 'Cancelacion': el porcentaje se llenaba con el monto.
+
+    Devuelve {nombre_historico: columna_origen} y la lista de columnas del
+    historico que no se cargan por ser ambiguas.
+    """
+    origen_exacto = {
+        str(col["column_name"]).strip().lower(): col
+        for col in columnas_origen
+    }
+    origen_por_norm: Dict[str, List[Dict[str, Any]]] = {}
+    for col in columnas_origen:
+        origen_por_norm.setdefault(normalizar_columna(col["column_name"]), []).append(col)
+
+    emparejadas: Dict[str, Dict[str, Any]] = {}
+    tomadas_exacto = set()
+    for col in columnas_historico:
+        nombre_hist = col["column_name"]
+        exacta = origen_exacto.get(str(nombre_hist).strip().lower())
+        if exacta is not None:
+            emparejadas[nombre_hist] = exacta
+            tomadas_exacto.add(exacta["column_name"])
+
+    ambiguas: List[str] = []
+    for col in columnas_historico:
+        nombre_hist = col["column_name"]
+        if nombre_hist in emparejadas:
+            continue
+        candidatas = [
+            c for c in origen_por_norm.get(normalizar_columna(nombre_hist), [])
+            if c["column_name"] not in tomadas_exacto
+        ]
+        if len(candidatas) == 1:
+            emparejadas[nombre_hist] = candidatas[0]
+        elif len(candidatas) > 1:
+            ambiguas.append(nombre_hist)
+    return emparejadas, ambiguas
+
+
+def transformacion_valor_historico(tabla_historica: Optional[str], columna_historica: str) -> Optional[Dict[str, int]]:
+    if not tabla_historica:
+        return None
+    try:
+        _, _, nombre_tabla = parsear_nombre_tabla(tabla_historica)
+    except ValueError:
+        return None
+    return TRANSFORMACIONES_VALOR_HISTORICO.get(
+        (normalizar_columna(nombre_tabla), normalizar_columna(columna_historica))
+    )
+
+
 def preparar_columnas_cierre(
     columnas_origen: List[Dict[str, Any]],
     columnas_historico: List[Dict[str, Any]],
     campo_periodo: str,
     config: Dict[str, Any],
     periodo: str,
+    tabla_historica: Optional[str] = None,
 ) -> Tuple[List[str], List[str], Dict[str, Any], List[str]]:
-    origen_por_norm = {
-        normalizar_columna(col["column_name"]): col["column_name"]
-        for col in columnas_origen
-    }
+    emparejadas, _ = emparejar_columnas_cierre(columnas_origen, columnas_historico)
     campo_periodo_norm = normalizar_columna(campo_periodo)
     insert_columns: List[str] = []
     select_expressions: List[str] = []
@@ -1916,9 +2028,14 @@ def preparar_columnas_cierre(
             select_expressions.append(":periodo_insert")
             continue
 
-        if norm in origen_por_norm:
+        origen = emparejadas.get(nombre_hist)
+        if origen is not None:
             insert_columns.append(quote_identificador(nombre_hist))
-            select_expressions.append(expresion_select_cierre(origen_por_norm[norm], col))
+            select_expressions.append(expresion_select_cierre(
+                origen["column_name"],
+                col,
+                transformacion_valor_historico(tabla_historica, nombre_hist),
+            ))
             continue
 
         if not es_columna_nullable(col) and not col.get("has_default"):
@@ -1927,7 +2044,29 @@ def preparar_columnas_cierre(
     return insert_columns, select_expressions, params, faltantes_obligatorias
 
 
-def expresion_select_cierre(columna_origen: str, columna_historica: Dict[str, Any]) -> str:
+def tipo_sql_destino(columna: Dict[str, Any]) -> str:
+    """Tipo SQL de una columna numerica del historico, para TRY_CONVERT/CONVERT."""
+    tipo = str(columna.get("data_type") or "").lower()
+    if tipo in ("decimal", "numeric"):
+        precision = int(columna.get("precision") or 18)
+        escala = int(columna.get("scale") or 0)
+        return f"{tipo}({precision},{escala})"
+    return tipo
+
+
+def texto_mayuscula_sql(origen_sql: str) -> str:
+    return f"UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), {origen_sql}))))"
+
+
+def literal_sql(valor: str) -> str:
+    return "N'" + str(valor).replace("'", "''") + "'"
+
+
+def expresion_select_cierre(
+    columna_origen: str,
+    columna_historica: Dict[str, Any],
+    transformacion: Optional[Dict[str, int]] = None,
+) -> str:
     origen_sql = quote_identificador(columna_origen)
     tipo_destino = str(columna_historica.get("data_type") or "").lower()
 
@@ -1943,7 +2082,93 @@ def expresion_select_cierre(columna_origen: str, columna_historica: Dict[str, An
             ")"
         )
 
+    if transformacion and tipo_destino in TIPOS_NUMERICOS_SQL:
+        # Valores confirmados (p. ej. N -> 0, R -> 1). El resto se convierte
+        # tal cual; la validacion previa garantiza que sea numerico.
+        casos = " ".join(
+            f"WHEN {literal_sql(clave)} THEN {int(valor)}"
+            for clave, valor in transformacion.items()
+        )
+        return (
+            f"CASE {texto_mayuscula_sql(origen_sql)} {casos} "
+            f"ELSE CONVERT({tipo_sql_destino(columna_historica)}, {origen_sql}) END"
+        )
+
     return origen_sql
+
+
+def detectar_valores_no_numericos(
+    tabla_origen: str,
+    tabla_historica: str,
+    columnas_origen: List[Dict[str, Any]],
+    columnas_historico: List[Dict[str, Any]],
+    campo_periodo: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Columnas numericas del historico cuyo origen es texto y trae valores que
+    SQL Server no puede convertir (lo que hoy rompe el INSERT con
+    'Error converting data type varchar to float').
+
+    No convierte ni descarta nada: solo informa columna, filas y ejemplos para
+    que el cierre se detenga con un mensaje claro.
+    """
+    emparejadas, _ = emparejar_columnas_cierre(columnas_origen, columnas_historico)
+    campo_periodo_norm = normalizar_columna(campo_periodo) if campo_periodo else ""
+
+    revisar = []
+    for col in columnas_historico:
+        nombre_hist = col["column_name"]
+        if col.get("is_identity") or normalizar_columna(nombre_hist) == campo_periodo_norm:
+            continue
+        origen = emparejadas.get(nombre_hist)
+        if origen is None:
+            continue
+        tipo_hist = str(col.get("data_type") or "").lower()
+        tipo_origen = str(origen.get("data_type") or "").lower()
+        if tipo_hist in TIPOS_NUMERICOS_SQL and tipo_origen in TIPOS_TEXTO_SQL:
+            revisar.append((col, origen))
+
+    if not revisar:
+        return []
+
+    partes = []
+    for indice, (col, origen) in enumerate(revisar):
+        origen_sql = quote_identificador(origen["column_name"])
+        condicion = f"{origen_sql} IS NOT NULL AND TRY_CONVERT({tipo_sql_destino(col)}, {origen_sql}) IS NULL"
+        transformacion = transformacion_valor_historico(tabla_historica, col["column_name"])
+        if transformacion:
+            claves = ", ".join(literal_sql(clave) for clave in transformacion)
+            condicion += f" AND {texto_mayuscula_sql(origen_sql)} NOT IN ({claves})"
+        partes.append(
+            f"SUM(CASE WHEN {condicion} THEN 1 ELSE 0 END) AS filas_{indice}, "
+            f"MIN(CASE WHEN {condicion} THEN CONVERT(NVARCHAR(100), {origen_sql}) END) AS ej1_{indice}, "
+            f"MAX(CASE WHEN {condicion} THEN CONVERT(NVARCHAR(100), {origen_sql}) END) AS ej2_{indice}"
+        )
+
+    query = text(f"""
+        SELECT {", ".join(partes)}
+        FROM {nombre_tabla_sql(tabla_origen)} WITH(NOLOCK)
+    """)
+    with engine_siscob.connect() as conn:
+        fila = conn.execute(query).mappings().first() or {}
+
+    problemas = []
+    for indice, (col, origen) in enumerate(revisar):
+        filas = int(fila.get(f"filas_{indice}") or 0)
+        if filas <= 0:
+            continue
+        ejemplos = []
+        for clave in (f"ej1_{indice}", f"ej2_{indice}"):
+            valor = fila.get(clave)
+            if valor is not None and valor not in ejemplos:
+                ejemplos.append(valor)
+        problemas.append({
+            "columna_historico": col["column_name"],
+            "columna_origen": origen["column_name"],
+            "tipo_historico": col.get("data_type"),
+            "filas": filas,
+            "ejemplos": ejemplos,
+        })
+    return problemas
 
 
 def es_columna_nullable(columna: Dict[str, Any]) -> bool:
@@ -2681,6 +2906,20 @@ def quote_identificador(columna: str) -> str:
 
 
 def asegurar_configuracion_importacion() -> None:
+    """Solo garantiza que exista la columna tabla_actual_es_mensual.
+
+    La configuracion de cada cartera (tabla_destino, tabla_historica,
+    clave_cruce, campo_periodo_historico, ...) vive en
+    CobAuto.dbo.importacion_config_cartera y es la fuente de verdad: el codigo
+    ya NO la reescribe.
+
+    Antes se ejecutaban aqui, en cada lectura, varios UPDATE que identificaban
+    la cartera por coincidencia de texto. El de Vigente Grupal
+    (tabla_destino LIKE '%COMPARTAMOS_GRUPAL%') tambien coincidia con
+    compartamos_grupal_castigo y dejaba a Castigo Grupal apuntando al historico
+    de Vigente Grupal. Los cambios de configuracion se hacen ahora con scripts
+    SQL revisados (por id_config), no desde Python.
+    """
     ddl = text("""
         IF COL_LENGTH('CobAuto.dbo.importacion_config_cartera', 'tabla_actual_es_mensual') IS NULL
         BEGIN
@@ -2689,59 +2928,8 @@ def asegurar_configuracion_importacion() -> None:
                 CONSTRAINT DF_importacion_config_cartera_tabla_actual_es_mensual DEFAULT(1)
         END
     """)
-    update_mibanco = text("""
-        UPDATE CobAuto.dbo.importacion_config_cartera
-        SET clave_cruce = 'NRO_DOC,COD_PRE',
-            tabla_actual_es_mensual = 1
-        WHERE ISNULL(activo, 1) = 1
-          AND UPPER(LTRIM(RTRIM(ISNULL(cartera, '')))) LIKE '%MIBANCO%'
-          AND (
-                UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) = 'GENERAL'
-                OR UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) LIKE '%GENERAL%'
-              )
-    """)
-    update_compartamos_castigo_individual = text("""
-        UPDATE CobAuto.dbo.importacion_config_cartera
-        SET tabla_historica = 'Compartamos_Castigo_Cobranzas.dbo.compartamos_castigo'
-        WHERE ISNULL(activo, 1) = 1
-          AND UPPER(LTRIM(RTRIM(ISNULL(cartera, '')))) LIKE '%COMPARTAMOS%'
-          AND (
-                UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) LIKE '%CASTIGO INDIVIDUAL%'
-                OR (
-                    UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) LIKE '%CASTIGO%'
-                    AND UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) NOT LIKE '%GRUPAL%'
-                    AND UPPER(LTRIM(RTRIM(ISNULL(tabla_destino, '')))) NOT LIKE '%GRUPAL%'
-                )
-              )
-    """)
-    update_compartamos_castigo_grupal = text("""
-        UPDATE CobAuto.dbo.importacion_config_cartera
-        SET tabla_historica = 'Compartamos_Castigo_Cobranzas.dbo.HIST_GRUPAL_CASTIGO'
-        WHERE ISNULL(activo, 1) = 1
-          AND UPPER(LTRIM(RTRIM(ISNULL(cartera, '')))) LIKE '%COMPARTAMOS%'
-          AND (
-                UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) LIKE '%CASTIGO GRUPAL%'
-                OR UPPER(LTRIM(RTRIM(ISNULL(tabla_destino, '')))) LIKE '%GRUPAL_CASTIGO%'
-              )
-    """)
-    update_compartamos_vigente_grupal = text("""
-        UPDATE CobAuto.dbo.importacion_config_cartera
-        SET tabla_historica = 'Compartamos_Vigente_Cobranzas.dbo.HIST_COMPARTAMOS_GRUPAL',
-            campo_periodo_historico = 'Mes Asignacion',
-            tipo_estructura_historico = 'MAPEO_HISTORICO'
-        WHERE ISNULL(activo, 1) = 1
-          AND UPPER(LTRIM(RTRIM(ISNULL(cartera, '')))) LIKE '%COMPARTAMOS%'
-          AND (
-                UPPER(LTRIM(RTRIM(ISNULL(producto, '')))) LIKE '%VIGENTE GRUPAL%'
-                OR UPPER(LTRIM(RTRIM(ISNULL(tabla_destino, '')))) LIKE '%COMPARTAMOS_GRUPAL%'
-              )
-    """)
     with engine_siscob.begin() as conn:
         conn.execute(ddl)
-        conn.execute(update_mibanco)
-        conn.execute(update_compartamos_castigo_individual)
-        conn.execute(update_compartamos_castigo_grupal)
-        conn.execute(update_compartamos_vigente_grupal)
 
 
 def parsear_nombre_tabla(tabla: str) -> Tuple[str, str, str]:
@@ -2944,9 +3132,30 @@ def validar_ruta_historica_compartamos(
     tabla_origen: str,
     tabla_historica: str,
     alertas: List[Dict[str, str]],
+    producto: Optional[str] = None,
 ) -> None:
     origen_norm = normalizar_columna(tabla_origen)
     historico_norm = normalizar_columna(tabla_historica)
+    producto_norm = normalizar_columna(producto)
+
+    # Cada cartera cierra en su propio historico: vigente nunca en un
+    # historico de castigo ni castigo en uno de vigente.
+    if "castigo" in producto_norm and "vigente" in historico_norm:
+        alertas.append({
+            "tipo": "error",
+            "mensaje": (
+                f"La configuracion es de {producto} y su tabla historica ({tabla_historica}) es de vigente. "
+                "Corrija tabla_historica en importacion_config_cartera."
+            ),
+        })
+    if "vigente" in producto_norm and "castigo" in historico_norm:
+        alertas.append({
+            "tipo": "error",
+            "mensaje": (
+                f"La configuracion es de {producto} y su tabla historica ({tabla_historica}) es de castigo. "
+                "Corrija tabla_historica en importacion_config_cartera."
+            ),
+        })
 
     if "compartamos_grupal_castigo" in origen_norm and "hist_grupal_castigo" not in historico_norm:
         alertas.append({

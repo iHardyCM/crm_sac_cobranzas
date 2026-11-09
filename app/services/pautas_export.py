@@ -283,10 +283,10 @@ def _hoja_reglas(libro: Workbook, pauta: Dict) -> None:
     hoja = libro.create_sheet("Reglas")
     hoja.sheet_view.showGridLines = False
     columnas = [
-        "Código", "Criterio", "Cuándo cumple", "Cuándo no cumple",
+        "Código", "Criterio", "Cuándo cumple", "Cuándo no cumple", "Cuándo es parcial (50%)",
         "Aplicabilidad / No aplica", "Regla de evaluación", "Recomendación sugerida",
     ]
-    _aplicar_anchos(hoja, [12, 30, 52, 52, 52, 52, 44])
+    _aplicar_anchos(hoja, [12, 30, 52, 52, 52, 52, 52, 44])
     _escribir_cabecera(hoja, 1, columnas)
 
     fila = 1
@@ -302,6 +302,7 @@ def _hoja_reglas(libro: Workbook, pauta: Dict) -> None:
                 str(criterio.get("nombre") or ""),
                 str(criterio.get("regla_cumple") or ""),
                 str(criterio.get("regla_no_cumple") or ""),
+                (str(criterio.get("regla_parcial") or "") if criterio.get("admite_parcial") else "No admite parcial"),
                 str(criterio.get("regla_aplicabilidad") or ""),
                 str(criterio.get("regla_evaluacion") or ""),
                 str(criterio.get("recomendacion") or ""),

@@ -8961,8 +8961,8 @@ function formularioCorreccionCalibracionIa(item) {
     <div class="cal-form">
         <label>Resultado correcto
             <select id="calResultado_${item.id_evaluacion_criterio}">
-                ${["CUMPLE", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE"]
-                    .map(v => `<option value="${v}" ${v === item.resultado_ia ? "" : ""}>${v}</option>`).join("")}
+                ${["CUMPLE", ...(item.admite_parcial ? ["PARCIAL_MEDIO"] : []), "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE"]
+                    .map(v => `<option value="${v}" ${v === item.resultado_ia ? "" : ""}>${v === "PARCIAL_MEDIO" ? "PARCIAL (50%)" : v}</option>`).join("")}
             </select>
         </label>
         <label>¿La evidencia citada sustenta la conclusión?

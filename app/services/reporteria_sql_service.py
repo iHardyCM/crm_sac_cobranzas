@@ -41,9 +41,11 @@ from sqlalchemy import bindparam, text
 
 from app.core.db_siscob import engine_siscob
 from app.services.ia_audio_service import limpiar_texto, score_vigente_llamada, serializar
+from app.services.pautas_evaluacion_service import bloques_anulados, puntaje_por_estado
 
 ESTADOS_TEXTO = {
     "CUMPLE": "Cumple",
+    "PARCIAL_MEDIO": "Parcial",
     "NO_CUMPLE": "No cumple",
     "NO_APLICA": "No aplica",
     "NO_EVALUABLE": "No evaluable",
@@ -120,15 +122,24 @@ def obtener_reporteria_sql(limit: int = 300, supervisor: Optional[str] = None) -
         if score is not None:
             scores.append(score)
         items = []
-        for fila in criterios_por_id.get(int(row["id_feedback"]), []):
+        filas_llamada = criterios_por_id.get(int(row["id_feedback"]), [])
+
+        def _vigente(fila) -> str:
+            corregido = str(fila.get("accion_calibracion") or "").upper() == "CORREGIR" and fila.get("resultado_esperado")
+            return str(fila["resultado_esperado"]).upper() if corregido else str(fila["resultado_ia"] or "").upper()
+
+        # Mismas reglas que el motor y la calibracion: puntaje por estado
+        # (parcial = mitad) y bloque en cero si su anulante vigente no cumple.
+        anulados = bloques_anulados(filas_llamada, estado_de=_vigente, bloque_de=lambda f: f.get("codigo_bloque"))
+        for fila in filas_llamada:
             peso = float(fila["peso"] or 0)
             resultado_ia = str(fila["resultado_ia"] or "").upper()
             corregido = str(fila.get("accion_calibracion") or "").upper() == "CORREGIR" and fila.get("resultado_esperado")
-            vigente = str(fila["resultado_esperado"]).upper() if corregido else resultado_ia
-            if corregido:
-                puntos = peso if vigente == "CUMPLE" else 0.0
+            vigente = _vigente(fila)
+            if str(fila.get("codigo_bloque") or "") in anulados:
+                puntos = 0.0
             else:
-                puntos = float(fila["puntaje_obtenido"] or 0)
+                puntos = puntaje_por_estado(vigente, peso)
             texto = ESTADOS_TEXTO.get(vigente, "Requiere revisión")
             items.append({
                 "codigo_criterio": fila["codigo_criterio"],
