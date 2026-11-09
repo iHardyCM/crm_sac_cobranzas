@@ -73,6 +73,7 @@ function renderCRMCliente(data) {
             </div>
         </details>
         ${renderMasDatosClienteV2(data)}
+        ${renderEstadoCuentaModalCRM(data)}
     `;
 }
 
@@ -340,7 +341,7 @@ function renderFilaOperacionCRM(item, index) {
         <td data-label="Capital" class="numero">${money(item.capital)}</td>
         <td data-label="Qué cobrar">${alternativas.length ? `<span class="crm-count-pill">${alternativas.length} alternativa${alternativas.length === 1 ? "" : "s"}</span>` : "—"}</td>
         <td data-label="Contención">${item.contencion?.disponible ? "Disponible" : "—"}</td>
-        <td data-label="Acción" class="cuenta-accion-celda"><button class="cuenta-ver-detalle" type="button" data-seleccionar-operacion="${index}" aria-current="${seleccionada}">Ver detalle</button></td>
+        <td data-label="Acción" class="cuenta-accion-celda"><div class="crm-ec-acciones"><button class="cuenta-ver-detalle" type="button" data-seleccionar-operacion="${index}" aria-current="${seleccionada}">Ver detalle</button>${renderBotonEstadoCuentaCRM(item)}</div></td>
     </tr>`;
 }
 
@@ -364,7 +365,7 @@ function renderDetalleOperacionCRM(item = {}) {
     ]);
     const cuotas = Object.entries(item.cuotas_calculadas || {}).filter(([, value]) => value?.disponible).map(([key, value]) => [key.replace("cuota_", "Cuota "), money(value.valor)]);
     return `<section class="detalle-operacion-panel crm-detalle-operacion" aria-labelledby="tituloDetalleOperacion">
-        <header class="detalle-operacion-header"><div><span class="section-kicker">Operación seleccionada</span><h3 id="tituloDetalleOperacion">Detalle de operación seleccionada</h3><p>${h(item.operacion)}</p></div><span class="detalle-operacion-indicador">Activa</span></header>
+        <header class="detalle-operacion-header"><div><span class="section-kicker">Operación seleccionada</span><h3 id="tituloDetalleOperacion">Detalle de operación seleccionada</h3><p>${h(item.operacion)}</p></div><div class="crm-ec-acciones">${renderBotonEstadoCuentaCRM(item, true)}<span class="detalle-operacion-indicador">Activa</span></div></header>
         ${renderGrupoDetalle("Situación contractual", contrato)}
         ${renderGrupoDetalle("Crédito y cuotas", credito)}
         ${cuotas.length ? renderGrupoDetalle("Cuotas calculadas", cuotas, "Cálculo visual: cada componente NULL se considera cero.") : ""}
@@ -478,8 +479,7 @@ function pintarCronogramaCRM() {
     const parametros = cronograma.parametros || {};
     const chip = (etiqueta, valor, resaltar = false) => `<span class="crm-chip${resaltar ? " crm-chip-resalta" : ""}"><i>${h(etiqueta)}</i><b>${h(valor)}</b></span>`;
     const pct = value => tieneValor(value) ? (String(value).includes("%") ? value : `${value}%`) : null;
-    const cuotasPlan = plan.disponible ? (plan.cuotas || []) : [];
-    const textoPlan = cuotasPlan.length ? cuotasPlan.join(" y ") : null;
+    const textoPlan = plan.disponible ? textoCuotasPlanCRM(plan) : null;
     const chips = [
         chip("Producto", parametros.producto_camp),
         chip("Cuotas a pagar", textoPlan ? `${plan.cuotas_por_pagar} (${textoPlan})` : null, !!textoPlan),
@@ -515,10 +515,13 @@ function renderLeyendaCronogramaCRM(cronograma, modo) {
 // Matriz integrantes x cuota. `soloCuotas` limita las columnas (pestaña "Cuotas a pagar").
 function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     const plan = cronograma.plan || {};
-    const marcadas = new Set(plan.disponible ? (plan.cuotas || []).map(String) : []);
     const cuotas = (soloCuotas || cronograma.cuotas || []).map(String);
     const integrantes = cronograma.integrantes || [];
     const montos = item => (modo === "total" ? item.cuotas_total : item.cuotas) || {};
+    // La matriz sigue por número de cuota; lo que se paga se marca celda por celda (por fecha de
+    // vencimiento: un integrante puede pagar su N.° 2 y otro su N.° 3 si vencen el mismo día).
+    const aPagar = (item, numero) => plan.disponible && Object.prototype.hasOwnProperty.call(item.a_pagar || {}, numero);
+    const marcadas = new Set(cuotas.filter(numero => integrantes.some(item => aPagar(item, numero))));
     const diasTexto = value => tieneValor(value) ? `${format(value)} d` : "—";
     // Redondeo siempre hacia arriba; los totales suman lo que se ve en pantalla para que la tabla cuadre.
     const celda = (item, numero) => numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero]);
@@ -527,6 +530,7 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     const maximoFila = Math.max(0, ...totalesPorFila);
     const totalGrupo = totalesPorFila.reduce((acc, value) => acc + value, 0);
     const clasePagar = numero => marcadas.has(numero) && !soloCuotas ? " col-pagar" : "";
+    const clasePagarCelda = (item, numero) => aPagar(item, numero) && !soloCuotas ? " col-pagar" : "";
     const filas = integrantes.map((item, index) => {
         const total = totalesPorFila[index];
         const ancho = maximoFila > 0 && total > 0 ? Math.max(6, Math.round(total / maximoFila * 100)) : 0;
@@ -536,7 +540,7 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
         ${cuotas.map(numero => {
             const monto = montos(item)[numero];
             const rango = tieneValor(monto) && tieneValor(item.cuota_mas_atrasada) ? Math.min(Math.max(Number(numero) - Number(item.cuota_mas_atrasada), 0), 2) : null;
-            return `<td data-label="Cuota ${h(numero)}" class="numero ${rango === null ? "sin-monto" : `rango-${rango}`}${clasePagar(numero)}"${rango === null ? "" : ` title="${attr(money(monto))}"`}>${rango === null ? "—" : montoEntero(monto)}</td>`;
+            return `<td data-label="Cuota ${h(numero)}" class="numero ${rango === null ? "sin-monto" : `rango-${rango}`}${clasePagarCelda(item, numero)}"${rango === null ? "" : ` title="${attr(money(monto) + (aPagar(item, numero) ? " · a pagar" : ""))}"`}>${rango === null ? "—" : montoEntero(monto)}</td>`;
         }).join("")}
         <td data-label="Total" class="numero crm-cronograma-total"><b>${total > 0 ? montoEntero(total) : "—"}</b><i style="--w:${ancho}%"></i></td>
         ${soloCuotas ? "" : `<td data-label="Atraso inicio" class="numero crm-cronograma-corte">${diasTexto(item.dias_atraso_inicio)}</td>
@@ -559,21 +563,69 @@ function renderMatrizCronogramaCRM(cronograma, modo, soloCuotas) {
     </section>`;
 }
 
+// Texto corto de una cuota exigida: "N.° 3 · vence 12/08/2026" o, si los números difieren
+// entre integrantes, "N.° 2 y 3 · vence 12/08/2026".
+function etiquetaVencimientoCRM(venc) {
+    const numeros = (venc.numeros && venc.numeros.length ? venc.numeros : [venc.cuota]).map(n => format(n));
+    return `N.° ${numeros.join(" y ")} · vence ${formatFecha(venc.fecha_vencimiento)}`;
+}
+
+function textoCuotasPlanCRM(plan) {
+    const vencimientos = plan.vencimientos || [];
+    if (vencimientos.length) return vencimientos.map(etiquetaVencimientoCRM).join(" · ");
+    return (plan.cuotas || []).length ? plan.cuotas.join(" y ") : null;
+}
+
+// Cuotas a pagar del grupo por FECHA DE VENCIMIENTO (regla 2026-10-13): una columna por cuota
+// exigida; cada integrante paga su cuota de esa fecha, aunque su número sea otro.
 function renderCronogramaPagarCRM(cronograma, modo) {
     const plan = cronograma.plan || {};
     if (!plan.disponible) return `<div class="crm-modal-aviso"><strong>No se puede determinar las cuotas a pagar.</strong><span>${h(plan.motivo || "Sin información suficiente.")}</span></div>`;
-    const cuotas = (plan.cuotas || []).map(String);
+    const vencimientos = plan.vencimientos || [];
     const integrantes = cronograma.integrantes || [];
-    const montos = item => (modo === "total" ? item.cuotas_total : item.cuotas) || {};
-    const sumaCuota = numero => integrantes.reduce((acc, item) => acc + (numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero])), 0);
-    const total = integrantes.reduce((acc, item) => acc + cuotas.reduce((a, numero) => a + (numeroValido(montos(item)[numero]) === null ? 0 : montoArriba(montos(item)[numero])), 0), 0);
-    const resumen = cuotas.map(numero => `<div class="crm-resumen-cuota"><span>Cuota ${h(numero)}</span><b>${montoEntero(sumaCuota(numero))}</b></div>`).join("");
+    const detalle = (item, venc) => (item.a_pagar_detalle || []).find(d => d.fecha_vencimiento === venc.fecha_vencimiento) || null;
+    const monto = (item, venc) => { const d = detalle(item, venc); return d ? numeroValido(modo === "total" ? d.total : d.capital) : null; };
+    const celda = (item, venc) => { const m = monto(item, venc); return m === null ? 0 : montoArriba(m); };
+    const totalesFila = integrantes.map(item => vencimientos.reduce((acc, venc) => acc + celda(item, venc), 0));
+    const totalVenc = venc => integrantes.reduce((acc, item) => acc + celda(item, venc), 0);
+    const total = totalesFila.reduce((acc, value) => acc + value, 0);
+    const maximo = Math.max(0, ...totalesFila);
+    const pagan = venc => integrantes.filter(item => monto(item, venc) !== null).length;
+    const resumen = vencimientos.map(venc => `<div class="crm-resumen-cuota"><span>${h(etiquetaVencimientoCRM(venc))}</span><b>${montoEntero(totalVenc(venc))}</b><small>${h(format(pagan(venc)))} de ${h(format(integrantes.length))} integrantes</small></div>`).join("");
+    const filas = integrantes.map((item, index) => {
+        const totalFila = totalesFila[index];
+        const ancho = maximo > 0 && totalFila > 0 ? Math.max(6, Math.round(totalFila / maximo * 100)) : 0;
+        const rol = tieneValor(item.rol) && String(item.rol).toLowerCase() !== "integrante" ? `<em class="crm-rol">${h(item.rol)}</em>` : "";
+        return `<tr style="--i:${index}">
+        <th scope="row" data-label="Integrante"><strong>${h(item.nombre)}</strong><span>${h(item.dni)}${rol}</span></th>
+        ${vencimientos.map(venc => {
+            const d = detalle(item, venc);
+            const m = monto(item, venc);
+            return m === null
+                ? `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero sin-monto">—</td>`
+                : `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero col-pagar" title="${attr(`${money(m)} · cuota N.° ${d.cuota}`)}">${montoEntero(m)}<small class="crm-cuota-numero">N.° ${h(format(d.cuota))}</small></td>`;
+        }).join("")}
+        <td data-label="Total" class="numero crm-cronograma-total"><b>${totalFila > 0 ? montoEntero(totalFila) : "—"}</b><i style="--w:${ancho}%"></i></td>
+    </tr>`;
+    }).join("");
+    const titulo = modo === "total" ? "A pagar · total de la cuota (S/)" : "A pagar · cuota capital (S/)";
+    const aviso = plan.alineado === false ? `<p class="crm-pagar-nota">Los integrantes tienen cronogramas desplazados: en una misma fecha vencen cuotas de distinto número. Pagan todos los que tienen cuota en esa fecha.</p>` : "";
     return `<div class="crm-pagar-resumen">
-            <p><b>${h(plan.cuotas_por_pagar)} cuota${plan.cuotas_por_pagar === 1 ? "" : "s"} por pagar</b> · producto ${h(plan.producto)} · siempre las más atrasadas del grupo</p>
+            <p><b>${h(plan.cuotas_por_pagar)} cuota${plan.cuotas_por_pagar === 1 ? "" : "s"} por pagar</b> · producto ${h(plan.producto)} · las más atrasadas del grupo por fecha de vencimiento</p>
+            ${aviso}
             <div class="crm-resumen-fila">${resumen}<div class="crm-resumen-cuota crm-resumen-total"><span>A cobrar al grupo</span><b>${montoEntero(total)}</b></div></div>
         </div>
-        ${renderMatrizCronogramaCRM(cronograma, modo, cuotas)}
-        <footer class="crm-cronograma-leyenda"><span class="crm-leyenda-nota">${modo === "total" ? "Incluye capital y otros cargos por atraso de cada cuota." : "Solo cuota capital."} Redondeado hacia arriba al sol por integrante; el exacto aparece al pasar el cursor.</span></footer>`;
+        <section class="crm-cronograma-panel" aria-label="${attr(titulo)}">
+            <table class="crm-cronograma-tabla">
+                <thead>
+                    <tr><th scope="col" rowspan="2" class="crm-col-nombre">Integrante</th><th scope="colgroup" colspan="${vencimientos.length + 1}" class="numero">${h(titulo)}</th></tr>
+                    <tr>${vencimientos.map(venc => `<th scope="col" class="numero">Vence ${h(formatFecha(venc.fecha_vencimiento))}<small>N.° ${h(((venc.numeros && venc.numeros.length) ? venc.numeros : [venc.cuota]).join(" y "))}</small></th>`).join("")}<th scope="col" class="numero">Total</th></tr>
+                </thead>
+                <tbody>${filas}</tbody>
+                <tfoot><tr><th scope="row" data-label="Total">Total</th>${vencimientos.map(venc => `<td data-label="${attr(etiquetaVencimientoCRM(venc))}" class="numero">${montoEntero(totalVenc(venc))}</td>`).join("")}<td data-label="Total" class="numero">${montoEntero(total)}</td></tr></tfoot>
+            </table>
+        </section>
+        <footer class="crm-cronograma-leyenda"><span class="crm-leyenda-nota">${modo === "total" ? "Incluye capital y otros cargos por atraso de cada cuota." : "Solo cuota capital."} Debajo de cada monto, el número de la cuota de ese integrante. Redondeado hacia arriba al sol por integrante; el exacto aparece al pasar el cursor.</span></footer>`;
 }
 
 // Primer número de un texto como "45% Capital" -> 45. Sin número legible no se calcula nada.
@@ -636,9 +688,11 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
     const filaB = `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(vencidoGrupo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="Camp. cancelación" class="numero">${solCuadro(baseCancel)}</td><td data-label="% Campaña" class="numero">${celdaCampana(pctCancel)}</td><td data-label="Propuesta" class="numero">${entrada("cancelacion", "Propuesta")}${aviso(propCancel, baseCancel)}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCancel)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
 
     const saldo = hayCapital ? Math.round(saldoGrupo * 100) / 100 : null;
-    // Cuota grupo: por cada cuota a pagar, suma del capital de todos los integrantes (lo mismo que ve el gestor en la matriz).
-    const cuotas = plan.disponible ? (plan.cuotas || []).map(String) : [];
-    const capitales = cuotas.map(n => numeroValido(cronograma.totales?.[n]));
+    // Cuota grupo: por cada cuota a pagar (fecha de vencimiento), suma del capital de los integrantes
+    // que tienen cuota en esa fecha, aunque su número de cuota sea distinto (regla 2026-10-13).
+    const vencimientos = plan.disponible ? (plan.vencimientos || []) : [];
+    const cuotas = vencimientos.map(etiquetaVencimientoCRM);
+    const capitales = vencimientos.map(v => numeroValido(v.capital));
     const capitalTotal = capitales.reduce((acc, v) => acc + (v || 0), 0);
     const baseCuotas = capitales.map(v => base(v, pctCuota));
     const baseTotalCuota = pctCuota === null ? null : Math.round(baseCuotas.reduce((acc, v) => acc + (v || 0), 0) * 100) / 100;
@@ -647,7 +701,7 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
     const montoPropuesto = capital => pctPropCuota !== null && capital !== null ? capital * pctPropCuota / 100 : null;
     const filasC = cuotas.map((n, i) => {
         const capital = capitales[i];
-        return `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(saldo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="N° cuota">${h(`${n}.ª cuota`)}</td><td data-label="Capital cuota" class="numero">${solCuadro(capital)}</td><td data-label="% campaña" class="numero">${celdaCampana(pctCuota)}</td><td data-label="Campaña cuota" class="numero">${solCuadro(baseCuotas[i])}</td><td data-label="Propuesta" class="numero">${solCuadro(montoPropuesto(capital))}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCuota)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
+        return `<tr><td data-label="Nombre grupo">${texto(grupo.nombre)}</td><td data-label="Cred. grupal">${texto(grupo.credito_grupal)}</td><td data-label="Saldo grupo" class="numero">${solCuadro(saldo)}</td><td data-label="Rango atraso" class="numero">${texto(parametros.rango_atraso)}</td><td data-label="N° cuota">${h(n)}</td><td data-label="Capital cuota" class="numero">${solCuadro(capital)}</td><td data-label="% campaña" class="numero">${celdaCampana(pctCuota)}</td><td data-label="Campaña cuota" class="numero">${solCuadro(baseCuotas[i])}</td><td data-label="Propuesta" class="numero">${solCuadro(montoPropuesto(capital))}</td><td data-label="% Propuesta" class="numero">${celdaPropuesta(pctPropCuota)}</td><td data-label="Top_NroGru" class="sin-dato">—</td></tr>`;
     }).join("");
     const sumaArriba = valores => Math.round(valores.reduce((acc, v) => acc + (v === null ? 0 : v), 0) * 100) / 100;
     const pieC = cuotas.length ? `<tfoot><tr><th scope="row" colspan="5">Total</th><td class="numero">${money(sumaArriba(capitales))}</td><td class="numero">${celdaCampana(pctCuota)}</td><td class="numero">${baseTotalCuota === null ? "—" : money(baseTotalCuota)}</td><td class="numero">${pctPropCuota === null ? "—" : money(sumaArriba(capitales.map(montoPropuesto)))}</td><td class="numero">${celdaPropuesta(pctPropCuota)}</td><td></td></tr></tfoot>` : "";
@@ -655,7 +709,7 @@ function renderCronogramaCuadrosCRM(data, cronograma) {
 
     const cuadro = (titulo, cabeceras, filas, pie = "", extra = "", footer = "") => `<section class="crm-cuadro"><h4>${h(titulo)}</h4>${extra}<div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla"><thead><tr>${cabeceras.map(c => `<th scope="col"${/saldo|capital|integrantes|campaña|%|propuesta|camp\./i.test(c) ? ' class="numero"' : ""}>${h(c)}</th>`).join("")}</tr></thead><tbody>${filas}</tbody>${pie}</table></div>${footer}</section>`;
     const preparacion = prepararDocumentoCuotasCRM(data, cronograma, propCuota);
-    const accionDocumento = cuotas.length && puedePrepararDocumentoGrupoCRM() ? `<div class="crm-documento-cuotas"><button type="button" data-abrir-documentos-grupo${preparacion ? "" : " disabled"}>Preparar compromiso grupal</button><small>${preparacion ? `${preparacion.pagos.length} integrante${preparacion.pagos.length === 1 ? "" : "s"} de las cuotas ${cuotas.join(" y ")} · ${money(propCuota)}. Se abrirá en otra pestaña para revisar los montos antes de generar.` : "Ingresa una propuesta válida y verifica las cuotas para preparar el compromiso."}</small></div>` : "";
+    const accionDocumento = cuotas.length && puedePrepararDocumentoGrupoCRM() ? `<div class="crm-documento-cuotas"><button type="button" data-abrir-documentos-grupo${preparacion ? "" : " disabled"}>Preparar compromiso grupal</button><small>${preparacion ? `${preparacion.pagos.length} integrante${preparacion.pagos.length === 1 ? "" : "s"} · ${cuotas.join(" y ")} · ${money(propCuota)}. Se abrirá en otra pestaña para revisar los montos antes de generar.` : "Ingresa una propuesta válida y verifica las cuotas para preparar el compromiso."}</small></div>` : "";
     const faltaPct = pctCuota === null || pctCancel === null || pctCliente === null ? `<p class="crm-modal-aviso crm-aviso-pct"><strong>No se pudo leer: ${[pctCliente === null ? "% Campaña Cliente" : "", pctCuota === null ? "% Campaña Cliente 100%" : "", pctCancel === null ? "% Cancelación Cliente" : ""].filter(Boolean).join(", ")}.</strong><span>La columna no existe, viene vacía o tiene valores distintos entre integrantes de compartamos_grupal. Sin ese % no se calcula la campaña.</span></p>` : "";
     return `<div class="crm-cuadros">
         ${faltaPct}<ul class="crm-cuadros-nota">
@@ -682,9 +736,12 @@ function puedePrepararDocumentoGrupoCRM() {
 }
 
 function prepararDocumentoCuotasCRM(data, cronograma, propuesta) {
-    const cuotas = cronograma?.plan?.disponible ? (cronograma.plan.cuotas || []).map(String) : [];
+    // Cuotas exigidas por fecha de vencimiento (regla 2026-10-13); cada integrante aporta el capital
+    // de SU cuota en esas fechas (a_pagar), no el de un mismo número de cuota.
+    const vencimientos = cronograma?.plan?.disponible ? (cronograma.plan.vencimientos || []) : [];
+    const cuotas = vencimientos.map(etiquetaVencimientoCRM);
     const grupo = data?.grupo || {};
-    const total = cuotas.reduce((suma, cuota) => suma + (numeroValido(cronograma.totales?.[cuota]) || 0), 0);
+    const total = vencimientos.reduce((suma, venc) => suma + (numeroValido(venc.capital) || 0), 0);
     const totalCentimos = Math.round(total * 100);
     const propuestaCentimos = Math.round(Number(propuesta) * 100);
     if (!cuotas.length || !totalCentimos || !Number.isFinite(propuestaCentimos) || propuestaCentimos <= 0 ||
@@ -694,15 +751,17 @@ function prepararDocumentoCuotasCRM(data, cronograma, propuesta) {
     const integrantes = (cronograma.integrantes || []).map(item => ({
         operacion: String(item.operacion || "").trim(),
         dni: String(item.dni || "").trim(),
-        capitalCentimos: Math.round(cuotas.reduce((suma, cuota) => suma + (numeroValido(item.cuotas?.[cuota]) || 0), 0) * 100),
+        capitalCentimos: Math.round(Object.values(item.a_pagar || {}).reduce((suma, monto) => suma + (numeroValido(monto) || 0), 0) * 100),
     })).filter(item => item.capitalCentimos > 0);
     if (!integrantes.length || integrantes.some(item => !item.operacion || !item.dni) ||
         new Set(integrantes.map(item => item.operacion)).size !== integrantes.length ||
-        integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0) !== totalCentimos) return null;
+        // Tolerancia de 1 céntimo por integrante: el total por fecha y el de cada integrante se redondean por separado.
+        Math.abs(integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0) - totalCentimos) > integrantes.length) return null;
 
     // Distribuye los centimos residuales por la mayor fraccion para conservar exactamente la oferta del grupo.
+    const baseCentimos = integrantes.reduce((suma, item) => suma + item.capitalCentimos, 0);
     const pagos = integrantes.map(item => {
-        const exacto = propuestaCentimos * item.capitalCentimos / totalCentimos;
+        const exacto = propuestaCentimos * item.capitalCentimos / baseCentimos;
         return { ...item, centimos: Math.floor(exacto), fraccion: exacto - Math.floor(exacto) };
     });
     let residuo = propuestaCentimos - pagos.reduce((suma, item) => suma + item.centimos, 0);
@@ -758,6 +817,213 @@ function montoEntero(value) {
 function montoPlano(value) {
     const numero = numeroValido(value);
     return numero === null ? "—" : new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numero);
+}
+
+// ---------------------------------------------------------------------------
+// Estado de cuenta individual / CCM (2026-11-09)
+// Reglas: docs/estado_cuenta_individual_compartamos.md · Referencia visual: docs/prototipos/estado_cuenta_individual.html
+// El backend entrega montos exactos; aquí se suben al sol (capital y cargos por separado) y el total
+// de la cuota es la suma de lo mostrado, para que cada fila cuadre a la vista. El exacto va en el tooltip.
+// ---------------------------------------------------------------------------
+function calcularEstadoCuentaCRM(ec = {}, modo = "total") {
+    let acumulado = 0;
+    const filas = (ec.cuotas || []).map(cuota => {
+        const capital = montoArriba(cuota.capital);
+        const cargos = montoArriba(cuota.cargos);
+        const total = capital === null && cargos === null ? null : (capital || 0) + (cargos || 0);
+        const monto = modo === "capital" ? capital : total;
+        acumulado += monto || 0;
+        return { ...cuota, capitalMostrado: capital, cargosMostrado: cargos, totalMostrado: total, acumulado };
+    });
+    const sumar = clave => filas.some(f => f[clave] !== null) ? filas.reduce((acc, f) => acc + (f[clave] || 0), 0) : null;
+    return { filas, totales: { capital: sumar("capitalMostrado"), cargos: sumar("cargosMostrado"), total: sumar("totalMostrado") } };
+}
+
+function operacionEstadoCuentaCRM(operacion) {
+    const data = window._consultaCompartamosCRM;
+    return (data?.operaciones || []).find(item => String(item.operacion) === String(operacion)) || null;
+}
+
+function renderBotonEstadoCuentaCRM(item, compacto = false) {
+    if (!item?.estado_cuenta?.aplica) return "";
+    return `<button class="crm-ec-boton${compacto ? " crm-ec-boton-compacto" : ""}" type="button" data-abrir-estado-cuenta="${attr(item.operacion)}" aria-haspopup="dialog" aria-controls="estadoCuentaModalCRM"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><path d="M3 2.5h7l3 3v8H3zM5.5 7h5M5.5 9.5h5M5.5 12h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Estado de cuenta</button>`;
+}
+
+function renderEstadoCuentaModalCRM(data) {
+    if (!(data.operaciones || []).some(item => item.estado_cuenta?.aplica)) return "";
+    return `<dialog id="estadoCuentaModalCRM" class="crm-modal crm-ec-modal" aria-labelledby="tituloEstadoCuentaCRM">
+            <div class="crm-modal-caja">
+                <header class="crm-modal-cabecera">
+                    <div><h3 id="tituloEstadoCuentaCRM">Estado de cuenta</h3><p id="subtituloEstadoCuentaCRM"></p></div>
+                    <button class="crm-modal-cerrar" type="button" data-cerrar-estado-cuenta aria-label="Cerrar estado de cuenta"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+                </header>
+                <nav class="crm-modal-tabs" role="tablist" aria-label="Secciones del estado de cuenta">
+                    <button type="button" role="tab" data-ec-tab="cuotas">Cuotas vencidas</button>
+                    <button type="button" role="tab" data-ec-tab="campanas">Campañas <span class="crm-ec-etiqueta">por validar</span></button>
+                </nav>
+                <div class="crm-modal-barra" id="estadoCuentaBarraCRM"></div>
+                <div class="crm-modal-cuerpo" id="estadoCuentaCuerpoCRM" role="tabpanel"></div>
+            </div>
+        </dialog>`;
+}
+
+function abrirEstadoCuentaCRM(operacion, boton) {
+    const dialogo = document.getElementById("estadoCuentaModalCRM");
+    if (!dialogo || typeof dialogo.showModal !== "function" || !operacionEstadoCuentaCRM(operacion)) return;
+    window._estadoCuentaEstado = { operacion: String(operacion), tab: "cuotas", modo: "total", hasta: 0 };
+    window._estadoCuentaOrigen = boton;
+    pintarEstadoCuentaCRM();
+    dialogo.showModal();
+    dialogo.querySelector(".crm-modal-cuerpo")?.scrollTo?.(0, 0);
+}
+
+function cerrarEstadoCuentaCRM() {
+    const dialogo = document.getElementById("estadoCuentaModalCRM");
+    if (dialogo?.open) dialogo.close();
+    window._estadoCuentaOrigen?.focus?.();
+}
+
+function cambiarEstadoCuentaCRM(cambio) {
+    window._estadoCuentaEstado = { ...(window._estadoCuentaEstado || {}), ...cambio };
+    pintarEstadoCuentaCRM();
+}
+
+function pintarEstadoCuentaCRM() {
+    const estado = window._estadoCuentaEstado || {};
+    const item = operacionEstadoCuentaCRM(estado.operacion);
+    const dialogo = document.getElementById("estadoCuentaModalCRM");
+    if (!item || !dialogo) return;
+    const ec = item.estado_cuenta || {};
+    const cliente = window._consultaCompartamosCRM?.cliente || {};
+    document.getElementById("subtituloEstadoCuentaCRM").textContent =
+        [cliente.nombre, `Op. ${item.operacion}`, ec.cartera ? `Vigente ${ec.cartera}` : null].filter(tieneValor).join(" · ");
+    dialogo.querySelectorAll("[data-ec-tab]").forEach(boton => {
+        const activo = boton.dataset.ecTab === estado.tab;
+        boton.setAttribute("aria-selected", String(activo));
+        boton.tabIndex = activo ? 0 : -1;
+    });
+    const chip = (etiqueta, valor) => tieneValor(valor) ? `<span class="crm-chip"><i>${h(etiqueta)}</i><b>${h(valor)}</b></span>` : "";
+    const aprobadas = ec.cuotas_aprobadas_asignacion ?? item.cuotas_aprobadas;
+    const desembolso = tieneValor(item.monto_desembolso) ? `${money(item.monto_desembolso)}${tieneValor(item.fecha_desembolso) ? ` · ${formatFecha(item.fecha_desembolso)}` : ""}` : null;
+    const chips = [
+        chip("Producto", item.producto), chip("Cartera", ec.cartera), chip(item.tipo_calificacion || "Calificación", item.calificacion),
+        chip("Desembolso", desembolso),
+        tieneValor(ec.cuotas_pagadas_asignacion) && tieneValor(aprobadas) ? chip("Pagadas", `${format(ec.cuotas_pagadas_asignacion)} de ${format(aprobadas)}`) : chip("Cuotas aprobadas", aprobadas),
+        chip("Carga SAC", tieneValor(ec.fecha_carga) ? formatFecha(ec.fecha_carga) : null)
+    ].join("");
+    const modo = estado.modo === "capital" ? "capital" : "total";
+    const segmento = estado.tab === "cuotas" && ec.disponible ? `<div class="crm-segmento" role="group" aria-label="Qué monto mostrar">
+            <button type="button" data-ec-modo="total" aria-pressed="${modo === "total"}">Total de la cuota <small>con cargos</small></button>
+            <button type="button" data-ec-modo="capital" aria-pressed="${modo === "capital"}">Solo capital</button>
+        </div>` : "";
+    document.getElementById("estadoCuentaBarraCRM").innerHTML = `<div class="crm-chips">${chips}</div>${segmento}`;
+    const cuerpo = estado.tab === "campanas" ? renderEstadoCuentaCampanasCRM(item, ec) : renderEstadoCuentaCuotasCRM(item, ec, modo, estado.hasta || 0);
+    document.getElementById("estadoCuentaCuerpoCRM").innerHTML = cuerpo;
+}
+
+function textoQuedaConCRM(fila) {
+    if (!tieneValor(fila?.queda_con_dias)) return null;
+    if (Number(fila.queda_con_dias) === 0) return "Queda al día";
+    return `Queda con ${format(fila.queda_con_dias)} días de atraso${fila.queda_con_estimado ? " (aprox.)" : ""}`;
+}
+
+function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
+    if (!ec.disponible) {
+        return `<div class="crm-modal-aviso"><strong>No se puede mostrar el estado de cuenta.</strong><span>${h(ec.motivo || "Sin información suficiente en la carga SAC.")}</span></div>`;
+    }
+    const { filas, totales } = calcularEstadoCuentaCRM(ec, modo);
+    if (!filas.length) return `<div class="crm-modal-aviso"><strong>La carga SAC no trae cuotas atrasadas para esta operación.</strong></div>`;
+    const conc = ec.conciliacion || {};
+    const hasta = Math.min(Math.max(Number(hastaPedido) || 0, 0), filas.length - 1);
+    const sel = filas[hasta];
+    const etiquetaModo = modo === "capital" ? "capital" : "total";
+    const aprobadas = ec.cuotas_aprobadas_asignacion ?? item.cuotas_aprobadas;
+    const sumaMostrada = modo === "capital" ? totales.capital : totales.total;
+    const cifra = (etiqueta, valor, sub, clase = "") => `<div class="crm-ec-cifra${clase ? ` ${clase}` : ""}"><span>${h(etiqueta)}</span><b>${h(valor)}</b>${tieneValor(sub) ? `<small>${h(sub)}</small>` : ""}</div>`;
+    const resumen = `<div class="crm-ec-resumen">
+        ${cifra(`Vencido en la carga (${etiquetaModo})`, sumaMostrada === null ? "—" : `S/ ${montoEntero(sumaMostrada)}`, `${filas.length} cuota${filas.length === 1 ? "" : "s"}`)}
+        ${cifra("Días de atraso hoy", tieneValor(ec.dias_atraso_hoy) ? format(ec.dias_atraso_hoy) : "—", tieneValor(filas[0].fecha_vencimiento) ? `Desde ${formatFecha(filas[0].fecha_vencimiento)}` : null, "is-alerta")}
+        ${cifra("Cuotas vencidas", tieneValor(conc.cuotas_vencidas) ? `${format(conc.cuotas_vencidas)}${tieneValor(aprobadas) ? ` de ${format(aprobadas)}` : ""}` : "—", `Más antigua: N.° ${format(filas[0].numero)}`)}
+        ${cifra(`Si paga hasta la N.° ${format(sel.numero)}`, `S/ ${montoEntero(sel.acumulado)}`, ec.simulacion_disponible ? textoQuedaConCRM(sel) : `Días resultantes: no se pueden calcular. ${ec.simulacion_motivo || ""}`, "is-cobrar")}
+    </div>`;
+    const faltan = conc.completo === false && tieneValor(conc.cuotas_vencidas) ? Math.max(0, Number(conc.cuotas_vencidas) - Number(conc.cuotas_en_sac || 0)) : 0;
+    const aviso = faltan ? `<div class="crm-modal-aviso crm-ec-aviso"><strong>La carga trae ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} cuotas vencidas.</strong><span>Faltan las ${h(format(faltan))} más recientes: lo que debe el cliente es mayor que lo que se ve aquí, y no se puede calcular con cuántos días queda después de pagar.</span></div>` : "";
+    const rango = i => `rango-${Math.min(i, 2)}`;
+    const desglose = fila => Object.entries(fila.componentes_cargos || {}).map(([nombre, valor]) => `${nombre}: ${tieneValor(valor) ? montoPlano(valor) : "—"}`).join(" · ");
+    const sim = fila => !ec.simulacion_disponible || !tieneValor(fila.queda_con_dias) ? "—"
+        : Number(fila.queda_con_dias) === 0 ? `<b class="crm-ec-aldia">Al día</b>` : `<b>${h(format(fila.queda_con_dias))}</b> días${fila.queda_con_estimado ? " ≈" : ""}`;
+    const estimada = fila => fila.fecha_estimada ? ` <span class="crm-ec-estimada" title="Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua">≈</span>` : "";
+    const filasHtml = filas.map((fila, i) => `<tr class="${i <= hasta ? "is-incluida" : ""}" data-ec-hasta="${i}" tabindex="0" aria-label="Ver cuánto paga si cubre hasta la cuota ${attr(fila.numero)}">
+            <td class="crm-ec-numero" data-label="Cuota"><span><i class="crm-ec-marca" aria-hidden="true"></i>N.° ${h(format(fila.numero))}</span></td>
+            <td class="crm-ec-izq" data-label="Vence"><span>${tieneValor(fila.fecha_vencimiento) ? formatFecha(fila.fecha_vencimiento) : "—"}${estimada(fila)}</span></td>
+            <td class="${fila.por_vencer ? "crm-ec-por-vencer" : rango(i)}" data-label="Días vencida"><span>${fila.por_vencer ? "Por vencer" : tieneValor(fila.dias_vencida) ? `${format(fila.dias_vencida)}${fila.fecha_estimada ? "≈" : ""}` : "—"}</span></td>
+            <td data-label="Capital" title="${attr(money(fila.capital))}"><span>${fila.capitalMostrado === null ? "—" : `S/ ${montoEntero(fila.capitalMostrado)}`}</span></td>
+            <td data-label="Intereses, moras y gastos" title="${attr(desglose(fila))}"><span>${fila.cargosMostrado === null ? "—" : `S/ ${montoEntero(fila.cargosMostrado)}`}</span></td>
+            <td class="crm-ec-total" data-label="Total cuota" title="${attr(money(fila.total))}"><span>${fila.totalMostrado === null ? "—" : `S/ ${montoEntero(fila.totalMostrado)}`}</span></td>
+            <td class="crm-ec-acumulado" data-label="Acumulado (${etiquetaModo})"><span>S/ ${montoEntero(fila.acumulado)}</span></td>
+            <td data-label="Si paga hasta aquí"><span>${sim(fila)}</span></td>
+        </tr>`).join("");
+    const ultimo = filas[filas.length - 1].numero;
+    const faltantesHtml = Array.from({ length: Math.min(faltan, 12) }, (_, k) => `<tr class="crm-ec-falta"><td class="crm-ec-numero" data-label="Cuota"><span>N.° ${h(format(Number(ultimo) + k + 1))}</span></td><td class="crm-ec-izq" colspan="7"><span>No viene en la carga SAC (solo trae 3 cuotas)</span></td></tr>`).join("");
+    const solTotal = valor => valor === null ? "—" : `S/ ${montoEntero(valor)}`;
+    const pie = `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td>${solTotal(totales.capital)}</td><td>${solTotal(totales.cargos)}</td><td>${solTotal(totales.total)}</td><td colspan="2"></td></tr></tfoot>`;
+    const ok = valor => valor ? "is-ok" : "is-no";
+    const conciliacion = `<div class="crm-ec-conciliacion" aria-label="Conciliación con la asignación">
+        ${tieneValor(conc.cuotas_vencidas) ? `<span class="${ok(conc.completo)}"><i aria-hidden="true">${conc.completo ? "✓" : "!"}</i>Cuotas en la carga: ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} vencidas</span>` : ""}
+        ${tieneValor(conc.capital_vencido) ? `<span class="${ok(conc.cuadra_capital)}"><i aria-hidden="true">${conc.cuadra_capital ? "✓" : "!"}</i>Capital de estas cuotas ${h(money(conc.suma_capital_cuotas))} ${conc.cuadra_capital ? "=" : "vs."} capital vencido ${h(money(conc.capital_vencido))}${conc.cuadra_capital ? "" : ` (diferencia ${h(money(conc.diferencia_capital))})`}</span>` : ""}
+    </div>`;
+    const observaciones = (ec.advertencias || []).filter(texto => !faltan || !/cuotas vencidas: lo que debe/.test(texto));
+    const leyenda = `<footer class="crm-cronograma-leyenda crm-ec-leyenda">
+        <span class="crm-leyenda-item"><i class="rango-0"></i>Cuota más antigua</span>
+        <span class="crm-leyenda-item"><i class="rango-1"></i>Siguiente</span>
+        <span class="crm-leyenda-item"><i class="rango-2"></i>Subsiguiente</span>
+        <span>Toca una fila para ver cuánto paga si cubre hasta esa cuota y con cuántos días de atraso queda.</span>
+        ${filas.some(f => f.fecha_estimada) ? `<span>≈ Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua; las siguientes se proyectan cada ${h(format(ec.meses_entre_cuotas_estimado))} mes (por confirmar).</span>` : ""}
+        <span>Intereses, moras y gastos = CT k1 a k5; el desglose y los montos exactos aparecen al pasar el cursor. Montos redondeados hacia arriba al sol.</span>
+    </footer>`;
+    return `${resumen}${aviso}
+        <section class="crm-ec-panel" aria-label="Cuotas vencidas">
+            <table class="crm-ec-tabla">
+                <thead><tr><th scope="col" class="crm-ec-izq">Cuota</th><th scope="col" class="crm-ec-izq">Vence</th><th scope="col">Días vencida</th><th scope="col">Capital</th><th scope="col">Intereses, moras<small>y gastos</small></th><th scope="col">Total cuota</th><th scope="col">Acumulado<small>${h(etiquetaModo)}</small></th><th scope="col">Si paga hasta aquí<small>queda con</small></th></tr></thead>
+                <tbody>${filasHtml}${faltantesHtml}</tbody>${pie}
+            </table>
+        </section>
+        ${conciliacion}
+        ${observaciones.length ? `<ul class="crm-ec-observaciones">${observaciones.map(texto => `<li>${h(texto)}</li>`).join("")}</ul>` : ""}
+        ${leyenda}`;
+}
+
+// Campañas tal como llegan en la asignación (compartamos_individual / compartamos_ccm).
+// Hardy (09/11/2026): la campaña es sobre la cuota capital; la referencia es el capital de esas cuotas.
+function renderEstadoCuentaCampanasCRM(item, ec) {
+    const campanas = ec.campanas || {};
+    const { filas } = calcularEstadoCuentaCRM(ec, "capital");
+    const capitalHasta = k => ec.disponible && k <= filas.length && filas.slice(0, k).some(f => f.capitalMostrado !== null)
+        ? filas.slice(0, k).reduce((acc, f) => acc + (f.capitalMostrado || 0), 0) : null;
+    const sol = valor => valor === null || valor === undefined ? "—" : `S/ ${montoEntero(valor)}`;
+    const filasHtml = (campanas.cuotas || []).map(c => {
+        const ref = capitalHasta(c.cuotas);
+        return `<tr><td data-label="Campaña">Campaña ${h(c.cuotas)} cuota${c.cuotas === 1 ? "" : "s"}<span>Camp${h(c.cuotas)}Cuota% · Campaña Final ${h(c.cuotas)} Cuota</span></td>
+            <td class="numero" data-label="% campaña">${tieneValor(c.porcentaje) ? h(c.porcentaje) : "—"}</td>
+            <td class="numero" data-label="Monto campaña"${tieneValor(c.monto) ? ` title="${attr(money(c.monto))}"` : ""}>${tieneValor(c.monto) ? `<b>${sol(c.monto)}</b>` : "—"}</td>
+            <td class="numero" data-label="Referencia: capital de esas cuotas">${ref === null ? `<span class="crm-ec-sin-ref" title="La carga SAC trae como máximo 3 cuotas">—</span>` : sol(ref)}</td></tr>`;
+    }).join("");
+    const cancel = campanas.cancelacion || {};
+    const filaCancel = `<tr class="crm-ec-cancelacion"><td data-label="Campaña">Cancelación<span>Cancelación% · Cancelacion</span></td>
+        <td class="numero" data-label="% campaña">${tieneValor(cancel.porcentaje) ? h(cancel.porcentaje) : "—"}</td>
+        <td class="numero" data-label="Monto campaña"${tieneValor(cancel.monto) ? ` title="${attr(money(cancel.monto))}"` : ""}>${tieneValor(cancel.monto) ? `<b>${sol(cancel.monto)}</b>` : "—"}</td>
+        <td class="numero" data-label="Referencia: saldo capital">${sol(montoArriba(item.capital))}</td></tr>`;
+    return `<ul class="crm-cuadros-nota">
+            <li>Montos tal como llegan en la asignación (${h(ec.tabla_asignacion || "asignación")}). El CRM no los recalcula.</li>
+            <li>La campaña es sobre la <b>cuota capital</b>: la referencia suma el capital de esas cuotas en el estado de cuenta.</li>
+            <li><b>Por confirmar con Compartamos:</b> condiciones de cada campaña (fecha límite, pago único).</li>
+            <li>“—” = sin dato en la asignación. Montos redondeados hacia arriba al sol; el exacto aparece al pasar el cursor.</li>
+        </ul>
+        ${campanas.disponible ? "" : `<div class="crm-modal-aviso crm-ec-aviso"><strong>Esta operación no tiene campañas en la asignación.</strong><span>Se cobra según el estado de cuenta.</span></div>`}
+        <section class="crm-cuadro"><div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla crm-ec-campanas">
+            <thead><tr><th scope="col">Campaña</th><th scope="col" class="numero">% campaña</th><th scope="col" class="numero">Monto campaña</th><th scope="col" class="numero">Referencia: capital de esas cuotas</th></tr></thead>
+            <tbody>${filasHtml}${filaCancel}</tbody>
+        </table></div></section>`;
 }
 
 function renderCampanasGrupoCRM(campanas = {}) {
@@ -931,8 +1197,26 @@ function configurarConsultaCompartamos() {
         if (modoCrono && !modoCrono.disabled) { cambiarCronogramaCRM({ modo: modoCrono.dataset.cronoModo }); return; }
         if (event.target.closest("[data-abrir-documentos-grupo]:not([disabled])")) { abrirDocumentosGrupoCRM(); return; }
         if (event.target.id === "cronogramaModalCRM") { cerrarCronogramaCRM(); return; }
+        const abrirEstadoCuenta = event.target.closest("[data-abrir-estado-cuenta]");
+        if (abrirEstadoCuenta) { abrirEstadoCuentaCRM(abrirEstadoCuenta.dataset.abrirEstadoCuenta, abrirEstadoCuenta); return; }
+        if (event.target.closest("[data-cerrar-estado-cuenta]") || event.target.id === "estadoCuentaModalCRM") { cerrarEstadoCuentaCRM(); return; }
+        const tabEstadoCuenta = event.target.closest("[data-ec-tab]");
+        if (tabEstadoCuenta) { cambiarEstadoCuentaCRM({ tab: tabEstadoCuenta.dataset.ecTab }); return; }
+        const modoEstadoCuenta = event.target.closest("[data-ec-modo]");
+        if (modoEstadoCuenta) { cambiarEstadoCuentaCRM({ modo: modoEstadoCuenta.dataset.ecModo }); return; }
+        const filaEstadoCuenta = event.target.closest("[data-ec-hasta]");
+        if (filaEstadoCuenta) { cambiarEstadoCuentaCRM({ hasta: Number(filaEstadoCuenta.dataset.ecHasta) }); return; }
         const fila = event.target.closest("[data-cuenta-index]");
         if (fila && !event.target.closest("a, button, input, select, textarea")) seleccionarOperacion(fila.dataset.cuentaIndex);
+    });
+    // Estado de cuenta: Enter o espacio sobre una fila equivale a tocarla.
+    resultado.addEventListener("keydown", event => {
+        const fila = event.target.closest?.("[data-ec-hasta]");
+        if (!fila || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        const indice = fila.dataset.ecHasta;
+        cambiarEstadoCuentaCRM({ hasta: Number(indice) });
+        document.querySelector(`#estadoCuentaModalCRM [data-ec-hasta="${indice}"]`)?.focus();
     });
 }
 

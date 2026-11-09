@@ -67,7 +67,7 @@ BEGIN
         fuente_evidencia        VARCHAR(30)  NULL,
 
         -- resultado de la IA
-        resultado_ia            VARCHAR(20)  NOT NULL,  -- CUMPLE | NO_CUMPLE | NO_APLICA | NO_EVALUABLE
+        resultado_ia            VARCHAR(20)  NOT NULL,  -- CUMPLE | PARCIAL_MEDIO | NO_CUMPLE | NO_APLICA | NO_EVALUABLE | REQUIERE_REVISION
         puntaje_obtenido        DECIMAL(10,2) NULL,
         bloque_anulado          BIT NOT NULL DEFAULT 0,
         confianza_ia            VARCHAR(20)  NULL,      -- ALTA | MEDIA | BAJA
@@ -184,7 +184,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_CRM_IA_CALIB
     ALTER TABLE CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO
     ADD CONSTRAINT CK_CRM_IA_CALIB_RESULTADO
         CHECK (
-            (accion = 'CORREGIR' AND resultado_esperado IN ('CUMPLE', 'NO_CUMPLE', 'NO_APLICA', 'NO_EVALUABLE'))
+            -- PARCIAL_MEDIO desde la pauta v3 (28/10/2026); el servicio valida
+            -- que el criterio admita parcial en la pauta con la que se evaluo.
+            (accion = 'CORREGIR' AND resultado_esperado IN ('CUMPLE', 'PARCIAL_MEDIO', 'NO_CUMPLE', 'NO_APLICA', 'NO_EVALUABLE'))
          OR (accion = 'CONFIRMAR' AND resultado_esperado IS NULL)
         );
 GO

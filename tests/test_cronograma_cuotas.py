@@ -16,18 +16,23 @@ from app.services.cliente_crm_service import (  # noqa: E402
     construir_datos_grupal,
     construir_plan_pago,
     etiqueta_calificacion,
+    fecha_sac,
     formatear_rol,
+    redondear_sql,
     texto,
 )
 
 
-def sac(dni, nombre, ult, ct=None, cargos=None, hoy=None, operacion=None, grupo=380168):
-    """Fila con los nombres reales (espacios finales incluidos) de SAC_CAR_BIZNESCOB."""
+def sac(dni, nombre, ult, ct=None, cargos=None, hoy=None, operacion=None, grupo=380168, venc=None):
+    """Fila con los nombres reales (espacios finales incluidos) de SAC_CAR_BIZNESCOB.
+
+    venc: UltFecVen (vencimiento de la cuota Ult_CuotaAtrasada) como float AAAAMMDD, igual que SAC."""
     ct = ct or {}
     cargos = cargos or {}
     fila = {
         "DNI": dni, "[NomCliente ]": nombre, "NomCliente ": nombre, "CodigoGrupo ": float(grupo),
         "Cod Operación": operacion or f"op-{dni}", "Ult_CuotaAtrasada ": ult, "DiasAtraso ": hoy,
+        "UltFecVen": float(venc) if venc else None,
     }
     for clave in ("CT 1", "CT 2", "CT 3"):
         fila[clave] = ct.get(clave)
@@ -94,10 +99,11 @@ class DatosGrupalTest(unittest.TestCase):
 class CronogramaTest(unittest.TestCase):
     def setUp(self):
         self.filas = [
+            # Cronogramas alineados (14 dias): la N.o 4 de Aaron y la N.o 5 de Rocio no coinciden en fecha.
             sac("70859388", "AARON", 4, {"CT 1": 100.10, "CT 2": 110.20, "CT 3": 120.30},
-                {"CT 11": 5, "CT 12": 1, "CT 21": 6, "CT 31": 7}, hoy=49),
-            sac("44634806", "ROCIO", 5, {"CT 1": 200, "CT 2": 210}, hoy=49),
-            sac("99999999", "AJENA", 4, {"CT 1": 999}, hoy=10),
+                {"CT 11": 5, "CT 12": 1, "CT 21": 6, "CT 31": 7}, hoy=49, venc=20260801),
+            sac("44634806", "ROCIO", 5, {"CT 1": 200, "CT 2": 210}, hoy=49, venc=20260815),
+            sac("99999999", "AJENA", 4, {"CT 1": 999}, hoy=10, venc=20260801),
         ]
         self.por_dni = {"70859388": {"comite": "PRESIDENTA", "producto_camp": "14 días", "dias_atraso_inicio": 18, "cuotas_aprobadas": 8, "cuotas_pagadas": 3},
                         "44634806": {"comite": "", "producto_camp": "14 días", "dias_atraso_inicio": 20}}
@@ -144,6 +150,69 @@ class CronogramaTest(unittest.TestCase):
         integrantes = {i["dni"]: i for i in self.construir()["integrantes"]}
         self.assertEqual(integrantes["70859388"]["rol"], "Presidenta")
         self.assertEqual(integrantes["44634806"]["rol"], "Integrante")
+
+
+    def test_plan_alineado_por_vencimiento_marca_celdas(self):
+        crono = self.construir()
+        plan = crono["plan"]
+        self.assertEqual([v["fecha_vencimiento"] for v in plan["vencimientos"]], ["2026-08-01", "2026-08-15"])
+        self.assertTrue(plan["alineado"])
+        integrantes = {i["dni"]: i for i in crono["integrantes"]}
+        self.assertEqual(integrantes["70859388"]["a_pagar"], {"4": 100.10, "5": 110.20})
+        self.assertEqual(integrantes["44634806"]["a_pagar"], {"5": 200.0})
+        self.assertEqual(integrantes["44634806"]["a_pagar_detalle"],
+                         [{"fecha_vencimiento": "2026-08-15", "cuota": 5, "capital": 200.0, "total": 200.0}])
+        self.assertEqual(plan["vencimientos"][1]["capital"], 310.2)
+        self.assertNotIn("_ubicacion", integrantes["70859388"])
+
+
+class PlanPorVencimientoTest(unittest.TestCase):
+    """Grupo 44011 (13/10): Felicita (desembolso 17/06) debe su N.o 2; las otras cinco (20/05) su N.o 3.
+    Todas vencen el 12/08/2026. Por numero solo se exigia la N.o 2 (1 de 6); deben pagar las seis.
+    Montos ilustrativos, no son los del SAC."""
+
+    def setUp(self):
+        self.filas = [sac("10000001", "FELICITA", 2, {"CT 1": 48.65, "CT 2": 48.65}, hoy=61, venc=20260812)]
+        self.filas += [sac(f"2000000{n}", f"SOCIA {n}", 3, {"CT 1": 100 + n, "CT 2": 100 + n}, hoy=61, venc=20260812)
+                       for n in range(1, 6)]
+        dnis = [fila["DNI"] for fila in self.filas]
+        self.crono = construir_cronograma_cuotas(self.filas, dnis, {dni: {"producto_camp": "Crédito Grupal 28 Días S/."} for dni in dnis})
+
+    def test_todas_pagan_la_cuota_que_vence_el_mismo_dia(self):
+        plan = self.crono["plan"]
+        self.assertTrue(plan["disponible"])
+        self.assertEqual(plan["cuotas_por_pagar"], 1)
+        venc = plan["vencimientos"][0]
+        self.assertEqual((venc["fecha_vencimiento"], venc["numeros"], venc["integrantes"]), ("2026-08-12", [2, 3], 6))
+        self.assertEqual(venc["cuota"], 3)          # numero mas frecuente en esa fecha (solo para mostrar)
+        self.assertEqual(plan["cuotas"], [3])
+        self.assertFalse(plan["alineado"])
+        self.assertEqual(venc["capital"], round(48.65 + sum(100 + n for n in range(1, 6)), 2))
+
+    def test_cada_integrante_paga_su_cuota_de_esa_fecha(self):
+        integrantes = {i["dni"]: i for i in self.crono["integrantes"]}
+        # Felicita paga su N.o 2; su N.o 3 vence un periodo despues y no se exige.
+        self.assertEqual(integrantes["10000001"]["a_pagar"], {"2": 48.65})
+        self.assertEqual(integrantes["20000001"]["a_pagar"], {"3": 101.0})
+        self.assertTrue(all(len(i["a_pagar_detalle"]) == 1 for i in integrantes.values()))
+        self.assertEqual(integrantes["10000001"]["a_pagar_detalle"][0]["fecha_vencimiento"], "2026-08-12")
+
+    def test_matriz_sigue_por_numero(self):
+        self.assertEqual(self.crono["cuotas"], [2, 3, 4])
+        felicita = next(i for i in self.crono["integrantes"] if i["dni"] == "10000001")
+        self.assertEqual(felicita["cuotas"], {"2": 48.65, "3": 48.65})
+
+    def test_sin_fecha_de_vencimiento_no_se_inventa(self):
+        filas = [sac("10000001", "SIN FECHA", 2, {"CT 1": 48.65})]
+        crono = construir_cronograma_cuotas(filas, ["10000001"], {"10000001": {"producto_camp": "28 días"}})
+        self.assertFalse(crono["plan"]["disponible"])
+        self.assertIn("UltFecVen", crono["plan"]["motivo"])
+        self.assertTrue(any("UltFecVen" in a for a in crono["advertencias"]))
+
+    def test_redondeo_igual_a_sql_server(self):
+        self.assertEqual([redondear_sql(x) for x in (0.5, 1.5, 2.5, -0.5, 0.49)], [1, 2, 3, -1, 0])
+        self.assertEqual(fecha_sac(20260812.0).isoformat(), "2026-08-12")
+        self.assertIsNone(fecha_sac(0))
 
 
 class PlanPagoTest(unittest.TestCase):

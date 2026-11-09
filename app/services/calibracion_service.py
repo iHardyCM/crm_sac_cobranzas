@@ -25,6 +25,12 @@ from typing import Dict, List, Optional
 from sqlalchemy import text
 
 from app.core.db_siscob import engine_siscob
+from app.services.pautas_evaluacion_service import (
+    ESTADO_PARCIAL_PAUTA,
+    asegurar_tablas_pautas,
+    bloques_anulados,
+    puntaje_por_estado,
+)
 
 
 ESTADO_BORRADOR = "BORRADOR"
@@ -35,12 +41,11 @@ ESTADO_RECHAZADA = "RECHAZADA"
 ACCION_CONFIRMAR = "CONFIRMAR"
 ACCION_CORREGIR = "CORREGIR"
 
-RESULTADOS_VALIDOS = {"CUMPLE", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE"}
+RESULTADOS_VALIDOS = {"CUMPLE", ESTADO_PARCIAL_PAUTA, "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE"}
 EVIDENCIA_VALIDA = {"SI", "NO", "PARCIAL"}
 
-# Estados que suman puntaje. Se mantiene alineado con puntaje_mibanco_pipeline_v3:
-# solo CUMPLE otorga el peso del criterio.
-ESTADOS_QUE_PUNTUAN = {"CUMPLE"}
+# Puntaje por estado: se usa puntaje_por_estado, la MISMA tabla que el motor
+# (CUMPLE = peso, PARCIAL_MEDIO = mitad). Antes aqui solo puntuaba CUMPLE.
 
 # Estados en los que no hay respuesta y por eso salen del denominador. Debe ser
 # el MISMO conjunto que ESTADOS_FUERA_DEL_DENOMINADOR_V3 en el motor: si no, la
@@ -113,9 +118,11 @@ def listar_motivos() -> List[Dict]:
 def obtener_calibracion(id_feedback: int) -> Dict:
     """Criterios evaluados de una llamada, con su calibracion vigente si existe."""
     with engine_siscob.begin() as conn:
+        asegurar_tablas_pautas(conn)
         criterios = conn.execute(text("""
             SELECT E.id_evaluacion_criterio, E.codigo_bloque, E.nombre_bloque,
                    E.codigo_criterio, E.nombre_criterio, E.peso, E.fuente_evidencia,
+                   E.tipo_criterio, CAST(ISNULL(PC.admite_parcial, 0) AS BIT) AS admite_parcial,
                    E.resultado_ia, E.puntaje_obtenido, E.confianza_ia,
                    E.motivo_ia, E.evidencia_texto, E.momento_llamada,
                    C.id_calibracion, C.accion, C.resultado_esperado, C.evidencia_valida,
@@ -128,6 +135,9 @@ def obtener_calibracion(id_feedback: int) -> Dict:
                   AND C.estado <> 'RECHAZADA'
             LEFT JOIN CobAuto.dbo.CRM_IA_CALIBRACION_MOTIVO M
                    ON M.id_motivo = C.id_motivo
+            LEFT JOIN CobAuto.dbo.CRM_IA_PAUTA_CRITERIO PC
+                   ON PC.id_pauta = E.id_pauta
+                  AND PC.codigo_criterio = E.codigo_criterio
             WHERE E.id_feedback = :id_feedback
             ORDER BY E.codigo_bloque, E.codigo_criterio
         """), {"id_feedback": id_feedback}).mappings().all()
@@ -139,6 +149,7 @@ def obtener_calibracion(id_feedback: int) -> Dict:
             if item.get(campo) is not None:
                 item[campo] = item[campo].isoformat()
         item["calibrado"] = item.get("id_calibracion") is not None
+        item["admite_parcial"] = bool(item.get("admite_parcial"))
         data.append(item)
 
     revisados = sum(1 for item in data if item["calibrado"])
@@ -214,13 +225,22 @@ def guardar_calibracion(
     estado = ESTADO_EN_REVISION if enviar_a_revision else ESTADO_BORRADOR
 
     with engine_siscob.begin() as conn:
+        asegurar_tablas_pautas(conn)
         evaluacion = conn.execute(text("""
-            SELECT id_evaluacion_criterio, id_feedback, codigo_criterio, resultado_ia
-            FROM CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO
-            WHERE id_evaluacion_criterio = :id_evaluacion_criterio
+            SELECT E.id_evaluacion_criterio, E.id_feedback, E.codigo_criterio, E.resultado_ia,
+                   CAST(ISNULL(PC.admite_parcial, 0) AS BIT) AS admite_parcial
+            FROM CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO E
+            LEFT JOIN CobAuto.dbo.CRM_IA_PAUTA_CRITERIO PC
+                   ON PC.id_pauta = E.id_pauta
+                  AND PC.codigo_criterio = E.codigo_criterio
+            WHERE E.id_evaluacion_criterio = :id_evaluacion_criterio
         """), {"id_evaluacion_criterio": id_evaluacion_criterio}).mappings().first()
         if not evaluacion:
             raise ValueError("El criterio evaluado no existe.")
+        # Un parcial solo es valido donde la pauta con la que se evaluo lo
+        # define. Si no, la nota calibrada usaria una regla que la llamada no tenia.
+        if resultado_esperado == ESTADO_PARCIAL_PAUTA and not evaluacion["admite_parcial"]:
+            raise ValueError("Este criterio no admite resultado parcial en la pauta con la que se evaluó.")
 
         vigente = conn.execute(text("""
             SELECT id_calibracion, estado
@@ -467,7 +487,7 @@ def recalcular_score_calibrado(id_feedback: int) -> Dict:
     """
     with engine_siscob.begin() as conn:
         filas = conn.execute(text("""
-            SELECT E.codigo_criterio, E.peso, E.resultado_ia,
+            SELECT E.codigo_criterio, E.codigo_bloque, E.tipo_criterio, E.peso, E.resultado_ia,
                    C.resultado_esperado, C.accion, C.estado
             FROM CobAuto.dbo.CRM_IA_EVALUACION_CRITERIO E
             LEFT JOIN CobAuto.dbo.CRM_IA_CALIBRACION_CRITERIO C
@@ -489,23 +509,32 @@ def recalcular_score_calibrado(id_feedback: int) -> Dict:
             """), {"id_feedback": id_feedback})
             return {"score_calibrado": None, "publicadas": 0}
 
-        obtenido = 0.0
-        peso_aplicable = 0.0
-        for fila in filas:
-            peso = float(fila.get("peso") or 0)
+        def vigente(fila) -> str:
             # Resultado vigente: el corregido si la correccion esta publicada,
             # el de la IA en cualquier otro caso.
             resultado = fila.get("resultado_ia")
             if fila.get("estado") == ESTADO_PUBLICADA and fila.get("accion") == ACCION_CORREGIR:
                 resultado = fila.get("resultado_esperado") or resultado
-            resultado = str(resultado or "").upper()
+            return str(resultado or "").upper()
+
+        # Un anulante incumplido (con su resultado vigente) deja su bloque en
+        # cero, igual que en el motor. Si Calidad corrige el anulante a CUMPLE,
+        # el bloque recupera sus puntos.
+        anulados = bloques_anulados(filas, estado_de=vigente, bloque_de=lambda f: f.get("codigo_bloque"))
+
+        obtenido = 0.0
+        peso_aplicable = 0.0
+        for fila in filas:
+            peso = float(fila.get("peso") or 0)
+            resultado = vigente(fila)
 
             # Sin respuesta no hay incumplimiento: sale del denominador.
             if resultado in ESTADOS_FUERA_DEL_DENOMINADOR:
                 continue
             peso_aplicable += peso
-            if resultado in ESTADOS_QUE_PUNTUAN:
-                obtenido += peso
+            if str(fila.get("codigo_bloque") or "") in anulados:
+                continue
+            obtenido += puntaje_por_estado(resultado, peso)
 
         score = round((obtenido / peso_aplicable) * 100, 2) if peso_aplicable else None
 

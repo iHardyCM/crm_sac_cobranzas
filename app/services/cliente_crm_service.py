@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import calendar
 import logging
+import math
 import re
+from collections import Counter
 import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
@@ -131,6 +134,10 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
     }
     if tipo_resultado == "GRUPO":
         tareas["grupal"] = fuente_grupal
+    else:
+        # Estado de cuenta individual / CCM: carga SAC y asignacion de los DNI consultados.
+        tareas["ec_sac"] = lambda: medir_fuente("estado_cuenta_sac_ms", lambda: consultar_sac_por_dni(dnis))
+        tareas["ec_asignacion"] = lambda: medir_fuente("estado_cuenta_asignacion_ms", lambda: consultar_asignacion_estado_cuenta(dnis))
     with ThreadPoolExecutor(max_workers=len(tareas)) as pool:
         futuros = {nombre: pool.submit(tarea) for nombre, tarea in tareas.items()}
         resultados: Dict[str, Any] = {}
@@ -163,6 +170,9 @@ def construir_respuesta_crm(rows: List[Dict[str, Any]], valor_buscado: str,
     for fila_op, operacion_item in zip(operaciones_rows, operaciones):
         aplicar_calificacion(operacion_item, clave_documento(campo(fila_op, "DNI")), operacion_item.get("operacion"),
                              asignacion_cal, grupal)
+
+    if tipo_resultado != "GRUPO":
+        aplicar_estado_cuenta(operaciones, resultados.get("ec_sac"), resultados.get("ec_asignacion"), advertencias)
 
     situacion = construir_situacion(operaciones)
     contacto = construir_contacto(rows)
@@ -935,6 +945,30 @@ COLUMNAS_CT_CARGOS = {
 }
 
 
+def leer_cuotas_sac(indice: Dict[str, Any]) -> Dict[str, Any]:
+    """Lectura de una fila SAC (indexada con indexar_fila), comun al cronograma grupal y al estado de cuenta.
+
+    cuota_inicial: Ult_CuotaAtrasada (numero de la cuota donde va CT 1).
+    capital[k]:    CT 1, CT 2, CT 3 (solo capital).
+    cargos[k]:     CT k1..k5 tal cual (otros cargos por atraso: intereses, moras, gastos).
+    total[k]:      capital + cargos; los NULL no suman; None si todos son NULL.
+    fecha_ct1:     UltFecVen (vencimiento de CT 1).
+    """
+    capital = [numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CAPITAL]
+    cargos = [[numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CARGOS[posicion]] for posicion in (1, 2, 3)]
+    total = []
+    for posicion in range(3):
+        presentes = [valor for valor in [capital[posicion]] + cargos[posicion] if valor is not None]
+        total.append(sum(presentes) if presentes else None)
+    return {
+        "cuota_inicial": entero(valor_columna(indice, "Ult_CuotaAtrasada")),
+        "capital": capital,
+        "cargos": cargos,
+        "total": total,
+        "fecha_ct1": fecha_sac(valor_columna(indice, "UltFecVen")),
+    }
+
+
 def valor_unanime(valores: Iterable[Any]) -> tuple:
     """(valor, ambiguo): el valor si todos los no vacios coinciden."""
     distintos: List[Any] = []
@@ -946,12 +980,38 @@ def valor_unanime(valores: Iterable[Any]) -> tuple:
     return None, len(distintos) > 1
 
 
-def cuotas_por_producto(producto: Optional[str]) -> Optional[int]:
-    """14 dias -> 2 cuotas; 28 dias -> 1 cuota. Cualquier otro texto: no determinado."""
+def dias_producto(producto: Optional[str]) -> Optional[int]:
+    """Periodo entre cuotas segun ProductoCamp: 14 o 28 dias. Cualquier otro texto: no determinado."""
     if not producto:
         return None
     coincidencia = re.search(r"(?<!\d)(14|28)(?!\d)\s*d[ií]as", producto, re.IGNORECASE)
-    return CUOTAS_A_PAGAR_POR_PRODUCTO.get(int(coincidencia.group(1))) if coincidencia else None
+    return int(coincidencia.group(1)) if coincidencia else None
+
+
+def cuotas_por_producto(producto: Optional[str]) -> Optional[int]:
+    """14 dias -> 2 cuotas; 28 dias -> 1 cuota. Cualquier otro texto: no determinado."""
+    dias = dias_producto(producto)
+    return CUOTAS_A_PAGAR_POR_PRODUCTO.get(dias) if dias else None
+
+
+def fecha_sac(value: Any) -> Optional[date]:
+    """UltFecVen de SAC llega como float AAAAMMDD (20260812.0); tambien acepta date/datetime."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    entero_fecha = entero(value)
+    if entero_fecha is None or not 19000101 <= entero_fecha <= 99991231:
+        return None
+    try:
+        return date(entero_fecha // 10000, entero_fecha // 100 % 100, entero_fecha % 100)
+    except ValueError:
+        return None
+
+
+def redondear_sql(valor: float) -> int:
+    """ROUND(x, 0) de SQL Server (mitades lejos de cero); round() de Python redondea al par."""
+    return int(math.copysign(math.floor(abs(valor) + 0.5), valor))
 
 
 def construir_cronograma_cuotas(
@@ -967,6 +1027,11 @@ def construir_cronograma_cuotas(
       - cuotas_total: total de la cuota con cargos por atraso
         (CT 1 + CT 11..CT 15, CT 2 + CT 21..CT 25, CT 3 + CT 31..CT 35).
     Solo se incluyen integrantes ya devueltos (y autorizados) por la consulta principal.
+
+    La matriz se muestra por NUMERO de cuota. Lo que el grupo debe pagar (plan) se decide
+    por FECHA DE VENCIMIENTO (2026-10-13, misma regla que Biznescob Analytics V1):
+    integrantes con distinto desembolso pueden deber cuotas de distinto numero que vencen
+    el mismo dia, y todos deben pagar para que el grupo contenga. Ver plan_pago_por_vencimiento.
     """
     grupal_por_dni = grupal_por_dni or {}
     advertencias: List[str] = []
@@ -995,18 +1060,16 @@ def construir_cronograma_cuotas(
         advertencias.append("Cronograma: no se encontraron en la carga SAC las columnas " + ", ".join(sorted(columnas_ct_faltantes)) + "; el total de cuota puede estar incompleto.")
 
     integrantes = []
+    ubicacion: List[Dict[str, Any]] = []
     numeros_cuota = set()
     sin_ubicacion = 0
     for key, indice in por_operacion.items():
         dni = clave_documento(valor_columna(indice, "DNI"))
         grupal = grupal_por_dni.get(dni) or {}
-        cuota_inicial = entero(valor_columna(indice, "Ult_CuotaAtrasada"))
-        capital = [numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CAPITAL]
-        total = []
-        for posicion in (1, 2, 3):
-            componentes = [capital[posicion - 1]] + [numero(valor_columna(indice, nombre)) for nombre in COLUMNAS_CT_CARGOS[posicion]]
-            presentes = [valor for valor in componentes if valor is not None]
-            total.append(sum(presentes) if presentes else None)
+        lectura = leer_cuotas_sac(indice)
+        cuota_inicial = lectura["cuota_inicial"]
+        capital = lectura["capital"]
+        total = lectura["total"]
         cuotas: Dict[str, float] = {}
         cuotas_total: Dict[str, float] = {}
         if cuota_inicial is not None:
@@ -1020,6 +1083,8 @@ def construir_cronograma_cuotas(
         elif any((valor or 0) > 0 for valor in capital + total):
             sin_ubicacion += 1
         atraso_inicio = entero(grupal.get("dias_atraso_inicio"))
+        ubicacion.append({"cuota_inicial": cuota_inicial, "capital": capital, "total": total,
+                          "fecha_ct1": lectura["fecha_ct1"]})
         integrantes.append({
             "nombre": texto(valor_columna(indice, "NomCliente")),
             "dni": texto(valor_columna(indice, "DNI")),
@@ -1038,7 +1103,9 @@ def construir_cronograma_cuotas(
             "dias_atraso_proyectado": atraso_inicio + DIAS_PROYECCION_ATRASO if atraso_inicio is not None else None,
             "cuotas_aprobadas": entero(grupal.get("cuotas_aprobadas")),
             "cuotas_pagadas": entero(grupal.get("cuotas_pagadas")),
+            "fecha_vencimiento_ct1": fecha_iso(ubicacion[-1]["fecha_ct1"]),
         })
+        integrantes[-1]["_ubicacion"] = ubicacion[-1]
     if sin_ubicacion:
         advertencias.append(
             f"Cronograma: {sin_ubicacion} integrante(s) con montos CT pero sin Ult_CuotaAtrasada; sus montos no se ubican en ninguna cuota."
@@ -1064,7 +1131,7 @@ def construir_cronograma_cuotas(
     if ambiguos:
         advertencias.append("Cronograma: el grupo tiene valores distintos en " + ", ".join(ambiguos) + "; ese dato no se muestra.")
 
-    plan = construir_plan_pago(columnas, parametros.get("producto_camp"), "producto_camp" in ambiguos)
+    plan = plan_pago_por_vencimiento(integrantes, parametros.get("producto_camp"), "producto_camp" in ambiguos, advertencias)
     return {
         "disponible": bool(integrantes),
         "fuente": "SAC_CAR_BIZNESCOB + compartamos_grupal",
@@ -1077,6 +1144,114 @@ def construir_cronograma_cuotas(
         "plan": plan,
         "advertencias": advertencias,
     }
+
+
+def plan_pago_por_vencimiento(integrantes: List[Dict[str, Any]], producto: Optional[str], producto_ambiguo: bool,
+                              advertencias: List[str]) -> Dict[str, Any]:
+    """Cuotas que debe pagar el grupo, alineadas por FECHA DE VENCIMIENTO (2026-10-13).
+
+    Misma regla que Biznescob Analytics (V1 y obligacion en cuotas):
+      1. Vencimiento de CT 1 = UltFecVen; CT 2 = + 1 periodo; CT 3 = + 2 (14 o 28 dias segun producto).
+      2. D1 = vencimiento mas antiguo del grupo entre integrantes con CT 1 > 0.
+      3. Posicion de cada CT = 1 + ROUND((vencimiento - D1) / periodo).
+      4. Cuotas exigidas = las 1 (28 dias) o 2 (14 dias) posiciones mas antiguas con capital.
+      5. Cada integrante debe sus CT en esas posiciones, aunque su numero de cuota sea otro.
+    Ejemplo real: grupo 44011, una integrante debe su N.o 2 y cinco su N.o 3, todas vencen el
+    12/08/2026: deben pagar las seis. Por numero solo se exigia la N.o 2 (1 de 6).
+
+    Agrega a cada integrante: a_pagar / a_pagar_total (por numero de cuota, para marcar la matriz)
+    y a_pagar_detalle (una fila por cuota exigida: fecha, numero, capital y total con cargos).
+    Quita el campo interno _ubicacion.
+    """
+    periodo = dias_producto(producto)
+    datos = [item.pop("_ubicacion", None) or {} for item in integrantes]
+    for item in integrantes:
+        item.update(a_pagar={}, a_pagar_total={}, a_pagar_detalle=[])
+
+    def positivo(valor: Optional[float]) -> bool:
+        return valor is not None and valor > 0
+
+    candidatos = [d["fecha_ct1"] for d in datos
+                  if d.get("fecha_ct1") and (d.get("cuota_inicial") or 0) > 0 and positivo((d.get("capital") or [None])[0])]
+    d1 = min(candidatos) if candidatos else None
+
+    posiciones: Dict[int, Dict[str, Any]] = {}
+    sin_fecha = 0
+    for d in datos:
+        d["pos1"] = None
+        con_capital = any(positivo(v) for v in d.get("capital") or [])
+        if d.get("cuota_inicial") is None or not con_capital:
+            continue
+        if not d.get("fecha_ct1") or d1 is None or periodo is None:
+            if d.get("fecha_ct1") is None:
+                sin_fecha += 1
+            continue
+        d["pos1"] = 1 + redondear_sql((d["fecha_ct1"] - d1).days / periodo)
+        for k in range(3):
+            capital_k = d["capital"][k]
+            if not positivo(capital_k):
+                continue
+            pos = d["pos1"] + k
+            info = posiciones.setdefault(pos, {"capital": 0.0, "total": 0.0, "fecha": None, "numeros": Counter()})
+            info["capital"] += capital_k
+            if positivo(d["total"][k]):
+                info["total"] += d["total"][k]
+            vence = date.fromordinal(d["fecha_ct1"].toordinal() + k * periodo)
+            info["fecha"] = vence if info["fecha"] is None or vence < info["fecha"] else info["fecha"]
+            info["numeros"][d["cuota_inicial"] + k] += 1
+    if sin_fecha:
+        advertencias.append(
+            f"Cuotas a pagar: {sin_fecha} integrante(s) sin fecha de vencimiento (UltFecVen) en la carga SAC; "
+            "no se puede saber qué cuota les corresponde y no se incluyen en lo que debe pagar el grupo."
+        )
+
+    plan = construir_plan_pago(sorted(posiciones), producto, producto_ambiguo)
+    if not plan.get("disponible"):
+        if not posiciones and sin_fecha and plan.get("motivo") == "El grupo no tiene cuotas atrasadas con monto.":
+            plan["motivo"] = "La carga SAC no trae la fecha de vencimiento (UltFecVen); no se puede determinar qué cuotas debe pagar el grupo."
+        return plan
+
+    seleccion = plan["cuotas"]
+    vencimientos = []
+    for pos in seleccion:
+        info = posiciones[pos]
+        # Numero que se muestra: el mas frecuente en esa fecha (empate: el menor). Solo informativo.
+        numero_mostrado = sorted(info["numeros"].items(), key=lambda par: (-par[1], par[0]))[0][0]
+        vencimientos.append({
+            "posicion": pos,
+            "fecha_vencimiento": info["fecha"].isoformat(),
+            "cuota": numero_mostrado,
+            "numeros": sorted(info["numeros"]),
+            "integrantes": sum(info["numeros"].values()),
+            "capital": round(info["capital"], 2),
+            "total": round(info["total"], 2),
+        })
+    fecha_por_pos = {v["posicion"]: v["fecha_vencimiento"] for v in vencimientos}
+    for item, d in zip(integrantes, datos):
+        if d.get("pos1") is None:
+            continue
+        for k in range(3):
+            pos = d["pos1"] + k
+            if pos not in fecha_por_pos:
+                continue
+            if not positivo(d["capital"][k]):
+                continue  # misma condicion que la seleccion: una cuota sin capital no se exige
+            numero_k = d["cuota_inicial"] + k
+            capital_k = round(d["capital"][k], 2)
+            total_k = round(d["total"][k], 2) if positivo(d["total"][k]) else None
+            item["a_pagar"][str(numero_k)] = capital_k
+            if total_k is not None:
+                item["a_pagar_total"][str(numero_k)] = total_k
+            item["a_pagar_detalle"].append({"fecha_vencimiento": fecha_por_pos[pos], "cuota": numero_k,
+                                            "capital": capital_k, "total": total_k})
+    plan.update(
+        cuotas=[v["cuota"] for v in vencimientos],
+        vencimientos=vencimientos,
+        alineado=all(len(v["numeros"]) == 1 for v in vencimientos),
+        regla=("14 días: 2 cuotas · 28 días: 1 cuota · las más atrasadas del grupo por fecha de vencimiento: "
+               "pagan todos los integrantes con cuota en esa fecha, aunque el número de su cuota sea otro"),
+    )
+    return plan
 
 
 def construir_plan_pago(cuotas_presentes: List[int], producto: Optional[str], producto_ambiguo: bool) -> Dict[str, Any]:
@@ -1101,6 +1276,293 @@ def construir_plan_pago(cuotas_presentes: List[int], producto: Optional[str], pr
 
 def estructura_cronograma_vacia() -> Dict[str, Any]:
     return {"disponible": False, "fuente": None, "dias_proyeccion": DIAS_PROYECCION_ATRASO, "cuotas": [], "integrantes": [], "totales": {}, "totales_total": {}, "parametros": {}, "plan": {"disponible": False}}
+
+
+# ---------------------------------------------------------------------------
+# Estado de cuenta individual / CCM (2026-11-09)
+# Especificacion y reglas R1-R10: docs/estado_cuenta_individual_compartamos.md
+# ---------------------------------------------------------------------------
+
+# La carga SAC solo trae el vencimiento de la cuota mas antigua (UltFecVen). Mientras Compartamos confirma
+# la frecuencia de pago, el vencimiento de CT 2 / CT 3 se proyecta N meses despues (mismo dia) y se marca
+# como estimado. None = no proyectar: sin esas fechas no se calculan dias ni la simulacion "si paga hasta aqui".
+MESES_ENTRE_CUOTAS_ESTIMADO: Optional[int] = 1
+
+# Una operacion recibe estado de cuenta solo si su numero figura en una de estas asignaciones.
+FUENTES_ESTADO_CUENTA = (
+    # (tabla, cartera, columnas de documento posibles)
+    ("compartamos_individual", "Individual", ("NumDoc", "DNI")),
+    ("compartamos_ccm", "CCM", ("DNI", "NumDoc")),
+)
+COLUMNAS_OPERACION_ASIGNACION = ("Operacion", "CodOperacion")
+CAMPANAS_CUOTAS_ASIGNACION = 4  # Camp1Cuota% .. Camp4Cuota% / Campana Final 1..4 Cuota
+
+
+def sumar_meses(fecha: date, meses: int) -> date:
+    """Mismo dia `meses` despues; si ese dia no existe (31 -> febrero), el ultimo dia del mes."""
+    total = fecha.month - 1 + meses
+    anio, mes = fecha.year + total // 12, total % 12 + 1
+    return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
+
+
+def consultar_tabla_estado_cuenta(tabla: str, cartera: str, cols_dni: tuple, variantes: List[str]) -> Dict[str, Any]:
+    """Filas de una asignacion (individual o CCM) de los DNI consultados, en su propia conexion."""
+    salida: Dict[str, Any] = {"filas": [], "advertencia": None}
+    params = {f"d{i}": valor for i, valor in enumerate(variantes)}
+    marcadores = ", ".join(f"CAST(:{key} AS VARCHAR(40))" for key in params)
+    try:
+        with engine_siscob.connect() as conn:
+            reales = columnas_reales_tabla(conn, tabla)
+            col_dni = next((reales[clave_columna(c)] for c in cols_dni if clave_columna(c) in reales), None)
+            col_op = next((reales[clave_columna(c)] for c in COLUMNAS_OPERACION_ASIGNACION if clave_columna(c) in reales), None)
+            if not col_dni or not col_op:
+                salida["advertencia"] = f"Estado de cuenta: {tabla} no tiene columna de documento u operación."
+                return salida
+            query = text(f"SELECT * FROM Desarrollo.dbo.{tabla} WITH(NOLOCK) WHERE [{col_dni}] IN ({marcadores})")
+            for fila in conn.execute(query, params).mappings().all():
+                indice = indexar_fila(dict(fila))
+                operacion = clave_documento(valor_columna(indice, *COLUMNAS_OPERACION_ASIGNACION))
+                if operacion:
+                    salida["filas"].append({"operacion": operacion, "tabla": tabla, "cartera": cartera, "indice": indice})
+    except Exception:
+        logger.exception("No se pudo leer %s para el estado de cuenta", tabla)
+        salida["advertencia"] = f"No se pudo consultar {tabla} (estado de cuenta)."
+    return salida
+
+
+def consultar_asignacion_estado_cuenta(dnis: List[str]) -> Dict[str, Any]:
+    """{'por_operacion': {operacion_sin_ceros: {tabla, cartera, indice}}, 'advertencias': [...]}"""
+    resultado: Dict[str, Any] = {"por_operacion": {}, "advertencias": []}
+    claves = [identificador(value) for value in dnis if identificador(value)]
+    if not claves:
+        return resultado
+    variantes = variantes_documento(claves)
+    with ThreadPoolExecutor(max_workers=len(FUENTES_ESTADO_CUENTA)) as pool:
+        futuros = [pool.submit(consultar_tabla_estado_cuenta, tabla, cartera, cols, variantes)
+                   for tabla, cartera, cols in FUENTES_ESTADO_CUENTA]
+        for futuro in futuros:
+            salida = futuro.result()
+            if salida["advertencia"]:
+                resultado["advertencias"].append(salida["advertencia"])
+            for fila in salida["filas"]:
+                # Si la misma operacion figurara en dos asignaciones, gana la primera (individual) y se avisa.
+                previo = resultado["por_operacion"].get(fila["operacion"])
+                if previo and previo["tabla"] != fila["tabla"]:
+                    resultado["advertencias"].append(
+                        f"Estado de cuenta: la operación {fila['operacion']} figura en {previo['tabla']} y en {fila['tabla']}; se usa {previo['tabla']}.")
+                    continue
+                resultado["por_operacion"].setdefault(fila["operacion"], fila)
+    return resultado
+
+
+def consultar_sac_por_dni(dnis: List[str]) -> List[Dict[str, Any]]:
+    """Filas de la carga diaria SAC de los DNI consultados (cuotas CT por operacion)."""
+    claves = [identificador(value) for value in dnis if identificador(value)]
+    if not claves:
+        return []
+    variantes = variantes_documento(claves)
+    params = {f"d{i}": valor for i, valor in enumerate(variantes)}
+    marcadores = ", ".join(f"CAST(:{key} AS NVARCHAR(40))" for key in params)
+    query = text(f"SELECT S.* FROM Desarrollo.DBO.SAC_CAR_BIZNESCOB S WITH(NOLOCK) WHERE S.DNI IN ({marcadores})")
+    with engine_siscob.connect() as conn:
+        return [dict(row) for row in conn.execute(query, params).mappings().all()]
+
+
+def huella_sac(lectura: Dict[str, Any], indice: Dict[str, Any]) -> tuple:
+    """Valores que definen el estado de cuenta; dos filas SAC de la misma operacion deben coincidir en todos."""
+    return (lectura["cuota_inicial"], lectura["fecha_ct1"], tuple(lectura["capital"]),
+            tuple(tuple(c) for c in lectura["cargos"]), entero(valor_columna(indice, "DiasAtraso")))
+
+
+def construir_campanas_asignacion(indice: Dict[str, Any]) -> Dict[str, Any]:
+    """Campanas tal como llegan en la asignacion. Hardy (09/11/2026): la campana es sobre la cuota capital."""
+    cuotas = []
+    for k in range(1, CAMPANAS_CUOTAS_ASIGNACION + 1):
+        cuotas.append({
+            "cuotas": k,
+            "porcentaje": texto(valor_columna(indice, f"Camp{k}Cuota%")),
+            "monto": numero(valor_columna(indice, f"Campaña Final {k} Cuota")),
+        })
+    cancelacion = {
+        "porcentaje": texto(valor_columna(indice, "Cancelación%")),
+        "monto": numero(valor_columna(indice, "Cancelacion")),
+    }
+    disponible = any(c["porcentaje"] or c["monto"] is not None for c in cuotas) or bool(cancelacion["porcentaje"]) or cancelacion["monto"] is not None
+    return {"disponible": disponible, "cuotas": cuotas, "cancelacion": cancelacion}
+
+
+def construir_estado_cuenta(operacion: Dict[str, Any], filas_sac: List[Dict[str, Any]],
+                            asignacion: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Estado de cuenta de UNA operacion individual o CCM (reglas R1-R10 de la especificacion).
+
+    operacion:  operacion normalizada (normalizar_operacion) de VW_CLIENTE_CRM_SAC.
+    filas_sac:  filas de SAC_CAR_BIZNESCOB de esa misma operacion.
+    asignacion: {tabla, cartera, indice} de compartamos_individual / compartamos_ccm, o None.
+    Los montos van exactos (2 decimales); el redondeo hacia arriba al sol es de pantalla.
+    """
+    if not asignacion:
+        return {"aplica": False}
+    indice_asig = asignacion["indice"]
+    base: Dict[str, Any] = {
+        "aplica": True,
+        "disponible": False,
+        "motivo": None,
+        "fuente": "SAC_CAR_BIZNESCOB",
+        "cartera": asignacion["cartera"],
+        "tabla_asignacion": asignacion["tabla"],
+        "cuotas_aprobadas_asignacion": entero(valor_columna(indice_asig, "NROCUOTAS")),
+        "cuotas_pagadas_asignacion": entero(valor_columna(indice_asig, "NROCUOTASPAGADAS")),
+        "campanas": construir_campanas_asignacion(indice_asig),
+        "meses_entre_cuotas_estimado": MESES_ENTRE_CUOTAS_ESTIMADO,
+        "cuotas": [],
+        "advertencias": [],
+    }
+    if not filas_sac:
+        base["motivo"] = "La operación no figura en la carga SAC del día."
+        return base
+
+    lecturas = []
+    for fila in filas_sac:
+        indice = indexar_fila(fila)
+        lectura = leer_cuotas_sac(indice)
+        lecturas.append((lectura, indice))
+    if len({huella_sac(lectura, indice) for lectura, indice in lecturas}) > 1:
+        base["motivo"] = f"La carga SAC trae {len(lecturas)} filas distintas para esta operación; no se elige una."
+        return base
+    lectura, indice = lecturas[0]
+    advertencias: List[str] = base["advertencias"]
+
+    cuota_inicial = lectura["cuota_inicial"]
+    capital, cargos, total, fecha_ct1 = lectura["capital"], lectura["cargos"], lectura["total"], lectura["fecha_ct1"]
+    con_monto = [k for k in range(3) if (capital[k] or 0) > 0 or (total[k] or 0) > 0]
+    if not con_monto:
+        base["motivo"] = "La carga SAC no trae cuotas atrasadas con monto para esta operación."
+        return base
+    if cuota_inicial is None:
+        base["motivo"] = "La carga SAC trae montos pero no Ult_CuotaAtrasada; no se puede saber a qué cuota corresponden."
+        return base
+
+    dias_hoy = entero(valor_columna(indice, "DiasAtraso"))
+    fecha_carga = a_fecha(valor_columna(indice, "FechaCarga"))
+    # Fecha de corte coherente con DiasAtraso: asi los dias de la cuota mas antigua = DiasAtraso.
+    if fecha_ct1 and dias_hoy is not None:
+        fecha_corte, fuente_corte = date.fromordinal(fecha_ct1.toordinal() + dias_hoy), "UltFecVen + DiasAtraso"
+    elif fecha_carga:
+        fecha_corte, fuente_corte = fecha_carga, "FechaCarga"
+    else:
+        fecha_corte, fuente_corte = None, None
+    if not fecha_ct1:
+        advertencias.append("La carga SAC no trae la fecha de vencimiento (UltFecVen): no se muestran fechas ni días por cuota.")
+
+    filas = []
+    for k in con_monto:
+        if (capital[k] or 0) <= 0:
+            advertencias.append(f"La cuota N.° {cuota_inicial + k} trae intereses, moras o gastos pero no capital (CT {k + 1}).")
+        vence, estimada = None, False
+        if fecha_ct1:
+            if k == 0:
+                vence = fecha_ct1
+            elif MESES_ENTRE_CUOTAS_ESTIMADO:
+                vence, estimada = sumar_meses(fecha_ct1, k * MESES_ENTRE_CUOTAS_ESTIMADO), True
+        dias_vencida = (fecha_corte - vence).days if vence and fecha_corte else None
+        cargos_k = [valor for valor in cargos[k] if valor is not None]
+        filas.append({
+            "numero": cuota_inicial + k,
+            "posicion_ct": k + 1,
+            "fecha_vencimiento": vence.isoformat() if vence else None,
+            "fecha_estimada": estimada,
+            "dias_vencida": dias_vencida if dias_vencida is None or dias_vencida >= 0 else None,
+            "por_vencer": dias_vencida is not None and dias_vencida < 0,
+            "capital": round(capital[k], 2) if capital[k] is not None else None,
+            "cargos": round(sum(cargos_k), 2) if cargos_k else None,
+            "total": round(total[k], 2) if total[k] is not None else None,
+            "componentes_cargos": {nombre: cargos[k][i] for i, nombre in enumerate(COLUMNAS_CT_CARGOS[k + 1])},
+        })
+    if len(con_monto) > 1 and con_monto != list(range(con_monto[0], con_monto[-1] + 1)):
+        advertencias.append("La carga SAC trae una cuota intermedia sin monto (hueco entre cuotas).")
+
+    # R6. Conciliacion: nunca corrige, solo informa.
+    cuotas_en_sac = sum(1 for f in filas if (f["capital"] or 0) > 0)
+    vencidas = entero(valor_columna(indice, "Nro_CuotasVencidas"))
+    if vencidas is None:
+        vencidas = entero(operacion.get("cuotas_vencidas"))
+    capital_vencido = numero(valor_columna(indice, "SdoCapitalVencido"))
+    if capital_vencido is None:
+        capital_vencido = numero(operacion.get("capital_vencido"))
+    suma_capital = sumar_conocidos(f["capital"] for f in filas)
+    completo = vencidas is not None and cuotas_en_sac >= vencidas
+    if vencidas is None:
+        advertencias.append("No se pudo verificar cuántas cuotas vencidas tiene la operación (Nro_CuotasVencidas vacío).")
+    elif not completo:
+        advertencias.append(f"La carga trae {cuotas_en_sac} de {vencidas} cuotas vencidas: lo que debe el cliente es mayor que lo que se muestra.")
+    diferencia = round(capital_vencido - (suma_capital or 0), 2) if capital_vencido is not None else None
+
+    # R7. Si paga hasta la cuota k, queda con los dias de la siguiente cuota vencida (o al dia).
+    fechas_ok = all(f["fecha_vencimiento"] for f in filas) and fecha_corte is not None
+    simulacion_disponible = completo and fechas_ok
+    for i, fila in enumerate(filas):
+        if not simulacion_disponible:
+            fila["queda_con_dias"], fila["queda_con_estimado"] = None, False
+            continue
+        siguiente = next((f for f in filas[i + 1:] if f["dias_vencida"] is not None), None)
+        fila["queda_con_dias"] = siguiente["dias_vencida"] if siguiente else 0
+        fila["queda_con_estimado"] = bool(siguiente and siguiente["fecha_estimada"])
+    if not completo:
+        motivo_sim = "Faltan cuotas vencidas en la carga."
+    elif not fechas_ok:
+        motivo_sim = "Faltan fechas de vencimiento."
+    else:
+        motivo_sim = None
+
+    base.update(
+        disponible=True,
+        cuota_mas_atrasada=cuota_inicial,
+        dias_atraso_hoy=dias_hoy,
+        fecha_carga=fecha_carga.isoformat() if fecha_carga else None,
+        fecha_corte=fecha_corte.isoformat() if fecha_corte else None,
+        fecha_corte_fuente=fuente_corte,
+        cuotas=filas,
+        totales={
+            "capital": sumar_conocidos(f["capital"] for f in filas),
+            "cargos": sumar_conocidos(f["cargos"] for f in filas),
+            "total": sumar_conocidos(f["total"] for f in filas),
+        },
+        conciliacion={
+            "cuotas_en_sac": cuotas_en_sac,
+            "cuotas_vencidas": vencidas,
+            "completo": completo,
+            "capital_vencido": capital_vencido,
+            "suma_capital_cuotas": suma_capital,
+            "diferencia_capital": diferencia,
+            "cuadra_capital": diferencia is not None and abs(diferencia) <= 0.05,
+        },
+        simulacion_disponible=simulacion_disponible,
+        simulacion_motivo=motivo_sim,
+    )
+    return base
+
+
+def aplicar_estado_cuenta(operaciones: List[Dict[str, Any]], filas_sac: Optional[List[Dict[str, Any]]],
+                          asignacion: Optional[Dict[str, Any]], advertencias: List[str]) -> None:
+    """Agrega operaciones[i]['estado_cuenta']. Sin asignacion consultable no se muestra (cerrado por defecto)."""
+    if asignacion is None:
+        advertencias.append("No se pudo consultar la asignación individual/CCM: el estado de cuenta no está disponible.")
+        for item in operaciones:
+            item["estado_cuenta"] = {"aplica": False}
+        return
+    advertencias.extend(asignacion.get("advertencias", []))
+    por_operacion: Dict[str, List[Dict[str, Any]]] = {}
+    for fila in filas_sac or []:
+        clave = clave_documento(valor_columna(indexar_fila(fila), "Cod Operación", "CodOperacion"))
+        if clave:
+            por_operacion.setdefault(clave, []).append(fila)
+    for item in operaciones:
+        clave = clave_documento(item.get("operacion"))
+        asig = asignacion.get("por_operacion", {}).get(clave) if clave else None
+        estado = construir_estado_cuenta(item, por_operacion.get(clave, []), asig)
+        if asig and filas_sac is None:
+            estado.update(disponible=False, motivo="No se pudo consultar la carga SAC.", cuotas=[])
+        item["estado_cuenta"] = estado
 
 
 def clave_documento(value: Any) -> str:

@@ -1,0 +1,496 @@
+<title>Estado de cuenta individual</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: la pantalla del Radar (cliente) atenuada detrás y el modal "Estado de cuenta" encima,
+   con el mismo lenguaje del modal del cronograma grupal (cabecera navy, pestañas con acento ámbar). */
+:root {
+    --navy: #0b2f55;
+    --blue: #0f4c81;
+    --ink: #12243a;
+    --muted: #5f6f86;
+    --line: #e3eaf2;
+    --line-strong: #d3deea;
+    --soft: #f3f7fb;
+    --page: #eef4f9;
+    --card: #ffffff;
+    --amber: #e8861f;
+    --amber-bg: #fff4e6;
+    --amber-line: #f6d9bb;
+    --amber-ink: #8a3d0a;
+    --r0: #fbcfa6; --r0-ink: #5a2706;
+    --r1: #fde3c8; --r1-ink: #6b3410;
+    --r2: #fef1e2; --r2-ink: #7a4519;
+    --ok-bg: #e5f4ec;
+    --ok-ink: #17623f;
+    --warn-bg: #fff4e6;
+    --backdrop: rgba(8, 28, 52, .58);
+    --on-navy: #ffffff;
+    --on-navy-muted: rgba(255, 255, 255, .78);
+    --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    padding-block: 18px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---------- Pantalla del Radar (contexto) ---------- */
+.radar { max-width: 1180px; margin: 0 auto; display: grid; gap: 12px; }
+.radar-busqueda { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 22px; border-radius: 16px; background: linear-gradient(120deg, #0a2a4d 0%, var(--blue) 100%); color: var(--on-navy); }
+.radar-busqueda h1 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+.radar-busqueda p { margin: 2px 0 0; color: var(--on-navy-muted); font-size: 12px; }
+.radar-busqueda .campo { padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, .14); color: var(--on-navy); font-variant-numeric: tabular-nums; }
+.tarjeta { min-width: 0; padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.cliente-cab { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.cliente-cab h2 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+.cliente-cab .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.cliente-cab .meta b { margin-right: 4px; color: var(--ink); font-weight: 650; }
+.tabla-scroll { overflow-x: auto; }
+.ops { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ops th, .ops td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.ops thead th { border-top: 0; color: var(--muted); background: var(--soft); font-size: 10.5px; font-weight: 700; }
+.ops .num { text-align: right; }
+.ops strong { color: var(--ink); }
+.ops .sec { display: block; color: var(--muted); font-size: 10.5px; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.pill-ind { color: var(--blue); background: #e6f0fa; }
+.pill-ccm { color: #5b3c8f; background: #efe9f8; }
+.pill-gru { color: var(--muted); background: var(--soft); }
+.btn-ec { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid rgba(15, 76, 129, .25); border-radius: 999px; color: var(--blue); background: var(--card); cursor: pointer; font-size: 11.5px; font-weight: 700; }
+.btn-ec:hover { border-color: var(--blue); background: #f1f7fd; }
+.btn-ec.nuevo { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(232, 134, 31, .16); }
+.btn-sec { padding: 5px 11px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); background: var(--card); font-size: 11.5px; font-weight: 600; }
+
+/* ---------- Capa del modal ---------- */
+.capa { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 10px; overflow: auto;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    background: var(--backdrop); backdrop-filter: blur(2px); }
+.propuesta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; width: min(1120px, 100%); color: var(--on-navy); font-size: 12px; }
+.propuesta strong { font-size: 12.5px; }
+.propuesta span { color: var(--on-navy-muted); }
+.escenarios { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .12); }
+.escenarios button { padding: 5px 11px; border: 0; border-radius: 999px; color: var(--on-navy); background: none; cursor: pointer; font-size: 11.5px; font-weight: 600; }
+.escenarios button[aria-pressed="true"] { color: var(--navy); background: var(--card); }
+
+.modal { flex: none; display: flex; flex-direction: column; width: min(1120px, 100%); border-radius: 16px; background: var(--card); box-shadow: 0 24px 60px rgba(8, 28, 52, .35); overflow: hidden; animation: entrar .28s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes entrar { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+.modal-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; color: var(--on-navy); background: linear-gradient(135deg, var(--navy), var(--blue)); }
+.modal-cab h3 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
+.modal-cab p { margin: 3px 0 0; color: var(--on-navy-muted); font-size: 12px; }
+.cerrar { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%; color: var(--on-navy); background: rgba(255, 255, 255, .14); cursor: pointer; }
+.cerrar:hover { background: rgba(255, 255, 255, .26); }
+.tabs { display: flex; gap: 6px; padding: 10px 18px 0; border-bottom: 1px solid #dfe7f0; background: var(--soft); overflow-x: auto; }
+.tabs button { padding: 9px 16px 10px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; color: var(--muted); background: none; cursor: pointer; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.tabs button:hover { background: rgba(15, 76, 129, .06); }
+.tabs button[aria-selected="true"] { margin-bottom: -1px; border-color: #dfe7f0; color: var(--navy); background: var(--card); box-shadow: inset 0 3px 0 var(--amber); }
+.tabs .etq { margin-left: 6px; padding: 1px 6px; border-radius: 999px; color: var(--amber-ink); background: var(--amber-bg); font-size: 9.5px; font-weight: 700; }
+.barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 12px 22px; border-bottom: 1px solid #eef2f7; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); font-size: 11px; }
+.chip i { color: var(--muted); font-style: normal; }
+.chip b { color: var(--ink); }
+.segmento { display: inline-flex; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--soft); }
+.segmento button { padding: 5px 12px; border: 0; border-radius: 999px; color: var(--muted); background: none; cursor: pointer; font-size: 11.5px; font-weight: 700; }
+.segmento button small { margin-left: 4px; font-weight: 500; opacity: .8; }
+.segmento button[aria-pressed="true"] { color: var(--on-navy); background: var(--blue); }
+.cuerpo { padding: 14px 22px 18px; container-type: inline-size; }
+.modal > * { flex: none; }
+.propuesta { flex: none; }
+
+/* Resumen */
+.resumen { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.cifra { min-width: 0; padding: 9px 13px; border: 1px solid var(--line); border-radius: 10px; background: #f7fafd; }
+.cifra span { display: block; color: var(--muted); font-size: 10.5px; }
+.cifra b { display: block; color: var(--navy); font-size: 18px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.cifra small { display: block; color: var(--muted); font-size: 10.5px; }
+.cifra.alerta b { color: var(--amber-ink); }
+.cifra.cobrar { border-color: var(--amber-line); background: var(--amber-bg); }
+.cifra.cobrar b { color: var(--amber-ink); }
+
+.aviso { display: grid; gap: 3px; margin-bottom: 12px; padding: 11px 14px; border: 1px solid var(--amber-line); border-radius: 12px; background: var(--amber-bg); color: var(--amber-ink); font-size: 12px; }
+
+/* Tabla de cuotas */
+.panel { overflow: hidden; border: 1px solid #d8e2ee; border-radius: 14px; background: var(--card); }
+.cuotas { width: 100%; border-collapse: collapse; color: #21374f; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cuotas th, .cuotas td { padding: 8px 10px; border-top: 1px solid #e6edf5; text-align: right; }
+.cuotas thead th { border-top: 0; color: #4a5d75; background: var(--soft); font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: bottom; }
+.cuotas thead th small { display: block; font-weight: 500; letter-spacing: 0; }
+.cuotas .izq { text-align: left; }
+.cuotas tbody tr { cursor: pointer; }
+.cuotas tbody tr:hover > * { background-color: #f8fbfe; }
+.cuotas td.n { text-align: left; font-weight: 700; }
+.cuotas td.n .marca { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 8px; border: 1.5px solid var(--line-strong); border-radius: 50%; vertical-align: -3px; }
+.cuotas tr.sel td.n .marca { border-color: var(--amber); background: var(--amber); box-shadow: inset 0 0 0 3px var(--card); }
+.cuotas td.r0 { color: var(--r0-ink); background: var(--r0); }
+.cuotas td.r1 { color: var(--r1-ink); background: var(--r1); }
+.cuotas td.r2 { color: var(--r2-ink); background: var(--r2); }
+.cuotas tr.sel > td { box-shadow: inset 0 -1px 0 var(--amber-line); }
+.cuotas tr.sel > td:first-child { box-shadow: inset 3px 0 0 var(--amber), inset 0 -1px 0 var(--amber-line); }
+.cuotas td.tot { color: var(--navy); font-weight: 800; }
+.cuotas td.acum { color: var(--navy); font-weight: 650; }
+.cuotas .estim { color: var(--muted); font-weight: 700; }
+.cuotas .sim { white-space: nowrap; }
+.cuotas .sim b { font-weight: 700; }
+.cuotas .sim .aldia { color: var(--ok-ink); }
+.cuotas .falta td { color: #9aa8bb; background: repeating-linear-gradient(135deg, #fafcfe, #fafcfe 6px, #f3f6fa 6px, #f3f6fa 12px); cursor: default; }
+.cuotas .falta td.n { font-weight: 600; }
+.cuotas tfoot th, .cuotas tfoot td { border-top: 1.5px solid #9fb3c8; color: var(--navy); background: var(--soft); font-weight: 750; }
+.cuotas tfoot th { text-align: left; }
+
+.conciliacion { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 11.5px; }
+.conciliacion span { display: inline-flex; align-items: center; gap: 6px; }
+.conciliacion i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-style: normal; font-weight: 800; }
+.conciliacion .ok i { color: var(--ok-ink); background: var(--ok-bg); }
+.conciliacion .no i { color: var(--amber-ink); background: var(--amber-bg); }
+.conciliacion .no { color: var(--amber-ink); }
+
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.leyenda .item { display: inline-flex; align-items: center; gap: 5px; }
+.leyenda .item i { width: 12px; height: 12px; border-radius: 3px; }
+
+/* Campañas */
+.nota { margin: 0 0 12px; padding: 10px 14px 10px 28px; border-radius: 10px; background: var(--soft); color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.nota li + li { margin-top: 3px; }
+.camp { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.camp th, .camp td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; }
+.camp thead th { color: var(--on-navy); background: var(--blue); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.camp .num { text-align: right; }
+.camp td.sd { color: #9aa8bb; text-align: center; }
+.camp td small { display: block; color: var(--muted); font-size: 10px; }
+.camp tr.cancel td { background: #fbfcfe; }
+
+/* Pantalla angosta: cada cuota pasa a tarjeta */
+@container (max-width: 700px) {
+    .resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cuotas thead { display: none; }
+    .cuotas, .cuotas tbody, .cuotas tfoot, .cuotas tr { display: block; }
+    .cuotas tr { margin: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .cuotas td, .cuotas tfoot th { display: flex; justify-content: space-between; gap: 10px; border-top: 0; border-bottom: 1px solid #eef2f7; text-align: right; }
+    .cuotas td::before { content: attr(data-label); color: var(--muted); font-weight: 600; text-align: left; }
+    .cuotas td.n { justify-content: flex-start; background: var(--soft); }
+    .cuotas td.n::before { content: none; }
+    .cuotas tr.falta td.izq::before { content: none; }
+    .camp thead { display: none; }
+    .camp, .camp tbody, .camp tr { display: block; }
+    .camp tr { margin-bottom: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .camp td { display: flex; justify-content: space-between; gap: 10px; border: 0; border-bottom: 1px solid #eef2f7; text-align: right; }
+    .camp td::before { content: attr(data-label); color: var(--muted); font-weight: 600; text-align: left; }
+}
+@media (max-width: 720px) {
+    .capa { padding-left: 0; padding-right: 0; padding-bottom: 0; }
+    .propuesta { padding: 0 16px; }
+    .modal { border-radius: 16px 16px 0 0; }
+    .barra, .cuerpo { padding-left: 14px; padding-right: 14px; }
+    .segmento { width: 100%; }
+    .segmento button { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .modal { animation: none; } }
+</style>
+
+<main class="radar" aria-label="Radar Compartamos (ejemplo)">
+    <header class="radar-busqueda">
+        <div><h1>Radar Compartamos</h1><p>Vista de cliente con el nuevo botón “Estado de cuenta” en cada operación individual o CCM.</p></div>
+        <span class="campo" id="campoBusqueda"></span>
+    </header>
+    <section class="tarjeta cliente-cab" id="cabCliente"></section>
+    <section class="tarjeta">
+        <div class="tabla-scroll">
+            <table class="ops">
+                <thead><tr><th>Operación</th><th>Cartera</th><th>Calificación</th><th class="num">Mora</th><th class="num">Capital</th><th class="num">Capital vencido</th><th>Acción</th></tr></thead>
+                <tbody id="filasOps"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<div class="capa" id="capa">
+    <div class="propuesta">
+        <div><strong>Propuesta · Estado de cuenta individual y CCM</strong> <span>Datos de ejemplo, no corresponden a clientes reales.</span></div>
+        <div class="escenarios" role="group" aria-label="Escenario de ejemplo" id="escenarios"></div>
+    </div>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="tituloEC">
+        <header class="modal-cab">
+            <div><h3 id="tituloEC">Estado de cuenta</h3><p id="subtituloEC"></p></div>
+            <button class="cerrar" type="button" id="cerrarEC" aria-label="Cerrar estado de cuenta"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        </header>
+        <nav class="tabs" role="tablist" aria-label="Secciones del estado de cuenta">
+            <button type="button" role="tab" id="tab-cuotas" data-tab="cuotas">Cuotas vencidas</button>
+            <button type="button" role="tab" id="tab-campanas" data-tab="campanas">Campañas <span class="etq">por validar</span></button>
+        </nav>
+        <div class="barra" id="barraEC"></div>
+        <div class="cuerpo" id="cuerpoEC" role="tabpanel"></div>
+    </section>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Datos de ejemplo. Cada escenario reproduce lo que entregaría el backend en
+// operaciones[i].estado_cuenta (ver docs/estado_cuenta_individual_compartamos.md).
+// Fechas "estimada: true" = la carga SAC solo trae el vencimiento de la cuota más
+// antigua (UltFecVen); las siguientes se proyectan (frecuencia por confirmar).
+// ---------------------------------------------------------------------------
+const ESCENARIOS = {
+    A: {
+        boton: "Individual · 3 cuotas",
+        cliente: { nombre: "ROSA PAREDES VILCA", dni: "40000001", codigo: "7100001", oficina: "Ag. Ejemplo Norte", calificacion: "1-CPP" },
+        operaciones: [
+            { op: "3021004587", cartera: "Individual", producto: "Crédito Individual", calificacion: "1-CPP", mora: 85, capital: 3980.40, vencido: 1256.90, aplica: true },
+            { op: "3021009911", cartera: "Grupal", producto: "Crédito Grupal 28 Días", calificacion: "0-Normal", mora: 0, capital: 1150.00, vencido: 0, aplica: false }
+        ],
+        ec: {
+            cartera: "Individual", producto: "Crédito Individual", calificacion: "1-CPP",
+            desembolso: 6000, fecha_desembolso: "2026-01-15", aprobadas: 12, pagadas: 6,
+            fecha_corte: "2026-11-08", dias_atraso_hoy: 85, deuda_total: 4136.63,
+            capital_vencido_asignacion: 1256.90, cuotas_vencidas_asignacion: 3,
+            cuotas: [
+                { numero: 7, vence: "2026-08-15", estimada: false, capital: 410.35, cargos: [52.18, 21.40, null, 6.50, null] },
+                { numero: 8, vence: "2026-09-15", estimada: true, capital: 418.92, cargos: [33.70, 12.10, null, 6.50, null] },
+                { numero: 9, vence: "2026-10-15", estimada: true, capital: 427.63, cargos: [14.05, 3.30, null, 6.50, null] }
+            ],
+            campanas: { c: [["20%", 392.34], ["25%", 721.24], ["30%", 990.12], [null, null]], cancel: ["45%", 2189.22] }
+        }
+    },
+    B: {
+        boton: "CCM · carga incompleta",
+        cliente: { nombre: "MARIBEL HUAMANÍ TORRES", dni: "40000002", codigo: "7100002", oficina: "Ag. Ejemplo Sur", calificacion: "3-Dudoso 1" },
+        operaciones: [
+            { op: "3021007702", cartera: "CCM", producto: "Crédito CCM", calificacion: "3-Dudoso 1", mora: 141, capital: 2410.75, vencido: 1048.60, aplica: true }
+        ],
+        ec: {
+            cartera: "CCM", producto: "Crédito CCM", calificacion: "3-Dudoso 1",
+            desembolso: 3500, fecha_desembolso: "2026-02-20", aprobadas: 18, pagadas: 3,
+            fecha_corte: "2026-11-08", dias_atraso_hoy: 141, deuda_total: 2861.04,
+            capital_vencido_asignacion: 1048.60, cuotas_vencidas_asignacion: 5,
+            cuotas: [
+                { numero: 4, vence: "2026-06-20", estimada: false, capital: 201.10, cargos: [61.42, 30.15, 4.80, 6.50, null] },
+                { numero: 5, vence: "2026-07-20", estimada: true, capital: 205.44, cargos: [48.03, 22.71, 4.80, 6.50, null] },
+                { numero: 6, vence: "2026-08-20", estimada: true, capital: 209.87, cargos: [35.20, 15.64, 4.80, 6.50, null] }
+            ],
+            campanas: { c: [["35%", 238.15], ["40%", 410.62], [null, null], [null, null]], cancel: ["55%", 1084.84] }
+        }
+    },
+    C: {
+        boton: "Individual · 1 cuota",
+        cliente: { nombre: "JUAN CARLOS MENDOZA RÍOS", dni: "40000003", codigo: "7100003", oficina: "Ag. Ejemplo Centro", calificacion: "0-Normal" },
+        operaciones: [
+            { op: "3021003320", cartera: "Individual", producto: "Crédito Individual", calificacion: "0-Normal", mora: 18, capital: 9870.55, vencido: 655.70, aplica: true }
+        ],
+        ec: {
+            cartera: "Individual", producto: "Crédito Individual", calificacion: "0-Normal",
+            desembolso: 15000, fecha_desembolso: "2025-12-21", aprobadas: 24, pagadas: 9,
+            fecha_corte: "2026-11-08", dias_atraso_hoy: 18, deuda_total: 10102.37,
+            capital_vencido_asignacion: 655.70, cuotas_vencidas_asignacion: 1,
+            cuotas: [
+                { numero: 10, vence: "2026-10-21", estimada: false, capital: 655.70, cargos: [9.80, 2.15, null, 6.50, null] }
+            ],
+            campanas: { c: [[null, null], [null, null], [null, null], [null, null]], cancel: [null, null] }
+        }
+    }
+};
+
+const estado = { esc: "A", tab: "cuotas", modo: "total", hasta: 0, abierto: true };
+
+// ---------- utilidades (mismo criterio que compartamos.js) ----------
+const fmt = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt0 = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 0 });
+const esc = v => String(v ?? "—").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const r2 = v => Math.round(v * 100) / 100;
+const arriba = v => v === null ? null : Math.ceil(r2(v) - 1e-9);           // redondeo al sol, siempre hacia arriba
+const sol = v => v === null ? "—" : `S/ ${fmt0.format(v)}`;
+const exacto = v => v === null ? "" : `S/ ${fmt.format(v)}`;
+const fecha = iso => { if (!iso) return "—"; const [a, m, d] = iso.split("-"); return `${d}/${m}/${a}`; };
+const dias = (desde, hasta) => Math.round((Date.parse(hasta) - Date.parse(desde)) / 86400000);
+const suma = arr => { const v = arr.filter(x => x !== null && x !== undefined); return v.length ? r2(v.reduce((a, b) => a + b, 0)) : null; };
+
+function calcular(ec) {
+    const filas = ec.cuotas.map((c, i) => {
+        const cargos = suma(c.cargos);
+        const total = suma([c.capital, cargos]);
+        // Cada componente se sube al sol y el total mostrado es su suma: la fila cuadra a la vista
+        // y nunca queda por debajo del exacto (que va en el tooltip).
+        const totalMostrado = (arriba(c.capital) || 0) + (arriba(cargos) || 0);
+        return { ...c, idx: i, cargosTotal: cargos, total, totalMostrado, diasVencida: dias(c.vence, ec.fecha_corte) };
+    });
+    const completo = ec.cuotas_vencidas_asignacion === filas.length;
+    const monto = f => estado.modo === "total" ? f.totalMostrado : arriba(f.capital);
+    let acum = 0;
+    filas.forEach((f, i) => {
+        acum += monto(f) || 0;
+        f.acumulado = acum;
+        if (!completo) f.quedaCon = null;
+        else if (i + 1 < filas.length) f.quedaCon = filas[i + 1].diasVencida;
+        else f.quedaCon = 0;
+    });
+    const sumaCapital = suma(filas.map(f => f.capital));
+    return { filas, completo, monto, sumaCapital, faltan: Math.max(0, ec.cuotas_vencidas_asignacion - filas.length) };
+}
+
+// ---------- pantalla del Radar ----------
+function pintarRadar() {
+    const e = ESCENARIOS[estado.esc];
+    document.getElementById("campoBusqueda").textContent = `DNI ${e.cliente.dni}`;
+    document.getElementById("cabCliente").innerHTML = `<div><h2>${esc(e.cliente.nombre)}</h2>
+        <div class="meta"><span><b>DNI</b>${esc(e.cliente.dni)}</span><span><b>Código cliente</b>${esc(e.cliente.codigo)}</span><span><b>Oficina</b>${esc(e.cliente.oficina)}</span></div></div>
+        <div class="meta"><span><b>Calificación</b>${esc(e.cliente.calificacion)}</span></div>`;
+    const pill = c => `<span class="pill ${c === "CCM" ? "pill-ccm" : c === "Grupal" ? "pill-gru" : "pill-ind"}">${esc(c)}</span>`;
+    document.getElementById("filasOps").innerHTML = e.operaciones.map((o, i) => `<tr>
+        <td><strong>${esc(o.op)}</strong><span class="sec">${esc(o.producto)}</span></td>
+        <td>${pill(o.cartera)}</td><td>${esc(o.calificacion)}</td>
+        <td class="num">${o.mora} días</td><td class="num">${exacto(o.capital)}</td><td class="num">${o.vencido ? exacto(o.vencido) : "—"}</td>
+        <td>${o.aplica
+            ? `<button type="button" class="btn-ec nuevo" data-abrir="${i}"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 2.5h7l3 3v8H3z M5.5 7h5M5.5 9.5h5M5.5 12h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Estado de cuenta</button>`
+            : `<span class="btn-sec">Ver grupo</span>`}</td></tr>`).join("");
+}
+
+// ---------- modal ----------
+function pintarModal() {
+    const e = ESCENARIOS[estado.esc];
+    const ec = e.ec;
+    const op = e.operaciones.find(o => o.aplica);
+    document.getElementById("escenarios").innerHTML = Object.entries(ESCENARIOS).map(([k, v]) =>
+        `<button type="button" data-esc="${k}" aria-pressed="${k === estado.esc}">${esc(v.boton)}</button>`).join("");
+    document.getElementById("subtituloEC").textContent = `${e.cliente.nombre} · Op. ${op.op} · Vigente ${ec.cartera}`;
+    document.querySelectorAll("[data-tab]").forEach(b => {
+        const activo = b.dataset.tab === estado.tab;
+        b.setAttribute("aria-selected", String(activo));
+        b.tabIndex = activo ? 0 : -1;
+    });
+    const chip = (i, b) => `<span class="chip"><i>${esc(i)}</i><b>${esc(b)}</b></span>`;
+    const chips = [
+        chip("Producto", ec.producto), chip("Cartera", ec.cartera), chip("Calificación", ec.calificacion),
+        chip("Desembolso", `${exacto(ec.desembolso)} · ${fecha(ec.fecha_desembolso)}`),
+        chip("Pagadas", `${ec.pagadas} de ${ec.aprobadas}`), chip("Carga SAC", fecha(ec.fecha_corte))
+    ].join("");
+    const segmento = estado.tab === "cuotas" ? `<div class="segmento" role="group" aria-label="Qué monto mostrar">
+        <button type="button" data-modo="total" aria-pressed="${estado.modo === "total"}">Total de la cuota <small>con cargos</small></button>
+        <button type="button" data-modo="capital" aria-pressed="${estado.modo === "capital"}">Solo capital</button></div>` : "";
+    document.getElementById("barraEC").innerHTML = `<div class="chips">${chips}</div>${segmento}`;
+    document.getElementById("cuerpoEC").innerHTML = estado.tab === "cuotas" ? cuerpoCuotas(ec) : cuerpoCampanas(ec);
+}
+
+function cuerpoCuotas(ec) {
+    const { filas, completo, monto, sumaCapital, faltan } = calcular(ec);
+    const hasta = Math.min(estado.hasta, filas.length - 1);
+    const sel = filas[hasta];
+    const totalMostrado = filas.length ? filas[filas.length - 1].acumulado : null;
+    const etiquetaModo = estado.modo === "total" ? "total" : "capital";
+
+    const cobrarTexto = completo
+        ? (sel.quedaCon === 0 ? "Queda al día" : `Queda con ${sel.quedaCon} días de atraso`)
+        : "Días resultantes: no se pueden calcular";
+    const resumen = `<div class="resumen">
+        <div class="cifra"><span>Vencido en la carga (${etiquetaModo})</span><b>${sol(totalMostrado)}</b><small>${filas.length} cuota${filas.length === 1 ? "" : "s"}</small></div>
+        <div class="cifra alerta"><span>Días de atraso hoy</span><b>${ec.dias_atraso_hoy}</b><small>Desde ${fecha(filas[0].vence)}</small></div>
+        <div class="cifra"><span>Cuotas vencidas</span><b>${ec.cuotas_vencidas_asignacion} de ${ec.aprobadas}</b><small>Más antigua: N.° ${filas[0].numero}</small></div>
+        <div class="cifra cobrar"><span>Si paga hasta la N.° ${sel.numero}</span><b>${sol(sel.acumulado)}</b><small>${cobrarTexto}</small></div>
+    </div>`;
+
+    const aviso = !completo ? `<div class="aviso"><strong>La carga trae ${filas.length} de ${ec.cuotas_vencidas_asignacion} cuotas vencidas.</strong>
+        <span>Faltan las ${faltan} más recientes: lo que debe el cliente es mayor que lo que se ve aquí, y no se puede calcular con cuántos días queda después de pagar.</span></div>` : "";
+
+    const rango = i => i === 0 ? "r0" : i === 1 ? "r1" : "r2";
+    const cuerpo = filas.map((f, i) => {
+        const dentro = i <= hasta;
+        const sim = f.quedaCon === null ? "—" : f.quedaCon === 0 ? `<b class="aldia">Al día</b>` : `<b>${f.quedaCon}</b> días`;
+        const desglose = f.cargos.map((v, k) => `CT ${f.idx + 1}${k + 1}: ${v === null ? "—" : fmt.format(v)}`).join(" · ");
+        return `<tr class="${dentro ? "sel" : ""}" data-hasta="${i}" tabindex="0" aria-label="Pagar hasta la cuota ${f.numero}">
+            <td class="n" data-label=""><span class="marca" aria-hidden="true"></span>N.° ${f.numero}</td>
+            <td class="izq" data-label="Vence"><span>${fecha(f.vence)}${f.estimada ? ` <span class="estim" title="Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua">≈</span>` : ""}</span></td>
+            <td class="${rango(i)}" data-label="Días vencida"><span>${f.diasVencida}${f.estimada ? "≈" : ""}</span></td>
+            <td data-label="Capital" title="${exacto(f.capital)}">${sol(arriba(f.capital))}</td>
+            <td data-label="Intereses, moras y gastos" title="${esc(desglose)}">${sol(arriba(f.cargosTotal))}</td>
+            <td class="tot" data-label="Total cuota" title="${exacto(f.total)}">${sol(f.totalMostrado)}</td>
+            <td class="acum" data-label="Acumulado (${etiquetaModo})">${sol(f.acumulado)}</td>
+            <td class="sim" data-label="Si paga hasta aquí"><span>${sim}</span></td>
+        </tr>`;
+    }).join("");
+    const faltantes = Array.from({ length: faltan }, (_, k) => `<tr class="falta"><td class="n" data-label="">N.° ${filas[filas.length - 1].numero + k + 1}</td>
+        <td class="izq" colspan="7" data-label="">No viene en la carga SAC (solo trae 3 cuotas)</td></tr>`).join("");
+    const pie = `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th>
+        <td>${sol(filas.reduce((a, f) => a + (arriba(f.capital) || 0), 0))}</td>
+        <td>${sol(filas.reduce((a, f) => a + (arriba(f.cargosTotal) || 0), 0))}</td>
+        <td>${sol(filas.reduce((a, f) => a + f.totalMostrado, 0))}</td><td colspan="2"></td></tr></tfoot>`;
+
+    const capitalCuadra = Math.abs((sumaCapital || 0) - ec.capital_vencido_asignacion) <= 0.05;
+    const conciliacion = `<div class="conciliacion" aria-label="Conciliación con la asignación">
+        <span class="${completo ? "ok" : "no"}"><i>${completo ? "✓" : "!"}</i>Cuotas en la carga: ${filas.length} de ${ec.cuotas_vencidas_asignacion} vencidas</span>
+        <span class="${capitalCuadra ? "ok" : "no"}"><i>${capitalCuadra ? "✓" : "!"}</i>Capital de estas cuotas ${exacto(sumaCapital)} ${capitalCuadra ? "=" : "vs."} capital vencido de la asignación ${exacto(ec.capital_vencido_asignacion)}${capitalCuadra ? "" : ` (faltan ${exacto(r2(ec.capital_vencido_asignacion - sumaCapital))})`}</span>
+    </div>`;
+
+    const leyenda = `<div class="leyenda">
+        <span class="item"><i style="background:var(--r0)"></i>Cuota más antigua</span>
+        <span class="item"><i style="background:var(--r1)"></i>Siguiente</span>
+        <span class="item"><i style="background:var(--r2)"></i>Subsiguiente</span>
+        <span>Toca una fila para ver cuánto paga si cubre hasta esa cuota.</span>
+        <span>≈ Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua.</span>
+        <span>Intereses, moras y gastos = CT k1 a k5; el desglose aparece al pasar el cursor.</span>
+        <span>Montos redondeados hacia arriba al sol; el exacto aparece al pasar el cursor.</span>
+    </div>`;
+
+    return `${resumen}${aviso}<section class="panel"><table class="cuotas">
+        <thead><tr><th class="izq">Cuota</th><th class="izq">Vence</th><th>Días vencida</th><th>Capital</th><th>Intereses, moras<small>y gastos</small></th><th>Total cuota</th><th>Acumulado<small>${etiquetaModo}</small></th><th>Si paga hasta aquí<small>queda con</small></th></tr></thead>
+        <tbody>${cuerpo}${faltantes}</tbody>${pie}</table></section>${conciliacion}${leyenda}`;
+}
+
+function cuerpoCampanas(ec) {
+    const { filas } = calcular({ ...ec });
+    const totalHasta = k => k <= filas.length ? filas.slice(0, k).reduce((a, f) => a + f.totalMostrado, 0) : null;
+    const filasC = ec.campanas.c.map(([pct, monto], i) => {
+        const k = i + 1;
+        const ref = totalHasta(k);
+        return `<tr><td data-label="Campaña">Campaña ${k} cuota${k === 1 ? "" : "s"}<small>Camp${k}Cuota% · Campaña Final ${k} Cuota</small></td>
+            <td class="num" data-label="% campaña">${pct ? esc(pct) : "—"}</td>
+            <td class="num" data-label="Monto campaña">${monto === null ? "—" : `<b>${sol(arriba(monto))}</b>`}</td>
+            <td class="num" data-label="Total de esas cuotas (referencia)">${ref === null ? `<span title="La carga solo trae 3 cuotas">—</span>` : sol(ref)}</td></tr>`;
+    }).join("");
+    const [pctC, montoC] = ec.campanas.cancel;
+    const filaCancel = `<tr class="cancel"><td data-label="Campaña">Cancelación<small>Cancelación% · Cancelacion</small></td>
+        <td class="num" data-label="% campaña">${pctC ? esc(pctC) : "—"}</td>
+        <td class="num" data-label="Monto campaña">${montoC === null ? "—" : `<b>${sol(arriba(montoC))}</b>`}</td>
+        <td class="num" data-label="Deuda total (referencia)">${sol(arriba(ec.deuda_total))}</td></tr>`;
+    const sinCampana = ec.campanas.c.every(([p, m]) => p === null && m === null) && pctC === null && montoC === null;
+    return `<ul class="nota">
+            <li>Montos tal como llegan en la asignación (${ec.cartera === "CCM" ? "compartamos_ccm" : "compartamos_individual"}). El CRM no los recalcula.</li>
+            <li><b>Por confirmar con Compartamos:</b> si el monto de campaña es sobre capital o sobre el total, y sus condiciones (fecha límite, pago único).</li>
+            <li>La columna de referencia suma el total de esas cuotas en el estado de cuenta, para comparar. “—” = sin dato en la asignación.</li>
+        </ul>
+        ${sinCampana ? `<div class="aviso"><strong>Esta operación no tiene campañas en la asignación.</strong><span>Se cobra según el estado de cuenta.</span></div>` : ""}
+        <div class="tabla-scroll"><table class="camp">
+            <thead><tr><th>Campaña</th><th class="num">% campaña</th><th class="num">Monto campaña</th><th class="num">Referencia: total de esas cuotas</th></tr></thead>
+            <tbody>${filasC}${filaCancel}</tbody>
+        </table></div>`;
+}
+
+function pintar() {
+    pintarRadar();
+    document.getElementById("capa").hidden = !estado.abierto;
+    if (estado.abierto) pintarModal();
+}
+
+document.addEventListener("click", ev => {
+    const t = ev.target.closest("[data-esc],[data-tab],[data-modo],[data-hasta],[data-abrir],#cerrarEC");
+    if (!t) { if (ev.target.id === "capa") { estado.abierto = false; pintar(); } return; }
+    if (t.id === "cerrarEC") estado.abierto = false;
+    else if (t.dataset.esc) Object.assign(estado, { esc: t.dataset.esc, hasta: 0, tab: "cuotas" });
+    else if (t.dataset.tab) estado.tab = t.dataset.tab;
+    else if (t.dataset.modo) estado.modo = t.dataset.modo;
+    else if (t.dataset.hasta) estado.hasta = Number(t.dataset.hasta);
+    else if (t.dataset.abrir) Object.assign(estado, { abierto: true, tab: "cuotas", hasta: 0 });
+    pintar();
+});
+document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && estado.abierto) { estado.abierto = false; pintar(); }
+    const fila = ev.target.closest && ev.target.closest("[data-hasta]");
+    if (fila && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); estado.hasta = Number(fila.dataset.hasta); pintar(); document.querySelector(`[data-hasta="${fila.dataset.hasta}"]`)?.focus(); }
+});
+pintar();
+</script>

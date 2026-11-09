@@ -35,7 +35,7 @@ vm.runInContext(`
 `, context);
 
 const correo = funcion => vm.runInContext(`${funcion}()`, context);
-const supervisorCastigo = "supervisor.compartamos@biznescob.pe";
+const supervisorCastigo = "supervisor4.compartamos@biznescob.com.pe";
 const supervisorGrupal = "supervisor2.compartamos@biznescob.pe";
 const supervisorIndividual = "supervisor3.compartamos@biznescob.pe";
 
@@ -72,4 +72,5 @@ for (const id of ["126", "128"]) {
 }
 
 assert.match(vm.runInContext("destinatariosCastigo({correoGa: '', correoAgencia: ''})", context), new RegExp(supervisorCastigo));
+assert.doesNotMatch(vm.runInContext("destinatariosCastigo({correoGa: '', correoAgencia: ''})", context), /supervisor\.compartamos@biznescob\.pe/);
 console.log("Correos de carteras vigentes y asuntos CSM/IND: OK");

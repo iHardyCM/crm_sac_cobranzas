@@ -256,6 +256,7 @@ function pintarCriterioPauta(criterio, bloqueIndex, criterioIndex) {
             <div class="criterio-grid-detail criterio-principal">
                 <div class="criterio-field"><label>Cuándo cumple</label><textarea data-field="regla_cumple" rows="2">${esc(criterio.regla_cumple || "")}</textarea></div>
                 <div class="criterio-field"><label>Cuándo no cumple</label><textarea data-field="regla_no_cumple" rows="2">${esc(criterio.regla_no_cumple || "")}</textarea></div>
+                <div class="criterio-field"><label>Cuándo es parcial (50% del peso)</label><textarea data-field="regla_parcial" rows="2" placeholder="Solo si el criterio admite parcial: qué hizo y qué le faltó" ${anulante ? "disabled" : ""}>${esc(criterio.regla_parcial || "")}</textarea></div>
                 <div class="criterio-field"><label>Aplicabilidad / No aplica</label><textarea data-field="regla_aplicabilidad" rows="2">${esc(criterio.regla_aplicabilidad || "")}</textarea></div>
                 <div class="criterio-field"><label>Criticidad</label><select data-field="criticidad">${opcionesCriticidad(criterio.criticidad)}</select></div>
             </div>
@@ -263,6 +264,7 @@ function pintarCriterioPauta(criterio, bloqueIndex, criterioIndex) {
             <div class="criterio-checks">
                 <label><input data-field="requiere_evidencia" type="checkbox" ${criterio.requiere_evidencia ? "checked" : ""}> Evidencia obligatoria</label>
                 <label><input data-field="puede_descalificar" type="checkbox" ${criterio.puede_descalificar ? "checked" : ""}> Puede descalificar</label>
+                <label title="Permite el resultado Parcial, que otorga la mitad del peso. Requiere definir cuándo es parcial."><input data-field="admite_parcial" type="checkbox" ${criterio.admite_parcial && !anulante ? "checked" : ""} ${anulante ? "disabled" : ""}> Admite parcial</label>
                 <label><input data-field="activo" type="checkbox" ${criterio.activo !== false ? "checked" : ""}> Activo</label>
             </div>
             <div class="criterio-actions"><button class="mini-btn danger" type="button" onclick="eliminarCriterioPauta(${bloqueIndex}, ${criterioIndex})">Quitar criterio</button></div>
@@ -271,7 +273,7 @@ function pintarCriterioPauta(criterio, bloqueIndex, criterioIndex) {
 
 function pintarFilaCriterioPauta(criterio, bloqueIndex, criterioIndex) {
     const seleccionado = criterioIndex === criterioSeleccionadoPauta;
-    const tipo = criterio.tipo_criterio === "ANULANTE_BLOQUE" ? "Anulante" : "Puntuable";
+    const tipo = criterio.tipo_criterio === "ANULANTE_BLOQUE" ? "Anulante" : (criterio.admite_parcial ? "Puntuable · parcial" : "Puntuable");
     return `<tr class="${seleccionado ? "selected" : ""}">
         <td><input type="radio" name="criterioSeleccionado" ${seleccionado ? "checked" : ""} onchange="seleccionarCriterioPauta(${criterioIndex})" aria-label="Seleccionar ${esc(criterio.codigo_criterio || "criterio")}"></td>
         <td><strong>${esc(criterio.codigo_criterio || "-")}</strong><span>${esc(criterio.nombre || "Sin nombre")}</span></td>
@@ -325,6 +327,8 @@ function sincronizarBloquesDesdeDom() {
                 fuente_evidencia: obtener("fuente_evidencia")?.value || "TRANSCRIPCION",
                 requiere_evidencia: Boolean(obtener("requiere_evidencia")?.checked),
                 puede_descalificar: Boolean(obtener("puede_descalificar")?.checked),
+                admite_parcial: tipo !== "ANULANTE_BLOQUE" && Boolean(obtener("admite_parcial")?.checked),
+                regla_parcial: obtener("regla_parcial")?.value?.trim() || "",
                 recomendacion: obtener("recomendacion")?.value?.trim() || "",
                 activo: Boolean(obtener("activo")?.checked), orden: indiceCriterio + 1,
             };

@@ -4207,3 +4207,78 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-cartera-castigo-individual { background: #fde9e0; color: #a1411a; }
 .crm-cartera-castigo-grupal { background: #fbe3ef; color: #9b2060; }
 .crm-estado-destacado .crm-cartera { margin-top: 4px; align-self: flex-start; }
+
+/* Cuotas a pagar por fecha de vencimiento (2026-10-13) */
+.crm-cronograma-tabla td.col-pagar .crm-cuota-numero { display: block; margin-top: 1px; font-size: 9.5px; font-weight: 600; color: #b45f0b; }
+.crm-cronograma-tabla th small { display: block; font-size: 9.5px; font-weight: 600; color: #5f6f86; }
+.crm-resumen-cuota small { display: block; margin-top: 2px; font-size: 10px; color: #5f6f86; }
+.crm-pagar-nota { margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; background: #fff7ec; color: #8a4b08; font-size: 11.5px; }
+
+/* ===== Estado de cuenta individual / CCM (2026-11-09) =====
+   Mismo modal que el cronograma grupal (.crm-modal*). Navy estructura; ámbar marca lo que se cobra. */
+.crm-ec-acciones { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.crm-ec-boton { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 5px 11px; border: 1px solid rgba(15, 76, 129, .25); border-radius: 999px; color: #0f4c81; background: #fff; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.crm-ec-boton:hover { border-color: #0f4c81; background: #f1f7fd; }
+.crm-ec-boton:focus-visible { outline: 2px solid #0a66d8; outline-offset: 2px; }
+.crm-ec-boton-compacto { min-height: 28px; padding: 4px 10px; }
+.crm-ec-etiqueta { margin-left: 6px; padding: 1px 6px; border-radius: 999px; color: #8a3d0a; background: #fff4e6; font-size: 9.5px; font-weight: 700; }
+
+.crm-ec-resumen { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.crm-ec-cifra { min-width: 0; padding: 9px 13px; border: 1px solid #e3eaf2; border-radius: 10px; background: #f7fafd; }
+.crm-ec-cifra span { display: block; color: #5f6f86; font-size: 10.5px; }
+.crm-ec-cifra b { display: block; color: #0b2f55; font-size: 18px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.crm-ec-cifra small { display: block; color: #5f6f86; font-size: 10.5px; line-height: 1.35; }
+.crm-ec-cifra.is-alerta b { color: #8a3d0a; }
+.crm-ec-cifra.is-cobrar { border-color: #f6d9bb; background: #fff4e6; }
+.crm-ec-cifra.is-cobrar b, .crm-ec-cifra.is-cobrar small { color: #8a3d0a; }
+.crm-ec-aviso { margin-bottom: 12px; }
+
+.crm-ec-panel { overflow: hidden; border: 1px solid #d8e2ee; border-radius: 14px; background: #fff; }
+.crm-ec-tabla { width: 100%; border-collapse: collapse; color: #21374f; font-size: 12px; font-variant-numeric: tabular-nums; }
+.crm-ec-tabla th, .crm-ec-tabla td { padding: 8px 10px; border-top: 1px solid #e6edf5; text-align: right; }
+.crm-ec-tabla thead th { border-top: 0; color: #4a5d75; background: #f3f7fb; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: bottom; }
+.crm-ec-tabla thead th small { display: block; font-weight: 500; letter-spacing: 0; }
+.crm-ec-tabla .crm-ec-izq { text-align: left; }
+.crm-ec-tabla tbody tr[data-ec-hasta] { cursor: pointer; }
+.crm-ec-tabla tbody tr[data-ec-hasta]:hover > * { background-color: #f8fbfe; }
+.crm-ec-tabla tbody tr[data-ec-hasta]:focus-visible { outline: 2px solid #e8861f; outline-offset: -2px; }
+.crm-ec-tabla td.crm-ec-numero { text-align: left; font-weight: 700; white-space: nowrap; }
+.crm-ec-marca { display: inline-block; width: 15px; height: 15px; margin-right: 8px; border: 1.5px solid #d3deea; border-radius: 50%; vertical-align: -3px; }
+.crm-ec-tabla tr.is-incluida .crm-ec-marca { border-color: #e8861f; background: #e8861f; box-shadow: inset 0 0 0 3px #fff; }
+.crm-ec-tabla tr.is-incluida > td { box-shadow: inset 0 -1px 0 #f6d9bb; }
+.crm-ec-tabla tr.is-incluida > td:first-child { box-shadow: inset 3px 0 0 #e8861f, inset 0 -1px 0 #f6d9bb; }
+.crm-ec-tabla td.rango-0 { color: #5a2706; background: #fbcfa6; font-weight: 700; }
+.crm-ec-tabla td.rango-1 { color: #6b3410; background: #fde3c8; font-weight: 600; }
+.crm-ec-tabla td.rango-2 { color: #7a4519; background: #fef1e2; font-weight: 600; }
+.crm-ec-tabla td.crm-ec-por-vencer { color: #17623f; background: #e5f4ec; font-weight: 600; }
+.crm-ec-tabla td.crm-ec-total { color: #0b2f55; font-weight: 800; }
+.crm-ec-tabla td.crm-ec-acumulado { color: #0b2f55; font-weight: 650; }
+.crm-ec-estimada { color: #5f6f86; font-weight: 700; }
+.crm-ec-aldia { color: #17623f; }
+.crm-ec-tabla tr.crm-ec-falta td { color: #9aa8bb; background: repeating-linear-gradient(135deg, #fafcfe, #fafcfe 6px, #f3f6fa 6px, #f3f6fa 12px); }
+.crm-ec-tabla tfoot th, .crm-ec-tabla tfoot td { border-top: 1.5px solid #9fb3c8; color: #0b2f55; background: #f3f7fb; font-weight: 750; }
+.crm-ec-tabla tfoot th { text-align: left; }
+
+.crm-ec-conciliacion { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 11.5px; }
+.crm-ec-conciliacion span { display: inline-flex; align-items: center; gap: 6px; }
+.crm-ec-conciliacion i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-style: normal; font-weight: 800; }
+.crm-ec-conciliacion .is-ok i { color: #17623f; background: #e5f4ec; }
+.crm-ec-conciliacion .is-no { color: #8a3d0a; }
+.crm-ec-conciliacion .is-no i { color: #8a3d0a; background: #fff4e6; }
+.crm-ec-observaciones { margin: 10px 0 0; padding: 8px 12px 8px 28px; border-radius: 10px; background: #fff4e6; color: #8a3d0a; font-size: 11.5px; line-height: 1.45; }
+.crm-ec-leyenda { margin-top: 6px; }
+.crm-ec-campanas td span { display: block; color: #5f6f86; font-size: 10px; }
+.crm-ec-campanas tr.crm-ec-cancelacion td { background: #fbfcfe; }
+.crm-cuadro-tabla td span.crm-ec-sin-ref { display: inline; font-size: inherit; color: #9aa8bb; }
+
+@container (max-width: 700px) {
+    .crm-ec-resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .crm-ec-tabla thead { display: none; }
+    .crm-ec-tabla, .crm-ec-tabla tbody, .crm-ec-tabla tfoot, .crm-ec-tabla tr { display: block; }
+    .crm-ec-tabla tr { margin: 8px; border: 1px solid #e3eaf2; border-radius: 10px; overflow: hidden; }
+    .crm-ec-tabla td, .crm-ec-tabla tfoot th { display: flex; justify-content: space-between; gap: 10px; border-top: 0; border-bottom: 1px solid #eef2f7; text-align: right; }
+    .crm-ec-tabla td::before { content: attr(data-label); color: #5f6f86; font-weight: 600; text-align: left; }
+    .crm-ec-tabla td.crm-ec-numero { justify-content: flex-start; background: #f3f7fb; }
+    .crm-ec-tabla td.crm-ec-numero::before, .crm-ec-tabla tr.crm-ec-falta td.crm-ec-izq::before { content: none; }
+    .crm-ec-tabla tfoot td:empty { display: none; }
+}

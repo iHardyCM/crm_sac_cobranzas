@@ -29,8 +29,10 @@ from app.services.mibanco_quality_pauta import (
     resumen_pesos_mibanco,
 )
 from app.services.pautas_evaluacion_service import (
+    ESTADO_PARCIAL_PAUTA,
     aplicar_anulantes_bloque,
     criterios_pauta_publicada_para_cartera,
+    puntaje_por_estado,
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -273,9 +275,30 @@ def matriz_desde_pauta_mibanco(pauta: List[Dict]) -> List[Dict]:
             "puede_descalificar": bool(item.get("puede_descalificar")),
             "requiere_evidencia": bool(item.get("requiere_evidencia")),
             "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+            "admite_parcial": bool(item.get("admite_parcial")),
+            "regla_parcial": item.get("regla_parcial") or None,
             "recomendacion": item.get("recomendacion"),
         })
     return matriz
+
+
+def pauta_admite_parcial(pauta: Optional[List[Dict]]) -> bool:
+    """La pauta tiene al menos un criterio con puntaje parcial definido."""
+    return any(bool((item or {}).get("admite_parcial")) for item in (pauta or []))
+
+
+def criterio_admite_parcial(item: Optional[Dict]) -> bool:
+    """Solo un criterio declarado como parcial puede quedar en PARCIAL_MEDIO.
+
+    Tambien es la marca que activa las reglas calibradas el 28/10/2026 en las
+    guardas: las evaluaciones hechas con pautas anteriores no traen este campo
+    y, al releerse, siguen resolviendose con la regla con la que se evaluaron.
+    """
+    return bool((item or {}).get("admite_parcial"))
+
+
+def estado_parcial_o(item: Optional[Dict], estado_sin_parcial: str) -> str:
+    return ESTADO_PARCIAL_PAUTA if criterio_admite_parcial(item) else estado_sin_parcial
 
 
 def matriz_tecnica_para_pauta(pauta: Optional[List[Dict]] = None) -> List[Dict]:
@@ -2286,10 +2309,19 @@ Para CUMPLE, segmentos_evidencia es recomendable pero no obligatorio si conducta
 Para NO_CUMPLE observable, segmentos_evidencia o segmentos_contexto es obligatorio. Para faltas críticas o posibles descalificaciones, la evidencia debe ser de AGENTE con confianza suficiente.
 Usa REQUIERE_REVISION solo si la evidencia existe pero es ambigua, el rol AGENTE/CLIENTE es dudoso, hay contradicción real o la falta crítica necesita validación humana.
 
-Para PECN.2 y PECN.3 no basta que el agente diga "puede pagar", "cuota" o "abonar". La evidencia debe mostrar la secuencia: objeción o restricción concreta del CLIENTE, respuesta posterior del AGENTE y conexión de esa respuesta con la causa, capacidad, monto o fecha expuestos. Una propuesta genérica que ignora un dato relevante, como cosecha, ingreso futuro, enfermedad o imposibilidad actual, no cumple negociación escalonada ni manejo de objeciones.
+Para PECN.2 y PECN.3 no basta que el agente diga "puede pagar", "cuota" o "abonar". La evidencia debe mostrar la secuencia: objeción o restricción concreta del CLIENTE, respuesta posterior del AGENTE y conexión de esa respuesta con la causa, capacidad, monto o fecha expuestos. Una propuesta genérica que ignora un dato relevante, como cosecha, ingreso futuro, enfermedad o imposibilidad actual, no cumple de forma completa.
 Para PECN.4, usa la promesa o siguiente acción realmente aceptada por el CLIENTE, no una frase previa donde el AGENTE solo informa la deuda. Para PECC.2, diferencia la promesa del cliente de la confirmación verbal del agente: exige una recapitulación posterior de las condiciones principales.
 """
         contrato_estado = "CUMPLE|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION"
+        if pauta_admite_parcial(pauta):
+            instrucciones_estado += """
+PUNTAJE PARCIAL:
+- PARCIAL_MEDIO: solo para criterios con admite_parcial = true, y solo cuando lo observado coincide con su regla_parcial. Otorga la mitad del peso.
+- En criterios con admite_parcial = false nunca uses PARCIAL_MEDIO: decide CUMPLE o NO_CUMPLE.
+- Parcial no es un premio al esfuerzo ni una salida por duda: describe una conducta que se hizo de forma incompleta. Si no hubo conducta, es NO_CUMPLE; si hay duda sobre la evidencia, es REQUIERE_REVISION.
+- Que el cliente rechace la propuesta no convierte en incumplimiento una conducta que el asesor sí realizó: se evalúa lo que hizo el asesor, no lo que decidió el cliente.
+"""
+            contrato_estado = "CUMPLE|PARCIAL_MEDIO|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION"
     else:
         instrucciones_estado = """
 Estados permitidos:
@@ -2368,7 +2400,12 @@ def corregir_criterios_inconsistentes(
     criterios_por_codigo = {str(item.get("codigo") or ""): item for item in criterios if isinstance(item, dict)}
     cuestionados = [criterios_por_codigo.get(str(item.get("criterio"))) for item in inconsistencias]
     cuestionados = [item for item in cuestionados if item]
-    estados = "CUMPLE|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION" if pauta else "CUMPLE|PARCIAL_ALTO|PARCIAL_MEDIO|PARCIAL_BAJO|NO_CUMPLE|NO_EVALUABLE|REQUIERE_REVISION"
+    if pauta and pauta_admite_parcial(pauta):
+        estados = "CUMPLE|PARCIAL_MEDIO|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION (PARCIAL_MEDIO solo si el criterio tiene admite_parcial = true)"
+    elif pauta:
+        estados = "CUMPLE|NO_CUMPLE|NO_APLICA|NO_EVALUABLE|REQUIERE_REVISION"
+    else:
+        estados = "CUMPLE|PARCIAL_ALTO|PARCIAL_MEDIO|PARCIAL_BAJO|NO_CUMPLE|NO_EVALUABLE|REQUIERE_REVISION"
     prompt = f"""
 Corrige solo los criterios cuestionados. No analices criterios no listados.
 Usa segmentos_evidencia por ID y no inventes citas.
@@ -2789,7 +2826,7 @@ def normalizar_criterios_pipeline_v3(
         hallazgo_txt = str(raw.get("hallazgo") or "").strip()
         if pauta:
             estado_previo = estado
-            estado = normalizar_estado_mibanco_pipeline_v3(estado)
+            estado = normalizar_estado_mibanco_pipeline_v3(estado, admite_parcial=criterio_admite_parcial(meta))
             estado = aplicar_reglas_fuente_mibanco_v3(estado, meta, evidencia_ids, contexto_ids, segmentos_por_id)
             nota = puntaje_mibanco_pipeline_v3(estado, peso)
             # Si el criterio quedo NO_EVALUABLE porque su fuente no es el audio,
@@ -2844,6 +2881,8 @@ def normalizar_criterios_pipeline_v3(
             "puede_descalificar": bool(meta.get("puede_descalificar")),
             "requiere_evidencia": bool(meta.get("requiere_evidencia")),
             "tipo_criterio": meta.get("tipo_criterio") or "PUNTUABLE",
+            "admite_parcial": criterio_admite_parcial(meta),
+            "regla_parcial": meta.get("regla_parcial") or None,
             "anula_bloque": str(meta.get("tipo_criterio") or "").upper() == "ANULANTE_BLOQUE",
             "recomendacion_configurada": meta.get("recomendacion"),
             "posible_descalificacion": bool(raw.get("posible_descalificacion")),
@@ -2853,12 +2892,15 @@ def normalizar_criterios_pipeline_v3(
     return salida
 
 
-def normalizar_estado_mibanco_pipeline_v3(estado: str) -> str:
+def normalizar_estado_mibanco_pipeline_v3(estado: str, admite_parcial: bool = False) -> str:
     estado = normalizar_estado_criterio_v2(estado)
     if estado in ESTADOS_MIBANCO:
         return estado
     if estado.startswith("PARCIAL"):
-        return "REQUIERE_REVISION"
+        # La pauta usa un unico nivel parcial. En un criterio binario, un
+        # parcial del modelo no se redondea ni hacia arriba ni hacia abajo:
+        # lo decide una persona.
+        return ESTADO_PARCIAL_PAUTA if admite_parcial else "REQUIERE_REVISION"
     return "REQUIERE_REVISION"
 
 
@@ -2897,7 +2939,7 @@ def aplicar_reglas_fuente_mibanco_v3(
 
 
 def puntaje_mibanco_pipeline_v3(estado: str, peso: float) -> float:
-    return float(peso) if estado == "CUMPLE" else 0.0
+    return puntaje_por_estado(estado, peso)
 
 
 def normalizar_ids_segmentos_pipeline_v3(value, segmentos_por_id: Dict[int, Dict]) -> List[int]:
@@ -3355,6 +3397,12 @@ def aplicar_guardas_deterministicas_criterios(segmentos: List[Dict], criterios: 
         )
 
     aplicar_guardas_mibanco_v3(segmentos_ordenados, por_codigo, cartera)
+    # Las guardas fijan estados y puntajes criterio por criterio. Un anulante
+    # incumplido tiene que poner su bloque en cero DESPUES de eso: si se
+    # aplicara antes, la guarda de PECC.2 devolveria el puntaje completo a un
+    # bloque ya anulado. Se aplica aqui porque la relectura de la ficha solo
+    # pasa por esta funcion.
+    aplicar_anulantes_bloque(salida)
     return salida
 
 
@@ -3521,20 +3569,28 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                     "Mantener la declaración del monto total al inicio de la negociación.",
                 )
             elif not n2["declarado"]:
+                # Desde la pauta v3 (28/10/2026), si la deuda total si se
+                # declaro, fallar la escalera despues es un cumplimiento
+                # parcial, no un cero. El orden sigue siendo obligatorio.
+                estado_escalera = estado_parcial_o(criterio_montos, "NO_CUMPLE")
+                nota_parcial = (
+                    " Se otorga puntaje parcial porque sí declaró la deuda total."
+                    if estado_escalera != "NO_CUMPLE" else ""
+                )
                 if n3["declarado"]:
                     aplicar_resultado_guardado_v3(
                         criterio_montos,
-                        "NO_CUMPLE",
+                        estado_escalera,
                         evidencia_n1 + evidencia_n3,
-                        "Tras el rechazo de la deuda total el asesor pasó directo a la campaña, sin ofrecer antes el capital. El orden de la escalera es deuda total, capital y recién campaña.",
+                        "Tras el rechazo de la deuda total el asesor pasó directo a la campaña, sin ofrecer antes el capital. El orden de la escalera es deuda total, capital y recién campaña." + nota_parcial,
                         "Ofrecer el capital con su monto antes de mencionar la campaña.",
                     )
                 else:
                     aplicar_resultado_guardado_v3(
                         criterio_montos,
-                        "NO_CUMPLE",
+                        estado_escalera,
                         evidencia_n1,
-                        "El cliente rechazó la deuda total y el asesor no ofreció el capital como siguiente alternativa.",
+                        "El cliente rechazó la deuda total y el asesor no ofreció el capital como siguiente alternativa." + nota_parcial,
                         "Ante un rechazo del monto total, declarar el capital con su importe.",
                     )
             elif not n2["con_monto"]:
@@ -3554,11 +3610,13 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                     "Mantener el escalonamiento de montos según la reacción del cliente.",
                 )
             elif not n3["declarado"]:
+                estado_escalera = estado_parcial_o(criterio_montos, "NO_CUMPLE")
                 aplicar_resultado_guardado_v3(
                     criterio_montos,
-                    "NO_CUMPLE",
+                    estado_escalera,
                     evidencia_n1 + evidencia_n2,
-                    "El cliente rechazó la deuda total y también el capital, y el asesor no llegó a ofrecer el monto de campaña.",
+                    "El cliente rechazó la deuda total y también el capital, y el asesor no llegó a ofrecer el monto de campaña."
+                    + (" Se otorga puntaje parcial porque declaró deuda total y capital en orden." if estado_escalera != "NO_CUMPLE" else ""),
                     "Agotar la escalera: tras el rechazo del capital, declarar el monto de campaña.",
                 )
             elif not n3["con_monto"]:
@@ -3599,6 +3657,18 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "El agente obtiene información sobre la causa del atraso y la capacidad actual del cliente.",
                 "Profundizar causa, capacidad, monto y fecha para sostener la negociación.",
             )
+        elif criterio_admite_parcial(por_codigo["PECN.1"]) and (tiene_causa or tiene_capacidad):
+            # Pauta v3: identificar uno de los dos -aunque sea de forma directa,
+            # sin cuestionario- es un diagnostico incompleto, no ausente.
+            obtenido = "la causa del atraso" if tiene_causa else "la capacidad de pago"
+            faltante = "la capacidad real de pago" if tiene_causa else "la causa del atraso"
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.1"],
+                ESTADO_PARCIAL_PAUTA,
+                ((preguntas_causa or causas_cliente) if tiene_causa else (preguntas_capacidad or respuestas_capacidad))[:1],
+                f"El agente identifica {obtenido}, pero no indaga {faltante}.",
+                f"Completar el diagnóstico preguntando por {faltante} antes de proponer.",
+            )
         elif segmentos_agente or segmentos_cliente:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.1"],
@@ -3625,8 +3695,44 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
     oportunidad = objeciones_cliente or dificultades_cliente
     secuencia_objecion = analizar_secuencia_objecion_mibanco_v3(segmentos, objeciones_cliente)
 
-    # PECN.2: Negociación escalonada.
-    if por_codigo.get("PECN.2"):
+    # PECN.2: Negociación escalonada (v1/v2) / Alternativas de pago (v3).
+    propuestas_accionables = [item for item in respuestas_gestion if es_propuesta_accionable_mibanco_v3(item)]
+    if por_codigo.get("PECN.2") and criterio_admite_parcial(por_codigo["PECN.2"]) and not sin_oportunidad_por_tercero_o_corte:
+        # Pauta v3. PECN.2 mide la FORMA de pago que propone el asesor. Ya no
+        # exige causa + capacidad (eso es PECN.1) ni escalonamiento de montos
+        # (eso es PECUF.3): exigirlos aqui descontaba dos veces la misma falta.
+        # Que el cliente rechace la alternativa no la vuelve incumplimiento.
+        compromiso_pago = buscar_segmentos_compromiso_confirmado_mibanco_v3(segmentos)
+        propuestas_tras_objecion = secuencia_objecion["propuestas"]
+        hay_propuesta = bool(propuestas_tras_objecion or propuestas_accionables)
+        if oportunidad:
+            adaptada = secuencia_objecion["adaptada"] if objeciones_cliente else bool(propuestas_accionables)
+            if hay_propuesta and adaptada:
+                estado_pecn2 = "CUMPLE"
+                hallazgo_pecn2 = "Ante la situación del cliente, el agente propone una forma de pago concreta y conectada con lo que el cliente expuso."
+            elif hay_propuesta:
+                estado_pecn2 = ESTADO_PARCIAL_PAUTA
+                hallazgo_pecn2 = "El agente ofrece una alternativa de pago, pero es genérica: no retoma la causa, el ingreso o la fecha que el cliente planteó."
+            else:
+                estado_pecn2 = "NO_CUMPLE"
+                hallazgo_pecn2 = "Existiendo una restricción del cliente, el agente no desarrolla ninguna alternativa de forma de pago."
+            evidencia_pecn2 = [secuencia_objecion["objecion"] or oportunidad[0], *((propuestas_tras_objecion or propuestas_accionables)[:2])]
+        else:
+            estado_pecn2 = "CUMPLE" if (propuestas_accionables or compromiso_pago) else "NO_CUMPLE"
+            hallazgo_pecn2 = (
+                "Sin una restricción planteada por el cliente, el agente concreta una forma de pago."
+                if estado_pecn2 == "CUMPLE"
+                else "El agente no propone ni concreta una forma de pago (cuotas, fecha o canal)."
+            )
+            evidencia_pecn2 = (propuestas_accionables or compromiso_pago)[:2]
+        aplicar_resultado_guardado_v3(
+            por_codigo["PECN.2"],
+            estado_pecn2,
+            evidencia_pecn2,
+            hallazgo_pecn2,
+            "Proponer una forma de pago concreta -cuotas, fecha y canal- que retome lo que el cliente dijo sobre su situación.",
+        )
+    elif por_codigo.get("PECN.2"):
         if sin_oportunidad_por_tercero_o_corte:
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.2"],
@@ -3670,6 +3776,17 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "La llamada no permitió abordar una objeción: se confirmó tercero o se produjo corte abrupto antes de responder.",
                 "Retomar la gestión con el titular cuando exista una oportunidad válida de negociación.",
             )
+        elif not objeciones_cliente and criterio_admite_parcial(por_codigo["PECN.3"]):
+            # Pauta v3: sin objecion no hay nada que manejar. Antes esto se
+            # resolvia CUMPLE/NO_CUMPLE y castigaba 15 puntos en llamadas donde
+            # el cliente nunca objeto.
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.3"],
+                "NO_APLICA",
+                [],
+                "El cliente no planteó una objeción, negativa o postergación que el asesor tuviera que rebatir.",
+                "Ante una objeción, reconocerla y responder con una alternativa conectada con lo que el cliente expuso.",
+            )
         elif not objeciones_cliente:
             estado = "CUMPLE" if respuestas_gestion else "NO_CUMPLE"
             aplicar_resultado_guardado_v3(
@@ -3686,11 +3803,35 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 and secuencia_objecion["validacion"]
                 and secuencia_objecion["adaptada"]
             )
+            # "claro", "correcto" o "de acuerdo" son muletillas: no bastan para
+            # decir que el asesor reconocio la objecion. Para el parcial se pide
+            # una propuesta o un reconocimiento explicito.
+            reconocimiento = [
+                item for item in secuencia_objecion["validacion"]
+                if any(marca in limpiar_key_texto(item.get("texto") or item.get("texto_original") or "")
+                       for marca in ("entiendo", "comprendo", "lamento", "veo que"))
+            ]
+            respondio = bool(respuesta_objecion or reconocimiento)
+            if manejo_sustentado:
+                estado_pecn3 = "CUMPLE"
+                hallazgo_pecn3 = "El agente reconoce la objeción y responde con una alternativa conectada con la situación expuesta."
+            elif respondio and criterio_admite_parcial(por_codigo["PECN.3"]):
+                estado_pecn3 = ESTADO_PARCIAL_PAUTA
+                hallazgo_pecn3 = (
+                    "El agente responde a la objeción, pero de forma incompleta: "
+                    + ("propone una alternativa sin reconocer ni retomar lo que el cliente planteó."
+                       if respuesta_objecion else
+                       "reconoce lo que el cliente plantea, pero no ofrece una alternativa.")
+                )
+            else:
+                estado_pecn3 = "NO_CUMPLE"
+                hallazgo_pecn3 = "El cliente presenta una objeción material y la respuesta posterior no demuestra validación ni adaptación suficiente a su situación."
             aplicar_resultado_guardado_v3(
                 por_codigo["PECN.3"],
-                "CUMPLE" if manejo_sustentado else "NO_CUMPLE",
-                [secuencia_objecion["objecion"] or objeciones_cliente[0], *(respuesta_objecion[:2] if respuesta_objecion else [])],
-                "El agente reconoce la objeción y responde con una alternativa conectada con la situación expuesta." if manejo_sustentado else "El cliente presenta una objeción material y la respuesta posterior no demuestra validación ni adaptación suficiente a su situación.",
+                estado_pecn3,
+                [secuencia_objecion["objecion"] or objeciones_cliente[0],
+                 *((respuesta_objecion or (reconocimiento if estado_pecn3 == ESTADO_PARCIAL_PAUTA else []))[:2])],
+                hallazgo_pecn3,
                 "Reconocer la objeción, resumir el dato relevante y construir una alternativa con monto o fecha antes de continuar.",
             )
 
@@ -3705,6 +3846,15 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 (tercero_confirmado or corte_abrupto)[:1],
                 "La llamada no permitió inducir cierre: se confirmó tercero o se produjo corte abrupto antes de gestionar.",
                 "Retomar el contacto con el titular para conducir una acción verificable.",
+            )
+        elif not compromiso and not siguiente_accion and criterio_admite_parcial(por_codigo["PECN.4"]) and buscar_segmentos_intento_cierre_agente_v3(segmentos):
+            intento = buscar_segmentos_intento_cierre_agente_v3(segmentos)
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECN.4"],
+                ESTADO_PARCIAL_PAUTA,
+                intento[:2],
+                "El agente intenta concretar un compromiso -pide fecha, monto o una siguiente acción-, pero la llamada termina sin una promesa ni una acción verificable aceptada por el cliente.",
+                "Cerrar con una pregunta concreta de fecha y monto y repetir el compromiso para que el cliente lo acepte.",
             )
         elif not compromiso and not siguiente_accion:
             aplicar_resultado_guardado_v3(
@@ -3727,8 +3877,51 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "Cerrar con promesa o siguiente acción verificable cuando exista disposición de gestión.",
             )
 
-    # PECC.1: respeto por la entidad y sus canales.
-    if por_codigo.get("PECC.1"):
+    # PECC.1 en la pauta v3: identificacion del gestor y de la entidad, como
+    # anulante del bloque Cumplimiento. Se reconoce por el tipo, no por el
+    # codigo: en v1/v2 el mismo codigo es "Respeto por la entidad".
+    identificacion_en_pecc1 = es_criterio_identificacion_anulante_v3(por_codigo.get("PECC.1"))
+    if identificacion_en_pecc1:
+        tokens_entidad_id = tokens_entidad_cartera_v3(cartera)
+        etiqueta_entidad_id = etiqueta_entidad_cartera_v3(cartera)
+        apertura = segmentos[:25]
+        nombre_gestor = buscar_segmentos_por_tokens_v3(apertura, "AGENTE", TOKENS_IDENTIFICACION_GESTOR_V3)
+        entidad_id = buscar_segmentos_por_tokens_v3(apertura, "AGENTE", tokens_entidad_id) if tokens_entidad_id else []
+        if not tokens_entidad_id:
+            # Sin la entidad de la cartera no hay con que verificar: la guarda
+            # se abstiene, igual que PENC.1. Anular un bloque por falta de un
+            # dato de contexto seria inventar el incumplimiento.
+            logger.info("[PECC.1] sin tokens de entidad (cartera=%r): la guarda se abstiene", cartera)
+        elif not segmentos_agente:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.1"], "NO_APLICA", [],
+                "La llamada no registra intervenciones del asesor, de modo que no hubo apertura que evaluar.",
+                f"Identificarse con nombre y en representación de {etiqueta_entidad_id} al inicio.",
+            )
+        elif nombre_gestor and entidad_id:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.1"], "CUMPLE", [nombre_gestor[0], entidad_id[0]],
+                f"El asesor se identifica con su nombre y en representación de {etiqueta_entidad_id}.",
+                f"Mantener la identificación con nombre y entidad ({etiqueta_entidad_id}) al inicio de la llamada.",
+            )
+        elif nombre_gestor or entidad_id:
+            # Una sola de las dos: puede ser la transcripcion deformando un
+            # nombre. Como este criterio anula 15 puntos, lo confirma una persona.
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.1"], "REQUIERE_REVISION", (nombre_gestor or entidad_id)[:1],
+                ("El asesor dice su nombre, pero no se reconoce la mención de " + etiqueta_entidad_id + "; la transcripción pudo deformarla.")
+                if nombre_gestor else
+                (f"El asesor menciona a {etiqueta_entidad_id}, pero no se reconoce que diga su nombre."),
+                "Escuchar la apertura y confirmar si el asesor dijo su nombre y la entidad.",
+            )
+        else:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.1"], "NO_CUMPLE", [],
+                f"En la apertura el asesor no se identifica con su nombre ni en representación de {etiqueta_entidad_id}.",
+                f"Decir al inicio: \"le saluda <nombre> en representación de {etiqueta_entidad_id}\".",
+            )
+    # PECC.1 (v1/v2): respeto por la entidad y sus canales.
+    elif por_codigo.get("PECC.1"):
         if not contiene_descredito_mibanco_v3(texto_agente):
             # La entidad sale de la cartera: esta pauta es general. Antes decia
             # "Mibanco" en toda llamada, incluso en carteras de otra entidad.
@@ -3761,6 +3954,35 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "El agente confirma verbalmente condiciones del acuerdo." if validacion else "Existe posible compromiso, pero no queda plenamente confirmado mediante speech.",
                 "Confirmar verbalmente monto, fecha y condiciones principales del compromiso.",
             )
+
+    # PECC.4: Protección de datos (pauta v3). Antes de dar montos de la deuda,
+    # confirmar que se habla con el titular. No exige DNI ni fecha de
+    # nacimiento: basta la confirmacion de titularidad.
+    if por_codigo.get("PECC.4"):
+        divulgaciones = buscar_segmentos_divulgacion_deuda_agente_v3(segmentos)
+        titularidad_pecc4 = detectar_titularidad_contextual_v3(segmentos)
+        indice_seg = {id(item): pos for pos, item in enumerate(segmentos)}
+        primera_divulgacion = divulgaciones[0] if divulgaciones else None
+        if tercero_confirmado and primera_divulgacion and indice_seg.get(id(primera_divulgacion), -1) > indice_seg.get(id(tercero_confirmado[0]), 10**6):
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.4"], "NO_CUMPLE", [tercero_confirmado[0], primera_divulgacion],
+                "Se confirmó que no hablaba con el titular y aun así el asesor comunicó montos de la deuda.",
+                "Ante un tercero, no dar montos ni detalle de la deuda: dejar un mensaje de contacto.",
+            )
+        elif not primera_divulgacion:
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.4"], "NO_APLICA", [],
+                "El asesor no comunicó montos ni detalle de la deuda, de modo que no había información sensible que proteger.",
+                "Confirmar la titularidad antes de comunicar cualquier monto.",
+            )
+        elif titularidad_pecc4 and indice_seg.get(id(titularidad_pecc4[0]), 10**6) < indice_seg.get(id(primera_divulgacion), -1):
+            aplicar_resultado_guardado_v3(
+                por_codigo["PECC.4"], "CUMPLE", [titularidad_pecc4[0], titularidad_pecc4[1]],
+                "El asesor confirma que habla con el titular antes de comunicar montos de la deuda.",
+                "Mantener la confirmación de titularidad antes de dar información de la deuda.",
+            )
+        # En otro caso decide el modelo: la titularidad pudo confirmarse con
+        # una formula que la deteccion no reconoce.
 
     # PECC.3: Tipificación de gestión requiere fuente de sistema/tipificación.
     if por_codigo.get("PECC.3"):
@@ -3812,7 +4034,12 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 for x in segmentos[:8]
             ],
         )
-        if not puede_evaluar_entidad:
+        if identificacion_en_pecc1:
+            # Pauta v3: nombre y entidad se evaluan en PECC.1. Exigirlos tambien
+            # aqui castigaria dos veces la misma omision.
+            estado_saludo = "CUMPLE" if saludo else ("NO_APLICA" if not segmentos_agente else "NO_CUMPLE")
+            entidad = []
+        elif not puede_evaluar_entidad:
             estado_saludo = None
         elif saludo and entidad:
             estado_saludo = "CUMPLE"
@@ -3831,7 +4058,11 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 por_codigo["PENC.1"],
                 estado_saludo,
                 (saludo[:1] + entidad[:1]) or evidencia_neutra,
-                f"El agente saluda e identifica representación de {etiqueta_entidad}."
+                ("El agente saluda al iniciar la llamada." if saludo else (
+                    "La llamada se interrumpe antes de una apertura atribuible al agente."
+                    if not segmentos_agente else "La apertura no incluye un saludo del agente."))
+                if identificacion_en_pecc1
+                else f"El agente saluda e identifica representación de {etiqueta_entidad}."
                 if saludo and entidad
                 else (
                     "La llamada se interrumpe antes de una apertura atribuible al agente."
@@ -3867,6 +4098,48 @@ def aplicar_guardas_mibanco_v3(segmentos: List[Dict], por_codigo: Dict[str, Dict
                 "El agente cierra la llamada con despedida cordial.",
                 "Mantener despedida profesional al finalizar la gestión.",
             )
+
+
+# Frases con las que el asesor dice su nombre. Se evita "habla" suelto: tambien
+# aparece en "¿hablo con...?" y daria por identificado a quien no se presento.
+TOKENS_IDENTIFICACION_GESTOR_V3 = {
+    "le habla", "te habla", "le saluda", "te saluda", "mi nombre es",
+    "mi nombre", "le llama", "se comunica", "soy ",
+}
+
+
+def es_criterio_identificacion_anulante_v3(item: Optional[Dict]) -> bool:
+    """PECC.1 de la pauta v3: identificacion cargada como anulante de bloque."""
+    return isinstance(item, dict) and str(item.get("tipo_criterio") or "").upper() == "ANULANTE_BLOQUE"
+
+
+def buscar_segmentos_intento_cierre_agente_v3(segmentos: List[Dict]) -> List[Dict]:
+    """El asesor busca concretar: pide fecha, monto o compromiso.
+
+    Sirve para separar "intento cerrar y el cliente no acepto" (parcial) de
+    "nunca intento cerrar" (no cumple). No reconoce el cierre en si: eso lo
+    hacen las busquedas de compromiso y siguiente accion confirmados.
+    """
+    tokens = {
+        "para cuando", "para que fecha", "que fecha", "que dia", "cuando podria",
+        "cuando puede", "cuanto podria", "cuanto puede", "puede realizar el pago",
+        "podria realizar el pago", "podemos quedar", "quedamos", "le parece si",
+        "me confirma", "se compromete", "lo dejamos para", "agendamos",
+        "le programo", "programamos", "cuento con su pago",
+    }
+    return buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", tokens)
+
+
+def buscar_segmentos_divulgacion_deuda_agente_v3(segmentos: List[Dict]) -> List[Dict]:
+    """Frases del asesor que comunican un monto de la deuda."""
+    conceptos = {
+        "deuda", "saldo", "monto", "importe", "capital", "campana", "campania",
+        "cuota", "debe", "adeuda", "pendiente", "soles",
+    }
+    return [
+        item for item in buscar_segmentos_por_tokens_v3(segmentos, "AGENTE", conceptos)
+        if montos_en_texto_v3(item.get("texto") or item.get("texto_original") or "")
+    ]
 
 
 def contiene_riesgo_trato_agente_v3(texto_agente: str) -> bool:
@@ -4561,6 +4834,7 @@ def metadatos_pauta_pipeline_v3(pauta: Optional[List[Dict]]) -> Dict:
         "nombre": item.get("nombre"),
         "peso": item.get("peso"),
         "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+        "admite_parcial": bool(item.get("admite_parcial")),
         "criticidad": item.get("criticidad"),
         "fuente_evidencia": item.get("fuente_evidencia"),
     } for item in pauta]
@@ -4753,7 +5027,14 @@ def construir_respuesta_pipeline_v3(
 
 def criterio_pipeline_a_v2(item: Dict) -> Dict:
     codigo = str(item.get("codigo") or "")
-    catalogo_sgc = obtener_catalogo_sgc(codigo) or catalogo_sgc_desde_pauta(item)
+    # Si el criterio viene de una pauta publicada, su criticidad y su nombre
+    # mandan sobre el catalogo historico en codigo: en la v3 PECC.1 pasa a ser
+    # la identificacion del gestor y PECN.4 vuelve al bloque de negocio.
+    catalogo_sgc = (
+        catalogo_sgc_desde_pauta(item)
+        if str(item.get("criticidad") or "").strip()
+        else (obtener_catalogo_sgc(codigo) or catalogo_sgc_desde_pauta(item))
+    )
     grupo_sgc = catalogo_sgc.get("grupo_error_sgc") or SGC_GRUPO_NO_CRITICO
     factor_sgc = catalogo_sgc.get("factor_sgc") or item.get("nombre") or "Criterio tecnico"
     evidencia_textual = item.get("evidencia_textual") if isinstance(item.get("evidencia_textual"), list) else []
@@ -4795,6 +5076,8 @@ def criterio_pipeline_a_v2(item: Dict) -> Dict:
         "regla_aplicabilidad": item.get("regla_aplicabilidad"),
         "requiere_evidencia": bool(item.get("requiere_evidencia")),
         "tipo_criterio": item.get("tipo_criterio") or "PUNTUABLE",
+        "admite_parcial": bool(item.get("admite_parcial")),
+        "regla_parcial": item.get("regla_parcial") or None,
         "bloque_anulado": bool(item.get("bloque_anulado")),
         "motivo_bloque_anulado": item.get("motivo_bloque_anulado") or "",
         "posible_descalificacion": bool(item.get("posible_descalificacion")),
@@ -5436,7 +5719,9 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
     canon = buscar_item_canonico(codigo, nombre_item)
     segmento_canon, item_canon, peso_canon = canon
     catalogo_sgc = obtener_catalogo_sgc(codigo)
-    if catalogo_sgc and str(codigo).upper().startswith(("PENC.", "PECUF.", "PECN.", "PECC.")):
+    # Los codigos nuevos de una pauta (PECC.4, PENC.5) no estan en el catalogo
+    # historico; sin esta condicion caian en "Sin segmento" y peso canonico 0.
+    if str(codigo).upper().startswith(("PENC.", "PECUF.", "PECN.", "PECC.")):
         segmento_canon = str(criterio.get("subcategoria") or criterio.get("bloque") or segmento or "").strip()
         item_canon = nombre or nombre_item
         peso_canon = float(criterio.get("puntaje_maximo") or criterio.get("peso") or 0)
@@ -5459,7 +5744,11 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
         nota = 0
     resultado = resultado_legacy_desde_estado_v2(estado)
     codigo_final = str(criterio.get("codigo_criterio") or codigo or "").strip()
-    catalogo_sgc = obtener_catalogo_sgc(codigo_final)
+    catalogo_sgc = (
+        catalogo_sgc_desde_pauta(criterio)
+        if str(criterio.get("criticidad") or "").strip()
+        else obtener_catalogo_sgc(codigo_final)
+    )
     if catalogo_sgc:
         grupo_sgc = catalogo_sgc["grupo_error_sgc"]
         factor_sgc = catalogo_sgc["factor_sgc"]
@@ -5510,6 +5799,8 @@ def convertir_criterio_v2(criterio: Dict, segmento: str) -> Dict:
         "regla_aplicabilidad": criterio.get("regla_aplicabilidad"),
         "requiere_evidencia": bool(criterio.get("requiere_evidencia")),
         "tipo_criterio": criterio.get("tipo_criterio") or "PUNTUABLE",
+        "admite_parcial": bool(criterio.get("admite_parcial")),
+        "regla_parcial": criterio.get("regla_parcial") or None,
         "bloque_anulado": bool(criterio.get("bloque_anulado")),
         "motivo_bloque_anulado": criterio.get("motivo_bloque_anulado") or "",
         "posible_descalificacion": bool(criterio.get("posible_descalificacion")),

@@ -7,6 +7,7 @@ import math
 import os
 import re
 from typing import Dict, List, Optional, Tuple
+import unicodedata
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -72,6 +73,15 @@ FORMATS = {
         "fecha": "FECHA_DE_MOVIMIENTO",
         "tipo_medicion": "RECUPERO",
         "linneg": {"IND": 124, "GRU": 144, "CCM": 144},
+        # 30/10/2026: llaves para cruzar cada pago con la asignación por operación.
+        # Se leen como texto para conservar los ceros a la izquierda
+        # (CodCuenta 01254159500, NumDoc 02855343).
+        "columnas_texto": ["CodCuenta", "Operación", "CtaCliente", "NumDoc"],
+        "num_operacion": "Operación",
+        "num_cuenta": "CodCuenta",
+        "cod_cliente": "CtaCliente",
+        "documento": "NumDoc",
+        "cliente": "NomCliente",
     },
     "COMPARTAMOS_VIGENTE": {
         "sheet": "base",
@@ -318,16 +328,21 @@ def leer_archivo(formato: str, filename: str, content: bytes) -> pd.DataFrame:
     config = FORMATS[formato]
     sheet = config.get("sheet")
     read_options = {"sheet_name": sheet}
+    engine = {".xlsb": "pyxlsb", ".xls": "xlrd"}.get(ext, "openpyxl")
+
     if formato in {"INTERBANK", "COMPARTAMOS_VIGENTE"}:
         read_options["dtype"] = str
+    elif config.get("columnas_texto"):
+        # Solo esas columnas como texto; montos y fechas se leen igual que antes.
+        encabezado = pd.read_excel(BytesIO(content), engine=engine, nrows=0, **read_options)
+        reales = {normalizar_columna(col): col for col in encabezado.columns}
+        read_options["dtype"] = {
+            reales[normalizar_columna(col)]: str
+            for col in config["columnas_texto"]
+            if normalizar_columna(col) in reales
+        }
 
-    if ext == ".xlsb":
-        return pd.read_excel(stream, engine="pyxlsb", **read_options)
-
-    if ext == ".xls":
-        return pd.read_excel(stream, engine="xlrd", **read_options)
-
-    return pd.read_excel(stream, engine="openpyxl", **read_options)
+    return pd.read_excel(stream, engine=engine, **read_options)
 
 
 def leer_financiera_oh(stream: BytesIO, ext: str) -> pd.DataFrame:
@@ -507,6 +522,16 @@ def normalizar_registros(
                 "fecha_pago": fecha_operativa_compartamos,
             })
 
+        if formato == "COMPARTAMOS_CASTIGO":
+            num_doc = valor_texto(row, df, config.get("documento"))
+            registro.update({
+                "dni": num_doc or None,
+                "documento": num_doc or registro["documento"],
+                "num_cuenta": valor_texto(row, df, config.get("num_cuenta")) or None,
+                "lin_neg": valor_texto(row, df, "LinNeg"),
+                "fecha_movimiento": fecha_pago,
+            })
+
         registros.append(registro)
 
     return registros
@@ -613,12 +638,17 @@ def construir_resumen_previo(formato: str, filename: str, registros: List[Dict])
     resumen_cartera = {}
 
     for r in registros:
-        segmentacion = normalizar_segmentacion_resumen(r.get("segmentacion"))
+        if formato == "COMPARTAMOS_CASTIGO":
+            # 30/10/2026: en castigo la cartera la decide la LinNeg (IND→124, GRU/CCM→144),
+            # no el color de segmentación.
+            segmentacion = str(r.get("lin_neg") or "").strip().upper() or "Sin LinNeg"
+        else:
+            segmentacion = normalizar_segmentacion_resumen(r.get("segmentacion"))
 
         key = segmentacion or "SIN_SEGMENTACION"
         idcartera_resumen = (
             r.get("idcartera")
-            if formato == "COMPARTAMOS_VIGENTE"
+            if formato in {"COMPARTAMOS_VIGENTE", "COMPARTAMOS_CASTIGO"}
             else None
         )
 
@@ -1110,7 +1140,9 @@ def obtener_columna_real(df: pd.DataFrame, expected: str) -> str:
 
 
 def normalizar_columna(col) -> str:
-    return re.sub(r"[^A-Z0-9]", "", str(col).strip().upper())
+    # Sin tildes: «Operación» y «Operacion» son la misma columna.
+    sin_tildes = unicodedata.normalize("NFKD", str(col)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Z0-9]", "", sin_tildes.strip().upper())
 
 
 def valor_texto(row, df, col: str) -> str:

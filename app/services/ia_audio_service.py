@@ -1183,7 +1183,7 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
     )
 
 
-RESULTADOS_IA_VALIDOS = {"CUMPLE", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
+RESULTADOS_IA_VALIDOS = {"CUMPLE", "PARCIAL_MEDIO", "NO_CUMPLE", "NO_APLICA", "NO_EVALUABLE", "REQUIERE_REVISION"}
 
 
 def _resultado_ia_normalizado(item: Dict) -> str:
@@ -1198,6 +1198,10 @@ def _resultado_ia_normalizado(item: Dict) -> str:
         return "NO_APLICA"
     if "revisi" in texto:
         return "REQUIERE_REVISION"
+    if "parcial" in texto:
+        # Sin esto un "Parcial" caia al final como REQUIERE_REVISION y la
+        # tabla perdia la mitad del puntaje que el motor si otorgo.
+        return "PARCIAL_MEDIO"
     if "no cumple" in texto or "no evidenciado" in texto:
         return "NO_CUMPLE"
     if "cumple" in texto:

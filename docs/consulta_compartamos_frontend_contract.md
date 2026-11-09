@@ -111,7 +111,20 @@ Bloque `cronograma_cuotas`, visible en un modal abierto con el botón "Cronogram
 
 ### Plan de pago (`cronograma_cuotas.plan`)
 
-`ProductoCamp` con "28" → 1 cuota; con "14" → 2 cuotas; siempre las más atrasadas **del grupo** (grupo 380168 → cuotas 4 y 5). Supuesto vigente: se toman los N números de cuota más bajos presentes en el grupo; un integrante cuya cuota más atrasada es mayor solo paga las que le correspondan dentro de ese conjunto. Si el producto falta, es ambiguo dentro del grupo o no indica 14/28, `plan.disponible = false` con `plan.motivo`.
+`ProductoCamp` con "28" → 1 cuota; con "14" → 2 cuotas; siempre las más atrasadas **del grupo**. Si el producto falta, es ambiguo dentro del grupo o no indica 14/28, `plan.disponible = false` con `plan.motivo`.
+
+**Regla por fecha de vencimiento (Hardy, 2026-10-13; misma regla que Biznescob Analytics).** Antes se tomaban los N *números* de cuota más bajos del grupo. Falla cuando los integrantes tienen distinto desembolso: grupo 44011, una integrante debía su N.° 2 y cinco su N.° 3, todas con vencimiento 12/08/2026; por número solo se exigía la N.° 2 (1 de 6) aunque, si las otras cinco no pagan, el grupo sigue en atraso. Ahora:
+1. Vencimiento de `CT 1` = `UltFecVen` (AAAAMMDD); `CT 2` = + 1 periodo; `CT 3` = + 2 periodos (14 o 28 días según producto).
+2. D1 = vencimiento más antiguo del grupo entre integrantes con `CT 1` > 0.
+3. Posición de cada CT = 1 + ROUND((vencimiento − D1) / periodo) (redondeo como SQL Server).
+4. Cuotas exigidas = las N posiciones más antiguas con capital.
+5. Cada integrante paga sus CT en esas posiciones, aunque su número de cuota sea otro.
+
+La **matriz del cronograma sigue por número de cuota** (decisión de Hardy); solo cambia lo que se paga. Campos:
+- `plan.vencimientos[]`: `fecha_vencimiento`, `cuota` (número más frecuente en esa fecha, solo para mostrar), `numeros` (todos los números que vencen ese día), `integrantes`, `capital`, `total`. `plan.cuotas` = los `cuota` de cada vencimiento (compatibilidad). `plan.alineado = false` si en alguna fecha vencen números distintos.
+- Por integrante: `a_pagar` / `a_pagar_total` (por número de cuota; marcan la celda "a pagar" en la matriz), `a_pagar_detalle[]` (fecha, número, capital, total) y `fecha_vencimiento_ct1`.
+- Pestaña "Por pagar": una columna por vencimiento; bajo cada monto, el número de cuota de ese integrante. Cuadro "Cuota grupo" y "Preparar compromiso grupal": capital por vencimiento y aporte de cada integrante según `a_pagar`.
+- Integrante sin `UltFecVen`: no se le asigna cuota y se avisa en `advertencias`; si nadie tiene fecha, `plan.disponible = false`.
 
 ### Cuadros (pestaña "Cuadros")
 
@@ -131,6 +144,19 @@ Reglas (definidas por negocio, solo capital sin intereses ni cargos):
 - **Rango atraso** sale de `compartamos_grupal.Rang_AtrasoCtaGru` (por integrante en el detalle; en los cuadros de grupo, solo si coincide en todo el grupo).
 - Sin porcentaje legible no se calcula (se avisa en el modal). No se bloquea una propuesta menor a la campaña; solo se señala como excepción.
 - Rango atraso, Top_NroGru, Prioridad y la propuesta por cliente quedan en "—" hasta definir reglas.
+
+## Estado de cuenta individual / CCM (solo `CLIENTE`)
+
+Bloque `operaciones[i].estado_cuenta`, visible en un modal abierto con el botón "Estado de cuenta" (fila de la operación y detalle). Especificación completa: `docs/estado_cuenta_individual_compartamos.md`. Referencia visual: `docs/prototipos/estado_cuenta_individual.html`.
+
+- Aplica solo si el número de operación figura en `Desarrollo.dbo.compartamos_individual` o `Desarrollo.dbo.compartamos_ccm` (cruce con `clave_documento`, sin ceros a la izquierda). Si no, `{"aplica": false}` y no hay botón. Grupal y castigo no aplican.
+- Montos y fechas de `SAC_CAR_BIZNESCOB` (filtrado por DNI): misma ubicación que el cronograma grupal (`CT 1` en `Ult_CuotaAtrasada`, `CT 2` y `CT 3` en las siguientes). Capital `CT k`; "Intereses, moras y gastos" = `CT k1..k5` sumados (el desglose va en el tooltip).
+- Vencimiento de `CT 1` = `UltFecVen`. `CT 2` y `CT 3` se proyectan al mismo día de los meses siguientes y se marcan como estimados (≈), hasta que Compartamos confirme la frecuencia (`MESES_ENTRE_CUOTAS_ESTIMADO`).
+- Fecha de corte = `UltFecVen + DiasAtraso`, así la cuota más antigua tiene exactamente `DiasAtraso` días. "Si paga hasta aquí" = días de la siguiente cuota vencida (0 = al día). Solo se calcula si la carga trae todas las cuotas vencidas (`Nro_CuotasVencidas`) y hay fechas.
+- Conciliación informativa: cuotas en la carga vs. vencidas, y capital de las cuotas vs. `SdoCapitalVencido`. No se ajusta ningún monto.
+- Pantalla: capital y cargos se redondean hacia arriba al sol por separado y el total de la cuota es la suma de lo mostrado; el exacto va en el tooltip y en el payload.
+- Pestaña "Campañas": `Camp1..4Cuota%`, `Campaña Final 1..4 Cuota`, `Cancelación%` y `Cancelacion` tal como llegan en la asignación. La campaña es sobre la cuota capital; la referencia es el capital de esas cuotas.
+- Si SAC trae dos filas distintas para la misma operación, no se elige una: `disponible = false` con motivo.
 
 ## Campos no conectados
 

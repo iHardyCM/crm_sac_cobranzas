@@ -13,7 +13,9 @@ REGLAS ACORDADAS (21/09/2026)
 MEDICION
   Resultado VIGENTE del criterio en una llamada FINALIZADA del agente: el
   corregido si Calidad publico una correccion, si no el de la IA. Solo cuenta si
-  es CUMPLE o NO_CUMPLE (lo no medido no suma ni resta). La fecha es la de la
+  es CUMPLE, PARCIAL_MEDIO o NO_CUMPLE (lo no medido no suma ni resta). Desde la
+  pauta v3 (28/10/2026) un PARCIAL cuenta como medicion y como falla: el
+  criterio no se cumplio completo, igual que "brecha" en el Centro de Calidad. La fecha es la de la
   llamada (si falta, la de carga): el plan mide llamadas posteriores a su inicio.
 
 El avance no se guarda: se calcula al leer, para que nunca contradiga a las
@@ -31,7 +33,8 @@ from sqlalchemy.exc import IntegrityError
 from app.core.db_siscob import engine_siscob
 
 REGLA = {"ultimas": 5, "fallas": 2, "minimo": 3, "meta_pct": 80.0, "mediciones_objetivo": 5, "dias": 30}
-MEDIDOS = {"CUMPLE", "NO_CUMPLE"}
+MEDIDOS = {"CUMPLE", "PARCIAL_MEDIO", "NO_CUMPLE"}
+FALLAS = {"PARCIAL_MEDIO", "NO_CUMPLE"}
 ESTADOS_CIERRE = {"CUMPLIDO", "NO_CUMPLIDO", "VENCIDO", "ANULADO"}
 
 SQL_MEDICIONES = text("""
@@ -145,7 +148,7 @@ def crear_plan(
         mediciones = _mediciones(conn, agente, codigo)
         medidas = [m for m in mediciones if m["medido"]]
         ultimas = medidas[-REGLA["ultimas"]:]
-        fallas = sum(1 for m in ultimas if m["vigente"] == "NO_CUMPLE")
+        fallas = sum(1 for m in ultimas if m["vigente"] in FALLAS)
         cumple = len(ultimas) - fallas
         ref = mediciones[-1] if mediciones else {}
         candidato = len(ultimas) >= REGLA["minimo"] and fallas >= REGLA["fallas"]

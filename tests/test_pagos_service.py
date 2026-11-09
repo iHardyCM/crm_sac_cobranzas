@@ -278,6 +278,84 @@ class PagosServiceTests(unittest.TestCase):
 
         self.assertEqual(ids, {"GRU": 133, "CCM": 128, "IND": 126})
 
+    def _excel_castigo(self, filas):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Caja"
+        sheet.append([
+            "FECHA_DE_MOVIMIENTO", "CodCuenta", "Operación", "CtaCliente", "NumDoc",
+            "NomCliente", "LinNeg", "USUARIO_2", " Monto",
+        ])
+        for fila in filas:
+            sheet.append(fila)
+        stream = BytesIO()
+        workbook.save(stream)
+        return stream.getvalue()
+
+    def test_castigo_guarda_operacion_cuenta_y_documento(self):
+        content = self._excel_castigo([
+            ["21/10/26", "02023147900", 20231479, "6227698", "02855343",
+             "CLIENTE GRUPAL", "GRU", "EXTERNO - BIZNESCOB", 150.5],
+            ["21/10/26", "01254159500", 12541595, "4363833", "41983450",
+             "CLIENTE IND", "IND", "EXTERNO - BIZNESCOB", 80],
+        ])
+
+        df = leer_archivo("COMPARTAMOS_CASTIGO", "matriz castigo.xlsx", content)
+        df = aplicar_filtros_formato(df, "COMPARTAMOS_CASTIGO", FORMATS["COMPARTAMOS_CASTIGO"])
+        gru, ind = normalizar_registros(df, "COMPARTAMOS_CASTIGO", "matriz castigo.xlsx")
+
+        self.assertEqual(gru["idcartera"], 144)
+        self.assertEqual(gru["num_operacion"], "20231479")
+        self.assertEqual(gru["num_cuenta"], "02023147900")
+        self.assertEqual(gru["cod_cliente"], "6227698")
+        self.assertEqual(gru["dni"], "02855343")
+        self.assertEqual(gru["documento"], "02855343")
+        self.assertEqual(gru["lin_neg"], "GRU")
+        self.assertEqual(gru["fecha_movimiento"], date(2026, 10, 21))
+        self.assertEqual(gru["monto_pago_soles"], 150.5)
+        self.assertEqual(ind["idcartera"], 124)
+        self.assertEqual(ind["num_operacion"], "12541595")
+        self.assertEqual(ind["estado_fila"], "VALIDO")
+
+    def test_castigo_reconoce_operacion_sin_tilde(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Caja"
+        sheet.append(["FECHA_DE_MOVIMIENTO", "Operacion", "LinNeg", "USUARIO_2", "Monto"])
+        sheet.append(["21/10/26", 20231479, "GRU", "EXTERNO - BIZNESCOB", 10])
+        stream = BytesIO()
+        workbook.save(stream)
+
+        df = leer_archivo("COMPARTAMOS_CASTIGO", "matriz.xlsx", stream.getvalue())
+        registro = normalizar_registros(df, "COMPARTAMOS_CASTIGO", "matriz.xlsx")[0]
+
+        self.assertEqual(registro["num_operacion"], "20231479")
+        self.assertIsNone(registro["dni"])
+        self.assertEqual(registro["estado_fila"], "VALIDO")
+
+    def test_resumen_castigo_agrupa_por_linneg_con_idcartera(self):
+        registros = [
+            {"lin_neg": lin, "segmentacion": "ROJO", "idcartera": idc, "estado_fila": estado,
+             "monto_pago_soles": monto, "capital_contenido": 0, "codmes": "202610",
+             "fecha_corte": date(2026, 10, 29)}
+            for lin, idc, estado, monto in (
+                ("IND", 124, "VALIDO", 100), ("GRU", 144, "VALIDO", 50),
+                ("GRU", 144, "ERROR", 0), ("CCM", 144, "VALIDO", 20),
+            )
+        ]
+
+        resumen = construir_resumen_previo("COMPARTAMOS_CASTIGO", "matriz.xlsx", registros)
+        por_cartera = {
+            item["cartera"]: (item["idcartera"], item["filas"], item["validas"], item["monto_pago"])
+            for item in resumen["resumen_por_cartera"]
+        }
+
+        self.assertEqual(por_cartera, {
+            "IND": (124, 1, 1, 100),
+            "GRU": (144, 2, 1, 50),
+            "CCM": (144, 1, 1, 20),
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

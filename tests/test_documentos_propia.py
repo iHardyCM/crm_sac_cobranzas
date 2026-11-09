@@ -184,6 +184,122 @@ class DocumentosPropiaTests(unittest.TestCase):
             finally:
                 result["path"].unlink(missing_ok=True)
 
+    def test_cuotas_varias_operaciones_suman_deuda_y_generan_un_cronograma(self):
+        segundo_sip = dict(SIP, Operacion="4040710009986512", CuentaOrigen="4040710009986512",
+                           CuentaCastigada="9202040004090141", DeudaTotal=2095.24, SdoCapital=1319.66)
+        primero_ibk = dict(INTERBANK, Operacion="0047255221", CuentaCastigada="0047255221",
+                           DeudaTotal=29621.58, MtoCancelacionCliente=10310.75)
+        segundo_ibk = dict(INTERBANK, Operacion="0047255222", CuentaCastigada="0047255222",
+                           CuentaOrigen="0012308021", Producto="01 VISA", DeudaTotal=15011.71,
+                           SdoCapital=5413.10, MtoCancelacionCliente=5246.26)
+        for origen, primero, segundo, total, inicial, cuota in (
+            ("sip", SIP, segundo_sip, 2000, 200, 900),
+            ("interbank", primero_ibk, segundo_ibk, 15557.01, 557.01, 7500),
+        ):
+            cuentas = {item["Operacion"]: item for item in (primero, segundo)}
+            def lookup(_cartera_id, **kwargs):
+                item = cuentas.get(kwargs["operacion"])
+                return [item] if item else []
+            pagos = [{"monto": inicial, "fecha": "2026-10-15"},
+                     {"monto": cuota, "fecha": "2026-11-15"},
+                     {"monto": cuota, "fecha": "2026-12-15"}]
+            solicitudes = [{"operacion": item["Operacion"]} for item in (primero, segundo)]
+            with patch.object(service, "consultar_datos_documento_propia", side_effect=lookup):
+                result = service.generar_documento(
+                    f"propia_{origen}_cuotas", dni=primero["NumDocumento"],
+                    cancelacion=total, fecha_pago="2026-10-15", cantidad_cuotas=2,
+                    pagos_mibanco=pagos, creditos_propia=solicitudes, formato="docx",
+                )
+            try:
+                with ZipFile(result["path"]) as doc:
+                    root = ET.fromstring(doc.read("word/document.xml"))
+                text = "".join(node.text or "" for node in root.findall(".//w:t", WORD_NS))
+                self.assertIn(primero["Operacion"], text)
+                self.assertIn(segundo["Operacion"], text)
+                self.assertIn(f"{primero['DeudaTotal'] + segundo['DeudaTotal']:,.2f}", text)
+                self.assertEqual(table_values(root)[0][1], ["Monto convenio", f"{total:,.2f}"])
+                self.assertEqual(table_values(root)[0][3], ["Número de cuotas", "2"])
+                self.assertEqual([fila[5] for fila in table_values(root)[1][1:]],
+                                 [f"{inicial:,.2f}", f"{cuota:,.2f}", f"{cuota:,.2f}"])
+                self.assertEqual(len(result["auditoria_detalle"]["operaciones"]), 2)
+                self.assertTrue(all(item["pago"] is None for item in result["auditoria_detalle"]["operaciones"]))
+            finally:
+                result["path"].unlink(missing_ok=True)
+
+    def test_cuotas_una_operacion_seleccionada_y_limites_del_total(self):
+        segundo = dict(SIP, Operacion="4040710009986512", CuentaOrigen="4040710009986512",
+                       CuentaCastigada="9202040004090141", DeudaTotal=2095.24, SdoCapital=1319.66)
+        cuentas = {item["Operacion"]: item for item in (SIP, segundo)}
+        def lookup(_cartera_id, **kwargs):
+            item = cuentas.get(kwargs["operacion"])
+            return [item] if item else []
+        config = service.obtener_config_documento("propia_sip_cuotas")
+        pagos = [{"monto": 0, "fecha": "2026-10-15"}, {"monto": 1200, "fecha": "2026-11-15"}]
+        with patch.object(service, "consultar_datos_documento_propia", side_effect=lookup):
+            result = service.generar_documento_propia(
+                config, dni=SIP["NumDocumento"], cancelacion=1200,
+                fecha_pago="2026-10-15", cantidad_cuotas=1,
+                pagos=pagos, creditos_propia=[{"operacion": SIP["Operacion"]}],
+            )
+            try:
+                with ZipFile(result["path"]) as doc:
+                    root = ET.fromstring(doc.read("word/document.xml"))
+                text = "".join(node.text or "" for node in root.findall(".//w:t", WORD_NS))
+                self.assertIn(SIP["Operacion"], text)
+                self.assertNotIn(segundo["Operacion"], text)
+                self.assertIn(f"{SIP['DeudaTotal']:,.2f}", text)
+            finally:
+                result["path"].unlink(missing_ok=True)
+            with self.assertRaisesRegex(ValueError, "50 % del capital total"):
+                service.generar_documento_propia(
+                    config, dni=SIP["NumDocumento"], cancelacion=1200,
+                    fecha_pago="2026-10-15", cantidad_cuotas=1, pagos=pagos,
+                    creditos_propia=[{"operacion": SIP["Operacion"]}, {"operacion": segundo["Operacion"]}],
+                )
+            con_excepcion = service.generar_documento_propia(
+                config, dni=SIP["NumDocumento"], cancelacion=1200,
+                fecha_pago="2026-10-15", cantidad_cuotas=1, pagos=pagos,
+                creditos_propia=[{"operacion": SIP["Operacion"]}, {"operacion": segundo["Operacion"]}],
+                excepcion=True,
+            )
+            try:
+                self.assertEqual(len(con_excepcion["auditoria_detalle"]["operaciones"]), 2)
+            finally:
+                con_excepcion["path"].unlink(missing_ok=True)
+            with self.assertRaisesRegex(ValueError, "deuda total"):
+                service.generar_documento_propia(
+                    config, dni=SIP["NumDocumento"], cancelacion=6000,
+                    fecha_pago="2026-10-15", cantidad_cuotas=1,
+                    pagos=[{"monto": 0, "fecha": "2026-10-15"}, {"monto": 6000, "fecha": "2026-11-15"}],
+                    creditos_propia=[{"operacion": SIP["Operacion"]}, {"operacion": segundo["Operacion"]}],
+                )
+            cuentas[segundo["Operacion"]] = dict(segundo, SdoCapital=None)
+            with self.assertRaisesRegex(ValueError, "capital válido"):
+                service.generar_documento_propia(
+                    config, dni=SIP["NumDocumento"], cancelacion=1200,
+                    fecha_pago="2026-10-15", cantidad_cuotas=1, pagos=pagos,
+                    creditos_propia=[{"operacion": SIP["Operacion"]}, {"operacion": segundo["Operacion"]}],
+                    excepcion=True,
+                )
+            cuentas[segundo["Operacion"]] = dict(segundo, NumDocumento="99999999")
+            with self.assertRaisesRegex(ValueError, "mismo documento"):
+                service.generar_documento_propia(
+                    config, dni=SIP["NumDocumento"], cancelacion=1200,
+                    fecha_pago="2026-10-15", cantidad_cuotas=1, pagos=pagos,
+                    creditos_propia=[{"operacion": SIP["Operacion"]}, {"operacion": segundo["Operacion"]}],
+                )
+
+    def test_solicitud_cuotas_acepta_operaciones_sin_montos_individuales(self):
+        operaciones = ["0046465217", "0047255222"]
+        payload = routes.GenerarDocumentoRequest(
+            documento_tipo="propia_interbank_cuotas", dni=INTERBANK["NumDocumento"],
+            cancelacion=6283.86,
+            creditos_propia=[{"operacion": operacion} for operacion in operaciones],
+        )
+        enviados = [item.model_dump() for item in payload.creditos_propia]
+        self.assertEqual([item["operacion"] for item in enviados], operaciones)
+        self.assertTrue(all(item["monto"] is None and item["fecha"] is None for item in enviados))
+
     def test_cancelacion_no_supera_deuda_total_en_ambas_carteras(self):
         for origen, row in (("sip", SIP), ("interbank", INTERBANK)):
             with patch.object(service, "consultar_datos_documento_propia", return_value=[row]):
@@ -268,20 +384,20 @@ class DocumentosPropiaTests(unittest.TestCase):
         with patch.object(service, "consultar_datos_documento_propia", side_effect=lookup):
             with self.assertRaisesRegex(ValueError, "Marca Excepción"):
                 service.generar_documento_propia(config, dni=SIP["NumDocumento"],
-                    cancelacion=2000, creditos_propia=solicitudes)
+                    cancelacion=2000, fecha_pago="2026-10-06", creditos_propia=solicitudes)
             with self.assertRaisesRegex(ValueError, "suma de los créditos"):
                 service.generar_documento_propia(config, dni=SIP["NumDocumento"],
-                    cancelacion=1900, creditos_propia=solicitudes, excepcion=True)
+                    cancelacion=1900, fecha_pago="2026-10-06", creditos_propia=solicitudes, excepcion=True)
             with self.assertRaisesRegex(ValueError, "deuda total"):
                 service.generar_documento_propia(config, dni=SIP["NumDocumento"],
-                    cancelacion=3600, creditos_propia=[dict(solicitudes[0], monto=3100), solicitudes[1]], excepcion=True)
+                    cancelacion=3600, fecha_pago="2026-10-06", creditos_propia=[dict(solicitudes[0], monto=3100), solicitudes[1]], excepcion=True)
             with self.assertRaisesRegex(ValueError, "misma fecha de pago"):
                 service.generar_documento_propia(config, dni=SIP["NumDocumento"],
-                    cancelacion=2000, creditos_propia=[solicitudes[0], dict(solicitudes[1], fecha="2026-10-08")], excepcion=True)
+                    cancelacion=2000, fecha_pago="2026-10-06", creditos_propia=[solicitudes[0], dict(solicitudes[1], fecha="2026-10-08")], excepcion=True)
             cuentas[segundo["Operacion"]] = dict(segundo, NumDocumento="99999999")
             with self.assertRaisesRegex(ValueError, "mismo documento"):
                 service.generar_documento_propia(config, dni=SIP["NumDocumento"],
-                    cancelacion=2000, creditos_propia=solicitudes, excepcion=True)
+                    cancelacion=2000, fecha_pago="2026-10-06", creditos_propia=solicitudes, excepcion=True)
 
     def test_preview_borrador_sin_monto_muestra_pdf(self):
         pagos = [{"monto": 0, "fecha": "2026-10-06"}, {"monto": 0, "fecha": "2026-11-06"}]
