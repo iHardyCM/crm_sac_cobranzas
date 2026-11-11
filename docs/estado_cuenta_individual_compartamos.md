@@ -98,6 +98,26 @@ Otras columnas de la asignación útiles para la cabecera: `NROCUOTAS`, `NROCUOT
 
 ---
 
+### 3.6 Regla de campañas (Hardy, 11/11/2026)
+
+Verificada al centavo con el cronograma del banco de un cliente real (cuotas 10 y 11, carga del 11/11/2026):
+`5% Capital` sobre 204.13 = 193.9235 = `Campaña Final 1 Cuota`; sobre 204.13 + 216.84 = 399.9215 = `Campaña Final 2 Cuota`;
+cancelación `20% Capital` sobre el saldo capital 660.64 = 528.512 = `Cancelacion`. `CT 11` / `CT 21` = 1.00 = seguro del banco.
+
+| `Camp{k}Cuota%` | Qué se cobra por las k cuotas vencidas más antiguas |
+|---|---|
+| `X% Capital` (5% a 45%) | Solo el capital × (100 − X)%. Es el monto de `Campaña Final k Cuota`; si el cálculo difiere, se cobra el mayor |
+| `100% Intereses` | Capital + seguro (`CT k1`). Se condonan intereses y moras |
+| `Sin Campania` | La cuota completa: `CT k` + `CT k1..k5` (con los cargos de la carga de hoy) |
+| Vacío (NULL) | No se calcula; se muestra "Sin dato en la asignación" |
+| Otro texto | No se calcula; advertencia "Condición no reconocida" |
+
+- **Solo cuentan cuotas vencidas** (Hardy, 11/11). Si la campaña es de más cuotas que las vencidas, se muestra "No aplica: el cliente tiene N cuotas vencidas". Las cuotas por vencer no cuentan.
+- **Cancelación** `X% Capital`: saldo capital (`SdoCapital` de SAC) × (100 − X)%.
+- Si el monto de la asignación difiere del cálculo sobre la carga de hoy en más de S/ 0.01, **se cobra el mayor** (Hardy, 11/11/2026), se marca "!" y se agrega una advertencia que dice cuál se usó. Causa confirmada con la sectorista en un caso: la asignación suma todo el seguro pendiente, que la carga SAC no trae. Aplica a "X% Capital", "100% Intereses" y cancelación; el payload indica `monto_fuente` (`ASIGNACION` o `CALCULO`).
+- Mapeo de cargos observado en este caso (inferencia sobre una fila, no confirmado por Compartamos): `CT k1` seguro, `CT k2` comisiones, `CT k3` + `CT k4` intereses compensatorios, `CT k5` moratorios. Solo `CT k1` = seguro está confirmado por la sectorista.
+- En pantalla: columna "Con campaña" por cuota (lo que se cobra si paga hasta esa cuota) y la cifra "A cobrar hasta la N.° X" con la campaña y, al lado, el monto sin campaña.
+
 ## 4. Reglas de cálculo (Fase A)
 
 **R1. Ubicación.** `CT k` va en la cuota `Ult_CuotaAtrasada + (k − 1)`. Solo se lista una cuota si su capital `CT k` > 0. Idéntico al grupal [REGLA].
@@ -295,12 +315,12 @@ Sin base de datos, con filas armadas como en `test_cronograma_cuotas.py` (nombre
 
 | # | Decisión | Por qué importa | Propuesta |
 |---|---|---|---|
-| D1 | **Qué es "el número a cobrar"** en individual | Es lo que pidió el banco y cambia toda la pantalla | Fase A muestra acumulado y simulación (datos). La regla (cuota más antigua, poner al día, o campaña) se define con Compartamos y entra en Fase B |
+| D1 | ~~**Qué es "el número a cobrar"**~~ — **resuelto 11/11:** la regla de campañas de la sección 3.6 | Es lo que pidió el banco y cambia toda la pantalla | Fase A muestra acumulado y simulación (datos). La regla (cuota más antigua, poner al día, o campaña) se define con Compartamos y entra en Fase B |
 | D2 | Fecha de vencimiento de CT 2 y CT 3 | Sin ella no hay días vencidos ni simulación | **Provisional (09/11):** mismo día del mes siguiente, marcado ≈ / "aprox.". Hardy lo consulta con Compartamos. Se cambia en `MESES_ENTRE_CUOTAS_ESTIMADO` |
 | D3 | ~~¿Incluye CCM?~~ | — | **Resuelto 09/11:** sí, individual y CCM |
 | D4 | ~~Formato de CB/WSAC~~ | — | **Resuelto 09/11:** no hay modelo; se usa la propuesta `docs/prototipos/estado_cuenta_individual.html` y Hardy la afina con la cliente |
 | D5 | ~~Redondeo~~ | — | **Resuelto 09/11:** hacia arriba al sol (R9) |
-| D6 | Campañas | Columnas en 3.5 | **Base resuelta (09/11):** sobre la cuota capital. Condiciones: Hardy las consulta con Compartamos |
+| D6 | Campañas | Columnas en 3.5 | **Resuelto 11/11:** regla de la sección 3.6. Falta: condiciones (fecha límite, pago único) |
 | D7 | ~~Significado de CT k1..k5~~ | — | **Resuelto 09/11:** no se conoce por separado; se muestran sumados como "Intereses, moras y gastos" |
 
 ---

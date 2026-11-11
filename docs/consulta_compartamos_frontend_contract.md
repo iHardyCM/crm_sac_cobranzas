@@ -155,7 +155,7 @@ Bloque `operaciones[i].estado_cuenta`, visible en un modal abierto con el botón
 - Fecha de corte = `UltFecVen + DiasAtraso`, así la cuota más antigua tiene exactamente `DiasAtraso` días. "Si paga hasta aquí" = días de la siguiente cuota vencida (0 = al día). Solo se calcula si la carga trae todas las cuotas vencidas (`Nro_CuotasVencidas`) y hay fechas.
 - Conciliación informativa: cuotas en la carga vs. vencidas, y capital de las cuotas vs. `SdoCapitalVencido`. No se ajusta ningún monto.
 - Pantalla: capital y cargos se redondean hacia arriba al sol por separado y el total de la cuota es la suma de lo mostrado; el exacto va en el tooltip y en el payload.
-- Pestaña "Campañas": `Camp1..4Cuota%`, `Campaña Final 1..4 Cuota`, `Cancelación%` y `Cancelacion` tal como llegan en la asignación. La campaña es sobre la cuota capital; la referencia es el capital de esas cuotas.
+- Campañas (regla 11/11/2026, sobre las k cuotas **vencidas** más antiguas): `X% Capital` → capital × (100 − X)% (= `Campaña Final k Cuota`); `100% Intereses` → capital + seguro (`CT k1`); `Sin Campania` → cuota completa. Cancelación `X% Capital` → saldo capital × (100 − X)%. Se compara el monto de la asignación con el cálculo sobre la carga de hoy (✓ / !); si difieren, se cobra el mayor (`monto_fuente`). Cada cuota trae `cobro` para la columna "Con campaña".
 - Si SAC trae dos filas distintas para la misma operación, no se elige una: `disponible = false` con motivo.
 
 ## Campos no conectados

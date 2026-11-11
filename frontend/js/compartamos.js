@@ -932,6 +932,7 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
         return `<div class="crm-modal-aviso"><strong>No se puede mostrar el estado de cuenta.</strong><span>${h(ec.motivo || "Sin información suficiente en la carga SAC.")}</span></div>`;
     }
     const { filas, totales } = calcularEstadoCuentaCRM(ec, modo);
+    const filasTotal = calcularEstadoCuentaCRM(ec, "total").filas;
     if (!filas.length) return `<div class="crm-modal-aviso"><strong>La carga SAC no trae cuotas atrasadas para esta operación.</strong></div>`;
     const conc = ec.conciliacion || {};
     const hasta = Math.min(Math.max(Number(hastaPedido) || 0, 0), filas.length - 1);
@@ -944,7 +945,7 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
         ${cifra(`Vencido en la carga (${etiquetaModo})`, sumaMostrada === null ? "—" : `S/ ${montoEntero(sumaMostrada)}`, `${filas.length} cuota${filas.length === 1 ? "" : "s"}`)}
         ${cifra("Días de atraso hoy", tieneValor(ec.dias_atraso_hoy) ? format(ec.dias_atraso_hoy) : "—", tieneValor(filas[0].fecha_vencimiento) ? `Desde ${formatFecha(filas[0].fecha_vencimiento)}` : null, "is-alerta")}
         ${cifra("Cuotas vencidas", tieneValor(conc.cuotas_vencidas) ? `${format(conc.cuotas_vencidas)}${tieneValor(aprobadas) ? ` de ${format(aprobadas)}` : ""}` : "—", `Más antigua: N.° ${format(filas[0].numero)}`)}
-        ${cifra(`Si paga hasta la N.° ${format(sel.numero)}`, `S/ ${montoEntero(sel.acumulado)}`, ec.simulacion_disponible ? textoQuedaConCRM(sel) : `Días resultantes: no se pueden calcular. ${ec.simulacion_motivo || ""}`, "is-cobrar")}
+        ${cifraCobroEstadoCuentaCRM(cifra, sel, filasTotal[hasta], ec)}
     </div>`;
     const faltan = conc.completo === false && tieneValor(conc.cuotas_vencidas) ? Math.max(0, Number(conc.cuotas_vencidas) - Number(conc.cuotas_en_sac || 0)) : 0;
     const aviso = faltan ? `<div class="crm-modal-aviso crm-ec-aviso"><strong>La carga trae ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} cuotas vencidas.</strong><span>Faltan las ${h(format(faltan))} más recientes: lo que debe el cliente es mayor que lo que se ve aquí, y no se puede calcular con cuántos días queda después de pagar.</span></div>` : "";
@@ -961,12 +962,13 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
             <td data-label="Intereses, moras y gastos" title="${attr(desglose(fila))}"><span>${fila.cargosMostrado === null ? "—" : `S/ ${montoEntero(fila.cargosMostrado)}`}</span></td>
             <td class="crm-ec-total" data-label="Total cuota" title="${attr(money(fila.total))}"><span>${fila.totalMostrado === null ? "—" : `S/ ${montoEntero(fila.totalMostrado)}`}</span></td>
             <td class="crm-ec-acumulado" data-label="Acumulado (${etiquetaModo})"><span>S/ ${montoEntero(fila.acumulado)}</span></td>
+            <td class="crm-ec-con-campana" data-label="Con campaña"><span>${celdaCobroCampanaCRM(fila.cobro)}</span></td>
             <td data-label="Si paga hasta aquí"><span>${sim(fila)}</span></td>
         </tr>`).join("");
     const ultimo = filas[filas.length - 1].numero;
-    const faltantesHtml = Array.from({ length: Math.min(faltan, 12) }, (_, k) => `<tr class="crm-ec-falta"><td class="crm-ec-numero" data-label="Cuota"><span>N.° ${h(format(Number(ultimo) + k + 1))}</span></td><td class="crm-ec-izq" colspan="7"><span>No viene en la carga SAC (solo trae 3 cuotas)</span></td></tr>`).join("");
+    const faltantesHtml = Array.from({ length: Math.min(faltan, 12) }, (_, k) => `<tr class="crm-ec-falta"><td class="crm-ec-numero" data-label="Cuota"><span>N.° ${h(format(Number(ultimo) + k + 1))}</span></td><td class="crm-ec-izq" colspan="8"><span>No viene en la carga SAC (solo trae 3 cuotas)</span></td></tr>`).join("");
     const solTotal = valor => valor === null ? "—" : `S/ ${montoEntero(valor)}`;
-    const pie = `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td>${solTotal(totales.capital)}</td><td>${solTotal(totales.cargos)}</td><td>${solTotal(totales.total)}</td><td colspan="2"></td></tr></tfoot>`;
+    const pie = `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td>${solTotal(totales.capital)}</td><td>${solTotal(totales.cargos)}</td><td>${solTotal(totales.total)}</td><td colspan="3"></td></tr></tfoot>`;
     const ok = valor => valor ? "is-ok" : "is-no";
     const conciliacion = `<div class="crm-ec-conciliacion" aria-label="Conciliación con la asignación">
         ${tieneValor(conc.cuotas_vencidas) ? `<span class="${ok(conc.completo)}"><i aria-hidden="true">${conc.completo ? "✓" : "!"}</i>Cuotas en la carga: ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} vencidas</span>` : ""}
@@ -984,7 +986,7 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
     return `${resumen}${aviso}
         <section class="crm-ec-panel" aria-label="Cuotas vencidas">
             <table class="crm-ec-tabla">
-                <thead><tr><th scope="col" class="crm-ec-izq">Cuota</th><th scope="col" class="crm-ec-izq">Vence</th><th scope="col">Días vencida</th><th scope="col">Capital</th><th scope="col">Intereses, moras<small>y gastos</small></th><th scope="col">Total cuota</th><th scope="col">Acumulado<small>${h(etiquetaModo)}</small></th><th scope="col">Si paga hasta aquí<small>queda con</small></th></tr></thead>
+                <thead><tr><th scope="col" class="crm-ec-izq">Cuota</th><th scope="col" class="crm-ec-izq">Vence</th><th scope="col">Días vencida</th><th scope="col">Capital</th><th scope="col">Intereses, moras<small>y gastos</small></th><th scope="col">Total cuota</th><th scope="col">Acumulado<small>${h(etiquetaModo)}</small></th><th scope="col">Con campaña<small>a cobrar</small></th><th scope="col">Si paga hasta aquí<small>queda con</small></th></tr></thead>
                 <tbody>${filasHtml}${faltantesHtml}</tbody>${pie}
             </table>
         </section>
@@ -993,35 +995,65 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
         ${leyenda}`;
 }
 
-// Campañas tal como llegan en la asignación (compartamos_individual / compartamos_ccm).
-// Hardy (09/11/2026): la campaña es sobre la cuota capital; la referencia es el capital de esas cuotas.
+// Campañas de la asignación (compartamos_individual / compartamos_ccm) y lo que se cobra en cada una.
+// Regla (Hardy, 11/11/2026; verificada con el cronograma del banco), calculada en el backend:
+//   "X% Capital" -> capital de las k cuotas x (100 - X)% (= Campaña Final k Cuota)
+//   "100% Intereses" -> capital + seguro (CT k1) · "Sin Campania" -> cuota completa. Solo cuentan cuotas vencidas.
+function celdaCobroCampanaCRM(cobro) {
+    if (!cobro || !tieneValor(cobro.monto)) return "—";
+    const etiqueta = cobro.tipo === "SIN_CAMPANA" ? "Sin campaña" : (cobro.porcentaje || cobro.regla);
+    return `<b>S/ ${montoEntero(montoArriba(cobro.monto))}</b><small>${h(etiqueta)}</small>`;
+}
+
+function cifraCobroEstadoCuentaCRM(cifra, sel, selTotal, ec) {
+    const queda = ec.simulacion_disponible ? textoQuedaConCRM(sel) : `Días resultantes: no se pueden calcular. ${ec.simulacion_motivo || ""}`;
+    const cobro = sel.cobro;
+    if (cobro && tieneValor(cobro.monto) && (cobro.tipo === "CAPITAL" || cobro.tipo === "INTERESES")) {
+        const sinCampana = selTotal && tieneValor(selTotal.acumulado) ? ` · sin campaña S/ ${montoEntero(selTotal.acumulado)}` : "";
+        return cifra(`A cobrar hasta la N.° ${format(sel.numero)} · ${cobro.porcentaje || cobro.regla}`, `S/ ${montoEntero(montoArriba(cobro.monto))}`, `${cobro.regla}${sinCampana}. ${queda}`, "is-cobrar");
+    }
+    return cifra(`Si paga hasta la N.° ${format(sel.numero)}`, `S/ ${montoEntero(sel.acumulado)}`, queda, "is-cobrar");
+}
+
+function verificacionCampanaCRM(c) {
+    if (c.coincide === true) return `<span class="crm-ec-verifica is-ok" title="Cálculo con la carga de hoy: ${attr(money(c.monto_calculado))}">✓ Coincide</span>`;
+    if (c.coincide === false) {
+        const otro = c.monto_fuente === "ASIGNACION" ? `Cálculo hoy: ${money(c.monto_calculado)}` : `Asignación: ${money(c.monto_asignacion)}`;
+        const fuente = c.monto_fuente === "ASIGNACION" ? "asignación" : "cálculo de hoy";
+        return `<span class="crm-ec-verifica is-no" title="Asignación ${attr(money(c.monto_asignacion))} · cálculo con la carga de hoy ${attr(money(c.monto_calculado))}. Se cobra el mayor.">! Se cobra el mayor (${h(fuente)})<small>${h(otro)}</small></span>`;
+    }
+    if (c.tipo === "SIN_CAMPANA" && tieneValor(c.monto_calculado)) return `<span class="crm-ec-verifica">Calculado con la carga de hoy</span>`;
+    return "—";
+}
+
 function renderEstadoCuentaCampanasCRM(item, ec) {
     const campanas = ec.campanas || {};
-    const { filas } = calcularEstadoCuentaCRM(ec, "capital");
-    const capitalHasta = k => ec.disponible && k <= filas.length && filas.slice(0, k).some(f => f.capitalMostrado !== null)
-        ? filas.slice(0, k).reduce((acc, f) => acc + (f.capitalMostrado || 0), 0) : null;
-    const sol = valor => valor === null || valor === undefined ? "—" : `S/ ${montoEntero(valor)}`;
+    const sol = valor => valor === null || valor === undefined ? "—" : `S/ ${montoEntero(montoArriba(valor))}`;
+    const montoCelda = c => tieneValor(c.monto) ? `<b>${sol(c.monto)}</b>` : "—";
     const filasHtml = (campanas.cuotas || []).map(c => {
-        const ref = capitalHasta(c.cuotas);
-        return `<tr><td data-label="Campaña">Campaña ${h(c.cuotas)} cuota${c.cuotas === 1 ? "" : "s"}<span>Camp${h(c.cuotas)}Cuota% · Campaña Final ${h(c.cuotas)} Cuota</span></td>
-            <td class="numero" data-label="% campaña">${tieneValor(c.porcentaje) ? h(c.porcentaje) : "—"}</td>
-            <td class="numero" data-label="Monto campaña"${tieneValor(c.monto) ? ` title="${attr(money(c.monto))}"` : ""}>${tieneValor(c.monto) ? `<b>${sol(c.monto)}</b>` : "—"}</td>
-            <td class="numero" data-label="Referencia: capital de esas cuotas">${ref === null ? `<span class="crm-ec-sin-ref" title="La carga SAC trae como máximo 3 cuotas">—</span>` : sol(ref)}</td></tr>`;
+        const noAplica = c.aplica === false;
+        return `<tr class="${noAplica ? "crm-ec-no-aplica" : ""}"><td data-label="Campaña">Campaña ${h(c.cuotas)} cuota${c.cuotas === 1 ? "" : "s"}<span>Camp${h(c.cuotas)}Cuota%</span></td>
+            <td data-label="Condición">${tieneValor(c.porcentaje) ? h(c.porcentaje) : "—"}</td>
+            <td data-label="Qué se cobra">${h(c.regla || "—")}</td>
+            <td class="numero" data-label="A cobrar"${tieneValor(c.monto) ? ` title="${attr(money(c.monto))}"` : ""}>${noAplica ? `<span class="crm-ec-motivo">${h(c.motivo)}</span>` : montoCelda(c)}</td>
+            <td data-label="Verificación">${noAplica ? "—" : verificacionCampanaCRM(c)}</td></tr>`;
     }).join("");
     const cancel = campanas.cancelacion || {};
-    const filaCancel = `<tr class="crm-ec-cancelacion"><td data-label="Campaña">Cancelación<span>Cancelación% · Cancelacion</span></td>
-        <td class="numero" data-label="% campaña">${tieneValor(cancel.porcentaje) ? h(cancel.porcentaje) : "—"}</td>
-        <td class="numero" data-label="Monto campaña"${tieneValor(cancel.monto) ? ` title="${attr(money(cancel.monto))}"` : ""}>${tieneValor(cancel.monto) ? `<b>${sol(cancel.monto)}</b>` : "—"}</td>
-        <td class="numero" data-label="Referencia: saldo capital">${sol(montoArriba(item.capital))}</td></tr>`;
+    const filaCancel = `<tr class="crm-ec-cancelacion"><td data-label="Campaña">Cancelación<span>Cancelación%</span></td>
+        <td data-label="Condición">${tieneValor(cancel.porcentaje) ? h(cancel.porcentaje) : "—"}</td>
+        <td data-label="Qué se cobra">${h(cancel.regla || "—")}${tieneValor(cancel.base_capital) ? `<span>Saldo capital ${h(money(cancel.base_capital))}</span>` : ""}</td>
+        <td class="numero" data-label="A cobrar"${tieneValor(cancel.monto) ? ` title="${attr(money(cancel.monto))}"` : ""}>${montoCelda(cancel)}</td>
+        <td data-label="Verificación">${verificacionCampanaCRM(cancel)}</td></tr>`;
     return `<ul class="crm-cuadros-nota">
-            <li>Montos tal como llegan en la asignación (${h(ec.tabla_asignacion || "asignación")}). El CRM no los recalcula.</li>
-            <li>La campaña es sobre la <b>cuota capital</b>: la referencia suma el capital de esas cuotas en el estado de cuenta.</li>
+            <li><b>X% Capital:</b> se cobra solo el capital de esas cuotas con el descuento (es el monto “Campaña Final” de la asignación).</li>
+            <li><b>100% Intereses:</b> se cobra capital + seguro; se condonan intereses y moras. <b>Sin Campania:</b> se cobra la cuota completa.</li>
+            <li>La campaña de k cuotas cuenta solo las cuotas <b>vencidas</b>, empezando por la más antigua.</li>
+            <li>Si el monto de la asignación no coincide con el cálculo sobre la carga de hoy, <b>se cobra el mayor</b> y se marca “!” (la asignación puede incluir seguros pendientes que la carga no trae). Montos redondeados hacia arriba al sol; el exacto aparece al pasar el cursor.</li>
             <li><b>Por confirmar con Compartamos:</b> condiciones de cada campaña (fecha límite, pago único).</li>
-            <li>“—” = sin dato en la asignación. Montos redondeados hacia arriba al sol; el exacto aparece al pasar el cursor.</li>
         </ul>
         ${campanas.disponible ? "" : `<div class="crm-modal-aviso crm-ec-aviso"><strong>Esta operación no tiene campañas en la asignación.</strong><span>Se cobra según el estado de cuenta.</span></div>`}
         <section class="crm-cuadro"><div class="cuentas-tabla-scroll"><table class="crm-cuadro-tabla crm-ec-campanas">
-            <thead><tr><th scope="col">Campaña</th><th scope="col" class="numero">% campaña</th><th scope="col" class="numero">Monto campaña</th><th scope="col" class="numero">Referencia: capital de esas cuotas</th></tr></thead>
+            <thead><tr><th scope="col">Campaña</th><th scope="col">Condición</th><th scope="col">Qué se cobra</th><th scope="col" class="numero">A cobrar</th><th scope="col">Verificación</th></tr></thead>
             <tbody>${filasHtml}${filaCancel}</tbody>
         </table></div></section>`;
 }

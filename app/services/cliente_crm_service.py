@@ -1374,20 +1374,119 @@ def huella_sac(lectura: Dict[str, Any], indice: Dict[str, Any]) -> tuple:
             tuple(tuple(c) for c in lectura["cargos"]), entero(valor_columna(indice, "DiasAtraso")))
 
 
-def construir_campanas_asignacion(indice: Dict[str, Any]) -> Dict[str, Any]:
-    """Campanas tal como llegan en la asignacion. Hardy (09/11/2026): la campana es sobre la cuota capital."""
+# Regla de campanas (Hardy, 11/11/2026; verificada con el cronograma del banco del DNI 46846214):
+#   "X% Capital"     -> se cobra solo el capital de las k cuotas x (100 - X)%; es el monto de "Campana Final k Cuota".
+#   "100% Intereses" -> se cobra capital + seguro (CT k1) de las k cuotas; intereses y moras se condonan.
+#   "Sin Campania"   -> se cobra la cuota completa (CT k + CT k1..k5).
+# La campana de k cuotas cuenta solo cuotas vencidas (las k mas antiguas). Cancelacion "X% Capital" -> saldo capital x (100 - X)%.
+PATRON_CAMPANA_CAPITAL = re.compile(r"(\d+(?:[.,]\d+)?)\s*%\s*capital", re.IGNORECASE)
+PATRON_CAMPANA_INTERESES = re.compile(r"100\s*%\s*inter", re.IGNORECASE)
+PATRON_SIN_CAMPANA = re.compile(r"sin\s*campa", re.IGNORECASE)
+TOLERANCIA_CAMPANA = 0.01  # diferencia maxima (S/) para considerar que el calculo coincide con la asignacion
+# Si la asignacion y el calculo sobre la carga de hoy no coinciden, se cobra el MAYOR (Hardy, 11/11/2026): la asignacion
+# puede sumar seguros pendientes que la carga SAC no trae (caso revisado con la sectorista), y la carga puede traer
+# cargos posteriores a la asignacion.
+
+
+def monto_mayor(asignado: Optional[float], calculado: Optional[float]) -> tuple:
+    """(monto a cobrar, fuente). Con los dos presentes gana el mayor; si empatan, la asignacion."""
+    if asignado is None and calculado is None:
+        return None, None
+    if calculado is None or (asignado is not None and asignado >= calculado):
+        return asignado, "ASIGNACION"
+    return calculado, "CALCULO"
+
+
+def interpretar_campana(valor: Any) -> Dict[str, Any]:
+    """Tipo de campana segun el texto de Camp{k}Cuota% / Cancelación%."""
+    original = texto(valor)
+    if not original:
+        return {"tipo": "SIN_DATO", "descuento": None, "regla": "Sin dato en la asignación"}
+    if PATRON_SIN_CAMPANA.search(original):
+        return {"tipo": "SIN_CAMPANA", "descuento": None, "regla": "Cuota completa"}
+    capital = PATRON_CAMPANA_CAPITAL.search(original)
+    if capital:
+        descuento = float(capital.group(1).replace(",", "."))
+        if 0 < descuento < 100:
+            return {"tipo": "CAPITAL", "descuento": descuento, "regla": f"Capital − {descuento:g}%"}
+    if PATRON_CAMPANA_INTERESES.search(original):
+        return {"tipo": "INTERESES", "descuento": None, "regla": "Capital + seguro"}
+    return {"tipo": "NO_RECONOCIDA", "descuento": None, "regla": "Condición no reconocida"}
+
+
+def seguro_cuota(fila: Dict[str, Any]) -> Optional[float]:
+    """Seguro de la cuota = CT k1 (Compartamos, 11/11/2026)."""
+    return (fila.get("componentes_cargos") or {}).get(COLUMNAS_CT_CARGOS[fila["posicion_ct"]][0])
+
+
+def comparar_con_asignacion(calculado: Optional[float], asignado: Optional[float]) -> Optional[bool]:
+    if calculado is None or asignado is None:
+        return None
+    return abs(calculado - asignado) <= TOLERANCIA_CAMPANA
+
+
+def calcular_cobro_campana(k: int, campana: Dict[str, Any], monto_asignacion: Optional[float],
+                           vencidas: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Que se cobra si el cliente paga sus k cuotas vencidas mas antiguas, segun la campana de la asignacion.
+
+    vencidas=None: no hay carga SAC para calcular; se muestra el monto de la asignacion sin verificar.
+    En "X% Capital" e "100% Intereses", si asignacion y calculo difieren se cobra el mayor (monto_mayor).
+    """
+    salida = {**campana, "aplica": True, "motivo": None, "monto_asignacion": monto_asignacion,
+              "monto_calculado": None, "coincide": None, "monto": None, "monto_fuente": None}
+    if vencidas is None:
+        salida.update(aplica=None, motivo="Sin carga SAC para verificar.", monto=monto_asignacion,
+                      monto_fuente="ASIGNACION" if monto_asignacion is not None else None)
+        return salida
+    if k > len(vencidas):
+        salida.update(aplica=False, motivo=f"El cliente tiene {len(vencidas)} cuota{'s' if len(vencidas) != 1 else ''} vencida{'s' if len(vencidas) != 1 else ''}.")
+        return salida
+    grupo = vencidas[:k]
+    tipo = campana["tipo"]
+    calculado = None
+    if tipo == "CAPITAL":
+        capital = sumar_conocidos(f["capital"] for f in grupo)
+        calculado = round(capital * (100 - campana["descuento"]) / 100, 4) if capital is not None else None
+    elif tipo == "INTERESES":
+        calculado = sumar_conocidos([f["capital"] for f in grupo] + [seguro_cuota(f) for f in grupo])
+    elif tipo == "SIN_CAMPANA":
+        calculado = sumar_conocidos(f["total"] for f in grupo)
+    salida["monto_calculado"] = calculado
+    salida["coincide"] = comparar_con_asignacion(calculado, monto_asignacion)
+    if tipo in ("CAPITAL", "INTERESES"):
+        salida["monto"], salida["monto_fuente"] = monto_mayor(monto_asignacion, calculado)
+    elif tipo == "SIN_CAMPANA":
+        salida["monto"], salida["monto_fuente"] = calculado, ("CALCULO" if calculado is not None else None)
+    return salida
+
+
+def construir_campanas_asignacion(indice: Dict[str, Any], vencidas: Optional[List[Dict[str, Any]]] = None,
+                                  saldo_capital: Optional[float] = None) -> Dict[str, Any]:
+    """Campanas de la asignacion con lo que se cobra en cada una (regla de arriba)."""
     cuotas = []
     for k in range(1, CAMPANAS_CUOTAS_ASIGNACION + 1):
-        cuotas.append({
-            "cuotas": k,
-            "porcentaje": texto(valor_columna(indice, f"Camp{k}Cuota%")),
-            "monto": numero(valor_columna(indice, f"Campaña Final {k} Cuota")),
-        })
+        porcentaje = texto(valor_columna(indice, f"Camp{k}Cuota%"))
+        cobro = calcular_cobro_campana(k, interpretar_campana(porcentaje),
+                                       numero(valor_columna(indice, f"Campaña Final {k} Cuota")), vencidas)
+        cuotas.append({"cuotas": k, "porcentaje": porcentaje, **cobro})
+
+    porcentaje_c = texto(valor_columna(indice, "Cancelación%"))
+    campana_c = interpretar_campana(porcentaje_c)
+    asignado_c = numero(valor_columna(indice, "Cancelacion"))
+    calculado_c = None
+    if campana_c["tipo"] == "CAPITAL" and saldo_capital is not None:
+        calculado_c = round(saldo_capital * (100 - campana_c["descuento"]) / 100, 4)
     cancelacion = {
-        "porcentaje": texto(valor_columna(indice, "Cancelación%")),
-        "monto": numero(valor_columna(indice, "Cancelacion")),
+        "porcentaje": porcentaje_c, **campana_c,
+        "base_capital": saldo_capital,
+        "monto_asignacion": asignado_c,
+        "monto_calculado": calculado_c,
+        "coincide": comparar_con_asignacion(calculado_c, asignado_c),
     }
-    disponible = any(c["porcentaje"] or c["monto"] is not None for c in cuotas) or bool(cancelacion["porcentaje"]) or cancelacion["monto"] is not None
+    cancelacion["monto"], cancelacion["monto_fuente"] = monto_mayor(asignado_c, calculado_c)
+    if campana_c["tipo"] == "CAPITAL":
+        cancelacion["regla"] = f"Saldo capital − {campana_c['descuento']:g}%"
+    disponible = any(c["porcentaje"] or c["monto_asignacion"] is not None for c in cuotas) or bool(porcentaje_c) or asignado_c is not None
     return {"disponible": disponible, "cuotas": cuotas, "cancelacion": cancelacion}
 
 
@@ -1412,7 +1511,7 @@ def construir_estado_cuenta(operacion: Dict[str, Any], filas_sac: List[Dict[str,
         "tabla_asignacion": asignacion["tabla"],
         "cuotas_aprobadas_asignacion": entero(valor_columna(indice_asig, "NROCUOTAS")),
         "cuotas_pagadas_asignacion": entero(valor_columna(indice_asig, "NROCUOTASPAGADAS")),
-        "campanas": construir_campanas_asignacion(indice_asig),
+        "campanas": construir_campanas_asignacion(indice_asig, None, numero(operacion.get("capital"))),
         "meses_entre_cuotas_estimado": MESES_ENTRE_CUOTAS_ESTIMADO,
         "cuotas": [],
         "advertencias": [],
@@ -1539,6 +1638,30 @@ def construir_estado_cuenta(operacion: Dict[str, Any], filas_sac: List[Dict[str,
         simulacion_disponible=simulacion_disponible,
         simulacion_motivo=motivo_sim,
     )
+
+    # Campanas sobre las cuotas vencidas de la carga (las por vencer no cuentan).
+    saldo_capital = numero(valor_columna(indice, "SdoCapital"))
+    if saldo_capital is None:
+        saldo_capital = numero(operacion.get("capital"))
+    vencidas_lista = [f for f in filas if not f["por_vencer"]]
+    campanas = construir_campanas_asignacion(indice_asig, vencidas_lista, saldo_capital)
+    base["campanas"] = campanas
+    for fila in filas:
+        fila["cobro"] = None
+    for i, fila in enumerate(vencidas_lista):
+        if i < len(campanas["cuotas"]):
+            c = campanas["cuotas"][i]
+            fila["cobro"] = {"cuotas": c["cuotas"], "porcentaje": c["porcentaje"], "tipo": c["tipo"],
+                             "regla": c["regla"], "monto": c["monto"], "monto_fuente": c["monto_fuente"],
+                             "coincide": c["coincide"]}
+    for c in campanas["cuotas"] + [campanas["cancelacion"]]:
+        if c.get("coincide") is False:
+            nombre = "Cancelación" if c is campanas["cancelacion"] else f"Campaña {c['cuotas']} cuota{'s' if c['cuotas'] != 1 else ''}"
+            mayor = "el de la asignación" if c.get("monto_fuente") == "ASIGNACION" else "el del cálculo"
+            advertencias.append(f"{nombre}: el monto de la asignación ({c['monto_asignacion']:.2f}) no coincide con el cálculo "
+                                f"sobre la carga de hoy ({c['monto_calculado']:.2f}). Se cobra el mayor ({mayor}).")
+        if c.get("tipo") == "NO_RECONOCIDA":
+            advertencias.append(f"Condición de campaña no reconocida: \"{c['porcentaje']}\". No se calcula el cobro.")
     return base
 
 

@@ -4271,6 +4271,19 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-ec-campanas tr.crm-ec-cancelacion td { background: #fbfcfe; }
 .crm-cuadro-tabla td span.crm-ec-sin-ref { display: inline; font-size: inherit; color: #9aa8bb; }
 
+/* Campañas (regla 11/11/2026) */
+.crm-ec-tabla td.crm-ec-con-campana b { display: block; color: #8a3d0a; font-weight: 800; }
+.crm-ec-tabla td.crm-ec-con-campana small { display: block; color: #8a3d0a; font-size: 10px; font-weight: 600; }
+.crm-ec-verifica { font-size: 11px; font-weight: 700; color: #5f6f86; }
+.crm-ec-verifica.is-ok { color: #17623f; }
+.crm-ec-verifica.is-no { color: #8a3d0a; }
+.crm-ec-verifica small { display: block; color: #5f6f86; font-size: 10px; font-weight: 500; }
+.crm-ec-campanas tr.crm-ec-no-aplica td { color: #9aa8bb; }
+.crm-ec-motivo { font-size: 11px; font-weight: 500; color: #9aa8bb; }
+@container (max-width: 700px) {
+    .crm-ec-tabla td.crm-ec-con-campana > span { text-align: right; }
+}
+
 @container (max-width: 700px) {
     .crm-ec-resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .crm-ec-tabla thead { display: none; }

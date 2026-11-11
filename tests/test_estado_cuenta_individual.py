@@ -45,7 +45,7 @@ def sac(operacion="0003021004587", ult=7, venc=20260815, hoy=85, ct=None, cargos
 
 def asignacion(tabla="compartamos_individual", cartera="Individual", **campos):
     fila = {"Operacion": "3021004587", "NumDoc": "40000001", "NROCUOTAS": 12.0, "NROCUOTASPAGADAS": 6.0,
-            "Camp1Cuota%": "20%", "Campaña Final 1 Cuota": 328.28, "Cancelación%": "45%", "Cancelacion": 2189.22}
+            "Camp1Cuota%": "20% Capital", "Campaña Final 1 Cuota": 328.28, "Cancelación%": "45%", "Cancelacion": 2189.22}
     fila.update(campos)
     return {"tabla": tabla, "cartera": cartera, "indice": indexar_fila(fila)}
 
@@ -162,13 +162,14 @@ class EstadoCuentaTest(unittest.TestCase):
         self.assertEqual(ec["tabla_asignacion"], "compartamos_ccm")
         self.assertIsNone(ec["cuotas_pagadas_asignacion"])
 
-    def test_15_campanas_tal_cual(self):
+    def test_15_campana_capital_usa_monto_de_la_asignacion(self):
         ec = construir_estado_cuenta(OPERACION, [sac()], asignacion())
-        campanas = ec["campanas"]
-        self.assertTrue(campanas["disponible"])
-        self.assertEqual(campanas["cuotas"][0], {"cuotas": 1, "porcentaje": "20%", "monto": 328.28})
-        self.assertEqual(campanas["cuotas"][1], {"cuotas": 2, "porcentaje": None, "monto": None})
-        self.assertEqual(campanas["cancelacion"], {"porcentaje": "45%", "monto": 2189.22})
+        c1 = ec["campanas"]["cuotas"][0]
+        self.assertEqual((c1["tipo"], c1["descuento"], c1["regla"]), ("CAPITAL", 20.0, "Capital − 20%"))
+        self.assertEqual(c1["monto_calculado"], 328.28)  # 410.35 x 80%
+        self.assertTrue(c1["coincide"])
+        self.assertEqual(c1["monto"], 328.28)
+        self.assertEqual(ec["cuotas"][0]["cobro"]["monto"], 328.28)
 
     def test_16_cruce_sin_ceros_a_la_izquierda(self):
         operaciones = [dict(OPERACION)]
@@ -201,6 +202,115 @@ class EstadoCuentaTest(unittest.TestCase):
         from datetime import date
         self.assertEqual(sumar_meses(date(2026, 1, 31), 1), date(2026, 2, 28))
         self.assertEqual(sumar_meses(date(2026, 11, 15), 2), date(2027, 1, 15))
+
+
+def sac_caso_banco(**cambios):
+    """Montos del caso verificado contra el cronograma del banco (11/11/2026). DNI y operación ficticios."""
+    base = dict(ult=10, venc=20260921, hoy=51, vencidas=2, capital_vencido=420.97,
+                ct={"CT 1": 204.13, "CT 2": 216.84, "CT 3": 0.0},
+                cargos={"CT 11": 1.0, "CT 12": 0.0, "CT 13": 33.87, "CT 14": 19.82, "CT 15": 4.53,
+                        "CT 21": 1.0, "CT 22": 0.0, "CT 23": 21.16, "CT 24": 8.36, "CT 25": 2.08,
+                        "CT 31": 0.0, "CT 32": 0.0, "CT 33": 0.0, "CT 34": 0.0, "CT 35": 0.0})
+    base.update(cambios)
+    fila = sac(**base)
+    fila["SdoCapital "] = 660.64
+    return fila
+
+
+def asignacion_caso_banco(**campos):
+    base = {"Camp1Cuota%": "5% Capital", "Camp2Cuota%": "5% Capital", "Camp3Cuota%": "Sin Campania", "Camp4Cuota%": "Sin Campania",
+            "Campaña Final 1 Cuota": 193.9235, "Campaña Final 2 Cuota": 399.9215, "Campaña Final 3 Cuota": None,
+            "Campaña Final 4 Cuota": None, "Cancelación%": "20% Capital", "Cancelacion": 528.512,
+            "NROCUOTAS": 12.0, "NROCUOTASPAGADAS": 9.0}
+    base.update(campos)
+    return asignacion(**base)
+
+
+class CampanasTest(unittest.TestCase):
+    """Regla de campañas (Hardy, 11/11/2026), verificada con el cronograma del banco."""
+    OP = {"operacion": "3021004587", "cuotas_vencidas": 2, "capital_vencido": 420.97, "capital": 660.64}
+
+    def test_caso_banco_capital_y_cancelacion_cuadran(self):
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asignacion_caso_banco())
+        self.assertEqual([c["numero"] for c in ec["cuotas"]], [10, 11])
+        self.assertEqual(ec["fecha_corte"], "2026-11-11")
+        self.assertEqual([c["total"] for c in ec["cuotas"]], [263.35, 249.44])
+        c1, c2, c3, c4 = ec["campanas"]["cuotas"]
+        self.assertEqual((c1["monto_calculado"], c1["coincide"]), (193.9235, True))
+        self.assertEqual((c2["monto_calculado"], c2["coincide"]), (399.9215, True))
+        self.assertFalse(c3["aplica"])  # solo 2 cuotas vencidas
+        self.assertEqual(c3["motivo"], "El cliente tiene 2 cuotas vencidas.")
+        self.assertFalse(c4["aplica"])
+        cancel = ec["campanas"]["cancelacion"]
+        self.assertEqual((cancel["regla"], cancel["monto_calculado"], cancel["coincide"]), ("Saldo capital − 20%", 528.512, True))
+        self.assertEqual([c["cobro"]["monto"] for c in ec["cuotas"]], [193.9235, 399.9215])
+        self.assertEqual(ec["advertencias"], [])
+
+    def test_100_intereses_cobra_capital_mas_seguro(self):
+        asig = asignacion_caso_banco(**{"Camp1Cuota%": "100% Intereses", "Campaña Final 1 Cuota": None,
+                                         "Camp2Cuota%": "100% Intereses", "Campaña Final 2 Cuota": None})
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asig)
+        c1, c2 = ec["campanas"]["cuotas"][:2]
+        self.assertEqual((c1["tipo"], c1["regla"], c1["monto"]), ("INTERESES", "Capital + seguro", 205.13))
+        self.assertEqual(c2["monto"], 422.97)  # 204.13 + 1 + 216.84 + 1
+
+    def test_sin_campania_cobra_la_cuota_completa(self):
+        asig = asignacion_caso_banco(**{"Camp1Cuota%": "Sin Campania", "Campaña Final 1 Cuota": None,
+                                         "Camp2Cuota%": "Sin Campania", "Campaña Final 2 Cuota": None})
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asig)
+        c1, c2 = ec["campanas"]["cuotas"][:2]
+        self.assertEqual((c1["tipo"], c1["monto"]), ("SIN_CAMPANA", 263.35))
+        self.assertEqual(c2["monto"], 512.79)
+
+    def test_asignacion_mayor_que_el_calculo_se_cobra_la_asignacion(self):
+        # Caso revisado con la sectorista (11/11): la asignación suma seguros pendientes que la carga SAC no trae.
+        asig = asignacion_caso_banco(**{"Campaña Final 1 Cuota": 201.93})
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asig)
+        c1 = ec["campanas"]["cuotas"][0]
+        self.assertFalse(c1["coincide"])
+        self.assertEqual((c1["monto"], c1["monto_fuente"]), (201.93, "ASIGNACION"))
+        self.assertEqual(ec["cuotas"][0]["cobro"]["monto"], 201.93)
+        self.assertTrue(any("Se cobra el mayor (el de la asignación)" in a for a in ec["advertencias"]))
+
+    def test_calculo_mayor_que_la_asignacion_se_cobra_el_calculo(self):
+        asig = asignacion_caso_banco(**{"Campaña Final 1 Cuota": 190.00})
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asig)
+        c1 = ec["campanas"]["cuotas"][0]
+        self.assertEqual((c1["monto"], c1["monto_fuente"]), (193.9235, "CALCULO"))
+        self.assertTrue(any("Se cobra el mayor (el del cálculo)" in a for a in ec["advertencias"]))
+
+    def test_cancelacion_distinta_se_cobra_el_mayor(self):
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asignacion_caso_banco(Cancelacion=540.00))
+        cancel = ec["campanas"]["cancelacion"]
+        self.assertEqual((cancel["monto"], cancel["monto_fuente"], cancel["coincide"]), (540.00, "ASIGNACION", False))
+
+    def test_coinciden_se_cobra_la_asignacion(self):
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asignacion_caso_banco())
+        self.assertEqual(ec["campanas"]["cuotas"][0]["monto_fuente"], "ASIGNACION")
+
+    def test_sin_dato_y_no_reconocida_no_calculan(self):
+        asig = asignacion_caso_banco(**{"Camp1Cuota%": None, "Campaña Final 1 Cuota": None,
+                                         "Camp2Cuota%": "Promo especial", "Campaña Final 2 Cuota": None})
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asig)
+        c1, c2 = ec["campanas"]["cuotas"][:2]
+        self.assertEqual((c1["tipo"], c1["monto"]), ("SIN_DATO", None))
+        self.assertEqual((c2["tipo"], c2["monto"]), ("NO_RECONOCIDA", None))
+        self.assertTrue(any("no reconocida" in a for a in ec["advertencias"]))
+
+    def test_cuota_por_vencer_no_cuenta_para_la_campana(self):
+        # La N.o 8 aun no vence: la campaña de 2 cuotas no aplica.
+        ec = construir_estado_cuenta({**OPERACION, "cuotas_vencidas": 1}, [sac(venc=20261015, hoy=5, vencidas=1)],
+                                     asignacion(**{"Camp2Cuota%": "10% Capital", "Campaña Final 2 Cuota": 700.0}))
+        self.assertTrue(ec["cuotas"][1]["por_vencer"])
+        self.assertIsNone(ec["cuotas"][1]["cobro"])
+        self.assertFalse(ec["campanas"]["cuotas"][1]["aplica"])
+
+    def test_interpretar_campana(self):
+        self.assertEqual(crm.interpretar_campana("45% Capital")["descuento"], 45.0)
+        self.assertEqual(crm.interpretar_campana(" 5 % capital ")["tipo"], "CAPITAL")
+        self.assertEqual(crm.interpretar_campana("100% Intereses")["tipo"], "INTERESES")
+        self.assertEqual(crm.interpretar_campana("Sin Campania")["tipo"], "SIN_CAMPANA")
+        self.assertEqual(crm.interpretar_campana("")["tipo"], "SIN_DATO")
 
 
 class RespuestaRadarTest(unittest.TestCase):
