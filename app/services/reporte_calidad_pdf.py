@@ -399,11 +399,16 @@ def _armar_individual(payload: Dict, nivel: int):
 
     # --- cabecera: titulo + datos a la izquierda, nota a la derecha
     ancho_izq = CW - 222
-    chips = Table([[
+    celdas_chips = [
         [Paragraph("AGENTE", s_label), Paragraph(escape(_txt(meta_llamada.get("agente"))), s_valor)],
         [Paragraph("CARTERA", s_label), Paragraph(escape(_txt(meta_llamada.get("cartera"))), s_valor)],
         [Paragraph("FECHA Y HORA", s_label), Paragraph(escape(_fecha_hora(meta_llamada.get("fecha"))), s_valor)],
-    ]], colWidths=[ancho_izq * .44, ancho_izq * .28, ancho_izq * .28])
+    ]
+    anchos_chips = [ancho_izq * .44, ancho_izq * .28, ancho_izq * .28]
+    if meta_llamada.get("interlocutor"):   # 16/11/2026: quién contestó (titular / tercero)
+        celdas_chips.append([Paragraph("INTERLOCUTOR", s_label), Paragraph(escape(_txt(meta_llamada.get("interlocutor"))), s_valor)])
+        anchos_chips = [ancho_izq * .34, ancho_izq * .22, ancho_izq * .24, ancho_izq * .20]
+    chips = Table([celdas_chips], colWidths=anchos_chips)
     chips.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), SOFT), ("BOX", (0, 0), (-1, -1), .6, LINE),
                                ("LINEAFTER", (0, 0), (-2, -1), .6, LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 4),

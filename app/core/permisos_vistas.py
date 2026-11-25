@@ -19,6 +19,7 @@ CATALOGO = (
     ("compromisos", "Mis compromisos"),
     ("gestiones", "Compromisos del equipo"),
     ("telefonos", "Validación de teléfonos"),
+    ("respuestas_mowa", "Respuestas SMS"),
     ("ia_feedback", "Análisis IA"),
 )
 CLAVES = frozenset(clave for clave, _ in CATALOGO)
@@ -44,6 +45,7 @@ def permisos_base(usuario: Dict) -> Dict[str, bool]:
         "compromisos": not monitor,
         "gestiones": global_ or supervisor,
         "telefonos": not monitor,
+        "respuestas_mowa": not monitor,
         "ia_feedback": global_ or supervisor or monitor,
     }
 

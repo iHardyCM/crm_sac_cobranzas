@@ -21,6 +21,11 @@
             title: "Canales Alternos",
             subtitle: "Importación y validación de archivos por canal"
         },
+        "respuestas_mowa.html": {
+            key: "respuestas_mowa",
+            title: "Respuestas SMS",
+            subtitle: "Respuestas recibidas y gestión posterior del cliente"
+        },
         "metas.html": {
             key: "metas",
             title: "Seguimiento de Metas",
@@ -101,6 +106,21 @@
             title: "Validación de Teléfonos",
             subtitle: "Consulta operativa de teléfonos activos por cliente"
         },
+        "segmentos.html": {
+            key: "segmentos",
+            title: "Segmentos del banco",
+            subtitle: "Carga de segmentos por cliente para el generador de bases"
+        },
+        "score_telefonico.html": {
+            key: "generador_bases",
+            title: "Generador de bases",
+            subtitle: "Bases con score para predictivo, IVR y SMS, con código para medir su rendimiento"
+        },
+        "score_rendimiento.html": {
+            key: "generador_bases",
+            title: "Rendimiento del score",
+            subtitle: "Intentos y CEF por tramo, orden, horario y atributos del teléfono"
+        },
         "documentos.html": {
             key: "documentos",
             title: "Documentos Automatizados",
@@ -134,6 +154,8 @@
                 { key: "ritmo_meta", label: "Ritmo Meta", href: "ritmo_meta.html", icon: iconMetas() },
                 { key: "pdp_hoy", label: "Promesas Hoy", href: getPdpHoyHref(), icon: iconPdpHoy() },
                 { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconPhone() },
+                { key: "respuestas_mowa", label: "Respuestas SMS", href: "respuestas_mowa.html", icon: iconMegaphone() },
+                { key: "generador_bases", label: "Generador de bases", href: "score_telefonico.html", icon: iconMegaphone() },
                 { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocumento() },
             ]
         },
@@ -150,7 +172,8 @@
             items: [
                 { key: "importacion", label: "Importacion de Cartera", href: "importacion.html", icon: iconUpload() },
                 { key: "pagos", label: "Pagos del Negocio", href: "pagos.html", icon: iconWallet() },
-                { key: "canales", label: "Canales Alternos", href: "canales.html", icon: iconMegaphone() }
+                { key: "canales", label: "Canales Alternos", href: "canales.html", icon: iconMegaphone() },
+                { key: "segmentos", label: "Segmentos del banco", href: "segmentos.html", icon: iconUpload() }
             ]
         },
         {
@@ -410,7 +433,7 @@
     // Color del icono por area (igual criterio que las areas del Home). Sin entrada = azul.
     const TONO_NAV = {
         ia_feedback: "calidad", susurro_ia: "calidad", consumo_ia_admin: "calidad",
-        documentos: "datos", importacion: "datos", pagos: "datos", canales: "datos",
+        documentos: "datos", generador_bases: "datos", segmentos: "datos", importacion: "datos", pagos: "datos", canales: "datos",
         supervisores_admin: "admin", metas_agentes_admin: "admin", accesos_admin: "admin",
         pautas_evaluacion_admin: "admin", admin: "admin"
     };
@@ -545,6 +568,8 @@
                 "pagos",
                 "canales",
                 "telefonos",
+                "respuestas_mowa",
+                "generador_bases",
                 "documentos",
                 ...(compartamos ? ["clientes"] : [])
             ].includes(key);
@@ -554,6 +579,7 @@
             "compromisos",
             "ritmo_meta",
             "telefonos",
+            "respuestas_mowa",
             ...(compartamos ? ["clientes"] : [])
         ].includes(key);
     }

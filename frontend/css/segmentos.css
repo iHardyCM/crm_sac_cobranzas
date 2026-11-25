@@ -1,0 +1,95 @@
+/* frontend/css/segmentos.css — carga de segmentos del banco para el generador de bases */
+
+.sg-page {
+    width: min(100%, var(--crm-content-max, 1900px));
+    margin: 0 auto;
+    padding: var(--crm-content-pad-y, 16px) var(--crm-content-pad-x, 24px) 32px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: #12243a;
+    font-size: 13px;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.hidden { display: none !important; }
+
+.sg-card {
+    background: rgba(255, 255, 255, .94);
+    border: 1px solid rgba(148, 163, 184, .27);
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, .05);
+    padding: 14px 16px;
+    min-width: 0;
+}
+.sg-card-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.sg-card-title h3 { margin: 0; font-size: 15px; }
+.sg-card-title small, .sg-nota { color: #66778b; font-size: 12px; }
+
+.sg-pasos { list-style: none; display: flex; gap: 8px; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
+.sg-pasos li { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; background: #f1f5f9; color: #66778b; }
+.sg-pasos li span { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #dbe4ee; font-size: 11px; font-weight: 700; }
+.sg-pasos li.activo { background: #e8f1fe; color: #0b4f9c; }
+.sg-pasos li.activo span { background: #1476e8; color: #fff; }
+
+.sg-fila { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 12px; }
+.sg-campo { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+.sg-campo.sg-ancho { flex: 1 1 320px; }
+.sg-campo.sg-boton { justify-content: flex-end; align-self: flex-end; }
+.sg-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #66778b; }
+.sg-select, .sg-input {
+    height: 32px; padding: 0 8px; border: 1px solid rgba(148, 163, 184, .45); border-radius: 8px;
+    background: #fff; font: inherit; font-size: 13px; color: #12243a; box-sizing: border-box; min-width: 0;
+}
+.sg-input[type="file"] { padding: 4px 8px; }
+.sg-corto { width: 90px; }
+.sg-codigo { width: 190px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.sg-btn {
+    height: 32px; padding: 0 12px; border: 1px solid rgba(148, 163, 184, .45); border-radius: 8px; font: inherit;
+    font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #21557f; white-space: nowrap;
+}
+.sg-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.sg-btn.primary { background: linear-gradient(180deg, #1476e8, #075fc8); border-color: #075fc8; color: #fff; }
+.sg-btn.success { background: linear-gradient(180deg, #17a35b, #0f8a4a); border-color: #0f8a4a; color: #fff; }
+.sg-btn:disabled { opacity: .5; cursor: not-allowed; }
+.sg-btn.is-busy { cursor: progress; opacity: .75; }
+
+.sg-subtitulo { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+.sg-subtitulo h4 { margin: 0; font-size: 13.5px; }
+.sg-subtitulo small { color: #66778b; }
+.sg-filtros { display: flex; flex-direction: column; gap: 8px; }
+.sg-filtro { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px dashed rgba(148, 163, 184, .55); border-radius: 10px; }
+.sg-filtro-valores { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; max-height: 120px; overflow: auto; }
+.sg-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: #f1f5f9; font-size: 12px; cursor: pointer; }
+
+.sg-tabla-wrap { overflow: auto; border: 1px solid rgba(148, 163, 184, .27); border-radius: 10px; max-height: 520px; }
+.sg-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sg-tabla th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: #526174; text-align: left; font-weight: 700; padding: 7px 9px; white-space: nowrap; border-bottom: 1px solid rgba(148, 163, 184, .27); }
+.sg-tabla td { padding: 6px 9px; border-bottom: 1px solid #eef2f7; vertical-align: middle; }
+.sg-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sg-tabla small { color: #8a99ab; }
+.sg-tabla .sg-input, .sg-tabla .sg-select { height: 28px; font-size: 12px; width: 100%; min-width: 90px; }
+.sg-tabla .sg-corto { width: 80px; min-width: 70px; }
+.sg-valores { max-width: 320px; font-size: 12px; color: #334155; }
+.sg-alerta { color: #a15c00 !important; }
+.sg-vacio { text-align: center; color: #8a99ab; padding: 18px !important; }
+.sg-acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+.sg-mensaje { padding: 9px 12px; border-radius: 10px; background: #eef5ff; color: #12406e; margin-bottom: 6px; }
+.sg-mensaje.error { background: #fdeeee; color: #8a1f1f; }
+.sg-mensaje.ok { background: #eaf8f0; color: #0f6b3a; }
+.sg-mensaje.aviso { background: #fff6e8; color: #7a4a00; }
+
+.sg-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.sg-kpi { background: #f8fafc; border: 1px solid #e5ebf2; border-radius: 10px; padding: 8px 10px; }
+.sg-kpi small { display: block; color: #66778b; font-size: 11px; }
+.sg-kpi strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.sg-distribucion { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+.sg-dist { border: 1px solid #e5ebf2; border-radius: 10px; padding: 8px 10px; }
+.sg-dist h5 { margin: 0 0 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.sg-dist div { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; border-bottom: 1px dotted #e5ebf2; }
+.sg-dist b { font-variant-numeric: tabular-nums; }
+
+.sg-estado { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #526174; }
+.sg-estado.vigente { background: #eaf8f0; color: #0f6b3a; }
+.sg-estado.anulada { background: #fdeeee; color: #8a1f1f; }

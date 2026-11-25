@@ -1,0 +1,200 @@
+﻿IdCartera   NombreCartera                                                                                        Entidad                        Activa
+----------- ---------------------------------------------------------------------------------------------------- ------------------------------ ------
+112         MIBANCO 1                                                                                            MIBANCO                        1
+117         INTERBANK                                                                                            INTERBANK                      1
+124         COMPARTAMOS CASTIGO INDIVIDUAL                                                                       COMPARTAMOS                    1
+126         COMPARTAMOS VIGENTE INDIVIDUAL                                                                       COMPARTAMOS                    1
+128         COMPARTAMOS VIGENTE CCM                                                                              COMPARTAMOS                    1
+132         FINANCIERA OH                                                                                        FINANCIERA_OH                  1
+133         COMPARTAMOS VIGENTE GRUPAL / CSM                                                                     COMPARTAMOS                    1
+135         MIBANCO VIGENTE                                                                                      MIBANCO                        1
+137         INTERBANK CEDIDA                                                                                     PROPIA                         1
+139         COMPARTAMOS DUAL                                                                                     COMPARTAMOS                    1
+143         MIBANCO 2                                                                                            MIBANCO                        0
+144         COMPARTAMOS CASTIGO GRUPAL                                                                           COMPARTAMOS                    1
+148         FINANCIERA OH PROPIA                                                                                 PROPIA                         1
+
+Estado gestiones
+------ --------------------
+NULL   132966
+A      36979
+
+observacion                                                                                                                                                                                              telefonos
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------------
+BI PREPAGO                                                                                                                                                                                               1364682
+PREPAGO                                                                                                                                                                                                  1302033
+NULL                                                                                                                                                                                                     1282912
+BI CONTROL                                                                                                                                                                                               895295
+SEARCH                                                                                                                                                                                                   796329
+EMPRESA                                                                                                                                                                                                  561774
+POSTPAGO                                                                                                                                                                                                 492117
+-                                                                                                                                                                                                        438716
+CONTROL                                                                                                                                                                                                  394349
+AVAL                                                                                                                                                                                                     254769
+CONYUGE                                                                                                                                                                                                  183735
+TELEFONO1                                                                                                                                                                                                110337
+BI                                                                                                                                                                                                       83016
+CELULAR2                                                                                                                                                                                                 59571
+CELULAR 1                                                                                                                                                                                                54058
+CELULAR3                                                                                                                                                                                                 49801
+CELULAR1                                                                                                                                                                                                 47675
+CELULAR 2                                                                                                                                                                                                45925
+3 NE                                                                                                                                                                                                     40252
+PORTA                                                                                                                                                                                                    38623
+CELULAR4                                                                                                                                                                                                 37756
+                                                                                                                                                                                                         37235
+Celular 3                                                                                                                                                                                                34782
+ENRIQUECIMIENTO 202601                                                                                                                                                                                   32069
+2 CI                                                                                                                                                                                                     28840
+CELULAR5                                                                                                                                                                                                 28700
+BI POSTPAGO                                                                                                                                                                                              27563
+BI AVAL                                                                                                                                                                                                  26922
+ENRIQUECIMIENTO                                                                                                                                                                                          26489
+CELULAR                                                                                                                                                                                                  26132
+CELULAR 4                                                                                                                                                                                                24664
+TITULAR                                                                                                                                                                                                  23101
+ESPECIAL                                                                                                                                                                                                 23065
+B I PREPAGO                                                                                                                                                                                              22434
+LISTA NEGRA                                                                                                                                                                                              20847
+ADICIONAL                                                                                                                                                                                                20112
+CELULAR 5                                                                                                                                                                                                18443
+CRM                                                                                                                                                                                                      16897
+ISIPAY                                                                                                                                                                                                   16742
+BI FINDENA                                                                                                                                                                                               10735
+HIJO                                                                                                                                                                                                     10497
+0                                                                                                                                                                                                        10386
+BI CONYUGE                                                                                                                                                                                               9704
+celular_01                                                                                                                                                                                               9070
+EMP POSTPAGO                                                                                                                                                                                             9027
+TELEF_BIM                                                                                                                                                                                                7964
+EMP PREPAGO                                                                                                                                                                                              7841
+BI - PREPAGO                                                                                                                                                                                             7806
+CONTROL CELULAR 1                                                                                                                                                                                        7662
+PRESIDENTE                                                                                                                                                                                               6958
+HERMANO                                                                                                                                                                                                  6693
+Telef_01                                                                                                                                                                                                 6320
+telefono_1                                                                                                                                                                                               6126
+celular_02                                                                                                                                                                                               5869
+1 CD                                                                                                                                                                                                     5743
+Telefono_01                                                                                                                                                                                              5700
+POST PAGO                                                                                                                                                                                                5596
+EMP CONTROL                                                                                                                                                                                              5301
+TELF_REFERENCIA_1                                                                                                                                                                                        5283
+FONO_1                                                                                                                                                                                                   5283
+
+origen     telefonos
+---------- --------------------
+EMPRESA    1919365
+M 202306   611880
+M 202411   449555
+E 202302   435815
+C 202306   404846
+E 202412   275942
+BUSQUEDA   240082
+M 201911   213977
+M 201811   122419
+M 201709   121629
+M 202307   105394
+M 202603   85581
+C 202401   77812
+C 201805   77519
+C 202202   75015
+CLIENTE    72287
+E 202502   60834
+M 202301   60675
+E 202608   58972
+M 202608   58842
+M 202611   57656
+E 202611   55330
+C 202406   55257
+C 202404   55132
+M 202410   54910
+C 202603   54499
+E 202509   53937
+E 202603   52755
+M 202001   52459
+M 202406   51728
+C 202611   51429
+E 202607   50281
+C 202608   47887
+M 202005   47820
+M 202607   45412
+M 202402   45346
+C 201910   42833
+C 202307   42315
+E 202401   42156
+M 202405   41212
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo       Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+---------- ---------- ------------- -------------- ----------------- ----------- --------------------
+SIMULACION 2026-10-29 5876          60338          60427             36861       0
+
+IdCartera   telefonos   clientes    humano      maquina     centralita  titular     tercero_acuerdo tercero     contesta_sin_id no_contesta buzon       apagado     equivocado  no_existe   sin_clasificar cef_siscob
+----------- ----------- ----------- ----------- ----------- ----------- ----------- --------------- ----------- --------------- ----------- ----------- ----------- ----------- ----------- -------------- -----------
+117         3867        2851        860         10845       10845       221         0               49          112             4140        6481        568         6           24          0              221
+124         8179        6388        1305        11534       11598       254         0               183         466             5305        5927        636         0           0           0              254
+126         1478        1204        556         2536        2534        75          0               14          114             1466        1240        160         0           0           0              75
+128         1263        906         113         2099        2101        46          0               8           89              959         971         123         0           0           0              46
+132         8540        7016        1081        9277        9277        263         0               70          561             2921        5944        473         1           0           0              263
+133         3611        3425        809         6125        6125        357         0               30          368             2786        3014        310         0           0           0              357
+137         2336        1883        160         5086        5092        58          0               7           293             1480        3096        217         1           0           0              58
+144         3742        3648        700         5852        5852        340         0               69          733             1845        3140        324         0           0           0              340
+148         3845        3155        292         6984        7003        136         1               22          437             1634        4599        353         1           1           0              137
+
+Fuente IdCartera   eventos_sin_clasificar
+------ ----------- ----------------------
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo       Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+---------- ---------- ------------- -------------- ----------------- ----------- --------------------
+SIMULACION 2026-11-13 5143          82194          0                 33380       0
+
+IdCartera   telefonos   clientes    humano      maquina     centralita  titular     tercero_acuerdo tercero     contesta_sin_id no_contesta buzon       apagado     equivocado  no_existe   sin_clasificar cef_siscob
+----------- ----------- ----------- ----------- ----------- ----------- ----------- --------------- ----------- --------------- ----------- ----------- ----------- ----------- ----------- -------------- -----------
+112         1462        1157        262         1575        0           82          5               52          0               27          83          0           4           4           0              87
+117         5040        2142        577         23683       0           172         1               68          0               229         10          0           58          7           0              173
+124         4479        3470        1087        12601       0           255         0               110         0               722         0           0           0           0           0              255
+126         461         397         614         0           0           160         0               12          0               442         0           0           0           0           0              160
+128         62          54          75          0           0           19          0               6           0               50          0           0           0           0           0              19
+132         11751       9221        1254        30730       0           322         0               104         0               809         7           0           8           2           0              322
+133         3700        2790        582         6303        0           349         0               22          0               211         0           0           0           0           0              349
+137         260         247         39          234         0           20          0               0           0               13          2           0           0           0           0              20
+144         5306        5258        544         6292        0           261         0               75          0               208         0           0           0           0           0              261
+148         859         634         109         776         0           50          0               5           0               34          7           0           5           0           0              50
+
+Fuente IdCartera   eventos_sin_clasificar
+------ ----------- ----------------------
+
+Modo       filas       clientes    telefonos   excluidos_lista_negra
+---------- ----------- ----------- ----------- ---------------------
+SIMULACION 879429      146876      858874      27207
+
+IdCartera   filas       clientes    filas_utiles excluidos_ln_siscob excluidos_ln_crm operador_no_reconocido compartidos
+----------- ----------- ----------- ------------ ------------------- ---------------- ---------------------- -----------
+112         65324       10001       65189        135                 0                18577                  1485
+117         17512       3019        17493        19                  0                7570                   289
+124         80489       14370       70642        9847                0                15527                  1204
+126         28678       5752        27979        699                 0                5565                   464
+128         10808       1817        10542        266                 0                1803                   228
+132         105968      19619       105941       27                  0                34609                  1977
+133         188564      32958       184383       4181                0                36410                  7544
+137         25387       4299        25383        4                   0                8738                   398
+144         236939      36550       224925       12014               0                144476                 3819
+148         119760      19919       119745       15                  0                38129                  2076
+
+IdCartera   filas_que_hoy_se_excluyen_por_LN_de_otro_banco
+----------- ----------------------------------------------
+112         1020
+117         150
+124         31
+126         3
+128         1
+132         1407
+133         33
+137         256
+144         62
+148         1437
+
+
+Hora de finalización: 2026-11-14T11:45:10.4695540-05:00

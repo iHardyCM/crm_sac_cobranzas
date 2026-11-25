@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Segmentos del banco · Generador de bases</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Layout global del CRM -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+
+    <!-- CSS propio de la vista -->
+    <link rel="stylesheet" href="../css/segmentos.css?v=22329627a7">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
+</head>
+
+<body>
+
+<main class="sg-page">
+
+    <div id="mensaje" class="sg-mensaje hidden" role="status"></div>
+
+    <section class="sg-card">
+        <div class="sg-card-title">
+            <h3>Nueva carga</h3>
+            <small>El segmento se pega a los clientes de todas las carteras de la entidad. Un dato por cliente.</small>
+        </div>
+
+        <ol class="sg-pasos" aria-label="Pasos de la carga">
+            <li id="paso1" class="activo"><span>1</span><b>Archivo</b></li>
+            <li id="paso2"><span>2</span><b>Configurar</b></li>
+            <li id="paso3"><span>3</span><b>Vista previa y carga</b></li>
+        </ol>
+
+        <!-- Paso 1 -->
+        <div class="sg-fila">
+            <div class="sg-campo">
+                <label class="sg-label" for="selEntidad">Entidad</label>
+                <select id="selEntidad" class="sg-select"></select>
+                <small id="carterasEntidad" class="sg-nota"></small>
+            </div>
+            <div class="sg-campo sg-ancho">
+                <label class="sg-label" for="archivo">Archivo (.xlsx, .xlsb o .csv)</label>
+                <input id="archivo" type="file" class="sg-input" accept=".xlsx,.xlsm,.xlsb,.csv">
+            </div>
+            <div class="sg-campo">
+                <label class="sg-label" for="selHoja">Hoja</label>
+                <select id="selHoja" class="sg-select" disabled><option value="">Primera hoja</option></select>
+            </div>
+            <div class="sg-campo sg-boton">
+                <button id="btnLeer" class="sg-btn primary" type="button">Leer archivo</button>
+            </div>
+        </div>
+
+        <!-- Paso 2 -->
+        <div id="bloqueConfig" class="hidden">
+            <p id="resumenArchivo" class="sg-nota"></p>
+            <div class="sg-fila">
+                <div class="sg-campo sg-ancho">
+                    <label class="sg-label" for="txtSegmento">Nombre del segmento</label>
+                    <input id="txtSegmento" class="sg-input" maxlength="100" placeholder="Ej.: Segmentación COBEX castigo">
+                    <small class="sg-nota">Una carga nueva con el mismo nombre reemplaza a la vigente.</small>
+                </div>
+                <div class="sg-campo">
+                    <label class="sg-label" for="selFuente">Fuente</label>
+                    <select id="selFuente" class="sg-select">
+                        <option value="BANCO">Archivo del banco</option>
+                        <option value="BIZNESCOB">Propio de Biznescob</option>
+                    </select>
+                </div>
+                <div class="sg-campo">
+                    <label class="sg-label" for="selPeriodo">Periodo</label>
+                    <select id="selPeriodo" class="sg-select"></select>
+                </div>
+                <div class="sg-campo">
+                    <label class="sg-label" for="txtPeriodo">AAAAMM</label>
+                    <input id="txtPeriodo" class="sg-input sg-corto" maxlength="6" inputmode="numeric">
+                </div>
+            </div>
+            <div class="sg-fila">
+                <div class="sg-campo">
+                    <label class="sg-label" for="selClave">Columna que identifica al cliente</label>
+                    <select id="selClave" class="sg-select"></select>
+                </div>
+                <div class="sg-campo">
+                    <label class="sg-label" for="selTipoClave">Es</label>
+                    <select id="selTipoClave" class="sg-select">
+                        <option value="CODIGO_BANCO">Código de cliente del banco</option>
+                        <option value="DNI">DNI</option>
+                    </select>
+                    <small id="notaClave" class="sg-nota"></small>
+                </div>
+            </div>
+
+            <div class="sg-subtitulo">
+                <h4>Filtrar filas</h4>
+                <small>Por ejemplo, quedarse solo con FUNCIONARIO = BIZNESCOB cuando el archivo trae otras agencias.</small>
+                <button id="btnAgregarFiltro" class="sg-btn sm" type="button">+ Agregar filtro</button>
+            </div>
+            <div id="filtros" class="sg-filtros"></div>
+
+            <div class="sg-subtitulo">
+                <h4>Columnas a cargar</h4>
+                <small>Cada columna marcada queda como un filtro del generador (pestaña Segmento cliente).</small>
+            </div>
+            <div class="sg-tabla-wrap">
+                <table class="sg-tabla">
+                    <thead>
+                        <tr><th></th><th>Columna</th><th>Valores en el archivo</th><th>Código</th><th>Nombre en el generador</th>
+                            <th>Abrev.</th><th>Formato</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody id="tbodyColumnas"></tbody>
+                </table>
+            </div>
+            <div class="sg-acciones">
+                <button id="btnPrevia" class="sg-btn primary" type="button">Vista previa</button>
+            </div>
+        </div>
+
+        <!-- Paso 3 -->
+        <div id="bloquePrevia" class="hidden">
+            <div id="kpisPrevia" class="sg-kpis"></div>
+            <div id="avisosPrevia"></div>
+            <div id="distribucionPrevia" class="sg-distribucion"></div>
+            <div class="sg-acciones">
+                <button id="btnCargar" class="sg-btn success" type="button" disabled>Cargar segmento</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="sg-card">
+        <div class="sg-card-title">
+            <h3>Cargas</h3>
+            <button id="btnRefrescar" class="sg-btn sm" type="button">Actualizar</button>
+        </div>
+        <div class="sg-tabla-wrap">
+            <table class="sg-tabla">
+                <thead>
+                    <tr><th>Id</th><th>Entidad</th><th>Segmento</th><th>Periodo</th><th>Archivo</th><th class="num">Campos</th>
+                        <th class="num">Clientes</th><th class="num">Sin cruce</th><th>Estado</th><th>Usuario</th><th>Fecha</th><th></th></tr>
+                </thead>
+                <tbody id="tbodyCargas"><tr><td colspan="12" class="sg-vacio">Cargando…</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<!-- Sesion (validacion con el backend y fetch autenticado) -->
+<script src="../js/session.js?v=887ddef4f1"></script>
+
+<!-- Layout global del CRM -->
+<script src="../js/app_layout.js?v=0c35600ffc"></script>
+
+<!-- JS propio de la vista -->
+<script src="../js/segmentos.js?v=437890b8b9"></script>
+
+</body>
+</html>

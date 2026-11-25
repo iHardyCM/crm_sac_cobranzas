@@ -1,168 +1,285 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Score Telefonico - Generador de Base</title>
-    <link rel="stylesheet" href="../css/score_telefonico.css?v=89886af628" />
+    <meta charset="UTF-8">
+    <title>Score telefónico · Generador de bases</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Layout global del CRM -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+
+    <!-- CSS propio de la vista -->
+    <link rel="stylesheet" href="../css/score_telefonico.css?v=c3040d86c7">
     <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
+
 <body>
-    <main class="score-page">
-        <header class="score-header">
-            <div class="score-title">
-                <div class="score-logo">TEL</div>
-                <div>
-                    <span class="eyebrow">Generador operativo</span>
-                    <h1>Score Telefónico - Generador de Base</h1>
-                    <p>Priorización inteligente de clientes y teléfonos</p>
+
+<main class="st-page">
+
+    <!-- Cartera y estado de los datos -->
+    <section class="st-cartera">
+        <div class="st-selcartera">
+            <button id="btnCartera" class="st-selcartera-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span id="carteraId" class="st-cartera-id">—</span>
+                <span class="st-cartera-txt"><strong id="carteraNombre">Cargando carteras…</strong><small id="carteraEntidad"></small></span>
+                <span class="st-flecha">▾</span>
+            </button>
+            <div id="menuCartera" class="st-menu hidden" role="listbox" aria-label="Carteras">
+                <input id="txtBuscarCartera" class="st-input" type="search" placeholder="Buscar por número o nombre…" autocomplete="off">
+                <div id="listaCarteras" class="st-menu-lista"></div>
+            </div>
+        </div>
+        <div id="estadoCartera" class="st-estado" aria-live="polite">—</div>
+        <a id="lnkRendimiento" class="st-btn" href="score_rendimiento.html" title="Intentos y CEF por tramo, orden, horario y OSIPTEL de esta cartera">Rendimiento del score</a>
+        <button id="btnActualizar" class="st-btn" type="button" title="Recalcula historial, score y datos del cliente de esta cartera">Actualizar cartera</button>
+    </section>
+
+    <!-- Barra fija: filtros, canal y generar -->
+    <section id="barra" class="st-barra">
+        <div class="st-barra-fila">
+            <button id="btnFiltros" class="st-btn st-btn-filtros" type="button">
+                <svg class="st-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"/></svg>
+                Filtros <span id="cntFiltros" class="st-badge">0</span>
+            </button>
+            <div id="chips" class="st-chips" aria-label="Filtros aplicados"></div>
+            <div class="st-acciones">
+                <span id="estadoCalculo" class="st-calculo" aria-live="polite"></span>
+                <label class="st-campo-mini">Canal
+                    <select id="selCanal" class="st-select"></select>
+                </label>
+                <label class="st-campo-mini">Tel. por cliente
+                    <select id="selPorCliente" class="st-select">
+                        <option value="">Todos</option>
+                        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                        <option value="4">4</option><option value="5">5</option>
+                    </select>
+                </label>
+                <button id="btnLimpiar" class="st-btn" type="button">Limpiar</button>
+                <button id="btnGenerar" class="st-btn success" type="button" disabled>Generar base</button>
+            </div>
+        </div>
+    </section>
+
+    <div id="mensaje" class="st-mensaje hidden" role="status"></div>
+
+    <!-- Tarjetas resumen -->
+    <section class="st-kpis">
+        <article class="st-kpi">
+            <span>Clientes seleccionados</span>
+            <strong id="kpiClientes">—</strong>
+            <em id="kpiClientesSub">—</em>
+        </article>
+        <article class="st-kpi">
+            <span>Teléfonos seleccionados</span>
+            <strong id="kpiTelefonos">—</strong>
+            <em id="kpiTelefonosSub">—</em>
+        </article>
+        <article class="st-kpi">
+            <span>% WhatsApp SI</span>
+            <strong id="kpiWhatsapp">—</strong>
+            <em id="kpiWhatsappSub">—</em>
+        </article>
+        <article class="st-kpi">
+            <span>% Timbrado 3–4</span>
+            <strong id="kpiTimbrado">—</strong>
+            <em id="kpiTimbradoSub">—</em>
+        </article>
+        <article class="st-kpi">
+            <span>Capital total (S/)</span>
+            <strong id="kpiCapital">—</strong>
+            <em>Clientes seleccionados</em>
+        </article>
+        <article class="st-kpi st-kpi-score">
+            <span>Score promedio <button id="btnScoreInfo" class="st-link" type="button">¿Qué significa?</button></span>
+            <strong id="kpiScore">—</strong>
+            <div id="kpiTramos" class="st-tramos" title="Teléfonos por tramo (A = mejor quintil, E = peor)"></div>
+        </article>
+    </section>
+
+    <!-- Reducción e impacto por filtro -->
+    <section class="st-resumen">
+        <article class="st-card st-reduccion">
+            <div class="st-card-title"><h3>Base origen → resultado</h3><small>Teléfonos no descartados de la cartera</small></div>
+            <div class="st-red-fila">
+                <div><span>Base origen</span><strong id="redOrigen">—</strong><em id="redOrigenSub">—</em></div>
+                <div class="st-red-barra">
+                    <div class="st-red-pista"><div id="redBarra" class="st-red-relleno"></div></div>
+                    <small id="redPct">—</small>
+                </div>
+                <div><span>Resultado</span><strong id="redResultado">—</strong><em id="redResultadoSub">—</em></div>
+            </div>
+        </article>
+        <article class="st-card st-impacto">
+            <div class="st-card-title"><h3>Impacto por filtro</h3><small>En el orden en que se aplican</small></div>
+            <div class="st-tabla-wrap st-tabla-corta">
+                <table class="st-tabla">
+                    <thead><tr><th>#</th><th>Filtro</th><th class="num">Antes</th><th class="num">Después</th><th class="num">Excluidos</th><th class="num">Impacto</th><th class="num">Clientes</th></tr></thead>
+                    <tbody id="tbodyImpacto"></tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+
+    <!-- Teléfonos de la base (vista central) -->
+    <section class="st-card st-tabla-card">
+        <div class="st-card-title">
+            <h3 id="tituloTabla">Teléfonos de la base</h3>
+            <div class="st-tabla-ctrl">
+                <small id="infoPagina">—</small>
+                <label class="st-check">Mostrar
+                    <select id="selTop" class="st-select">
+                        <option value="20">Top 20</option>
+                        <option value="50" selected>Top 50</option>
+                        <option value="100">Top 100</option>
+                    </select>
+                </label>
+                <button id="btnAnterior" class="st-btn sm" type="button">‹ Anterior</button>
+                <button id="btnSiguiente" class="st-btn sm" type="button">Siguiente ›</button>
+            </div>
+        </div>
+        <div class="st-tabla-wrap st-tabla-principal">
+            <table class="st-tabla">
+                <thead>
+                    <tr>
+                        <th class="num">#</th><th>DNI</th><th>IdCliente</th><th>Teléfono</th><th class="num">Capital</th>
+                        <th class="num" title="Clic en el score para ver por qué tiene ese puntaje">Score</th><th>Tramo</th><th>Timbrado</th><th>WhatsApp</th><th>OSIPTEL</th><th>Semáforo</th>
+                        <th id="thMejorTel">Mejor resultado teléfono</th><th>Mejor resultado cliente</th><th>Último resultado tel.</th>
+                        <th class="num" title="Días desde el último contacto directo (CEF) del teléfono, al corte del score">Últ. CEF (días)</th>
+                        <th title="Franja con más contactos en 90 días">Franja</th>
+                        <th class="num" title="Orden del teléfono dentro del cliente en esta base">Orden</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyFilas"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Histórico -->
+    <section class="st-card">
+        <div class="st-card-title">
+            <h3>Bases generadas (últimos 30 días)</h3>
+            <button id="btnRecargarHistorico" class="st-btn sm" type="button">Recargar</button>
+        </div>
+        <div class="st-tabla-wrap">
+            <table class="st-tabla">
+                <thead>
+                    <tr><th>Código</th><th>Archivo</th><th>Canal</th><th>Generada</th><th>Usuario</th>
+                        <th class="num">Clientes</th><th class="num">Teléfonos</th><th class="num">Capital</th><th></th></tr>
+                </thead>
+                <tbody id="tbodyHistorico"></tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<!-- Modal de filtros (casi pantalla completa) -->
+<div id="modalFiltros" class="st-modal st-modal-full hidden" role="dialog" aria-modal="true" aria-labelledby="tituloFiltros">
+    <div class="st-full-card">
+        <header class="st-full-head">
+            <div class="st-full-titulo">
+                <h3 id="tituloFiltros">Filtros</h3>
+                <div class="st-vivo" aria-live="polite">
+                    <span><small>Clientes</small><strong id="vivoClientes">—</strong></span>
+                    <span><small>Teléfonos</small><strong id="vivoTelefonos">—</strong></span>
+                    <span><small>Score prom.</small><strong id="vivoScore">—</strong></span>
+                    <span id="vivoEstado" class="st-calculo"></span>
                 </div>
             </div>
-            <div class="score-actions">
-                <span id="ultimaActualizacionScore" class="last-update">Última actualización: -</span>
-                <button class="btn secondary" type="button" data-action="limpiar">Limpiar filtros</button>
-                <button class="btn primary" type="button" data-action="exportar">Exportar</button>
+            <div class="st-full-acciones">
+                <input id="txtBuscarSeg" class="st-input st-buscar" type="search" placeholder="Buscar filtro…" autocomplete="off">
+                <label class="st-check"><input type="checkbox" id="chkSoloActivos"> Solo con filtro</label>
+                <button id="btnDesmarcarTodo" class="st-btn" type="button" title="Deja todas las listas sin marcar para empezar de cero: una lista sin marcar no filtra">Desmarcar todo</button>
+                <button id="btnLimpiarModal" class="st-btn" type="button" title="Vuelve todo a marcado y quita las condiciones del día">Restablecer</button>
+                <button class="st-btn primary" type="button" data-cerrar="modalFiltros">Listo</button>
             </div>
         </header>
+        <nav id="tabsFiltros" class="st-tabs" role="tablist"></nav>
+        <div id="avisoFiltros" class="st-mensaje aviso hidden"></div>
+        <div id="muro" class="st-full-body"></div>
+    </div>
+</div>
 
-        <section class="score-layout">
-            <aside class="filter-panel">
-                <div class="filter-head">
-                    <h3>Filtros de base</h3>
-                    <p>Segmenta clientes y teléfonos.</p>
-                </div>
+<!-- Modal: qué significa el score -->
+<div id="modalScore" class="st-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tituloScore">
+    <div class="st-modal-card st-modal-xl">
+        <header class="st-modal-head">
+            <h3 id="tituloScore">¿Qué significa el score?</h3>
+            <button class="st-close" type="button" data-cerrar="modalScore" aria-label="Cerrar">×</button>
+        </header>
+        <div id="cuerpoScore" class="st-score-body"></div>
+    </div>
+</div>
 
-                <div class="score-static-top">
-                    <label>
-                        <span>CARTERA / ID CARTERA</span>
-                        <select id="filtroCarteraScore"><option value="">Cargando carteras...</option></select>
-                    </label>
-                </div>
+<!-- Modal: por qué este teléfono tiene su score -->
+<div id="modalTelefono" class="st-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tituloTelefono">
+    <div class="st-modal-card st-modal-xl">
+        <header class="st-modal-head">
+            <h3 id="tituloTelefono">Por qué tiene este score</h3>
+            <button class="st-close" type="button" data-cerrar="modalTelefono" aria-label="Cerrar">×</button>
+        </header>
+        <div id="cuerpoTelefono" class="st-score-body"></div>
+    </div>
+</div>
 
-                <div class="score-segment-nav" id="scoreSegmentNav"></div>
-                <div class="score-segment-body" id="scoreSegmentBody"></div>
-                <button class="btn secondary save-view" type="button" data-action="guardar">Guardar vista</button>
-                <div class="filter-note">
-                    <strong>Base sugerida para gestión del día</strong>
-                    <span>Los resultados consideran los criterios seleccionados en los filtros y el modelo de scoring actual.</span>
-                </div>
-            </aside>
+<!-- Modal generar -->
+<div id="modalGenerar" class="st-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tituloGenerar">
+    <div class="st-modal-card">
+        <header class="st-modal-head">
+            <h3 id="tituloGenerar">Generar base</h3>
+            <button class="st-close" type="button" data-cerrar="modalGenerar" aria-label="Cerrar">×</button>
+        </header>
+        <div class="st-generar-body">
+            <div id="resumenGenerar" class="st-resumen-generar"></div>
+            <label class="st-label" for="txtNombreBase">Nombre de la base</label>
+            <div class="st-nombre-base">
+                <input id="txtNombreBase" class="st-input" maxlength="110" autocomplete="off"
+                       placeholder="112 2411 1249 PRD K MAYOR 1K NOC SCORE AB TIM 24 OSIPTEL">
+                <span id="sufijoCodigo" class="st-sufijo-codigo" title="Código de la base: se confirma al generar">B…</span>
+                <button id="btnProponerNombre" class="st-btn sm" type="button" title="Volver a armar el nombre con los filtros actuales">Proponer</button>
+            </div>
+            <p class="st-ayuda">Cartera, fecha y hora, tipo (PRD · PRV · TTS · SMS), capital (K), mejor contacto del mes (CEF MES · NOC · CEF HIST · MIX CONTACTO), tramo del score, timbrado, OSIPTEL y semáforo. Corrígelo como quieras: letras, números, espacios, guion, guion bajo y +. Al generar se pone la hora real y el código de la base al final (el que ves al lado se confirma en ese momento).</p>
+            <label class="st-label" for="txtDescripcion">Descripción (opcional)</label>
+            <input id="txtDescripcion" class="st-input" maxlength="200" placeholder="Ej.: barrido tarde tramo A-B">
+            <label class="st-label" for="selFormatoArchivo">Formato del archivo</label>
+            <select id="selFormatoArchivo" class="st-select">
+                <option value="xlsx">Excel (.xlsx)</option>
+                <option value="csv">CSV delimitado por comas (.csv)</option>
+            </select>
+            <p class="st-ayuda">Se guarda la receta y cada teléfono que sale. El archivo lleva el código de la base al final del nombre: con él se mide su rendimiento. CSV para el marcador: IDCLIENTE y TELEFONO. Excel: código de la base, cartera, posición, DNI, IdCliente (SISCOB), teléfono, orden en el cliente, score y tramo.</p>
+            <div id="resultadoGenerar" class="st-resultado-generar hidden"></div>
+        </div>
+        <footer class="st-modal-foot">
+            <button class="st-btn" type="button" data-cerrar="modalGenerar">Cerrar</button>
+            <button id="btnConfirmarGenerar" class="st-btn success" type="button">Generar y descargar</button>
+        </footer>
+    </div>
+</div>
 
-            <section class="score-main">
-                <div class="kpi-row">
-                    <article class="kpi-card blue">
-                        <span class="kpi-icon">CLI</span>
-                        <small>Clientes seleccionados</small>
-                        <strong id="kpiClientesScore">0</strong>
-                        <em id="kpiClientesSubScore">Base filtrada actual</em>
-                    </article>
-                    <article class="kpi-card green">
-                        <span class="kpi-icon">TEL</span>
-                        <small>Teléfonos seleccionados</small>
-                        <strong id="kpiTelefonosScore">0</strong>
-                        <em>Registros priorizados</em>
-                    </article>
-                    <article class="kpi-card green">
-                        <span class="kpi-icon">WA</span>
-                        <small>% WhatsApp válido</small>
-                        <strong id="kpiWhatsappScore">0.0%</strong>
-                        <em id="kpiWhatsappSubScore">0 de 0</em>
-                    </article>
-                    <article class="kpi-card amber">
-                        <span class="kpi-icon">TIM</span>
-                        <small>% Timbrado 3-4</small>
-                        <strong id="kpiTimbradoScore">0.0%</strong>
-                        <em id="kpiTimbradoSubScore">0 de 0</em>
-                    </article>
-                    <article class="kpi-card gold">
-                        <span class="kpi-icon">S/</span>
-                        <small>Capital total</small>
-                        <strong id="kpiCapitalScore">S/ 0.00</strong>
-                        <em>Capital seleccionado</em>
-                    </article>
-                    <article class="criteria-card">
-                        <h2>Criterios de selección</h2>
-                        <ul>
-                            <li>Mayor score = mayor prioridad</li>
-                            <li>Penaliza teléfonos fallados</li>
-                            <li>Prioriza WhatsApp + Timbrado</li>
-                            <li>Excluye equivocados repetidos</li>
-                        </ul>
-                    </article>
-                </div>
+<!-- Capa de carga (la misma grúa de Analytics): cubre la página mientras se calcula el resultado -->
+<div id="cargando" class="st-cargando hidden" role="status" aria-live="polite">
+    <div class="st-cargando-caja">
+        <img src="../images/cargando-grua.svg" alt="" width="240" height="160">
+        <p id="cargandoTexto">Estamos trabajando en tu resultado</p>
+        <small id="cargandoDetalle"></small>
+        <button id="btnSeguirSinEsperar" type="button" class="st-btn hidden">Seguir sin esperar</button>
+    </div>
+</div>
 
-                <section class="results-card">
-                    <div class="results-toolbar">
-                    <div class="results-heading">
-                        <h2 id="tituloResultadosScore">Resultados (0 teléfonos)</h2>
-                        <p id="subtituloResultadosScore">Mostrando teléfonos priorizados para gestión.</p>
-                        <div id="activeFiltersScore" class="active-filters-bar"></div>
-                    </div>
-                        <div class="toolbar-actions">
-                            <div class="search-box">
-                                <input id="busquedaScoreInput" type="search" placeholder="Buscar por DNI, IDCliente o Teléfono..." />
-                                <button type="button" data-action="buscar">Buscar</button>
-                            </div>
-                            <button class="btn secondary" type="button" data-action="columnas">Columnas</button>
-                            <button class="btn secondary" type="button" data-action="filtrar">Filtrar tabla</button>
-                            <span class="sort-text">Ordenado por: <strong>SCORE_FINAL</strong></span>
-                            <button class="icon-btn" type="button" data-action="acciones">⋮</button>
-                        </div>
-                    </div>
-                    <div id="chipCarteraActivaScore" class="active-score-chip">Cartera activa: -</div>
-                    <div class="table-shell">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>DNI</th>
-                                    <th>IDCLIENTE</th>
-                                    <th>TELÉFONO</th>
-                                    <th>CAPITAL</th>
-                                    <th>SCORE_FINAL</th>
-                                    <th>ETIQUETA_SCORE</th>
-                                    <th>TIMBRADO</th>
-                                    <th>WHATSAPP</th>
-                                    <th>OSIPTEL</th>
-                                    <th>INTENTOS_RECIENTES</th>
-                                    <th>MEJOR_RESULTADO</th>
-                                    <th>ORDEN</th>
-                                </tr>
-                            </thead>
-                            <tbody id="scoreTableBody"></tbody>
-                        </table>
-                    </div>
+<!-- Tarjeta de ayuda de cada filtro -->
+<div id="ayuda" class="st-ayuda-pop hidden" role="tooltip"></div>
 
-                    <footer class="table-footer">
-                        <span id="resumenPaginacionScore">Mostrando 0 registros</span>
-                        <label>Registros por página
-                            <select id="pageSizeScore">
-                                <option value="25">25</option>
-                                <option value="50">50</option>
-                                <option value="100">100</option>
-                            </select>
-                        </label>
-                        <nav class="pagination">
-                            <button id="prevScorePage" type="button">‹</button>
-                            <button id="currentScorePage" type="button" class="active">1</button>
-                            <span id="totalScorePages">/ 1</span>
-                            <button id="nextScorePage" type="button">›</button>
-                        </nav>
-                    </footer>
-                </section>
+<!-- Sesion (validacion con el backend y fetch autenticado) -->
+<script src="../js/session.js?v=887ddef4f1"></script>
 
-                <footer class="method-footer">
-                    <div>
-                        <strong>Base sugerida para gestión del día</strong>
-                        <span>Los resultados consideran los criterios seleccionados en los filtros y el modelo de scoring actual.</span>
-                    </div>
-                    <button type="button" data-action="metodologia">Ver metodología del score</button>
-                </footer>
-            </section>
-        </section>
-    </main>
+<!-- Layout global del CRM -->
+<script src="../js/app_layout.js?v=14c9204b45"></script>
 
-    <div id="scoreToast" class="toast"></div>
-    <script src="../js/session.js?v=60298e1520"></script>
-    <script src="../js/score_telefonico.js?v=57204443e0"></script>
+<!-- JS propio de la vista -->
+<script src="../js/score_telefonico.js?v=865c107823"></script>
+
 </body>
 </html>

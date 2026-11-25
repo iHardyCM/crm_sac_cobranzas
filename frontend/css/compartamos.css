@@ -4278,6 +4278,14 @@ body.crm-shell .clientes-page .cuentas-tabla-cabecera p {
 .crm-ec-verifica.is-ok { color: #17623f; }
 .crm-ec-verifica.is-no { color: #8a3d0a; }
 .crm-ec-verifica small { display: block; color: #5f6f86; font-size: 10px; font-weight: 500; }
+/* Mínimo a cobrar: capital + seguro (24/11/2026) */
+.crm-ec-tabla td.crm-ec-minimo { color: #0f4c81; font-weight: 800; background-color: #f1f7fd; }
+.crm-ec-tabla thead th.crm-ec-minimo { color: #0f4c81; background: #e6f0fa; }
+.crm-ec-tabla tfoot td.crm-ec-minimo { color: #0f4c81; }
+.crm-ec-cifra.is-minimo { border-color: #c9ddf1; background: #f1f7fd; }
+.crm-ec-cifra.is-minimo b { color: #0f4c81; }
+.crm-ec-tabla small.crm-ec-fuente { display: block; color: #0f4c81; font-size: 9.5px; font-weight: 600; }
+.crm-ec-marca-seguro { margin-left: 2px; color: #8a3d0a; font-weight: 800; cursor: help; }
 .crm-ec-campanas tr.crm-ec-no-aplica td { color: #9aa8bb; }
 .crm-ec-motivo { font-size: 11px; font-weight: 500; color: #9aa8bb; }
 @container (max-width: 700px) {

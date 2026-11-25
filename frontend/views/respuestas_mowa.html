@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Respuestas SMS | CRM Cobranzas</title>
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
+    <link rel="stylesheet" href="../css/respuestas_mowa.css?v=sync-manual-1">
+</head>
+<body>
+<main class="mowa-main">
+    <section class="mowa-heading">
+        <div>
+            <h2>Respuestas SMS recibidas</h2>
+            <p>Revisa cada SMS recibido y la gestión posterior registrada para el cliente.</p>
+        </div>
+        <span id="mowaConsultaHora" class="mowa-small">Última sincronización completada: —</span>
+    </section>
+
+    <section class="mowa-top">
+        <button type="button" id="mowaSinAtender" class="mowa-sin-atender" disabled aria-describedby="mowaSinAtenderDetalle">
+            <span>Clientes sin atender</span>
+            <strong id="mowaSinAtenderTotal">—</strong>
+            <small id="mowaSinAtenderDetalle">Clientes activos con respuestas sin gestión SISCOB posterior</small>
+            <em id="mowaSinAtenderAccion">Descargar Excel para repartir</em>
+        </button>
+        <form id="mowaFiltros" class="mowa-panel mowa-filtros">
+            <label>Recibidas desde <input id="mowaDesde" type="date" required></label>
+            <label>Recibidas hasta <input id="mowaHasta" type="date" required></label>
+            <label>Cuenta <select id="mowaCuenta"><option value="">Todas mis cuentas</option></select></label>
+            <button type="submit" id="mowaConsultar">Consultar</button>
+            <button type="button" id="mowaVerCarteras" class="mowa-ver-carteras" disabled>Ver pendientes por cartera</button>
+            <button type="button" id="mowaExportar" class="mowa-exportar" disabled>Exportar Excel</button>
+            <div id="mowaSyncAcciones" class="mowa-sync-acciones" hidden>
+                <label>Buscar campañas de <select id="mowaSyncDias"><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="60">Últimos 60 días</option></select></label>
+                <button type="button" id="mowaSyncBoton" class="mowa-sync-boton">Actualizar SMS</button>
+            </div>
+            <span class="mowa-small">Por fecha de recepción, hasta 31 días. La tarjeta cuenta todo lo pendiente, sin límite de fecha.</span>
+        </form>
+    </section>
+
+    <div id="mowaSyncEstado" class="mowa-sync-estado" role="status" aria-live="polite" hidden></div>
+    <div id="mowaAviso" class="mowa-aviso" role="status" aria-live="polite"></div>
+    <div id="mowaCargando" class="mowa-loading" role="status" aria-live="polite" hidden>
+        <span class="mowa-spinner" aria-hidden="true"></span>
+        <div><strong>Consultando respuestas SMS</strong><small id="mowaProgreso">Leyendo las respuestas guardadas y verificando las gestiones en SISCOB.</small></div>
+        <span id="mowaSegundos" class="mowa-loading-tiempo">0 s</span>
+        <button type="button" id="mowaCancelar" class="mowa-cancelar">Detener</button>
+    </div>
+
+    <section class="mowa-resumen" aria-label="Resumen de respuestas">
+        <button type="button" id="mowaCardPendientes" class="mowa-card-pendientes" aria-label="Filtrar clientes sin gestión posterior"><span id="mowaCardPendientesTitulo">Sin gestión posterior (rango)</span><strong id="mowaPendientes">—</strong><small id="mowaCardAlcance">Según carteras autorizadas</small></button>
+        <article><span>Clientes atendidos</span><strong id="mowaAtendidas">—</strong></article>
+        <article><span>Contactos sin vincular</span><strong id="mowaSinVincular">—</strong></article>
+        <article><span>Clientes sin verificar</span><strong id="mowaSinVerificar">—</strong></article>
+    </section>
+
+    <section class="mowa-panel" id="mowaDetalle">
+        <div class="mowa-tabla-cabecera">
+            <div><h3>Detalle de respuestas</h3><p id="mowaAlcance">Selecciona un rango y consulta.</p></div>
+            <div class="mowa-controles">
+                <label>Estado <select id="mowaEstado"><option value="">Todos</option><option value="PENDIENTE">Pendientes</option><option value="ATENDIDA">Atendidas</option><option value="SIN_VINCULAR">Sin vincular</option><option value="SIN_VERIFICAR">Sin verificar</option></select></label>
+                <label>Cartera <select id="mowaCartera"><option value="">Todas</option></select></label>
+                <label>Orden <select id="mowaOrden"><option value="reciente">Más recientes</option><option value="antiguo">Más antiguas</option><option value="pendiente">Pendientes primero</option><option value="cliente">Cliente A-Z</option></select></label>
+                <label>Por página <select id="mowaTamano"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+                <label>Buscar <input id="mowaBuscar" type="search" placeholder="DNI, cliente, teléfono o texto"></label>
+            </div>
+        </div>
+        <div class="mowa-table-scroll">
+            <table>
+                <thead><tr><th>Última recepción</th><th>Seguimiento CRM / Mowa</th><th>Cliente</th><th>Conversación SMS</th><th>Cuenta / campaña</th><th>Gestión posterior</th></tr></thead>
+                <tbody id="mowaTabla"><tr><td colspan="6" class="mowa-vacio">Aún no hay una consulta.</td></tr></tbody>
+            </table>
+        </div>
+        <div class="mowa-paginacion"><span id="mowaPaginacion">—</span><button type="button" id="mowaAnterior" disabled>Anterior</button><button type="button" id="mowaMas" disabled>Siguiente</button></div>
+    </section>
+    <dialog id="mowaChat" class="mowa-chat" aria-labelledby="mowaChatTitulo">
+        <div class="mowa-chat-cabecera"><div><h3 id="mowaChatTitulo">Conversación SMS</h3><small id="mowaChatSubtitulo"></small></div><button type="button" id="mowaChatCerrar" aria-label="Cerrar conversación">×</button></div>
+        <div id="mowaChatMensajes" class="mowa-chat-mensajes"></div>
+        <form id="mowaChatForm" class="mowa-chat-form">
+            <label>Enviar al celular <select id="mowaChatDestino"></select></label>
+            <label>Mensaje de texto <textarea id="mowaChatTexto" rows="3" maxlength="160" required placeholder="Escribe tu SMS"></textarea></label>
+            <div class="mowa-chat-acciones"><small id="mowaChatCaracteres">0/160</small><button type="submit" id="mowaChatEnviar">Enviar SMS</button></div>
+            <small id="mowaChatAviso" role="status" aria-live="polite"></small>
+        </form>
+        <p class="mowa-chat-nota">El historial busca campañas de este cliente y celular dentro del rango consultado; un SMS de una campaña anterior requiere ampliar el rango. Enviar un SMS no registra una gestión en SISCOB ni cambia el estado pendiente.</p>
+    </dialog>
+    <dialog id="mowaCarterasModal" class="mowa-carteras-modal" aria-labelledby="mowaCarterasTitulo">
+        <div class="mowa-carteras-cabecera">
+            <div><h3 id="mowaCarterasTitulo">Clientes sin atender por cartera</h3><p id="mowaCarterasSubtitulo">Pendientes acumulados</p></div>
+            <button type="button" id="mowaCarterasCerrar" aria-label="Cerrar desglose">×</button>
+        </div>
+        <div class="mowa-carteras-contenido">
+            <div id="mowaDona" class="mowa-dona" aria-label="Distribución de clientes pendientes por cartera"></div>
+            <div id="mowaCarterasLista" class="mowa-carteras-lista"></div>
+        </div>
+        <p id="mowaCarterasNota" class="mowa-carteras-nota">Selecciona una cartera para ver sus pendientes acumulados.</p>
+    </dialog>
+    <p class="mowa-nota">Las respuestas se leen de la última carga de Mowa a CobAuto. Administradores y jefes pueden iniciarla con «Actualizar SMS»: busca campañas nuevas en los días elegidos y revisa todas las campañas conocidas de hasta 60 días; la hora de actualización figura arriba a la derecha. Cada cliente se muestra una vez con sus respuestas del rango, filtradas por fecha de recepción. «Clientes sin atender» cuenta, sin límite de fecha, a los clientes activos con al menos una respuesta sin gestión SISCOB posterior, y su Excel trae solo esas respuestas pendientes. Exportar Excel incluye todos los resultados filtrados de la tabla, no solo la página visible. Las respuestas de clientes inactivos en SISCOB no se muestran (se indica cuántas se ocultaron). El estado Mowa se muestra aparte. «Atendida» no confirma que se haya respondido el contenido del SMS.</p>
+</main>
+<script src="../js/session.js?v=887ddef4f1"></script>
+<script src="../js/app_layout.js?v=0c35600ffc"></script>
+<script src="../js/respuestas_mowa.js?v=sync-manual-4"></script>
+</body>
+</html>

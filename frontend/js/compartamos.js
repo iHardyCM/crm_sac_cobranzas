@@ -825,18 +825,44 @@ function montoPlano(value) {
 // El backend entrega montos exactos; aquí se suben al sol (capital y cargos por separado) y el total
 // de la cuota es la suma de lo mostrado, para que cada fila cuadre a la vista. El exacto va en el tooltip.
 // ---------------------------------------------------------------------------
-function calcularEstadoCuentaCRM(ec = {}, modo = "total") {
-    let acumulado = 0;
+// Montos de pantalla por cuota (Hardy, 24/11/2026). Mínimo a cobrar = capital + seguro (CT k + CT k1), ya sumado.
+// Capital y cargos suben al sol por separado (R9) y el total es su suma; el mínimo es capital + seguro exacto subido al sol.
+// En el desglose, seguro = mínimo − capital mostrado y "intereses, moras y gastos" = total − mínimo: cada fila cuadra.
+function calcularEstadoCuentaCRM(ec = {}) {
+    let acumuladoTotal = 0;
+    let acumuladoMinimo = 0;
+    let minimoExacto = 0;
     const filas = (ec.cuotas || []).map(cuota => {
         const capital = montoArriba(cuota.capital);
         const cargos = montoArriba(cuota.cargos);
-        const total = capital === null && cargos === null ? null : (capital || 0) + (cargos || 0);
-        const monto = modo === "capital" ? capital : total;
-        acumulado += monto || 0;
-        return { ...cuota, capitalMostrado: capital, cargosMostrado: cargos, totalMostrado: total, acumulado };
+        // cuota.seguro ya es el seguro completo (el mayor entre CT k1 y el que se despeja de la asignación).
+        const seguroExacto = tieneValor(cuota.seguro) ? Number(cuota.seguro) : null;
+        const minimo = !tieneValor(cuota.capital) && seguroExacto === null ? null : montoArriba((Number(cuota.capital) || 0) + (seguroExacto || 0));
+        const totalCarga = capital === null && cargos === null ? null : (capital || 0) + (cargos || 0);
+        // El total sale de la carga SAC; nunca se muestra por debajo del piso capital + seguro.
+        const total = totalCarga === null ? minimo : (minimo !== null ? Math.max(totalCarga, minimo) : totalCarga);
+        const seguro = seguroExacto === null || minimo === null ? null : minimo - (capital || 0);
+        const otros = cargos === null || total === null || minimo === null ? null : Math.max(total - minimo, 0);
+        acumuladoTotal += total || 0;
+        // El acumulado del mínimo se redondea sobre la suma exacta, para que coincida con los montos del banco
+        // (p. ej. "100% Intereses" de 2 cuotas 842.40 -> 843), aunque no sea la suma de las filas redondeadas.
+        if (minimo !== null) minimoExacto += (Number(cuota.capital) || 0) + (seguroExacto || 0);
+        acumuladoMinimo = minimo !== null ? montoArriba(minimoExacto) : acumuladoMinimo;
+        return {
+            ...cuota, capitalMostrado: capital, cargosMostrado: cargos, totalMostrado: total,
+            minimoMostrado: minimo, seguroMostrado: seguro, otrosMostrado: otros,
+            acumuladoTotal, acumuladoMinimo, acumulado: acumuladoTotal
+        };
     });
     const sumar = clave => filas.some(f => f[clave] !== null) ? filas.reduce((acc, f) => acc + (f[clave] || 0), 0) : null;
-    return { filas, totales: { capital: sumar("capitalMostrado"), cargos: sumar("cargosMostrado"), total: sumar("totalMostrado") } };
+    return {
+        filas,
+        totales: {
+            capital: sumar("capitalMostrado"), seguro: sumar("seguroMostrado"), otros: sumar("otrosMostrado"),
+            cargos: sumar("cargosMostrado"), total: sumar("totalMostrado"),
+            minimo: filas.some(f => f.minimoMostrado !== null) ? filas[filas.length - 1].acumuladoMinimo : null
+        }
+    };
 }
 
 function operacionEstadoCuentaCRM(operacion) {
@@ -870,7 +896,7 @@ function renderEstadoCuentaModalCRM(data) {
 function abrirEstadoCuentaCRM(operacion, boton) {
     const dialogo = document.getElementById("estadoCuentaModalCRM");
     if (!dialogo || typeof dialogo.showModal !== "function" || !operacionEstadoCuentaCRM(operacion)) return;
-    window._estadoCuentaEstado = { operacion: String(operacion), tab: "cuotas", modo: "total", hasta: 0 };
+    window._estadoCuentaEstado = { operacion: String(operacion), tab: "cuotas", vista: "resumen", hasta: 0 };
     window._estadoCuentaOrigen = boton;
     pintarEstadoCuentaCRM();
     dialogo.showModal();
@@ -911,13 +937,13 @@ function pintarEstadoCuentaCRM() {
         tieneValor(ec.cuotas_pagadas_asignacion) && tieneValor(aprobadas) ? chip("Pagadas", `${format(ec.cuotas_pagadas_asignacion)} de ${format(aprobadas)}`) : chip("Cuotas aprobadas", aprobadas),
         chip("Carga SAC", tieneValor(ec.fecha_carga) ? formatFecha(ec.fecha_carga) : null)
     ].join("");
-    const modo = estado.modo === "capital" ? "capital" : "total";
-    const segmento = estado.tab === "cuotas" && ec.disponible ? `<div class="crm-segmento" role="group" aria-label="Qué monto mostrar">
-            <button type="button" data-ec-modo="total" aria-pressed="${modo === "total"}">Total de la cuota <small>con cargos</small></button>
-            <button type="button" data-ec-modo="capital" aria-pressed="${modo === "capital"}">Solo capital</button>
+    const vista = estado.vista === "desglose" ? "desglose" : "resumen";
+    const segmento = estado.tab === "cuotas" && ec.disponible ? `<div class="crm-segmento" role="group" aria-label="Cómo ver las cuotas">
+            <button type="button" data-ec-vista="resumen" aria-pressed="${vista === "resumen"}">Resumen <small>capital + seguro</small></button>
+            <button type="button" data-ec-vista="desglose" aria-pressed="${vista === "desglose"}">Desglose <small>capital, seguro, intereses</small></button>
         </div>` : "";
     document.getElementById("estadoCuentaBarraCRM").innerHTML = `<div class="crm-chips">${chips}</div>${segmento}`;
-    const cuerpo = estado.tab === "campanas" ? renderEstadoCuentaCampanasCRM(item, ec) : renderEstadoCuentaCuotasCRM(item, ec, modo, estado.hasta || 0);
+    const cuerpo = estado.tab === "campanas" ? renderEstadoCuentaCampanasCRM(item, ec) : renderEstadoCuentaCuotasCRM(item, ec, vista, estado.hasta || 0);
     document.getElementById("estadoCuentaCuerpoCRM").innerHTML = cuerpo;
 }
 
@@ -927,48 +953,64 @@ function textoQuedaConCRM(fila) {
     return `Queda con ${format(fila.queda_con_dias)} días de atraso${fila.queda_con_estimado ? " (aprox.)" : ""}`;
 }
 
-function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
+function renderEstadoCuentaCuotasCRM(item, ec, vista = "resumen", hastaPedido = 0) {
     if (!ec.disponible) {
         return `<div class="crm-modal-aviso"><strong>No se puede mostrar el estado de cuenta.</strong><span>${h(ec.motivo || "Sin información suficiente en la carga SAC.")}</span></div>`;
     }
-    const { filas, totales } = calcularEstadoCuentaCRM(ec, modo);
-    const filasTotal = calcularEstadoCuentaCRM(ec, "total").filas;
+    const { filas, totales } = calcularEstadoCuentaCRM(ec);
     if (!filas.length) return `<div class="crm-modal-aviso"><strong>La carga SAC no trae cuotas atrasadas para esta operación.</strong></div>`;
+    const desgloseVista = vista === "desglose";
     const conc = ec.conciliacion || {};
     const hasta = Math.min(Math.max(Number(hastaPedido) || 0, 0), filas.length - 1);
     const sel = filas[hasta];
-    const etiquetaModo = modo === "capital" ? "capital" : "total";
     const aprobadas = ec.cuotas_aprobadas_asignacion ?? item.cuotas_aprobadas;
-    const sumaMostrada = modo === "capital" ? totales.capital : totales.total;
+    const sol = valor => valor === null || valor === undefined ? "—" : `S/ ${montoEntero(valor)}`;
     const cifra = (etiqueta, valor, sub, clase = "") => `<div class="crm-ec-cifra${clase ? ` ${clase}` : ""}"><span>${h(etiqueta)}</span><b>${h(valor)}</b>${tieneValor(sub) ? `<small>${h(sub)}</small>` : ""}</div>`;
     const resumen = `<div class="crm-ec-resumen">
-        ${cifra(`Vencido en la carga (${etiquetaModo})`, sumaMostrada === null ? "—" : `S/ ${montoEntero(sumaMostrada)}`, `${filas.length} cuota${filas.length === 1 ? "" : "s"}`)}
+        ${cifra("Mínimo a cobrar · capital + seguro", sol(totales.minimo), `Piso de cobro: requiere aprobación de la sectorista; por debajo se escala. Total con intereses: ${sol(totales.total)} · ${filas.length} cuota${filas.length === 1 ? "" : "s"}`, "is-minimo")}
         ${cifra("Días de atraso hoy", tieneValor(ec.dias_atraso_hoy) ? format(ec.dias_atraso_hoy) : "—", tieneValor(filas[0].fecha_vencimiento) ? `Desde ${formatFecha(filas[0].fecha_vencimiento)}` : null, "is-alerta")}
         ${cifra("Cuotas vencidas", tieneValor(conc.cuotas_vencidas) ? `${format(conc.cuotas_vencidas)}${tieneValor(aprobadas) ? ` de ${format(aprobadas)}` : ""}` : "—", `Más antigua: N.° ${format(filas[0].numero)}`)}
-        ${cifraCobroEstadoCuentaCRM(cifra, sel, filasTotal[hasta], ec)}
+        ${cifraCobroEstadoCuentaCRM(cifra, sel, ec)}
     </div>`;
     const faltan = conc.completo === false && tieneValor(conc.cuotas_vencidas) ? Math.max(0, Number(conc.cuotas_vencidas) - Number(conc.cuotas_en_sac || 0)) : 0;
     const aviso = faltan ? `<div class="crm-modal-aviso crm-ec-aviso"><strong>La carga trae ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} cuotas vencidas.</strong><span>Faltan las ${h(format(faltan))} más recientes: lo que debe el cliente es mayor que lo que se ve aquí, y no se puede calcular con cuántos días queda después de pagar.</span></div>` : "";
     const rango = i => `rango-${Math.min(i, 2)}`;
-    const desglose = fila => Object.entries(fila.componentes_cargos || {}).map(([nombre, valor]) => `${nombre}: ${tieneValor(valor) ? montoPlano(valor) : "—"}`).join(" · ");
+    const desgloseCargos = fila => Object.entries(fila.componentes_cargos || {}).map(([nombre, valor]) => `${nombre}: ${tieneValor(valor) ? montoPlano(valor) : "—"}`).join(" · ");
     const sim = fila => !ec.simulacion_disponible || !tieneValor(fila.queda_con_dias) ? "—"
         : Number(fila.queda_con_dias) === 0 ? `<b class="crm-ec-aldia">Al día</b>` : `<b>${h(format(fila.queda_con_dias))}</b> días${fila.queda_con_estimado ? " ≈" : ""}`;
     const estimada = fila => fila.fecha_estimada ? ` <span class="crm-ec-estimada" title="Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua">≈</span>` : "";
+    const seguroAjustado = Boolean(ec.seguro_ajustado_por_asignacion);
+    const fuenteSeguro = fila => fila.seguro_fuente === "ASIGNACION"
+        ? ` (según asignación; la carga SAC trae ${tieneValor(fila.seguro_sac) ? money(fila.seguro_sac) : "—"})`
+        : seguroAjustado ? " (según carga SAC; puede faltar seguro pendiente)" : "";
+    const tituloMinimo = fila => `Capital ${money(fila.capital)} + seguro ${tieneValor(fila.seguro) ? money(fila.seguro) : "—"}${fuenteSeguro(fila)}`;
+    const marcaSeguro = fila => seguroAjustado && fila.seguro_fuente !== "ASIGNACION" ? `<sup class="crm-ec-marca-seguro" title="Seguro según carga SAC; puede faltar seguro pendiente">*</sup>` : "";
+    const celdas = fila => desgloseVista ? `
+            <td data-label="Capital" title="${attr(money(fila.capital))}"><span>${sol(fila.capitalMostrado)}</span></td>
+            <td data-label="Seguro" title="${attr(tieneValor(fila.seguro) ? `${money(fila.seguro)}${fuenteSeguro(fila)}` : "Sin seguro en la carga")}"><span>${sol(fila.seguroMostrado)}${fila.seguro_fuente === "ASIGNACION" ? `<small class="crm-ec-fuente">asignación</small>` : marcaSeguro(fila)}</span></td>
+            <td data-label="Intereses, moras y gastos" title="${attr(desgloseCargos(fila))}"><span>${sol(fila.otrosMostrado)}</span></td>
+            <td class="crm-ec-total" data-label="Total cuota" title="${attr(money(fila.total))}"><span>${sol(fila.totalMostrado)}</span></td>
+            <td class="crm-ec-acumulado" data-label="Acumulado total"><span>${sol(fila.acumuladoTotal)}</span></td>` : `
+            <td class="crm-ec-minimo" data-label="Capital + seguro" title="${attr(tituloMinimo(fila))}"><span>${sol(fila.minimoMostrado)}${marcaSeguro(fila)}</span></td>
+            <td class="crm-ec-total" data-label="Total cuota" title="${attr(money(fila.total))}"><span>${sol(fila.totalMostrado)}</span></td>
+            <td class="crm-ec-acumulado crm-ec-minimo" data-label="Acumulado capital + seguro"><span>${sol(fila.acumuladoMinimo)}</span></td>
+            <td class="crm-ec-acumulado" data-label="Acumulado total"><span>${sol(fila.acumuladoTotal)}</span></td>`;
     const filasHtml = filas.map((fila, i) => `<tr class="${i <= hasta ? "is-incluida" : ""}" data-ec-hasta="${i}" tabindex="0" aria-label="Ver cuánto paga si cubre hasta la cuota ${attr(fila.numero)}">
             <td class="crm-ec-numero" data-label="Cuota"><span><i class="crm-ec-marca" aria-hidden="true"></i>N.° ${h(format(fila.numero))}</span></td>
             <td class="crm-ec-izq" data-label="Vence"><span>${tieneValor(fila.fecha_vencimiento) ? formatFecha(fila.fecha_vencimiento) : "—"}${estimada(fila)}</span></td>
-            <td class="${fila.por_vencer ? "crm-ec-por-vencer" : rango(i)}" data-label="Días vencida"><span>${fila.por_vencer ? "Por vencer" : tieneValor(fila.dias_vencida) ? `${format(fila.dias_vencida)}${fila.fecha_estimada ? "≈" : ""}` : "—"}</span></td>
-            <td data-label="Capital" title="${attr(money(fila.capital))}"><span>${fila.capitalMostrado === null ? "—" : `S/ ${montoEntero(fila.capitalMostrado)}`}</span></td>
-            <td data-label="Intereses, moras y gastos" title="${attr(desglose(fila))}"><span>${fila.cargosMostrado === null ? "—" : `S/ ${montoEntero(fila.cargosMostrado)}`}</span></td>
-            <td class="crm-ec-total" data-label="Total cuota" title="${attr(money(fila.total))}"><span>${fila.totalMostrado === null ? "—" : `S/ ${montoEntero(fila.totalMostrado)}`}</span></td>
-            <td class="crm-ec-acumulado" data-label="Acumulado (${etiquetaModo})"><span>S/ ${montoEntero(fila.acumulado)}</span></td>
+            <td class="${fila.por_vencer ? "crm-ec-por-vencer" : rango(i)}" data-label="Días vencida"><span>${fila.por_vencer ? "Por vencer" : tieneValor(fila.dias_vencida) ? `${format(fila.dias_vencida)}${fila.fecha_estimada ? "≈" : ""}` : "—"}</span></td>${celdas(fila)}
             <td class="crm-ec-con-campana" data-label="Con campaña"><span>${celdaCobroCampanaCRM(fila.cobro)}</span></td>
             <td data-label="Si paga hasta aquí"><span>${sim(fila)}</span></td>
         </tr>`).join("");
+    const columnas = desgloseVista ? 10 : 9;
     const ultimo = filas[filas.length - 1].numero;
-    const faltantesHtml = Array.from({ length: Math.min(faltan, 12) }, (_, k) => `<tr class="crm-ec-falta"><td class="crm-ec-numero" data-label="Cuota"><span>N.° ${h(format(Number(ultimo) + k + 1))}</span></td><td class="crm-ec-izq" colspan="8"><span>No viene en la carga SAC (solo trae 3 cuotas)</span></td></tr>`).join("");
-    const solTotal = valor => valor === null ? "—" : `S/ ${montoEntero(valor)}`;
-    const pie = `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td>${solTotal(totales.capital)}</td><td>${solTotal(totales.cargos)}</td><td>${solTotal(totales.total)}</td><td colspan="3"></td></tr></tfoot>`;
+    const faltantesHtml = Array.from({ length: Math.min(faltan, 12) }, (_, k) => `<tr class="crm-ec-falta"><td class="crm-ec-numero" data-label="Cuota"><span>N.° ${h(format(Number(ultimo) + k + 1))}</span></td><td class="crm-ec-izq" colspan="${columnas - 1}"><span>No viene en la carga SAC (solo trae 3 cuotas)</span></td></tr>`).join("");
+    const pie = desgloseVista
+        ? `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td>${sol(totales.capital)}</td><td>${sol(totales.seguro)}</td><td>${sol(totales.otros)}</td><td>${sol(totales.total)}</td><td colspan="3"></td></tr></tfoot>`
+        : `<tfoot><tr><th scope="row" colspan="3">Total en la carga</th><td class="crm-ec-minimo">${sol(totales.minimo)}</td><td>${sol(totales.total)}</td><td colspan="4"></td></tr></tfoot>`;
+    const encabezado = desgloseVista
+        ? `<th scope="col">Capital</th><th scope="col">Seguro</th><th scope="col">Intereses, moras<small>y gastos</small></th><th scope="col">Total cuota</th><th scope="col">Acumulado<small>total</small></th>`
+        : `<th scope="col" class="crm-ec-minimo">Capital + seguro<small>mínimo a cobrar</small></th><th scope="col">Total cuota<small>con intereses y gastos</small></th><th scope="col" class="crm-ec-minimo">Acumulado<small>capital + seguro</small></th><th scope="col">Acumulado<small>total</small></th>`;
     const ok = valor => valor ? "is-ok" : "is-no";
     const conciliacion = `<div class="crm-ec-conciliacion" aria-label="Conciliación con la asignación">
         ${tieneValor(conc.cuotas_vencidas) ? `<span class="${ok(conc.completo)}"><i aria-hidden="true">${conc.completo ? "✓" : "!"}</i>Cuotas en la carga: ${h(format(conc.cuotas_en_sac))} de ${h(format(conc.cuotas_vencidas))} vencidas</span>` : ""}
@@ -981,12 +1023,13 @@ function renderEstadoCuentaCuotasCRM(item, ec, modo, hastaPedido) {
         <span class="crm-leyenda-item"><i class="rango-2"></i>Subsiguiente</span>
         <span>Toca una fila para ver cuánto paga si cubre hasta esa cuota y con cuántos días de atraso queda.</span>
         ${filas.some(f => f.fecha_estimada) ? `<span>≈ Fecha estimada: la carga solo trae el vencimiento de la cuota más antigua; las siguientes se proyectan cada ${h(format(ec.meses_entre_cuotas_estimado))} mes (por confirmar).</span>` : ""}
-        <span>Intereses, moras y gastos = CT k1 a k5; el desglose y los montos exactos aparecen al pasar el cursor. Montos redondeados hacia arriba al sol.</span>
+        <span>Capital + seguro es el piso de cobro: el seguro va sí o sí; cobrar ese mínimo requiere aprobación de la sectorista y por debajo se escala. Intereses, moras y gastos = CT k2 a k5 (detalle en Desglose y al pasar el cursor). Montos redondeados hacia arriba al sol.</span>
+        ${seguroAjustado ? `<span>El seguro se toma de la asignación cuando es mayor que el de la carga SAC (la carga no trae todo el seguro pendiente). * = seguro según la carga; puede faltar seguro pendiente.</span>` : ""}
     </footer>`;
     return `${resumen}${aviso}
         <section class="crm-ec-panel" aria-label="Cuotas vencidas">
             <table class="crm-ec-tabla">
-                <thead><tr><th scope="col" class="crm-ec-izq">Cuota</th><th scope="col" class="crm-ec-izq">Vence</th><th scope="col">Días vencida</th><th scope="col">Capital</th><th scope="col">Intereses, moras<small>y gastos</small></th><th scope="col">Total cuota</th><th scope="col">Acumulado<small>${h(etiquetaModo)}</small></th><th scope="col">Con campaña<small>a cobrar</small></th><th scope="col">Si paga hasta aquí<small>queda con</small></th></tr></thead>
+                <thead><tr><th scope="col" class="crm-ec-izq">Cuota</th><th scope="col" class="crm-ec-izq">Vence</th><th scope="col">Días vencida</th>${encabezado}<th scope="col">Con campaña<small>a cobrar</small></th><th scope="col">Si paga hasta aquí<small>queda con</small></th></tr></thead>
                 <tbody>${filasHtml}${faltantesHtml}</tbody>${pie}
             </table>
         </section>
@@ -1005,14 +1048,15 @@ function celdaCobroCampanaCRM(cobro) {
     return `<b>S/ ${montoEntero(montoArriba(cobro.monto))}</b><small>${h(etiqueta)}</small>`;
 }
 
-function cifraCobroEstadoCuentaCRM(cifra, sel, selTotal, ec) {
+function cifraCobroEstadoCuentaCRM(cifra, sel, ec) {
     const queda = ec.simulacion_disponible ? textoQuedaConCRM(sel) : `Días resultantes: no se pueden calcular. ${ec.simulacion_motivo || ""}`;
+    const sol = valor => tieneValor(valor) ? `S/ ${montoEntero(valor)}` : "—";
+    const referencias = `mínimo ${sol(sel.acumuladoMinimo)} · total ${sol(sel.acumuladoTotal)}`;
     const cobro = sel.cobro;
     if (cobro && tieneValor(cobro.monto) && (cobro.tipo === "CAPITAL" || cobro.tipo === "INTERESES")) {
-        const sinCampana = selTotal && tieneValor(selTotal.acumulado) ? ` · sin campaña S/ ${montoEntero(selTotal.acumulado)}` : "";
-        return cifra(`A cobrar hasta la N.° ${format(sel.numero)} · ${cobro.porcentaje || cobro.regla}`, `S/ ${montoEntero(montoArriba(cobro.monto))}`, `${cobro.regla}${sinCampana}. ${queda}`, "is-cobrar");
+        return cifra(`A cobrar hasta la N.° ${format(sel.numero)} · ${cobro.porcentaje || cobro.regla}`, `S/ ${montoEntero(montoArriba(cobro.monto))}`, `${cobro.regla} · sin campaña: ${referencias}. ${queda}`, "is-cobrar");
     }
-    return cifra(`Si paga hasta la N.° ${format(sel.numero)}`, `S/ ${montoEntero(sel.acumulado)}`, queda, "is-cobrar");
+    return cifra(`Si paga hasta la N.° ${format(sel.numero)} · capital + seguro`, sol(sel.acumuladoMinimo), `Total con intereses: ${sol(sel.acumuladoTotal)}. ${queda}`, "is-cobrar");
 }
 
 function verificacionCampanaCRM(c) {
@@ -1234,8 +1278,8 @@ function configurarConsultaCompartamos() {
         if (event.target.closest("[data-cerrar-estado-cuenta]") || event.target.id === "estadoCuentaModalCRM") { cerrarEstadoCuentaCRM(); return; }
         const tabEstadoCuenta = event.target.closest("[data-ec-tab]");
         if (tabEstadoCuenta) { cambiarEstadoCuentaCRM({ tab: tabEstadoCuenta.dataset.ecTab }); return; }
-        const modoEstadoCuenta = event.target.closest("[data-ec-modo]");
-        if (modoEstadoCuenta) { cambiarEstadoCuentaCRM({ modo: modoEstadoCuenta.dataset.ecModo }); return; }
+        const vistaEstadoCuenta = event.target.closest("[data-ec-vista]");
+        if (vistaEstadoCuenta) { cambiarEstadoCuentaCRM({ vista: vistaEstadoCuenta.dataset.ecVista }); return; }
         const filaEstadoCuenta = event.target.closest("[data-ec-hasta]");
         if (filaEstadoCuenta) { cambiarEstadoCuentaCRM({ hasta: Number(filaEstadoCuenta.dataset.ecHasta) }); return; }
         const fila = event.target.closest("[data-cuenta-index]");

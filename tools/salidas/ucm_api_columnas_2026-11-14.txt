@@ -1,0 +1,45 @@
+API https://bzncob.omnitel.pe/api/v1.3.1/gestiones · fecha 2026-11-14 · 20,794 llamadas · 18 columnas
+
+COLUMNAS
+- anexo | tipo object | distintos 26 | vacíos 0 | ej. ['0', '0', '0']
+- campana | tipo str | distintos 15 | vacíos 0 | ej. ['1311 HISTORICOS CAMP+100 RCC4 FONO V', '1311 HISTORICOS CAMP+100 RCC4 FONO V', '1311 HISTORICOS CAMP+100 RCC4 FONO V']
+- canal | tipo str | distintos 1 | vacíos 0 | ej. ['PREDICTIVO', 'PREDICTIVO', 'PREDICTIVO']
+- cartera | tipo str | distintos 15 | vacíos 0 | ej. ['COMPARTAMOS|CASTIGO_CSM|1311 HISTORICOS CAMP+100 RCC4 FONO V|COMPARTAMOS CASTIGO_CSM', 'COMPARTAMOS|CASTIGO_CSM|1311 HISTORICOS CAMP+100 RCC4 FONO V|COMPARTAMOS CASTIGO_CSM', 'COMPARTAMOS|CASTIGO_CSM|1311 HISTORICOS CAMP+100 RCC4 FONO V|COMPARTAMOS CASTIGO_CSM']
+- causa | tipo str | distintos 4 | vacíos 0 | ej. ['Normal Clearing', 'Normal Clearing', 'OK']
+- corta | tipo str | distintos 3 | vacíos 0 | ej. ['PREDICTIVO', 'PREDICTIVO', 'PREDICTIVO']
+- disposition | tipo str | distintos 3 | vacíos 0 | ej. ['ANSWERED', 'ANSWERED', 'NO ANSWER']
+- duration | tipo int64 | distintos 169 | vacíos 0 | ej. ['39', '17', '11']
+- end | tipo str | distintos 9,145 | vacíos 0 | ej. ['2026-11-14 08:08:52', '2026-11-14 08:08:30', '2026-11-14 08:08:24']
+- estado | tipo str | distintos 6 | vacíos 0 | ej. ['BUZON', 'BUZON', 'APAGADO']
+- gestion | tipo str | distintos 3 | vacíos 0 | ej. ['Contestadora', 'Contestadora', 'Telefono no contesta']
+- habla | tipo int64 | distintos 93 | vacíos 0 | ej. ['0', '0', '0']
+- idcliente | tipo str | distintos 14,795 | vacíos 0 | ej. ['2450821', '2547929', '2540927']
+- idp | tipo str | distintos 15 | vacíos 0 | ej. ['6af720aae3d3bf29ae5369cd', '6af720aae3d3bf29ae5369cd', '6af720aae3d3bf29ae5369cd']
+- start | tipo str | distintos 4,515 | vacíos 0 | ej. ['2026-11-14 08:08:13', '2026-11-14 08:08:13', '2026-11-14 08:08:13']
+- subcartera | tipo str | distintos 6 | vacíos 0 | ej. ['695bc12c0506c35d3c623f06', '695bc12c0506c35d3c623f06', '695bc12c0506c35d3c623f06']
+- supervisor | tipo str | distintos 6 | vacíos 0 | ej. ['COMPARTAMOS CASTIGO_CSM', 'COMPARTAMOS CASTIGO_CSM', 'COMPARTAMOS CASTIGO_CSM']
+- telefono | tipo str | distintos 17,533 | vacíos 0 | ej. ['956751875', '951968211', '901201311']
+
+COLUMNAS DE TEXTO CON POCOS VALORES (candidatas a nombre de base, campaña o lista)
+
+## anexo (26 valores distintos)
+     20,048  0
+         94  870
+         81  867
+         74  978
+         61  877
+         50  505
+         43  364
+         42  975
+         39  359
+         35  878
+         35  506
+         30  137
+         21  209
+         20  969
+         18  860
+         17  350
+         17  365
+         16  360
+         12  138
+         10  211

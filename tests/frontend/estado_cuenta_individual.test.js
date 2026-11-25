@@ -19,9 +19,9 @@ const ec = {
     aplica: true, disponible: true, cartera: "Individual", tabla_asignacion: "compartamos_individual",
     dias_atraso_hoy: 85, simulacion_disponible: true, meses_entre_cuotas_estimado: 1,
     cuotas: [
-        { numero: 7, fecha_vencimiento: "2026-08-15", fecha_estimada: false, dias_vencida: 85, capital: 410.35, cargos: 80.08, total: 490.43, queda_con_dias: 54, queda_con_estimado: true, componentes_cargos: { "CT 11": 52.18 } },
-        { numero: 8, fecha_vencimiento: "2026-09-15", fecha_estimada: true, dias_vencida: 54, capital: 418.92, cargos: 52.30, total: 471.22, queda_con_dias: 24, queda_con_estimado: true, componentes_cargos: {} },
-        { numero: 9, fecha_vencimiento: "2026-10-15", fecha_estimada: true, dias_vencida: 24, capital: 427.63, cargos: null, total: 427.63, queda_con_dias: 0, queda_con_estimado: false, componentes_cargos: {} },
+        { numero: 7, fecha_vencimiento: "2026-08-15", fecha_estimada: false, dias_vencida: 85, capital: 410.35, cargos: 80.08, seguro: 6.50, total: 490.43, queda_con_dias: 54, queda_con_estimado: true, componentes_cargos: { "CT 11": 52.18 } },
+        { numero: 8, fecha_vencimiento: "2026-09-15", fecha_estimada: true, dias_vencida: 54, capital: 418.92, cargos: 52.30, seguro: 6.50, total: 471.22, queda_con_dias: 24, queda_con_estimado: true, componentes_cargos: {} },
+        { numero: 9, fecha_vencimiento: "2026-10-15", fecha_estimada: true, dias_vencida: 24, capital: 427.63, cargos: null, seguro: null, total: 427.63, queda_con_dias: 0, queda_con_estimado: false, componentes_cargos: {} },
     ],
     conciliacion: { cuotas_en_sac: 3, cuotas_vencidas: 3, completo: true, capital_vencido: 1256.90, suma_capital_cuotas: 1256.90, diferencia_capital: 0, cuadra_capital: true },
     campanas: { disponible: true, cuotas: [{ cuotas: 1, porcentaje: "20%", monto: 328.28 }, { cuotas: 2, porcentaje: null, monto: null }, { cuotas: 3, porcentaje: null, monto: null }, { cuotas: 4, porcentaje: "35%", monto: 900 }], cancelacion: { porcentaje: "45%", monto: 2189.22 } },
@@ -30,20 +30,22 @@ const ec = {
 radar.ecPrueba = ec;
 // Los objetos vienen de otro contexto vm: se comparan como JSON.
 const plano = valor => JSON.parse(JSON.stringify(valor));
-const calcular = modo => plano(vm.runInContext(`calcularEstadoCuentaCRM(ecPrueba, "${modo}")`, radar));
+const calculo = plano(vm.runInContext(`calcularEstadoCuentaCRM(ecPrueba)`, radar));
 
 // Capital y cargos se suben al sol por separado; el total mostrado es su suma (la fila cuadra).
-const total = calcular("total");
-assert.deepEqual(total.filas.map(f => [f.capitalMostrado, f.cargosMostrado, f.totalMostrado]), [[411, 81, 492], [419, 53, 472], [428, null, 428]]);
-assert.deepEqual(total.filas.map(f => f.acumulado), [492, 964, 1392]);
-assert.deepEqual(total.totales, { capital: 1258, cargos: 134, total: 1392 });
-
-// Solo capital: el acumulado suma capital mostrado.
-assert.deepEqual(calcular("capital").filas.map(f => f.acumulado), [411, 830, 1258]);
+assert.deepEqual(calculo.filas.map(f => [f.capitalMostrado, f.cargosMostrado, f.totalMostrado]), [[411, 81, 492], [419, 53, 472], [428, null, 428]]);
+assert.deepEqual(calculo.filas.map(f => f.acumuladoTotal), [492, 964, 1392]);
+// Mínimo = capital + seguro ya sumado (416.85 -> 417, 425.42 -> 426, 427.63 sin seguro -> 428).
+assert.deepEqual(calculo.filas.map(f => f.minimoMostrado), [417, 426, 428]);
+// Acumulado del mínimo sobre la suma exacta: 416.85 -> 417; 842.27 -> 843; 1269.90 -> 1270.
+assert.deepEqual(calculo.filas.map(f => f.acumuladoMinimo), [417, 843, 1270]);
+// Desglose: seguro = mínimo − capital mostrado; intereses y gastos = total − mínimo. Cada fila cuadra.
+assert.deepEqual(calculo.filas.map(f => [f.capitalMostrado, f.seguroMostrado, f.otrosMostrado, f.totalMostrado]), [[411, 6, 75, 492], [419, 7, 46, 472], [428, null, null, 428]]);
+assert.deepEqual(calculo.totales, { capital: 1258, seguro: 13, otros: 121, cargos: 134, total: 1392, minimo: 1270 });
 
 // Sin cuotas: totales nulos, no cero.
 radar.ecVacio = { cuotas: [] };
-assert.deepEqual(plano(vm.runInContext(`calcularEstadoCuentaCRM(ecVacio, "total").totales`, radar)), { capital: null, cargos: null, total: null });
+assert.deepEqual(plano(vm.runInContext(`calcularEstadoCuentaCRM(ecVacio).totales`, radar)), { capital: null, seguro: null, otros: null, cargos: null, total: null, minimo: null });
 
 // Texto de días resultantes.
 assert.equal(vm.runInContext(`textoQuedaConCRM({queda_con_dias: 0})`, radar), "Queda al día");
@@ -54,28 +56,33 @@ assert.equal(vm.runInContext(`textoQuedaConCRM({queda_con_dias: null})`, radar),
 assert.equal(vm.runInContext(`renderBotonEstadoCuentaCRM({operacion: "1", estado_cuenta: {aplica: false}})`, radar), "");
 assert.match(vm.runInContext(`renderBotonEstadoCuentaCRM({operacion: "3021004587", estado_cuenta: {aplica: true}})`, radar), /data-abrir-estado-cuenta="3021004587"/);
 
-// Pestaña de cuotas: selección "hasta la N.° 8" muestra el acumulado y los días resultantes.
-const cuotasHtml = vm.runInContext(`renderEstadoCuentaCuotasCRM({cuotas_aprobadas: 12}, ecPrueba, "total", 1)`, radar);
-assert.match(cuotasHtml, /Si paga hasta la N\.° 8/);
-assert.match(cuotasHtml, /S\/ 964/);
+// Resumen (vista principal): "hasta la N.° 8" muestra el mínimo (capital + seguro), el total y los días resultantes.
+const cuotasHtml = vm.runInContext(`renderEstadoCuentaCuotasCRM({cuotas_aprobadas: 12}, ecPrueba, "resumen", 1)`, radar);
+assert.match(cuotasHtml, /Si paga hasta la N\.° 8 · capital \+ seguro/);
+assert.match(cuotasHtml, /<b>S\/ 843<\/b>/);
+assert.match(cuotasHtml, /Total con intereses: S\/ 964/);
 assert.match(cuotasHtml, /Queda con 24 días de atraso \(aprox\.\)/);
+assert.match(cuotasHtml, /Mínimo a cobrar · capital \+ seguro<\/span><b>S\/ 1,270<\/b>/);
+assert.match(cuotasHtml, /requiere aprobación de la sectorista; por debajo se escala/);
+assert.match(cuotasHtml, /Capital \+ seguro<small>mínimo a cobrar/);
+assert.doesNotMatch(cuotasHtml, />Seguro</);
 assert.equal((cuotasHtml.match(/class="is-incluida"/g) || []).length, 2);
 
 // Carga incompleta: aviso, filas faltantes y sin simulación.
 radar.ecIncompleto = { ...ec, simulacion_disponible: false, simulacion_motivo: "Faltan cuotas vencidas en la carga.",
     conciliacion: { ...ec.conciliacion, cuotas_vencidas: 5, completo: false, cuadra_capital: false, capital_vencido: 1689.09, diferencia_capital: 432.19 } };
-const incompleto = vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecIncompleto, "total", 0)`, radar);
+const incompleto = vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecIncompleto, "resumen", 0)`, radar);
 assert.match(incompleto, /La carga trae 3 de 5 cuotas vencidas/);
 assert.equal((incompleto.match(/crm-ec-falta/g) || []).length, 2);
 assert.match(incompleto, /Días resultantes: no se pueden calcular/);
 
 // No disponible: muestra el motivo del backend.
 radar.ecNoDisponible = { aplica: true, disponible: false, motivo: "La operación no figura en la carga SAC del día." };
-assert.match(vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecNoDisponible, "total", 0)`, radar), /no figura en la carga SAC/);
+assert.match(vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecNoDisponible, "resumen", 0)`, radar), /no figura en la carga SAC/);
 
 // Campañas (regla 11/11/2026). Payload generado por construir_estado_cuenta con los montos del caso
 // verificado contra el cronograma del banco (cuotas 10 y 11; 5% Capital; cancelación 20% Capital).
-radar.ecBanco = {"aplica": true, "disponible": true, "motivo": null, "fuente": "SAC_CAR_BIZNESCOB", "cartera": "Individual", "tabla_asignacion": "compartamos_individual", "cuotas_aprobadas_asignacion": 12, "cuotas_pagadas_asignacion": 9, "campanas": {"disponible": true, "cuotas": [{"cuotas": 1, "porcentaje": "5% Capital", "tipo": "CAPITAL", "descuento": 5.0, "regla": "Capital − 5%", "aplica": true, "motivo": null, "monto_asignacion": 193.9235, "monto_calculado": 193.9235, "coincide": true, "monto": 193.9235}, {"cuotas": 2, "porcentaje": "5% Capital", "tipo": "CAPITAL", "descuento": 5.0, "regla": "Capital − 5%", "aplica": true, "motivo": null, "monto_asignacion": 399.9215, "monto_calculado": 399.9215, "coincide": true, "monto": 399.9215}, {"cuotas": 3, "porcentaje": "Sin Campania", "tipo": "SIN_CAMPANA", "descuento": null, "regla": "Cuota completa", "aplica": false, "motivo": "El cliente tiene 2 cuotas vencidas.", "monto_asignacion": null, "monto_calculado": null, "coincide": null, "monto": null}, {"cuotas": 4, "porcentaje": "Sin Campania", "tipo": "SIN_CAMPANA", "descuento": null, "regla": "Cuota completa", "aplica": false, "motivo": "El cliente tiene 2 cuotas vencidas.", "monto_asignacion": null, "monto_calculado": null, "coincide": null, "monto": null}], "cancelacion": {"porcentaje": "20% Capital", "tipo": "CAPITAL", "descuento": 20.0, "regla": "Saldo capital − 20%", "base_capital": 660.64, "monto_asignacion": 528.512, "monto_calculado": 528.512, "coincide": true, "monto": 528.512}}, "meses_entre_cuotas_estimado": 1, "cuotas": [{"numero": 10, "posicion_ct": 1, "fecha_vencimiento": "2026-09-21", "fecha_estimada": false, "dias_vencida": 51, "por_vencer": false, "capital": 204.13, "cargos": 59.22, "total": 263.35, "componentes_cargos": {"CT 11": 1.0, "CT 12": 0.0, "CT 13": 33.87, "CT 14": 19.82, "CT 15": 4.53}, "queda_con_dias": 21, "queda_con_estimado": true, "cobro": {"cuotas": 1, "porcentaje": "5% Capital", "tipo": "CAPITAL", "regla": "Capital − 5%", "monto": 193.9235, "coincide": true}}, {"numero": 11, "posicion_ct": 2, "fecha_vencimiento": "2026-10-21", "fecha_estimada": true, "dias_vencida": 21, "por_vencer": false, "capital": 216.84, "cargos": 32.6, "total": 249.44, "componentes_cargos": {"CT 21": 1.0, "CT 22": 0.0, "CT 23": 21.16, "CT 24": 8.36, "CT 25": 2.08}, "queda_con_dias": 0, "queda_con_estimado": false, "cobro": {"cuotas": 2, "porcentaje": "5% Capital", "tipo": "CAPITAL", "regla": "Capital − 5%", "monto": 399.9215, "coincide": true}}], "advertencias": [], "cuota_mas_atrasada": 10, "dias_atraso_hoy": 51, "fecha_carga": null, "fecha_corte": "2026-11-11", "fecha_corte_fuente": "UltFecVen + DiasAtraso", "totales": {"capital": 420.97, "cargos": 91.82, "total": 512.79}, "conciliacion": {"cuotas_en_sac": 2, "cuotas_vencidas": 2, "completo": true, "capital_vencido": 420.97, "suma_capital_cuotas": 420.97, "diferencia_capital": 0.0, "cuadra_capital": true}, "simulacion_disponible": true, "simulacion_motivo": null};
+radar.ecBanco = {"aplica": true, "disponible": true, "motivo": null, "fuente": "SAC_CAR_BIZNESCOB", "cartera": "Individual", "tabla_asignacion": "compartamos_individual", "cuotas_aprobadas_asignacion": 12, "cuotas_pagadas_asignacion": 9, "campanas": {"disponible": true, "cuotas": [{"cuotas": 1, "porcentaje": "5% Capital", "tipo": "CAPITAL", "descuento": 5.0, "regla": "Capital − 5%", "aplica": true, "motivo": null, "monto_asignacion": 193.9235, "monto_calculado": 193.9235, "coincide": true, "monto": 193.9235, "monto_fuente": "ASIGNACION"}, {"cuotas": 2, "porcentaje": "5% Capital", "tipo": "CAPITAL", "descuento": 5.0, "regla": "Capital − 5%", "aplica": true, "motivo": null, "monto_asignacion": 399.9215, "monto_calculado": 399.9215, "coincide": true, "monto": 399.9215, "monto_fuente": "ASIGNACION"}, {"cuotas": 3, "porcentaje": "Sin Campania", "tipo": "SIN_CAMPANA", "descuento": null, "regla": "Cuota completa", "aplica": false, "motivo": "El cliente tiene 2 cuotas vencidas.", "monto_asignacion": null, "monto_calculado": null, "coincide": null, "monto": null, "monto_fuente": null}, {"cuotas": 4, "porcentaje": "Sin Campania", "tipo": "SIN_CAMPANA", "descuento": null, "regla": "Cuota completa", "aplica": false, "motivo": "El cliente tiene 2 cuotas vencidas.", "monto_asignacion": null, "monto_calculado": null, "coincide": null, "monto": null, "monto_fuente": null}], "cancelacion": {"porcentaje": "20% Capital", "tipo": "CAPITAL", "descuento": 20.0, "regla": "Saldo capital − 20%", "base_capital": 660.64, "monto_asignacion": 528.512, "monto_calculado": 528.512, "coincide": true, "monto": 528.512, "monto_fuente": "ASIGNACION"}}, "meses_entre_cuotas_estimado": 1, "cuotas": [{"numero": 10, "posicion_ct": 1, "fecha_vencimiento": "2026-09-21", "fecha_estimada": false, "dias_vencida": 51, "por_vencer": false, "capital": 204.13, "cargos": 59.22, "seguro": 1.0, "total": 263.35, "componentes_cargos": {"CT 11": 1.0, "CT 12": 0.0, "CT 13": 33.87, "CT 14": 19.82, "CT 15": 4.53}, "queda_con_dias": 21, "queda_con_estimado": true, "cobro": {"cuotas": 1, "porcentaje": "5% Capital", "tipo": "CAPITAL", "regla": "Capital − 5%", "monto": 193.9235, "monto_fuente": "ASIGNACION", "coincide": true}}, {"numero": 11, "posicion_ct": 2, "fecha_vencimiento": "2026-10-21", "fecha_estimada": true, "dias_vencida": 21, "por_vencer": false, "capital": 216.84, "cargos": 32.6, "seguro": 1.0, "total": 249.44, "componentes_cargos": {"CT 21": 1.0, "CT 22": 0.0, "CT 23": 21.16, "CT 24": 8.36, "CT 25": 2.08}, "queda_con_dias": 0, "queda_con_estimado": false, "cobro": {"cuotas": 2, "porcentaje": "5% Capital", "tipo": "CAPITAL", "regla": "Capital − 5%", "monto": 399.9215, "monto_fuente": "ASIGNACION", "coincide": true}}], "advertencias": [], "cuota_mas_atrasada": 10, "dias_atraso_hoy": 51, "fecha_carga": null, "fecha_corte": "2026-11-11", "fecha_corte_fuente": "UltFecVen + DiasAtraso", "totales": {"capital": 420.97, "cargos": 91.82, "total": 512.79}, "conciliacion": {"cuotas_en_sac": 2, "cuotas_vencidas": 2, "completo": true, "capital_vencido": 420.97, "suma_capital_cuotas": 420.97, "diferencia_capital": 0.0, "cuadra_capital": true}, "simulacion_disponible": true, "simulacion_motivo": null};
 const campanas = vm.runInContext(`renderEstadoCuentaCampanasCRM({capital: 660.64}, ecBanco)`, radar);
 assert.match(campanas, /Capital − 5%/);
 assert.match(campanas, /S\/ 194/);          // 193.9235 -> 194
@@ -85,10 +92,11 @@ assert.equal((campanas.match(/✓ Coincide/g) || []).length, 3);
 assert.equal((campanas.match(/El cliente tiene 2 cuotas vencidas/g) || []).length, 2);
 
 // Tabla de cuotas: columna "Con campaña" y cifra "A cobrar hasta la N.° 11".
-const cuotasBanco = vm.runInContext(`renderEstadoCuentaCuotasCRM({cuotas_aprobadas: 12}, ecBanco, "total", 1)`, radar);
+const cuotasBanco = vm.runInContext(`renderEstadoCuentaCuotasCRM({cuotas_aprobadas: 12}, ecBanco, "resumen", 1)`, radar);
 assert.match(cuotasBanco, /A cobrar hasta la N\.° 11 · 5% Capital/);
 assert.match(cuotasBanco, /S\/ 400/);
-assert.match(cuotasBanco, /sin campaña S\/ 515/);   // (205 + 60) + (217 + 33): capital y cargos suben al sol por separado
+// Sin campaña: mínimo (204.13 + 1) + (216.84 + 1) = 422.97 -> 423; total (205 + 60) + (217 + 33) = 515.
+assert.match(cuotasBanco, /sin campaña: mínimo S\/ 423 · total S\/ 515/);
 assert.match(cuotasBanco, /<b>S\/ 194<\/b><small>5% Capital<\/small>/);
 
 // Sin campaña: la cifra vuelve al acumulado de la cuota completa.
@@ -102,5 +110,30 @@ assert.match(mayorAsig, /Se cobra el mayor \(asignación\)/);
 assert.match(mayorAsig, /Cálculo hoy: S\/ 119\.27/);
 const mayorCalc = vm.runInContext(`verificacionCampanaCRM({coincide: false, monto_fuente: "CALCULO", monto_asignacion: 190, monto_calculado: 193.92})`, radar);
 assert.match(mayorCalc, /Se cobra el mayor \(cálculo de hoy\)/);
+
+// Desglose con el caso del banco: capital, seguro e intereses por separado; la fila y el pie cuadran.
+const desgloseBanco = vm.runInContext(`renderEstadoCuentaCuotasCRM({cuotas_aprobadas: 12}, ecBanco, "desglose", 0)`, radar);
+assert.match(desgloseBanco, /<th scope="col">Seguro<\/th>/);
+assert.match(desgloseBanco, /data-label="Seguro"[^>]*><span>S\/ 1<\/span>/);
+assert.match(desgloseBanco, /data-label="Intereses, moras y gastos"[^>]*><span>S\/ 59<\/span>/);   // 265 − 206
+assert.match(desgloseBanco, /<td>S\/ 422<\/td><td>S\/ 2<\/td><td>S\/ 91<\/td><td>S\/ 515<\/td>/);
+
+// Seguro completo desde la asignación (24/11/2026): cuota con 397.48 de capital y seguro 14.86 (SAC trae 4.86).
+radar.ecSeguro = { ...ec, seguro_ajustado_por_asignacion: true, cuotas: [
+    { ...ec.cuotas[0], numero: 5, capital: 397.48, cargos: 258.10, seguro: 14.86, seguro_sac: 4.86, seguro_fuente: "ASIGNACION", total: 655.58 },
+    { ...ec.cuotas[1], numero: 6, capital: 430.36, cargos: 162.10, seguro: 3.80, seguro_sac: 3.80, seguro_fuente: "SAC", total: 592.46 },
+] };
+const conSeguro = plano(vm.runInContext(`calcularEstadoCuentaCRM(ecSeguro)`, radar));
+assert.deepEqual(conSeguro.filas.map(f => f.minimoMostrado), [413, 435]);   // 397.48 + 14.86 = 412.34 -> 413 (= "100% Intereses")
+assert.deepEqual(conSeguro.filas.map(f => f.acumuladoMinimo), [413, 847]);   // 412.34 + 434.16 = 846.50 -> 847
+assert.deepEqual(conSeguro.filas.map(f => [f.capitalMostrado, f.seguroMostrado, f.otrosMostrado, f.totalMostrado]), [[398, 15, 244, 657], [431, 4, 159, 594]]);
+const seguroHtml = vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecSeguro, "resumen", 0)`, radar);
+assert.match(seguroHtml, /según asignación; la carga SAC trae S\/ 4\.86/);
+assert.equal((seguroHtml.match(/crm-ec-marca-seguro/g) || []).length, 1);   // solo la cuota con seguro de SAC
+assert.match(seguroHtml, /El seguro se toma de la asignación cuando es mayor/);
+assert.match(vm.runInContext(`renderEstadoCuentaCuotasCRM({}, ecSeguro, "desglose", 0)`, radar), /<small class="crm-ec-fuente">asignación<\/small>/);
+// El total nunca queda por debajo del piso capital + seguro.
+radar.ecPiso = { ...ec, cuotas: [{ ...ec.cuotas[0], capital: 100, cargos: 2, seguro: 20, total: 102 }] };
+assert.deepEqual(plano(vm.runInContext(`calcularEstadoCuentaCRM(ecPiso)`, radar)).filas.map(f => [f.minimoMostrado, f.totalMostrado, f.otrosMostrado]), [[120, 120, 0]]);
 
 console.log("estado_cuenta_individual.test.js OK");

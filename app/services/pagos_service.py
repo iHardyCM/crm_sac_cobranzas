@@ -22,6 +22,9 @@ FORMATS = {
         "required": ["USU_FIN", "PAG_REA_SOL", "FEC_ULT_PAG", "COD_CLI"],
         "filter_col": "USU_FIN",
         "filter_val": "BIZNESCOB",
+        # 16/11/2026: MiBanco envía también "BIZNESCOB - IRRE" (cartera nuestra, cruza con la asignación).
+        # Se acepta todo USU_FIN que empiece con BIZNESCOB; el texto completo queda en usuario_asignado.
+        "filter_prefijo": True,
         "monto": "PAG_REA_SOL",
         "monto_original": "PAG_REA",
         "fecha": "FEC_ULT_PAG",
@@ -383,7 +386,11 @@ def validar_columnas(df: pd.DataFrame, required: List[str]):
 def aplicar_filtros_formato(df: pd.DataFrame, formato: str, config: Dict) -> pd.DataFrame:
     col = obtener_columna_real(df, config["filter_col"])
     valor = config["filter_val"]
-    filtrado = df[df[col].astype(str).str.strip().str.upper() == valor.upper()].copy()
+    usuarios = df[col].astype(str).str.strip().str.upper()
+    if config.get("filter_prefijo"):
+        filtrado = df[usuarios.str.startswith(valor.upper())].copy()
+    else:
+        filtrado = df[usuarios == valor.upper()].copy()
 
     if formato == "INTERBANK":
         periodo = obtener_columna_real(filtrado, "PERIODOCAMPAÑA")
@@ -570,14 +577,10 @@ def identificar_cartera_mibanco(row, df) -> Tuple[Optional[int], Optional[str]]:
             except Exception:
                 pass
 
-    cod_cli = valor_texto(row, df, "COD_CLI")
-
-    if cod_cli:
-        match = re.search(r"(112|143|135)", cod_cli)
-        if match:
-            return int(match.group(1)), None
-
-    return 112, "No se identifico cartera MIBANCO; se asigno 112 por defecto."
+    # 16/11/2026: ya no se busca 112/143/135 dentro de COD_CLI (un código como 11431234 iba a la 143 por
+    # contener "143"). Sin columna de cartera, todo MiBanco castigo va a la 112. Si vuelve a existir otra
+    # cartera (la 143 se dividió por cuentas o por tramo de castigo), hay que definir esa regla aquí.
+    return 112, None
 
 
 def obtener_fecha_pago(row, df, config: Dict):

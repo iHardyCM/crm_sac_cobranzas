@@ -767,6 +767,9 @@ function renderResultadoIa(data) {
     setText("resultadoNivelIa", formatearRiesgoVisibleIa(data.nivel_oportunidad_mejora));
     setText("resumenIa", data.resumen || "-");
     setText("tipoContactoIa", data.tipo_contacto || "-");
+    // Quién contestó (titular / tercero), con la frase que lo sustenta al pasar el mouse
+    setText("interlocutorIa", ({ TITULAR: "Titular", TERCERO: "Tercero" })[String(data.interlocutor || "").toUpperCase()] || "Sin identificar");
+    document.getElementById("interlocutorIa")?.setAttribute("title", data.interlocutor_evidencia || "");
     setText("resultadoGestionIa", data.resultado_gestion || "-");
     setText("objecionIa", data.objecion_principal || "-");
     const scoreMostrado = data.score_final ?? data.score_normalizado ?? data.score_calidad;
@@ -3667,11 +3670,14 @@ function actualizarResumenFiltrosIa() {
         ["Riesgo", textoFiltroSelectIa("filtroRiesgoIa")],
         ["Resultado", textoFiltroSelectIa("filtroResultadoIa")],
         ["Tipo", textoFiltroSelectIa("filtroTipoLlamadaIa")],
+        ["Interlocutor", textoFiltroSelectIa("filtroInterlocutorIa")],
         ["Revisión", textoFiltroSelectIa("filtroRevisionIa")],
         ["Error crítico", textoFiltroSelectIa("filtroErrorCriticoIa")],
         ["Plan", textoFiltroSelectIa("filtroCoachingIa")],
         ["Calibración", textoFiltroSelectIa("filtroCalibracionIa")],
     ].filter(([, value]) => value);
+    // Lista completa para los archivos exportados (los chips muestran solo 5).
+    window.filtrosResumenIa = filtros;
     const chips = document.getElementById("chipsFiltrosIa");
     if (chips) {
         chips.innerHTML = filtros.length
@@ -3862,7 +3868,7 @@ function porcentajeObservadasIa(data) {
 }
 
 function prepararFiltrosReporteIa() {
-    ["filtroCarteraIa", "filtroSupervisorIa", "filtroAgenteIa", "filtroBusquedaEvaluacionIa", "filtroRiesgoIa", "filtroResultadoIa", "filtroTipoLlamadaIa", "filtroRevisionIa", "filtroErrorCriticoIa", "filtroCoachingIa", "filtroCalibracionIa"].forEach(id => {
+    ["filtroCarteraIa", "filtroSupervisorIa", "filtroAgenteIa", "filtroBusquedaEvaluacionIa", "filtroRiesgoIa", "filtroResultadoIa", "filtroTipoLlamadaIa", "filtroInterlocutorIa", "filtroRevisionIa", "filtroErrorCriticoIa", "filtroCoachingIa", "filtroCalibracionIa"].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const evento = el.tagName === "INPUT" ? "input" : "change";
@@ -3923,6 +3929,7 @@ function aplicarFiltrosDetalleSinFechaIa(items) {
     const riesgo = valor("filtroRiesgoIa").toLowerCase();
     const resultado = valor("filtroResultadoIa").toLowerCase();
     const tipoLlamada = valor("filtroTipoLlamadaIa").toLowerCase();
+    const interlocutor = valor("filtroInterlocutorIa").toUpperCase();
     const revision = valor("filtroRevisionIa").toLowerCase();
     const errorCritico = valor("filtroErrorCriticoIa").toLowerCase();
     const coaching = valor("filtroCoachingIa").toLowerCase();
@@ -3935,6 +3942,7 @@ function aplicarFiltrosDetalleSinFechaIa(items) {
         if (riesgo && nivelRiesgoDetalleIa(item).toLowerCase() !== riesgo) return false;
         if (resultado && resultadoIaDetalle(item).toLowerCase() !== resultado) return false;
         if (tipoLlamada && !String(item.tipo_llamada || "").toLowerCase().includes(tipoLlamada)) return false;
+        if (interlocutor && String(item.interlocutor || "SIN_IDENTIFICAR").toUpperCase() !== interlocutor) return false;
         if (revision === "revision_humana") {
             if (!item.requiere_revision_humana) return false;
         } else if (revision && String(item.estado_revision || "PENDIENTE").toLowerCase() !== revision) return false;
@@ -4021,6 +4029,7 @@ function aplicarFiltrosDetalleIa(items) {
     const riesgo = valor("filtroRiesgoIa").toLowerCase();
     const resultado = valor("filtroResultadoIa").toLowerCase();
     const tipoLlamada = valor("filtroTipoLlamadaIa").toLowerCase();
+    const interlocutor = valor("filtroInterlocutorIa").toUpperCase();
     const revision = valor("filtroRevisionIa").toLowerCase();
     const errorCritico = valor("filtroErrorCriticoIa").toLowerCase();
     const coaching = valor("filtroCoachingIa").toLowerCase();
@@ -4038,6 +4047,7 @@ function aplicarFiltrosDetalleIa(items) {
         if (riesgo && nivelRiesgoDetalleIa(item).toLowerCase() !== riesgo) return false;
         if (resultado && resultadoIaDetalle(item).toLowerCase() !== resultado) return false;
         if (tipoLlamada && !String(item.tipo_llamada || "").toLowerCase().includes(tipoLlamada)) return false;
+        if (interlocutor && String(item.interlocutor || "SIN_IDENTIFICAR").toUpperCase() !== interlocutor) return false;
         if (revision === "revision_humana") {
             if (!item.requiere_revision_humana) return false;
         } else if (revision && String(item.estado_revision || "PENDIENTE").toLowerCase() !== revision) return false;
@@ -4643,6 +4653,7 @@ function limpiarFiltrosReporteIa() {
     setValue("filtroRiesgoIa", "");
     setValue("filtroResultadoIa", "");
     setValue("filtroTipoLlamadaIa", "");
+    setValue("filtroInterlocutorIa", "");
     setValue("filtroRevisionIa", "");
     setValue("filtroErrorCriticoIa", "");
     setValue("filtroCoachingIa", "");

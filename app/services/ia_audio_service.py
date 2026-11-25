@@ -261,6 +261,19 @@ def ensure_tabla_feedback():
             ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
             ADD requiere_coaching BIT DEFAULT 0;
 
+        -- 16/11/2026: quién contestó (TITULAR / TERCERO / SIN_IDENTIFICAR), ver ia_interlocutor.py
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'interlocutor') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD interlocutor VARCHAR(20) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'interlocutor_origen') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD interlocutor_origen VARCHAR(10) NULL;
+
+        IF COL_LENGTH('CobAuto.dbo.ia_feedback_llamadas', 'interlocutor_evidencia') IS NULL
+            ALTER TABLE CobAuto.dbo.ia_feedback_llamadas
+            ADD interlocutor_evidencia NVARCHAR(500) NULL;
+
         IF OBJECT_ID('CobAuto.dbo.ia_feedback_recalibraciones', 'U') IS NULL
         BEGIN
             CREATE TABLE CobAuto.dbo.ia_feedback_recalibraciones (
@@ -691,7 +704,7 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             puntos_criticos, estado_revision, falta_anulante, error_critico,
             estado_recalibracion, estado_coaching, resumen_sgc, estado_feedback,
             requiere_feedback, requiere_coaching, fecha_coaching,
-            score_calibrado, origen_score
+            score_calibrado, origen_score, interlocutor, interlocutor_origen, interlocutor_evidencia
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE {where_sql}
         ORDER BY fecha_creacion DESC, id_feedback DESC
@@ -793,6 +806,9 @@ def obtener_reporteria_calidad(limit: int = 300, supervisor: Optional[str] = Non
             "requiere_feedback": bool(row_data.get("requiere_feedback")),
             "requiere_coaching": bool(row_data.get("requiere_coaching")),
             "fecha_coaching": serializar({"fecha": row.get("fecha_coaching")}).get("fecha"),
+            "interlocutor": row.get("interlocutor") or "SIN_IDENTIFICAR",
+            "interlocutor_origen": row.get("interlocutor_origen"),
+            "interlocutor_evidencia": row.get("interlocutor_evidencia"),
         })
 
         # La llamada aparece en el detalle -es real y hay que poder verla- pero
@@ -966,7 +982,7 @@ def obtener_feedback(id_feedback: int) -> Dict:
             estado_coaching, fecha_coaching, responsable_coaching, compromiso_agente, resultado_coaching,
             resumen_sgc, estado_feedback, requiere_feedback, requiere_coaching,
             fecha_creacion, fecha_analisis, fecha_revision,
-            score_calibrado, origen_score
+            score_calibrado, origen_score, interlocutor, interlocutor_origen, interlocutor_evidencia
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE id_feedback = :id_feedback
     """)
@@ -1160,6 +1176,16 @@ def guardar_analisis(id_feedback: int, analisis: Dict):
             "requiere_coaching": 1 if resumen_sgc.get("requiere_coaching") else 0,
             "estado_feedback": "PENDIENTE" if resumen_sgc.get("requiere_feedback") else "NO_REQUIERE",
         })
+    # Quién contestó (titular / tercero): etiqueta descriptiva, no toca la nota. Un fallo no tumba el análisis.
+    try:
+        from app.services.ia_interlocutor import clasificar_interlocutor, guardar_interlocutor
+        inter = analisis.get("interlocutores") if isinstance(analisis.get("interlocutores"), dict) else {}
+        segmentos_inter = analisis.get("segmentos_interlocutores") or inter.get("segmentos") or []
+        with engine_siscob.begin() as conn:
+            guardar_interlocutor(conn, id_feedback, clasificar_interlocutor(segmentos_inter, analisis.get("tipo_contacto")))
+    except Exception:
+        logger.exception("[INTERLOCUTOR] no se pudo etiquetar la llamada (feedback=%s)", id_feedback)
+
     # La evaluacion por criterio se persiste aqui, al cerrar el analisis. Si la
     # llamada ya tenia sus criterios escritos, esto NO los pisa (inmutabilidad).
     # Un fallo aqui no puede tumbar el analisis, que ya quedo guardado arriba:

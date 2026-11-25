@@ -7,8 +7,8 @@
     <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
     <style>html.crm-boot body{visibility:hidden}</style>
     <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
-    <link rel="stylesheet" href="../css/app_layout.css?v=6b163cde8e">
-    <link rel="stylesheet" href="../css/ia_feedback.css?v=9ca9b0c9d5">
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+    <link rel="stylesheet" href="../css/ia_feedback.css?v=38149d9109">
     <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
@@ -110,6 +110,15 @@
                     <option>Confirmacion de pago</option>
                     <option>Recordatorio</option>
                     <option>Informativa</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="filtroInterlocutorIa">Interlocutor</label>
+                <select id="filtroInterlocutorIa" title="Quién contestó la llamada, según lo analizado">
+                    <option value="">Todos</option>
+                    <option value="TITULAR">Titular</option>
+                    <option value="TERCERO">Tercero</option>
+                    <option value="SIN_IDENTIFICAR">Sin identificar</option>
                 </select>
             </div>
             <div class="field">
@@ -405,6 +414,7 @@
                                         <div><span>Supervisor</span><strong id="trazaSupervisorIa">-</strong></div>
                                         <div><span>Revisión</span><strong id="trazaRevisionIa">PENDIENTE</strong></div>
                                         <div><span>Tipo contacto</span><strong id="tipoContactoIa">-</strong></div>
+                                        <div><span>Interlocutor</span><strong id="interlocutorIa">-</strong></div>
                                         <div><span>Objecion principal</span><strong id="objecionIa">-</strong></div>
                                         <div><span>Recalibración</span><strong id="estadoRecalibracionIa">SIN APELACIÓN</strong></div>
                                     </div>
@@ -1295,9 +1305,9 @@
         </section>
     </main>
 
-    <script src="../js/session.js?v=60298e1520"></script>
-    <script src="../js/app_layout.js?v=38918d1f6e"></script>
-    <script src="../js/ia_feedback.js?v=8d35ba65e5"></script>
-    <script src="../js/ia_feedback_vistas.js?v=ebbd7deb33"></script>
+    <script src="../js/session.js?v=887ddef4f1"></script>
+    <script src="../js/app_layout.js?v=0c35600ffc"></script>
+    <script src="../js/ia_feedback.js?v=c6ab7f7665"></script>
+    <script src="../js/ia_feedback_vistas.js?v=9b19c4713b"></script>
 </body>
 </html>

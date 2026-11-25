@@ -7,8 +7,8 @@
     <!-- Oculta el body hasta que app_layout.js monte menú y cabecera (evita ver la página sin shell). Respaldo: se muestra a los 3 s. -->
     <style>html.crm-boot body{visibility:hidden}</style>
     <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
-    <link rel="stylesheet" href="../css/app_layout.css?v=5a19c55d9c">
-    <link rel="stylesheet" href="../css/control_horario.css?v=82736eee87">
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+    <link rel="stylesheet" href="../css/control_horario.css?v=121df03971">
     <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 <body>
@@ -57,7 +57,7 @@
             <input id="filtroApoyoRecupero" type="checkbox" onchange="cambiarApoyoRecupero()">
             <span>
                 <strong>Incluir apoyo operativo</strong>
-                <small>ADM, supervisor y jefe como agentes.</small>
+                <small>Otros perfiles con actividad propia.</small>
             </span>
         </label>
     </section>
@@ -269,8 +269,8 @@
     </div>
 </div>
 
-<script src="../js/session.js?v=60298e1520"></script>
-    <script src="../js/app_layout.js?v=876e8f616f"></script>
-<script src="../js/control_horario.js?v=fcfe6fe7d8"></script>
+<script src="../js/session.js?v=887ddef4f1"></script>
+    <script src="../js/app_layout.js?v=0c35600ffc"></script>
+<script src="../js/control_horario.js?v=81584b5875"></script>
 </body>
 </html>

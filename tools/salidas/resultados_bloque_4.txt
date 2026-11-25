@@ -1,0 +1,304 @@
+﻿Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 112         65324       136
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 65324              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   112         65188       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           112         65188
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 5               112         MANUAL       REAL       <71333556>                                                                                                                       2026-11-14 20:21:28         2026-11-14 20:23:24         OK           FIN                  2026-11-13     1           65188       136         0            6             9           88                 11          No se pudo alinear con producción; se usó la copia local. Cannot insert the value NULL into column 'CambiosTimbra', table 'CobAuto.score.AlineacionAtributoEjecucion'; column does not allow nulls. INSERT fails.
+
+IdCartera   UltimaActualizacion         Usuario                                                                                                                          Origen       HistorialHasta Version     Telefonos   Excluidos   Aviso                                                                                                                                                                                                                                                            Segundos    EnCurso
+----------- --------------------------- -------------------------------------------------------------------------------------------------------------------------------- ------------ -------------- ----------- ----------- ----------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ----------- -------
+112         2026-11-14 20:23:24         <71333556>                                                                                                                       MANUAL       2026-11-13     1           65188       136         No se pudo alinear con producción; se usó la copia local. Cannot insert the value NULL into column 'CambiosTimbra', table 'CobAuto.score.AlineacionAtributoEjecucion'; column does not allow nulls. INSERT fails.                                                116         0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Aviso: no se pudo alinear con producción: Cannot insert the value NULL into column 'CambiosTimbra', table 'CobAuto.score.AlineacionAtributoEjecucion'; column does not allow nulls. INSERT fails.
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 112         65324       136
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 65324              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   112         65188       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           112         65188
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 6               112         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:23:39         2026-11-14 20:25:30         OK           FIN                  2026-11-13     1           65188       136         0            NULL          8           94                 4           NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 117         17512       19
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 17512              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   117         17493       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           117         17493
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 7               117         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:25:30         2026-11-14 20:27:21         OK           FIN                  2026-11-13     1           17493       19          0            NULL          9           97                 3           NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 124         80489       9847
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 80489              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   124         70642       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           124         70642
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 8               124         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:27:21         2026-11-14 20:27:54         OK           FIN                  2026-11-13     1           70642       9847        0            NULL          6           11                 14          NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 126         28678       699
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 28678              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   126         27979       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           126         27979
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 9               126         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:27:54         2026-11-14 20:28:20         OK           FIN                  2026-11-13     1           27979       699         0            NULL          10          6                  10          NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 128         10808       266
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 10808              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   128         10542       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           128         10542
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 10              128         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:28:20         2026-11-14 20:28:28         OK           FIN                  2026-11-13     1           10542       266         0            NULL          4           1                  2           NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 132         105968      27
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 105968             0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   132         105941      NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           132         105941
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 11              132         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:28:28         2026-11-14 20:30:21         OK           FIN                  2026-11-13     1           105941      27          0            NULL          11          88                 11          NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 133         188564      4181
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 188564             0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   133         184383      NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           133         184383
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 12              133         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:30:21         2026-11-14 20:31:13         OK           FIN                  2026-11-13     1           184383      4181        0            NULL          14          11                 23          NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 137         25387       4
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 25387              0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   137         25383       NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           137         25383
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 13              137         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:31:13         2026-11-14 20:32:57         OK           FIN                  2026-11-13     1           25383       4           0            NULL          7           92                 4           NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 144         236939      12014
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 236939             0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   144         224925      NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           144         224925
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 14              144         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:32:57         2026-11-14 20:34:11         OK           FIN                  2026-11-13     1           224925      12014       0            NULL          16          13                 40          NULL
+
+Modo        IdCartera   filas       excluidos_lista_negra
+----------- ----------- ----------- ---------------------
+ACTUALIZADO 148         119760      15
+
+Fecha      filas_abiertas_hoy filas_cerradas_hoy
+---------- ------------------ ------------------
+2026-11-14 119760             0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Poblacion  IdCartera   filas       exitos      descartados_sin_atributos descartados_alta_desde_corte
+-------- ---------- ---------- ----------- ----------- ----------- ------------------------- ----------------------------
+GUARDADO 2026-11-14 UNIVERSO   148         119745      NULL        0                         0
+Warning: Null value is eliminated by an aggregate or other SET operation.
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo     FechaCorte Version     IdCartera   telefonos
+-------- ---------- ----------- ----------- -----------
+GUARDADO 2026-11-14 1           148         119745
+
+Resultado IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------- --------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TERMINADA 15              148         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:34:11         2026-11-14 20:36:14         OK           FIN                  2026-11-13     1           119745      15          0            NULL          14          94                 13          NULL
+
+IdCartera   Estado       Inicio                      Fin                         Segundos    Telefonos   Excluidos   HistorialHasta Mensaje
+----------- ------------ --------------------------- --------------------------- ----------- ----------- ----------- -------------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+112         OK           2026-11-14 20:23:39         2026-11-14 20:25:30         111         65188       136         2026-11-13     NULL
+117         OK           2026-11-14 20:25:30         2026-11-14 20:27:21         111         17493       19          2026-11-13     NULL
+124         OK           2026-11-14 20:27:21         2026-11-14 20:27:54         33          70642       9847        2026-11-13     NULL
+126         OK           2026-11-14 20:27:54         2026-11-14 20:28:20         26          27979       699         2026-11-13     NULL
+128         OK           2026-11-14 20:28:20         2026-11-14 20:28:28         8           10542       266         2026-11-13     NULL
+132         OK           2026-11-14 20:28:28         2026-11-14 20:30:21         113         105941      27          2026-11-13     NULL
+133         OK           2026-11-14 20:30:21         2026-11-14 20:31:13         52          184383      4181        2026-11-13     NULL
+137         OK           2026-11-14 20:31:13         2026-11-14 20:32:57         104         25383       4           2026-11-13     NULL
+144         OK           2026-11-14 20:32:57         2026-11-14 20:34:11         74          224925      12014       2026-11-13     NULL
+148         OK           2026-11-14 20:34:11         2026-11-14 20:36:14         123         119745      15          2026-11-13     NULL
+
+IdActualizacion IdCartera   Origen       Modo       Usuario                                                                                                                          Inicio                      Fin                         Estado       Paso                 HistorialHasta Version     Telefonos   Excluidos   SegHistorial SegAlineacion SegUniverso SegCaracteristicas SegScore    Mensaje
+--------------- ----------- ------------ ---------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------- --------------------------- ------------ -------------------- -------------- ----------- ----------- ----------- ------------ ------------- ----------- ------------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+15              148         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:34:11         2026-11-14 20:36:14         OK           FIN                  2026-11-13     1           119745      15          0            NULL          14          94                 13          NULL
+14              144         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:32:57         2026-11-14 20:34:11         OK           FIN                  2026-11-13     1           224925      12014       0            NULL          16          13                 40          NULL
+13              137         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:31:13         2026-11-14 20:32:57         OK           FIN                  2026-11-13     1           25383       4           0            NULL          7           92                 4           NULL
+12              133         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:30:21         2026-11-14 20:31:13         OK           FIN                  2026-11-13     1           184383      4181        0            NULL          14          11                 23          NULL
+11              132         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:28:28         2026-11-14 20:30:21         OK           FIN                  2026-11-13     1           105941      27          0            NULL          11          88                 11          NULL
+10              128         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:28:20         2026-11-14 20:28:28         OK           FIN                  2026-11-13     1           10542       266         0            NULL          4           1                  2           NULL
+9               126         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:27:54         2026-11-14 20:28:20         OK           FIN                  2026-11-13     1           27979       699         0            NULL          10          6                  10          NULL
+8               124         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:27:21         2026-11-14 20:27:54         OK           FIN                  2026-11-13     1           70642       9847        0            NULL          6           11                 14          NULL
+7               117         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:25:30         2026-11-14 20:27:21         OK           FIN                  2026-11-13     1           17493       19          0            NULL          9           97                 3           NULL
+6               112         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:23:39         2026-11-14 20:25:30         OK           FIN                  2026-11-13     1           65188       136         0            NULL          8           94                 4           NULL
+5               112         MANUAL       REAL       <71333556>                                                                                                                       2026-11-14 20:21:28         2026-11-14 20:23:24         OK           FIN                  2026-11-13     1           65188       136         0            6             9           88                 11          No se pudo alinear con producción; se usó la copia local. Cannot insert the value NULL into column 'CambiosTimbra', table 'CobAuto.score.AlineacionAtributoEjecucion'; column does not allow nulls. INSERT fails.
+4               117         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:19:55         2026-11-14 20:25:30         INTERRUMPIDA CARACTERISTICAS      2026-11-13     1           NULL        NULL        0            NULL          6           NULL               NULL        NULL
+3               112         PROGRAMADA   REAL       JOB                                                                                                                              2026-11-14 20:17:49         2026-11-14 20:19:55         OK           FIN                  2026-11-13     1           65188       136         0            NULL          8           104                12          NULL
+2               112         MANUAL       REAL       <71333556>                                                                                                                       2026-11-14 20:13:58         2026-11-14 20:17:27         OK           FIN                  2026-11-13     1           65188       136         1            9             11          177                5           No se pudo alinear con producción; se usó la copia local. Cannot insert the value NULL into column 'CambiosTimbra', table 'CobAuto.score.AlineacionAtributoEjecucion'; column does not allow nulls. INSERT fails.
+1               112         MANUAL       SIMULACION prueba                                                                                                                           2026-11-14 20:10:51         2026-11-14 20:11:44         SIMULADA     FIN                  2026-11-13     1           NULL        NULL        NULL         13            38          NULL               NULL        Simulación hasta el universo; características y score se calculan solo en modo real.
+
+
+Hora de finalización: 2026-11-14T20:36:35.9129758-05:00

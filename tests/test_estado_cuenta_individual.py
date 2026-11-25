@@ -235,6 +235,7 @@ class CampanasTest(unittest.TestCase):
         self.assertEqual([c["numero"] for c in ec["cuotas"]], [10, 11])
         self.assertEqual(ec["fecha_corte"], "2026-11-11")
         self.assertEqual([c["total"] for c in ec["cuotas"]], [263.35, 249.44])
+        self.assertEqual([c["seguro"] for c in ec["cuotas"]], [1.0, 1.0])  # CT 11 / CT 21
         c1, c2, c3, c4 = ec["campanas"]["cuotas"]
         self.assertEqual((c1["monto_calculado"], c1["coincide"]), (193.9235, True))
         self.assertEqual((c2["monto_calculado"], c2["coincide"]), (399.9215, True))
@@ -304,6 +305,30 @@ class CampanasTest(unittest.TestCase):
         self.assertTrue(ec["cuotas"][1]["por_vencer"])
         self.assertIsNone(ec["cuotas"][1]["cobro"])
         self.assertFalse(ec["campanas"]["cuotas"][1]["aplica"])
+
+    def test_seguro_completo_desde_la_asignacion(self):
+        # Montos del caso revisado el 24/11/2026 (identificadores ficticios): SAC trae 4.86 y 4.34 de seguro; la
+        # campaña "100% Intereses" de la asignación (412.34 y 842.40) implica 14.86 y 14.34. Se usa el mayor.
+        fila = sac_caso_banco(ult=5, venc=20260902, hoy=83, vencidas=3, capital_vencido=1243.56,
+                              ct={"CT 1": 397.48, "CT 2": 415.72, "CT 3": 430.36},
+                              cargos={"CT 11": 4.86, "CT 13": 200.0, "CT 14": 50.0, "CT 15": 3.24,
+                                      "CT 21": 4.34, "CT 23": 150.0, "CT 24": 40.0, "CT 25": 14.2,
+                                      "CT 31": 3.80, "CT 33": 120.0, "CT 34": 30.0, "CT 35": 8.3})
+        asig = asignacion_caso_banco(**{"Camp1Cuota%": "100% Intereses", "Campaña Final 1 Cuota": 412.34,
+                                         "Camp2Cuota%": "100% Intereses", "Campaña Final 2 Cuota": 842.40,
+                                         "Camp3Cuota%": "Sin Campania"})
+        ec = construir_estado_cuenta({**self.OP, "cuotas_vencidas": 3, "capital_vencido": 1243.56}, [fila], asig)
+        self.assertTrue(ec["seguro_ajustado_por_asignacion"])
+        self.assertEqual([c["seguro"] for c in ec["cuotas"]], [14.86, 14.34, 3.8])
+        self.assertEqual([c["seguro_sac"] for c in ec["cuotas"]], [4.86, 4.34, 3.8])
+        self.assertEqual([c["seguro_fuente"] for c in ec["cuotas"]], ["ASIGNACION", "ASIGNACION", "SAC"])
+        self.assertEqual([c["seguro_asignacion"] for c in ec["cuotas"]], [14.86, 14.34, None])
+        self.assertTrue(any("seguro pendiente que la carga SAC no trae" in a for a in ec["advertencias"]))
+
+    def test_seguro_de_sac_si_no_hay_100_intereses(self):
+        ec = construir_estado_cuenta(self.OP, [sac_caso_banco()], asignacion_caso_banco())  # 5% Capital
+        self.assertFalse(ec["seguro_ajustado_por_asignacion"])
+        self.assertEqual([c["seguro_fuente"] for c in ec["cuotas"]], ["SAC", "SAC"])
 
     def test_interpretar_campana(self):
         self.assertEqual(crm.interpretar_campana("45% Capital")["descuento"], 45.0)

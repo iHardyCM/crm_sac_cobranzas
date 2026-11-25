@@ -1,0 +1,153 @@
+﻿Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-01 5015          0              72416             39559       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-02 4549          51314          45088             31972       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-03 1743          17774          17111             17173       0
+
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-04 0             0              0                 0           0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-05 5752          59487          57404             42382       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-06 6180          92607          92444             45392       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-07 6871          76385          76734             40325       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-08 285           0              0                 259         0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-09 6214          88423          89506             48533       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-10 2953          35496          35463             20912       0
+
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-11 0             0              0                 0           0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-12 9616          144962         61560             61190       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-13 16378         268024         100641            57641       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-14 19813         53947          53946             46063       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-15 11110         85010          84838             38136       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-16 6082          95023          85424             47514       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-17 2594          24402          25695             18642       0
+
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-18 0             0              0                 0           0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-19 19705         80559          80568             44473       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-20 12629         116481         116527            45007       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-21 5804          83446          83097             32186       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-22 5604          93070          93228             39113       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-23 5691          89788          89757             43735       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-24 1908          33728          33728             24313       0
+
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-25 0             0              0                 0           0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-26 4491          60684          60692             31337       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-27 5847          79596          80197             33173       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-28 6801          58963          60344             36561       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-29 5876          60338          60427             36861       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-30 7773          36887          0                 19003       0
+
+Warning: Null value is eliminated by an aggregate or other SET operation.
+Modo    Fecha      EventosHumano EventosMaquina EventosCentralita Filas       EventosSinClasificar
+------- ---------- ------------- -------------- ----------------- ----------- --------------------
+CARGADO 2026-10-31 2207          23010          0                 15091       0
+
+
+Hora de finalización: 2026-11-14T13:08:15.1688055-05:00

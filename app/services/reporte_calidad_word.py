@@ -234,9 +234,14 @@ def construir_informe_individual_docx(payload: Dict) -> bytes:
     _espacio(d, 4)
 
     # --- datos
-    chips = _tabla(d, 1, [W * .44, W * .28, W * .28])
-    for c, (et, val) in zip(chips.rows[0].cells, (("AGENTE", meta_llamada.get("agente")), ("CARTERA", meta_llamada.get("cartera")),
-                                                  ("FECHA Y HORA", _fecha_hora(meta_llamada.get("fecha"))))):
+    datos = [("AGENTE", meta_llamada.get("agente")), ("CARTERA", meta_llamada.get("cartera")),
+             ("FECHA Y HORA", _fecha_hora(meta_llamada.get("fecha")))]
+    anchos = [W * .44, W * .28, W * .28]
+    if meta_llamada.get("interlocutor"):   # 16/11/2026: quién contestó (titular / tercero)
+        datos.append(("INTERLOCUTOR", meta_llamada.get("interlocutor")))
+        anchos = [W * .34, W * .22, W * .24, W * .20]
+    chips = _tabla(d, 1, anchos)
+    for c, (et, val) in zip(chips.rows[0].cells, datos):
         _fondo(c, SOFT); _bordes(c, top=(4, LINE), bottom=(4, LINE), left=(4, LINE), right=(4, LINE)); _margenes(c, 50, 60, 130, 100)
         _par(c, et, 6.5, MUTED, True, primero=True)
         _par(c, _txt(val), 10, NAVY, True)

@@ -66,6 +66,8 @@ def _contar_lista_json(valor) -> int:
 
 
 def obtener_reporteria_sql(limit: int = 300, supervisor: Optional[str] = None) -> Dict:
+    from app.services.ia_audio_service import ensure_tabla_feedback   # columnas nuevas (interlocutor)
+    ensure_tabla_feedback()
     t0 = time.perf_counter()
     filtros = ["estado = 'FINALIZADO'"]
     params: Dict = {"limit": int(limit)}
@@ -83,7 +85,8 @@ def obtener_reporteria_sql(limit: int = 300, supervisor: Optional[str] = None) -
             resultado_gestion, nivel_oportunidad_mejora, puntos_criticos,
             estado_revision, falta_anulante, error_critico,
             estado_recalibracion, estado_coaching, estado_feedback,
-            requiere_feedback, requiere_coaching, fecha_coaching
+            requiere_feedback, requiere_coaching, fecha_coaching,
+            interlocutor, interlocutor_origen, interlocutor_evidencia
         FROM CobAuto.dbo.ia_feedback_llamadas WITH(NOLOCK)
         WHERE {where_sql}
         ORDER BY fecha_creacion DESC, id_feedback DESC
@@ -195,6 +198,9 @@ def obtener_reporteria_sql(limit: int = 300, supervisor: Optional[str] = None) -
             "requiere_feedback": bool(row.get("requiere_feedback")),
             "requiere_coaching": bool(row.get("requiere_coaching")),
             "fecha_coaching": serializar({"f": row.get("fecha_coaching")})["f"],
+            "interlocutor": row.get("interlocutor") or "SIN_IDENTIFICAR",
+            "interlocutor_origen": row.get("interlocutor_origen"),
+            "interlocutor_evidencia": row.get("interlocutor_evidencia"),
             "brechas_items": [],
             "notas_segmento": {},
             "resumen_sgc": {},

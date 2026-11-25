@@ -920,6 +920,12 @@ function mostrarVistaCalibracionIa() {
 
 /* ------------------------------------------------------ Exportar a Excel */
 
+// Quién contestó (titular / tercero), tal como quedó etiquetado al analizar la llamada.
+const ETIQUETAS_INTERLOCUTOR_IA = { TITULAR: "Titular", TERCERO: "Tercero", SIN_IDENTIFICAR: "Sin identificar" };
+function interlocutorTextoIa(r) {
+    return ETIQUETAS_INTERLOCUTOR_IA[String(r?.interlocutor || "SIN_IDENTIFICAR").toUpperCase()] || "Sin identificar";
+}
+
 // El Excel se arma en el servidor con lo que esta pagina ya filtro y calculo:
 // asi el archivo y la pantalla no pueden contar historias distintas.
 function payloadExcelV2(detalle) {
@@ -935,6 +941,7 @@ function payloadExcelV2(detalle) {
             agente: agenteV2(r) || "Sin agente",
             supervisor: supervisorDe(r),
             tipo_llamada: r.tipo_llamada || "",
+            interlocutor: interlocutorTextoIa(r),
             nota: n,
             origen: n === null ? "No evaluable" : String(r.origen_score || "").toUpperCase() === "CALIBRACION" ? "Calibrada" : "IA",
             nota_ia: r.score_ia ?? null,
@@ -953,6 +960,7 @@ function payloadExcelV2(detalle) {
         agente: agenteV2(r) || "Sin agente",
         supervisor: supervisorDe(r),
         tipo_llamada: r.tipo_llamada || "",
+        interlocutor: interlocutorTextoIa(r),
         bloque: i.bloque,
         bloque_nombre: i.bloqueNombre,
         codigo: claveCriterioV2(i),
@@ -977,10 +985,12 @@ function payloadExcelV2(detalle) {
     const catalogo = [...criteriosTotal].sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }))
         .map(c => ({ codigo: c.clave, criterio: c.nombre }));
     const pareto = criteriosTotal.filter(c => c.brechas).sort((a, b) => b.brechas - a.brechas).map(c => ({ codigo: c.clave, criterio: c.nombre }));
-    const filtros = [...document.querySelectorAll("#chipsFiltrosIa span")]
-        .map(s => s.textContent.trim())
-        .filter(t => t.includes(":"))
-        .map(t => [t.slice(0, t.indexOf(":")).trim(), t.slice(t.indexOf(":") + 1).trim()]);
+    // Todos los filtros aplicados (los chips de pantalla muestran solo 5).
+    const filtros = Array.isArray(window.filtrosResumenIa) ? window.filtrosResumenIa.map(([a, b]) => [a, String(b)])
+        : [...document.querySelectorAll("#chipsFiltrosIa span")]
+            .map(s => s.textContent.trim())
+            .filter(t => t.includes(":"))
+            .map(t => [t.slice(0, t.indexOf(":")).trim(), t.slice(t.indexOf(":") + 1).trim()]);
     return {
         generado_por: localStorage.getItem("agente") || "",
         periodo: document.getElementById("periodoHeaderIa")?.textContent?.trim() || "",
@@ -1064,7 +1074,8 @@ function payloadInformeIndividualIa() {
         tipo: "INDIVIDUAL",
         formato: "PDF",
         score_vigente: score,
-        meta: { agente: data.agente || "Sin asignar", cartera: data.cartera || "—", fecha: data.fecha_llamada || data.fecha_creacion || "—" },
+        meta: { agente: data.agente || "Sin asignar", cartera: data.cartera || "—", fecha: data.fecha_llamada || data.fecha_creacion || "—",
+                interlocutor: interlocutorTextoIa(data) },
         resumen: data.resumen || "Sin resumen registrado.",
         criterios,
         fortalezas: aTexto(data.fortalezas_lista || data.fortalezas),
@@ -1075,7 +1086,7 @@ function payloadInformeIndividualIa() {
         evaluaciones: [{
             id_feedback: data.id_feedback, fecha: data.fecha_llamada || data.fecha_creacion || "",
             cartera: data.cartera || "", agente: data.agente || "", supervisor: data.supervisor || "",
-            tipo_llamada: data.tipo_llamada || "", nota: score, origen: data.origen_score || "IA",
+            tipo_llamada: data.tipo_llamada || "", interlocutor: interlocutorTextoIa(data), nota: score, origen: data.origen_score || "IA",
             nota_ia: data.score_ia ?? null, evaluable: score == null ? "No" : "Sí",
             error_critico: data.error_critico ? "Sí" : "No", estado_revision: data.estado_revision || "",
             ia_pide_revision: data.requiere_revision_humana ? "Sí" : "No", brechas: brechas.join("; "),

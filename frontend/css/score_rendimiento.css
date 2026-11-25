@@ -1,0 +1,122 @@
+/* frontend/css/score_rendimiento.css — Rendimiento del score (usa las clases base de score_telefonico.css) */
+
+.sr-page { background: linear-gradient(180deg, #eef3f9 0, #f5f8fc 320px); }
+.sr-cabecera { gap: 18px; }
+.sr-campo { display: flex; flex-direction: column; }
+.sr-select-cartera { min-width: 280px; height: 36px; }
+.sr-volver { margin-left: auto; }
+.sr-rango { display: block; color: #52677f; line-height: 1.5; }
+.sr-rango small { color: #8796a8; }
+
+.sr-tabs { display: inline-flex; padding: 3px; border-radius: 10px; background: #e6edf5; gap: 2px; }
+.sr-tab, .sr-dias {
+    height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent;
+    font: inherit; font-size: 13px; font-weight: 600; color: #52677f; cursor: pointer;
+}
+.sr-tabs-sm .sr-tab { height: 26px; padding: 0 10px; font-size: 12px; }
+.sr-tab.active { background: #fff; color: #0a66d8; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+.sr-periodo { display: inline-flex; align-items: center; gap: 4px; }
+.sr-periodo .st-label { margin: 0 4px 0 0; }
+.sr-dias { border: 1px solid rgba(148, 163, 184, .45); background: #fff; height: 28px; padding: 0 10px; }
+.sr-dias.active { background: #e8f1fd; border-color: #0a66d8; color: #0a66d8; }
+.sr-inline { display: inline-flex; align-items: center; gap: 6px; }
+.sr-inline .st-label { margin: 0; }
+
+.sr-filtros-cab { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.sr-filtros-cab small { color: #66778b; }
+.sr-filtros-grid { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.sr-filtro .st-label { margin-bottom: 3px; }
+.sr-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.sr-pill {
+    height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, .5);
+    background: #fff; color: #33475e; font: inherit; font-size: 12px; cursor: pointer;
+}
+.sr-pill:hover { border-color: #0a66d8; }
+.sr-pill.on { background: #0a66d8; border-color: #0a66d8; color: #fff; }
+
+.sr-lectura { padding: 10px 14px; border-radius: 12px; background: #e8f1fd; border: 1px solid #c9dcf5; color: #12406e; line-height: 1.6; }
+.sr-avisos { padding: 10px 14px; border-radius: 12px; background: #fff6e8; border: 1px solid #f3d9a8; color: #7a4a00; line-height: 1.5; }
+
+/* Glosario */
+.sr-glosario { background: #fff; border: 1px solid rgba(148, 163, 184, .27); border-radius: 12px; padding: 8px 14px; }
+.sr-glosario summary { cursor: pointer; font-weight: 700; color: #21557f; }
+.sr-glosario dl { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; margin: 10px 0 4px; }
+.sr-glosario dt { font-weight: 700; color: #12243a; }
+.sr-glosario dd { margin: 0; color: #43566c; line-height: 1.45; }
+.sr-s { display: inline-block; padding: 1px 8px; border-radius: 6px; margin-right: 4px; font-size: 12px; }
+
+/* Tarjetas con color por sección */
+.sr-card { border-top: 4px solid #0a66d8; }
+.sr-c2 { border-top-color: #7c5cd6; }
+.sr-c3 { border-top-color: #e08a00; }
+.sr-c4 { border-top-color: #15a06a; }
+.sr-desglose-cab { justify-content: flex-start; align-items: center; flex-wrap: wrap; }
+.sr-ayuda { margin: 2px 0 8px; color: #66778b; font-size: 12px; }
+.sr-ayuda:empty { display: none; }
+
+/* Tablas */
+.sr-tabla-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e1e8f0; }
+.sr-tabla { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sr-tabla th, .sr-tabla td { padding: 7px 10px; border-bottom: 1px solid #e9eef4; white-space: nowrap; }
+.sr-tabla thead th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #fff; text-align: right;
+    background: #24466b; cursor: help; border-bottom: 0;
+}
+.sr-tabla thead tr + tr th { background: #2f5680; }
+.sr-tabla thead th:first-child, .sr-tabla tbody th { text-align: left; }
+.sr-tabla thead th.sr-th-grupo { text-align: center; border-left: 1px solid rgba(255,255,255,.2); }
+.sr-tabla td { text-align: right; }
+.sr-tabla td small { display: block; font-size: 10px; color: #7d8ca0; font-weight: 400; }
+.sr-tabla tbody tr:nth-child(even) { background: #f7f9fc; }
+.sr-tabla tbody tr:hover { background: #eef5ff; }
+.sr-tabla tbody th { font-weight: 700; color: #12243a; background: #f1f5fa; }
+.sr-tabla tbody th small { color: #7d8ca0; font-weight: 400; margin-left: 4px; }
+.sr-tabla tr.sr-total th, .sr-tabla tr.sr-total td { border-top: 2px solid #24466b; background: #e6edf5; font-weight: 700; }
+
+/* Tramo */
+.sr-tramo { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 6px; text-align: center; font-weight: 800; font-size: 12px; color: #fff; }
+.sr-t-A { background: #138a4f; } .sr-t-B { background: #5fa52b; } .sr-t-C { background: #d4a100; }
+.sr-t-D { background: #e2761b; } .sr-t-E { background: #cf3b3b; } .sr-t-SINSCORE { background: #7b8a9c; }
+thead .sr-tramo { box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
+
+/* Semáforo */
+.sr-v3 { background: #c7ecd6 !important; color: #0b5e33; font-weight: 700; }
+.sr-v2 { background: #e3f5ea !important; color: #146c3d; }
+.sr-n  { background: #fdf6dc !important; color: #6b5300; }
+.sr-r1 { background: #fde6dc !important; color: #94401c; }
+.sr-r2 { background: #f8cfcf !important; color: #8a1f1f; font-weight: 700; }
+.sr-poca { background: #f2f4f7 !important; color: #a3afbd !important; font-weight: 400 !important; }
+.sr-tabla td.sr-mejor { box-shadow: inset 0 0 0 2px #138a4f; }
+.sr-tabla td.sr-col-int { color: #43566c; }
+
+/* Calor (resultado del día y conteos) */
+.sr-calor { background: rgba(124, 92, 214, calc(var(--calor) * .55)) !important; }
+.sr-calor-azul { background: rgba(10, 102, 216, calc(var(--calor) * .35)) !important; }
+
+/* Esfuerzo vs CEF */
+.sr-th-barras { min-width: 150px; }
+.sr-td-barras { min-width: 150px; }
+.sr-barras { display: grid; gap: 3px; }
+.sr-barras div { position: relative; height: 12px; background: #eef2f7; border-radius: 4px; }
+.sr-barras span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.sr-b-int { background: #5b8fd6; }
+.sr-b-cef { background: #2fae6f; }
+.sr-barras em { position: absolute; right: 4px; top: -1px; font-size: 10px; font-style: normal; color: #33475e; }
+
+.sr-nota { margin: 0; color: #66778b; font-size: 12px; line-height: 1.5; }
+body.sr-cargando .sr-tabla, body.sr-cargando .sr-lectura { opacity: .45; transition: opacity .15s; }
+.sr-tabla tr.sr-total td.sr-n { background: #e6edf5 !important; color: inherit; }
+
+/* Cobertura del periodo */
+.sr-c5 { border-top-color: #1d5a8f; }
+.sr-cobbar { position: relative; height: 18px; background: #eef2f7; border-radius: 5px; min-width: 160px; }
+.sr-cobbar span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: linear-gradient(90deg, #5b8fd6, #1d5a8f); }
+.sr-cobbar em { position: absolute; right: 6px; top: 1px; font-size: 11px; font-style: normal; font-weight: 700; color: #12243a; }
+.sr-tabla td.sr-alerta { background: #fde6dc !important; color: #94401c; font-weight: 700; }
+.sr-cobbar i { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: #cf3b3b; }
+.sr-td-meta { white-space: nowrap; }
+.sr-meta { width: 58px; height: 26px; padding: 0 6px; border: 1px solid rgba(148, 163, 184, .6); border-radius: 6px; font: inherit; font-size: 12px; text-align: right; }
+.sr-ejemplo { margin: 10px 0 4px; padding: 10px 14px; border-radius: 10px; background: #f3f7fc; border: 1px dashed #b9cde6; color: #33475e; line-height: 1.55; font-size: 12.5px; }
+.sr-ejemplo em { font-style: normal; font-weight: 700; color: #12406e; }
+.sr-subtitulo { margin: 14px 0 6px; font-size: 13px; color: #12243a; }
+.sr-tabla td.sr-oportunidad { background: #fde6dc !important; color: #94401c; font-weight: 700; }

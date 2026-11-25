@@ -1,0 +1,147 @@
+body{margin:0;background:#eef3f8;color:#10243b;font-family:"Segoe UI",Arial,sans-serif}
+.mowa-main{width:min(100%,var(--crm-content-max,1740px));box-sizing:border-box;margin:auto;padding:24px var(--crm-content-pad-x,32px) 40px}
+.mowa-heading,.mowa-tabla-cabecera,.mowa-controles,.mowa-filtros{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.mowa-heading{align-items:start;margin-bottom:18px}.mowa-heading h2{font-size:26px;margin:0 0 4px}.mowa-heading p,.mowa-tabla-cabecera p{margin:0;color:#597089}
+.mowa-small,.mowa-nota{color:#5e7187;font-size:13px}.mowa-panel,.mowa-resumen article{background:white;border:1px solid #d9e3ec;border-radius:14px;box-shadow:0 8px 24px #1429420b}
+.mowa-panel{padding:18px;margin-bottom:18px}.mowa-filtros{justify-content:flex-start;align-items:end}.mowa-filtros label,.mowa-controles label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:#40566c}
+.mowa-filtros input,.mowa-filtros select,.mowa-controles input,.mowa-controles select{border:1px solid #cbd7e3;border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:#10243b;background:#fff;min-height:40px;box-sizing:border-box}
+.mowa-filtros button{background:#1356a3;color:white;border:0;border-radius:9px;padding:11px 17px;font-weight:700;cursor:pointer;min-height:40px}.mowa-filtros button:disabled{opacity:.6;cursor:wait}
+.mowa-aviso{display:none;padding:12px 15px;margin-bottom:18px;border-radius:10px;background:#fff4dd;color:#79540d;white-space:pre-line}.mowa-aviso.visible{display:block}.mowa-aviso.error{background:#fff0ee;color:#9d302d}
+.mowa-copiar{margin-top:7px;border:1px solid #b8cde4;border-radius:7px;background:#f5f9fd;color:#14518f;padding:5px 8px;cursor:pointer;font-size:11px;font-weight:700}
+.mowa-resumen{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.mowa-resumen article{padding:17px}.mowa-resumen span{display:block;color:#61758c;font-size:13px}.mowa-resumen strong{display:block;font-size:28px;margin-top:3px}
+.mowa-tabla-cabecera{align-items:center;margin-bottom:16px}.mowa-tabla-cabecera h3{margin:0 0 4px;font-size:18px}.mowa-table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1000px}th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#5c7087;background:#f5f8fb;padding:12px;white-space:nowrap}td{border-top:1px solid #e7edf3;padding:13px 12px;vertical-align:top;font-size:13px}td small{display:block;color:#65788d;margin-top:4px}td .mowa-texto{max-width:380px;white-space:pre-wrap;overflow-wrap:anywhere}.mowa-badge{display:inline-block;border-radius:100px;padding:5px 9px;font-weight:700;font-size:11px;background:#edf1f5;color:#516579}.mowa-badge.PENDIENTE{background:#fff0d9;color:#88540b}.mowa-badge.ATENDIDA{background:#e2f6e9;color:#176438}.mowa-badge.SIN_VERIFICAR{background:#eaf0ff;color:#365a9c}.mowa-vacio{text-align:center;color:#61758c;padding:30px}.mowa-nota{line-height:1.45;margin-top:5px}
+@media(max-width:760px){.mowa-main{padding:16px}.mowa-resumen{grid-template-columns:repeat(2,1fr)}.mowa-heading h2{font-size:22px}.mowa-filtros label,.mowa-filtros button{flex:1 1 140px}}
+
+/* Conversación y seguimiento: lectura compacta sin perder el contenido completo. */
+.mowa-main{padding-top:20px}
+.mowa-heading h2{font-size:23px}
+.mowa-heading p,.mowa-tabla-cabecera p{font-size:12px}
+.mowa-small,.mowa-nota{font-size:11px}
+.mowa-panel{padding:16px;margin-bottom:14px}
+.mowa-filtros input,.mowa-filtros select,.mowa-controles input,.mowa-controles select{font-size:12px;min-height:36px;padding:8px 10px}
+.mowa-filtros button{font-size:12px;min-height:36px;padding:9px 14px}
+.mowa-resumen{gap:10px;margin-bottom:14px}
+.mowa-resumen article{padding:13px 15px}
+.mowa-resumen span{font-size:11px}
+.mowa-resumen strong{font-size:23px}
+.mowa-tabla-cabecera h3{font-size:16px}
+.mowa-table-scroll table{min-width:1030px}
+.mowa-table-scroll th{font-size:10px;padding:10px}
+.mowa-table-scroll td{font-size:11.5px;line-height:1.4;padding:11px 10px}
+.mowa-table-scroll td strong{font-size:11.5px}
+.mowa-table-scroll td small{font-size:10px;line-height:1.4}
+.mowa-table-scroll tbody tr:hover{background:#f8fbfe}
+.mowa-badge{font-size:10px;padding:4px 8px}
+.mowa-copiar{font-size:10px;padding:4px 7px}
+.mowa-motivo{max-width:225px}
+.mowa-proveedor{border-top:1px dashed #dce5ee;padding-top:5px;margin-top:6px!important;color:#415d7a!important}
+.mowa-conversacion{display:grid;gap:7px;min-width:220px;max-width:360px}
+.mowa-conversacion>div{border-radius:9px;padding:7px 9px}
+.mowa-conversacion span{display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.mowa-conversacion p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.mowa-enviado{background:#f0f3f7;color:#435a70}
+.mowa-recibido{background:#eaf3ff;color:#173e69}
+.mowa-alerta{display:inline-block;border-radius:7px;padding:5px 7px;background:#fff0ee;color:#a92f2d;font-size:10px;font-weight:700;white-space:nowrap}
+.mowa-alerta-neutral{color:#65788d;font-size:10px}
+.mowa-gestion-ok{color:#176438;font-size:11px;font-weight:700;white-space:nowrap}
+.mowa-loading[hidden]{display:none}
+.mowa-loading{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:14px;border:1px solid #c9ddf2;border-radius:10px;background:#f3f8fe;color:#174875;font-size:12px}
+.mowa-loading strong,.mowa-loading small{display:block}
+.mowa-loading small{color:#627f9a;margin-top:2px}
+.mowa-loading-tiempo{margin-left:auto;font-weight:700;white-space:nowrap}
+.mowa-spinner{width:18px;height:18px;border:2px solid #b6d0ec;border-top-color:#155ca8;border-radius:50%;animation:mowa-girar .8s linear infinite;flex:0 0 auto}
+@keyframes mowa-girar{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.mowa-spinner{animation:none}}
+@media(max-width:760px){.mowa-heading h2{font-size:21px}}
+
+.mowa-resumen .mowa-card-pendientes{display:block;width:100%;text-align:left;padding:13px 15px;border:1px solid #f0b5b0;border-radius:12px;background:#fff8f7;color:#8d2927;box-shadow:0 6px 20px #9d302d13;cursor:pointer;font-family:inherit}
+.mowa-card-pendientes span{display:block;font-size:11px;font-weight:700}
+.mowa-card-pendientes strong{display:block;font-size:25px;margin-top:3px}
+.mowa-card-pendientes small{display:block;margin-top:3px;font-size:10px;color:#975754}
+.mowa-card-pendientes:hover{background:#fff0ee}
+.mowa-card-pendientes.mowa-pulsante{animation:mowa-pulso 2.5s ease-in-out infinite}
+@keyframes mowa-pulso{50%{box-shadow:0 0 0 6px #d8494926,0 8px 24px #9d302d18}}
+.mowa-cancelar{margin-left:8px;border:1px solid #b6cee6;border-radius:7px;background:white;color:#20557f;padding:6px 10px;cursor:pointer;font-size:11px;font-weight:700}
+.mowa-mas{display:block;margin:14px auto 2px;border:1px solid #b6cee6;border-radius:8px;background:#f5f9fd;color:#14518f;padding:8px 14px;cursor:pointer;font-size:11px;font-weight:700}
+.mowa-mas[hidden]{display:none}
+.mowa-gestion-detalle{min-width:140px;max-width:250px;color:#176438}
+.mowa-gestion-detalle strong{display:block;white-space:nowrap}
+.mowa-gestion-detalle p{margin:4px 0 0;color:#38546b;white-space:pre-wrap;overflow-wrap:anywhere}
+.mowa-gestion-detalle small{color:#718297}
+@media(prefers-reduced-motion:reduce){.mowa-card-pendientes.mowa-pulsante{animation:none}}
+.mowa-abrir{margin-top:2px;border:1px solid #b8cde4;border-radius:8px;background:#fff;color:#14518f;padding:6px 9px;cursor:pointer;font-size:11px;font-weight:700}
+.mowa-chat{width:min(620px,calc(100vw - 28px));max-height:min(760px,calc(100vh - 28px));padding:0;border:1px solid #cbd7e3;border-radius:16px;box-shadow:0 28px 80px #10243b55;color:#10243b;font-family:inherit}
+.mowa-chat::backdrop{background:#10243b77}
+.mowa-chat-cabecera{display:flex;align-items:start;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid #dce5ee;background:#fff}
+.mowa-chat-cabecera h3{margin:0 0 3px;font-size:17px}.mowa-chat-cabecera small{color:#65788d;font-size:11px}
+.mowa-chat-cabecera button{border:0;background:#f0f3f7;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:22px;line-height:1}
+.mowa-chat-mensajes{display:flex;flex-direction:column;gap:9px;overflow:auto;height:min(390px,45vh);padding:17px;background:#f5f8fb}
+.mowa-burbuja{max-width:82%;padding:9px 11px;border-radius:12px;font-size:12px;line-height:1.4;box-shadow:0 2px 7px #10243b0c}
+.mowa-burbuja span{display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.mowa-burbuja p{margin:3px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.mowa-burbuja small{display:block;font-size:9px;opacity:.75}
+.mowa-burbuja-cliente{align-self:flex-start;background:#eaf3ff;color:#173e69;border-bottom-left-radius:3px}
+.mowa-burbuja-nosotros{align-self:flex-end;background:#fff;color:#364e64;border-bottom-right-radius:3px}
+.mowa-chat-form{display:grid;gap:9px;padding:14px 18px;background:#fff;border-top:1px solid #dce5ee}
+.mowa-chat-form label{display:grid;gap:4px;color:#40566c;font-size:11px;font-weight:700}
+.mowa-chat-form select,.mowa-chat-form textarea{width:100%;box-sizing:border-box;border:1px solid #cbd7e3;border-radius:8px;padding:8px 10px;background:#fff;color:#10243b;font:12px "Segoe UI",Arial,sans-serif}
+.mowa-chat-form textarea{resize:vertical;min-height:65px}
+.mowa-chat-acciones{display:flex;align-items:center;justify-content:space-between}
+.mowa-chat-acciones small,#mowaChatAviso{color:#65788d;font-size:10px}
+.mowa-chat-acciones button{border:0;border-radius:8px;background:#1356a3;color:#fff;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer}
+.mowa-chat-acciones button:disabled{opacity:.55;cursor:wait}
+.mowa-chat-nota{margin:0;padding:0 18px 15px;background:#fff;color:#65788d;font-size:10px;line-height:1.4}
+.mowa-paginacion{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:12px;color:#65788d;font-size:11px}
+.mowa-paginacion span{margin-right:auto}
+.mowa-paginacion button{border:1px solid #b6cee6;border-radius:8px;background:#f5f9fd;color:#14518f;padding:7px 11px;cursor:pointer;font-size:11px;font-weight:700}
+.mowa-paginacion button:disabled{opacity:.45;cursor:default}
+.mowa-filtros .mowa-exportar{background:#eaf6ef;border:1px solid #a4cdb4;color:#176438}
+.mowa-filtros .mowa-exportar:disabled{cursor:default}
+
+/* Fase 1b: tarjeta de clientes sin atender a la altura de los filtros. */
+.mowa-top{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:14px;align-items:stretch;margin-bottom:14px}
+.mowa-top .mowa-filtros{margin-bottom:0}
+.mowa-sin-atender{display:flex;flex-direction:column;justify-content:center;gap:2px;text-align:left;padding:14px 18px;border:1px solid #f0b5b0;border-radius:14px;background:#fff8f7;color:#8d2927;box-shadow:0 8px 24px #9d302d14;cursor:pointer;font-family:inherit}
+.mowa-sin-atender span{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.mowa-sin-atender strong{font-size:38px;line-height:1.05}
+.mowa-sin-atender small{font-size:11px;color:#975754}
+.mowa-sin-atender em{margin-top:6px;font-style:normal;font-size:11px;font-weight:700;color:#14518f;text-decoration:underline}
+.mowa-sin-atender:hover:not(:disabled){background:#fff0ee}
+.mowa-sin-atender:disabled{cursor:default;opacity:.8}
+.mowa-sin-atender:disabled em{color:#8a99a8;text-decoration:none}
+.mowa-sin-atender.mowa-pulsante{animation:mowa-pulso 2.5s ease-in-out infinite}
+.mowa-sync-alerta{color:#9d302d!important;font-weight:700}
+@media(prefers-reduced-motion:reduce){.mowa-sin-atender.mowa-pulsante{animation:none}}
+@media(max-width:900px){.mowa-top{grid-template-columns:1fr}}
+
+.mowa-filtros .mowa-ver-carteras{background:#eef5ff;border:1px solid #bdd3ec;color:#174875}
+.mowa-filtros .mowa-ver-carteras:disabled{cursor:default}
+.mowa-sync-acciones{display:flex;align-items:end;gap:8px;flex-wrap:wrap;margin-left:auto}
+.mowa-sync-acciones[hidden],.mowa-sync-estado[hidden]{display:none}
+.mowa-filtros .mowa-sync-boton{background:#eaf0fc;border:1px solid #aac4e8;color:#164d88}
+.mowa-sync-estado{padding:10px 13px;margin:-4px 0 14px;border:1px solid #b9d1eb;border-radius:10px;background:#eff6ff;color:#164d88;font-size:12px;line-height:1.4}
+.mowa-sync-estado[data-resultado="CON_AVISOS"]{background:#fff6e7;border-color:#e9c98c;color:#805511}
+.mowa-sync-estado[data-resultado="ERROR"]{background:#fff0ee;border-color:#edb6b1;color:#a13431}
+.mowa-carteras-modal{width:min(820px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:0;border:1px solid #cbd7e3;border-radius:16px;box-shadow:0 28px 80px #10243b55;color:#10243b;font-family:inherit}
+.mowa-carteras-modal::backdrop{background:#10243b77}
+.mowa-carteras-cabecera{display:flex;align-items:start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid #dce5ee}
+.mowa-carteras-cabecera h3{margin:0 0 4px;font-size:17px}
+.mowa-carteras-cabecera p{margin:0;color:#61758c;font-size:11px}
+.mowa-carteras-cabecera button{border:0;background:#f0f3f7;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:22px;line-height:1}
+.mowa-carteras-contenido{display:grid;grid-template-columns:minmax(220px,1fr) minmax(250px,1fr);align-items:center;gap:14px;padding:16px 18px}
+.mowa-dona{display:grid;place-items:center;min-height:230px}
+.mowa-dona svg{width:min(100%,230px);height:auto;overflow:visible}
+.mowa-dona circle[data-cartera]{cursor:pointer;transition:stroke-width .15s ease}
+.mowa-dona circle[data-cartera]:hover,.mowa-dona circle[data-cartera]:focus{stroke-width:34;outline:none}
+.mowa-dona .mowa-dona-total{font-size:32px;font-weight:800;fill:#10243b;text-anchor:middle}
+.mowa-dona .mowa-dona-leyenda{font-size:11px;fill:#61758c;text-anchor:middle}
+.mowa-carteras-lista{display:grid;gap:6px;max-height:calc(100vh - 190px);overflow:auto}
+.mowa-carteras-lista button{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;border:1px solid #dce5ee;border-radius:10px;background:#fff;color:#10243b;text-align:left;cursor:pointer;font:12px "Segoe UI",Arial,sans-serif}
+.mowa-carteras-lista button:hover,.mowa-carteras-lista button:focus-visible{background:#f3f8fe;border-color:#a8c7e8}
+.mowa-carteras-lista button span:nth-child(2){display:flex;flex-direction:column;gap:2px}
+.mowa-carteras-lista strong{margin-left:auto;font-size:15px}
+.mowa-carteras-lista small{color:#61758c;font-size:10px}
+.mowa-carteras-color{width:12px;height:12px;flex:0 0 12px;border-radius:50%}
+.mowa-carteras-nota{margin:0;padding:0 20px 18px;color:#61758c;font-size:11px;line-height:1.45}
+@media(max-width:560px){.mowa-carteras-contenido{grid-template-columns:1fr;gap:4px}.mowa-dona{min-height:200px}.mowa-dona svg{width:200px}.mowa-carteras-lista{max-height:40vh}}
+@media(prefers-reduced-motion:reduce){.mowa-dona circle[data-cartera]{transition:none}}

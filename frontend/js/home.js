@@ -152,6 +152,7 @@ const GRUPO_POR_PAGINA = {
     "pagos.html": "datos",
     "canales.html": "datos",
     "documentos.html": "datos",
+    "segmentos.html": "datos",
     "admin_supervisores.html": "admin",
     "admin_accesos.html": "admin"
 };
@@ -174,7 +175,9 @@ const ICONOS_HOME = {
     "canales.html": '<path d="M3 11v3l12 5V6L3 11zM15 9a4 4 0 010 6M6 14l1.5 6"/>',
     "documentos.html": '<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5zM14 3v5h5M9 13h6M9 17h6"/>',
     "admin_supervisores.html": '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
-    "admin_accesos.html": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'
+    "admin_accesos.html": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+    "score_telefonico.html": '<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',
+    "segmentos.html": '<path d="M4 6h16M4 12h10M4 18h6M17 14v7M14 18l3 3 3-3"/>'
 };
 
 function paginaDeRuta(ruta) {
@@ -311,6 +314,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "GB",
+                titulo: "Generador de bases",
+                descripcion: "Score de teléfonos y filtros para armar bases de predictivo, IVR y SMS.",
+                ruta: "score_telefonico.html",
+                destacado: false
+            },
+            {
                 sigla: "PH",
                 titulo: "Promesas con vencimiento hoy",
                 descripcion: "PDP de hoy filtradas por las carteras asignadas al supervisor.",
@@ -395,6 +405,13 @@ function obtenerModulosPorPerfil(tipo) {
                 destacado: false
             },
             {
+                sigla: "GB",
+                titulo: "Generador de bases",
+                descripcion: "Score de teléfonos y filtros para armar bases de predictivo, IVR y SMS.",
+                ruta: "score_telefonico.html",
+                destacado: false
+            },
+            {
                 sigla: "PA",
                 titulo: "Importacion de pagos",
                 descripcion: "Validacion y publicacion de pagos normalizados para BI.",
@@ -413,6 +430,13 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Canales alternos",
                 descripcion: "Carga y validacion de archivos para SMS, WAPI, Email, IVR y Bot.",
                 ruta: "canales.html",
+                destacado: false
+            },
+            {
+                sigla: "SB",
+                titulo: "Segmentos del banco",
+                descripcion: "Carga de segmentos por cliente (MiBanco, Compartamos…) para el generador de bases.",
+                ruta: "segmentos.html",
                 destacado: false
             },
             {

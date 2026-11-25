@@ -55,7 +55,8 @@ _SP_CONTROL_PERMITIDOS = {
 SP_CONTROL_HORARIO = os.getenv("CONTROL_HORARIO_SP", "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO").strip()
 if SP_CONTROL_HORARIO not in _SP_CONTROL_PERMITIDOS:
     SP_CONTROL_HORARIO = "dbo.SP_CRM_CONTROL_HORARIO_GESTION_RECUPERO"
-PERFILES_RECUPERO_APOYO = {"ADM", "SUPERVISOR", "JEFE"}
+PERFILES_RECUPERO_CON_APOYO_SQL = "LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, ''))) <> ''"
+PERFILES_RECUPERO_GESTOR_SQL = "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'"
 CARTERAS_EXCLUIDAS_CONTROL = {120, 139, 141, 146}
 
 logger = logging.getLogger("control_horario")
@@ -228,7 +229,6 @@ def obtener_mapa_usuarios(cursor):
             UPPER(LTRIM(RTRIM(ISNULL(TIPOUSUARIO, '')))) AS TIPOUSUARIO,
             UPPER(LTRIM(RTRIM(ISNULL(ESTADO, '')))) AS ESTADO
         FROM SISCOB.DBO.USUARIO WITH(NOLOCK)
-        WHERE IDCARTERA IS NOT NULL
     """)
 
     mapa_id = {}
@@ -318,7 +318,12 @@ def extraer_usuario_agente(valor):
 
 
 def es_perfil_recupero_apoyo(info):
-    return str(info.get("tipousuario") or "").strip().upper() in PERFILES_RECUPERO_APOYO
+    tipo = str(info.get("tipousuario") or "").strip().upper()
+    return bool(tipo) and tipo != "GESTOR"
+
+
+def filtro_perfiles_recupero(incluir_apoyo_recupero):
+    return PERFILES_RECUPERO_CON_APOYO_SQL if incluir_apoyo_recupero else PERFILES_RECUPERO_GESTOR_SQL
 
 
 def enriquecer_por_usuario(rows, mapa_id, mapa_usuario, incluir_apoyo_recupero=False):
@@ -403,10 +408,7 @@ def obtener_clientes_unicos_control(cursor, fecha=None, idcartera=None, idusuari
         "UPPER(LTRIM(RTRIM(ISNULL(U.ESTADO, '')))) <> 'E'",
     ]
 
-    if incluir_apoyo_recupero:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
-    else:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+    filtros.append(filtro_perfiles_recupero(incluir_apoyo_recupero))
 
     if idcartera is not None:
         filtros.append("G.IDCARTERA = ?")
@@ -479,10 +481,7 @@ def obtener_compromisos_activos_control(cursor, fecha=None, idcartera=None, idus
         "UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')",
     ]
 
-    if incluir_apoyo_recupero:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
-    else:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+    filtros.append(filtro_perfiles_recupero(incluir_apoyo_recupero))
 
     if idcartera is not None:
         filtros.append("G.IDCARTERA = ?")
@@ -554,10 +553,7 @@ def obtener_compromisos_hora_control(cursor, fecha=None, idcartera=None, idusuar
         "UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')",
     ]
 
-    if incluir_apoyo_recupero:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')")
-    else:
-        filtros.append("UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'")
+    filtros.append(filtro_perfiles_recupero(incluir_apoyo_recupero))
 
     if idcartera is not None:
         filtros.append("G.IDCARTERA = ?")
@@ -1208,11 +1204,7 @@ def obtener_matriz_mensual_control_horario(fecha=None, idcartera=None, idusuario
             params_extra.append(idusuario)
 
         where_base = " AND ".join(filtros)
-        filtro_perfiles = (
-            "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) IN ('GESTOR', 'ADM', 'SUPERVISOR', 'JEFE')"
-            if incluir_apoyo_recupero else
-            "UPPER(LTRIM(RTRIM(ISNULL(U.TIPOUSUARIO, '')))) = 'GESTOR'"
-        )
+        filtro_perfiles = filtro_perfiles_recupero(incluir_apoyo_recupero)
         where_perfiles = f"{where_base} AND {filtro_perfiles}"
         where_perfiles_activos = f"{where_perfiles} AND UPPER(LTRIM(RTRIM(ISNULL(CL.ESTADO, '')))) IN ('A', 'N')"
 

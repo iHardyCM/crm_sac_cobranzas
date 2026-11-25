@@ -26,9 +26,12 @@ from app.api.routes_pagos import router as pagos_router
 from app.api.routes_planes_mejora import router as planes_mejora_router
 from app.api.routes_importacion import router as importacion_router
 from app.api.routes_score_telefonico import router as score_telefonico_router
+from app.api.routes_generador_bases import router as generador_bases_router
+from app.api.routes_segmentos import router as segmentos_router
 from app.api.routes_ia_feedback import router as ia_feedback_router
 from app.api.routes_susurro_ia import router as susurro_ia_router
 from app.api.routes_telefonos import router as telefonos_router
+from app.api.routes_respuestas_mowa import router as respuestas_mowa_router
 
 def configurar_logging():
     """Escribe el log de la aplicacion en logs/app.log.
@@ -105,6 +108,11 @@ app.include_router(planes_mejora_router, prefix="/planes-mejora", tags=["Planes 
 app.include_router(metas_router, prefix="/metas", tags=["Metas"], dependencies=SESION_API)
 app.include_router(score_telefonico_router, prefix="/score-telefonico", tags=["Score Telefonico"], dependencies=SESION_API)
 app.include_router(telefonos_router, prefix="/telefonos", tags=["Validación de Teléfonos"])
+app.include_router(respuestas_mowa_router, prefix="/respuestas-mowa", tags=["Respuestas SMS"])
+# Generador de bases (score telefónico nuevo): cada endpoint exige sesión, perfil y cartera
+app.include_router(generador_bases_router, prefix="/generador-bases", tags=["Generador de bases"])
+# Segmentos del banco para el generador: sesión + visión global en cada endpoint
+app.include_router(segmentos_router, prefix="/segmentos-banco", tags=["Segmentos del banco"])
 
 @app.get("/")
 def healthcheck():

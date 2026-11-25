@@ -90,6 +90,7 @@ COLS_EVAL = [
     ("ia_pide_revision", "IA pide revisión", 14),
     ("brechas", "Brechas (No cumple / Parcial)", 50),
     ("observacion", "Observación supervisor", 40),
+    ("interlocutor", "Interlocutor", 14),   # 16/11/2026: titular / tercero (al final: "En meta" es la columna 11)
 ]
 COLS_CRIT = [
     ("id_feedback", "ID", 9),
@@ -108,6 +109,7 @@ COLS_CRIT = [
     ("medido", "Medido (1/0)", 11),
     ("cumple", "Cumple (1/0)", 11),
     ("brecha", "Brecha (1/0)", 11),
+    ("interlocutor", "Interlocutor", 14),
 ]
 
 

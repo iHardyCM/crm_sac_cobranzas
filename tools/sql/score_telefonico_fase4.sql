@@ -1,0 +1,1113 @@
+/* =====================================================================================
+   SCORE TELEFÓNICO · FASE 4 — TABLA DE TRABAJO DEL GENERADOR DE BASES
+   Fecha: 14/11/2026 · Diseño: claude/diseno_base_trabajo.md (proyecto crm_cobranzas)
+   Requiere: fases 1, 2 y 3 instaladas (fase 3 con el paso BASE en sp_ActualizarCartera).
+
+   Qué crea:
+     score.BaseTrabajoCliente   una fila por cartera + DNI con los campos comunes a todas las carteras
+                                (capital, rango de capital estándar, cuentas, meta, gestiones del mes, contacto
+                                directo del mes, último CEF, PDP del mes), tomados del corte de Analytics.
+     score.BaseTrabajoDato      campos propios de cada cartera (del cliente o de cada cuenta), como filas:
+                                cartera + DNI + campo + valor (+ cuenta). Un filtro por un campo de cuenta
+                                significa "el cliente tiene alguna cuenta que cumple" (regla de Analytics).
+     score.BaseTrabajoEstado    por cartera: fecha del corte de Analytics usado y cobertura del universo.
+     score.CampoCartera         qué campos tiene cada cartera y de qué tabla y columna salen.
+     score.vw_BaseTrabajo       lo que consulta la pantalla: teléfono con score + atributos + cliente.
+     score.sp_ArmarBaseTrabajoCliente @IdCartera, @Simular, @Detalle
+     Catálogo score.Campo lleno (descripción, fuente y actualización de cada campo).
+
+   Reglas (aprobadas por Hardy el 14/11/2026):
+     - No se recalcula nada que Analytics ya calcula: se copia del corte. Si una cartera no tiene un dato,
+       queda vacío ("sin dato").
+     - Rango de capital: escala estándar del 26/10/2026 (la misma del portal) sobre el capital del cliente.
+     - Pagos: cada cartera con su campo y su nombre real; no se unifican.
+     - Prioridad ML de SIP: se muestra con su fecha (hoy, 31/10) para marcarla como desactualizada.
+     - PDP del mes en Propia (137/148): promesas distintas generadas en el mes del corte (PROPIA_PDP_CORTE).
+     - Contacto directo del mes en Propia: vacío (el corte no lo trae).
+     - Si la fuente trae un DNI repetido en la misma cartera, no se elige un valor: la carga falla y avisa.
+
+   Cómo ejecutarlo:
+     Bloque 1: tablas. Bloque 2: procedimiento y vista. Bloque 3: catálogo.
+     Bloque 4: simulación de todas las carteras (no escribe).
+     Bloque 5 (comentado): carga real. Desde ahora también la hace "Actualizar cartera" (paso BASE).
+   ===================================================================================== */
+
+USE CobAuto;
+GO
+SET NOCOUNT ON;
+GO
+
+/* =====================================================================================
+   BLOQUE 1 · Tablas
+   ===================================================================================== */
+
+-- 1.1 El catálogo acepta el origen DATO (campos de score.BaseTrabajoDato)
+IF EXISTS (SELECT 1 FROM sys.check_constraints
+           WHERE name = 'CK_score_Campo_Origen' AND parent_object_id = OBJECT_ID('score.Campo')
+             AND definition NOT LIKE '%DATO%')
+BEGIN
+    ALTER TABLE score.Campo DROP CONSTRAINT CK_score_Campo_Origen;
+    ALTER TABLE score.Campo ADD CONSTRAINT CK_score_Campo_Origen CHECK (Origen IN ('TRABAJO', 'SEGMENTO', 'DIA', 'DATO'));
+END;
+GO
+
+-- 1.2 Qué campos tiene cada cartera y de dónde salen
+IF OBJECT_ID('score.CampoCartera', 'U') IS NULL
+CREATE TABLE score.CampoCartera (
+    Campo      VARCHAR(60)    NOT NULL CONSTRAINT FK_score_CampoCartera_Campo REFERENCES score.Campo (Codigo),
+    IdCartera  INT            NOT NULL,
+    Nivel      VARCHAR(10)    NOT NULL,   -- CLIENTE · CUENTA
+    Tabla      NVARCHAR(256)  NOT NULL,
+    Columna    NVARCHAR(256)  NOT NULL,
+    CONSTRAINT PK_score_CampoCartera PRIMARY KEY (Campo, IdCartera),
+    CONSTRAINT CK_score_CampoCartera_Nivel CHECK (Nivel IN ('CLIENTE', 'CUENTA'))
+);
+GO
+
+-- 1.3 Cliente: campos comunes
+IF OBJECT_ID('score.BaseTrabajoCliente', 'U') IS NULL
+CREATE TABLE score.BaseTrabajoCliente (
+    IdCartera            INT            NOT NULL,
+    DNI                  VARCHAR(20)    NOT NULL,
+    FechaCorteFuente     DATE           NOT NULL,   -- corte de Analytics del que salió
+    Capital              DECIMAL(18, 2) NULL,
+    RangoCapital         NVARCHAR(40)   NOT NULL,
+    Cuentas              INT            NULL,
+    Meta                 DECIMAL(18, 2) NULL,
+    GestionesHumanasMes  INT            NULL,
+    GestionesMaquinaMes  INT            NULL,
+    ContactoDirectoMes   BIT            NULL,
+    FechaUltimoCef       DATETIME2(0)   NULL,
+    PdpGeneradasMes      INT            NULL,
+    FechaArmado          DATETIME2(0)   NOT NULL,
+    CONSTRAINT PK_score_BaseTrabajoCliente PRIMARY KEY CLUSTERED (IdCartera, DNI)
+);
+GO
+
+-- 1.4 Campos propios de cada cartera
+IF OBJECT_ID('score.BaseTrabajoDato', 'U') IS NULL
+CREATE TABLE score.BaseTrabajoDato (
+    IdCartera    INT            NOT NULL,
+    DNI          VARCHAR(20)    NOT NULL,
+    Campo        VARCHAR(60)    NOT NULL,
+    Cuenta       NVARCHAR(60)   NULL,       -- NULL = dato del cliente
+    Valor        NVARCHAR(200)  NULL,       -- texto (listas, sí/no, fechas aaaa-mm-dd)
+    ValorNum     DECIMAL(18, 4) NULL,       -- números (filtros por rango)
+    FechaFuente  DATE           NULL        -- fecha del corte del que salió (para avisar si está desactualizado)
+);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_BaseTrabajoDato' AND object_id = OBJECT_ID('score.BaseTrabajoDato'))
+    CREATE CLUSTERED INDEX IX_BaseTrabajoDato ON score.BaseTrabajoDato (IdCartera, Campo, Valor, DNI);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_BaseTrabajoDato_Dni' AND object_id = OBJECT_ID('score.BaseTrabajoDato'))
+    CREATE INDEX IX_BaseTrabajoDato_Dni ON score.BaseTrabajoDato (IdCartera, DNI) INCLUDE (Campo, Valor, ValorNum);
+GO
+
+-- 1.5 Estado por cartera (lo que la pantalla muestra: "datos del cliente al corte del …")
+IF OBJECT_ID('score.BaseTrabajoEstado', 'U') IS NULL
+CREATE TABLE score.BaseTrabajoEstado (
+    IdCartera           INT            NOT NULL CONSTRAINT PK_score_BaseTrabajoEstado PRIMARY KEY,
+    Fuente              NVARCHAR(256)  NOT NULL,
+    FechaCorteFuente    DATE           NOT NULL,
+    ClientesFuente      INT            NOT NULL,
+    ClientesUniverso    INT            NOT NULL,
+    UniversoSinDato     INT            NOT NULL,   -- clientes con teléfonos en el score sin fila en el corte
+    FilasDato           INT            NOT NULL,
+    FechaArmado         DATETIME2(0)   NOT NULL
+);
+GO
+
+/* =====================================================================================
+   BLOQUE 2 · Procedimiento y vista
+   ===================================================================================== */
+CREATE OR ALTER PROCEDURE score.sp_ArmarBaseTrabajoCliente
+    @IdCartera INT,
+    @Simular   BIT = 1,
+    @Detalle   BIT = 0      -- solo en simulación: cobertura por campo y formato de los DNI sin cruce
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @Hoy DATE = CAST(GETDATE() AS DATE), @Fc DATE, @FcCuenta DATE, @FcMl DATE, @Periodo INT,
+            @Fuente NVARCHAR(256);
+
+    CREATE TABLE #cli (
+        DNI VARCHAR(20) COLLATE DATABASE_DEFAULT NULL,
+        Capital DECIMAL(18, 2) NULL, Cuentas INT NULL, Meta DECIMAL(18, 2) NULL,
+        GestionesHumanasMes INT NULL, GestionesMaquinaMes INT NULL, ContactoDirectoMes INT NULL,
+        FechaUltimoCef DATETIME2(0) NULL, PdpGeneradasMes INT NULL);
+
+    CREATE TABLE #dato (
+        DNI VARCHAR(20) COLLATE DATABASE_DEFAULT NULL,
+        Campo VARCHAR(60) COLLATE DATABASE_DEFAULT NOT NULL,
+        Cuenta NVARCHAR(60) COLLATE DATABASE_DEFAULT NULL,
+        Valor NVARCHAR(200) COLLATE DATABASE_DEFAULT NULL,
+        ValorNum DECIMAL(18, 4) NULL,
+        FechaFuente DATE NULL);
+
+    /* 1. Lectura del corte de Analytics de la cartera (una sección por fuente; columnas de los
+          diagnósticos 11 y 12 del 14/11/2026) */
+    IF (@IdCartera = 112)
+    BEGIN
+        -- 112 · MiBanco castigo
+        SET @Fuente = N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_SOLES), c.PRESTAMOS, TRY_CONVERT(DECIMAL(18, 2), c.META_SOLES),
+               c.GESTIONES_HUMANAS, c.GESTIONES_MAQUINA, CASE WHEN c.TIENE_CEF > 0 THEN 1 WHEN c.TIENE_CEF = 0 THEN 0 END, TRY_CONVERT(DATETIME2(0), NULL), c.PDP_GENERADAS_MES
+        FROM MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), a.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CONVERT(NVARCHAR(60), CONVERT(DECIMAL(30, 0), a.OPERACION)) COLLATE DATABASE_DEFAULT, v.Valor, v.ValorNum, @Fc
+        FROM MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE AS a WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRIORIDAD))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RIESGO_CASTIGO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RIESGO_CASTIGO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CLUSTER_RFP', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.CLUSTER_RFP))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FAMILIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.FAMILIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TIPO_PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.TIPO_PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONEDA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.MONEDA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DEPARTAMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DEPARTAMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PROVINCIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PROVINCIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DISTRITO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DISTRITO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ZONA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.ZONA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TERRITORIAL', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.TERRITORIAL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUPERVISOR_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUPERVISOR))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_UIT', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_UIT))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TIPO_CARTERA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.TIPO_CARTERA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'REGLA_ASIG_TIPO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), RIGHT(a.REGLA_ASIG, CHARINDEX('/', REVERSE(a.REGLA_ASIG) + '/') - 1)))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'GRUPO_ASIG', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.GRUPO_ASIG))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'HIPOTECARIO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.HIPOTECARIO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FOGAPI', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.FOGAPI))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MESES_CASTIGO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), a.MESES_CASTIGO)),
+            (N'DIAS_MORA', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), a.DIAS_MORA)),
+            (N'FECHA_ULT_PAGO_BANCO', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, a.FECHA_ULT_PAGO_BANCO), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE a.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 117)
+    BEGIN
+        -- 117 · Interbank
+        SET @Fuente = N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        SELECT @FcCuenta = MAX(FECHA_CORTE_ANALITICA) FROM Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO WITH (NOLOCK)
+        WHERE FECHA_CORTE_ANALITICA <= @Fc;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_CLIENTE), c.Q_CUENTAS, TRY_CONVERT(DECIMAL(18, 2), c.META_CLIENTE),
+               c.Q_GESTIONES_HUMANAS, c.Q_GESTIONES_MAQUINA, c.FLG_CEF, TRY_CONVERT(DATETIME2(0), NULL), c.Q_PDP_GENERADAS
+        FROM Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'ULTIMO_CONTACTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ULTIMO_CONTACTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MEJOR_CONTACTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.MEJOR_CONTACTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MEJOR_INDICADOR', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.MEJOR_INDICADOR))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PDP_VIGENTES', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.Q_PDP_VIGENTES)),
+            (N'PAGO_OFICIAL_ACUMULADO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PAGO_OFICIAL_ACUMULADO)),
+            (N'PAGO_REGISTRADO_SISCOB', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PAGO_REGISTRADO_SISCOB))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), a.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CONVERT(NVARCHAR(60), COALESCE(NULLIF(LTRIM(RTRIM(a.CJ)), N''), a.CU)) COLLATE DATABASE_DEFAULT, v.Valor, v.ValorNum, @FcCuenta
+        FROM Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO AS a WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUB_PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUB_PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'GRUPO_PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.GRUPO_PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TIPO_CARTERA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.TIPO_CARTERA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUB_TIPO_CARTERA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUB_TIPO_CARTERA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONEDA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.MONEDA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_MADURACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRIORIDAD_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SEGMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SEGMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUB_SEGMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUB_SEGMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SEGMENTO_ESTRATEGIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SEGMENTO_ESTRATEGIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CALIFICACION_SBS', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.CALIFICACION_SBS))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TIPO_CLIENTE', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.TIPO_CLIENTE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'INHIBIR_GESTION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.INHIBIR_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DEPARTAMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DEPARTAMENTO_CLIENTE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PROVINCIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PROVINCIA_CLIENTE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DISTRITO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DISTRITO_CLIENTE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ZONA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.ZONA_CLIENTE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FERIA', CASE WHEN a.FLAG_FERIA = 1 THEN N'SI' WHEN a.FLAG_FERIA = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PCT_DSCTO_CANCELACION', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), a.PCT_DSCTO_CANCELACION)),
+            (N'PCT_DSCTO_FERIA', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), a.PCT_DSCTO_FERIA)),
+            (N'FECHA_ULT_PAGO_BANCO', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, a.FECHA_ULTIMO_PAGO_BANCO), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FECHA_CASTIGO', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, a.FECHA_CASTIGO), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE a.FECHA_CORTE_ANALITICA = @FcCuenta
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 124)
+    BEGIN
+        -- 124 · Compartamos castigo individual
+        SET @Fuente = N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        SELECT @Periodo = MAX(PERIODO) FROM Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO WITH (NOLOCK) WHERE FECHA_CORTE = @Fc;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_TOTAL), c.Q_OPERACIONES, TRY_CONVERT(DECIMAL(18, 2), NULL),
+               c.Q_GESTIONES_HUMANAS, c.Q_GESTIONES_MAQUINA, CONVERT(INT, c.FLG_CEF), TRY_CONVERT(DATETIME2(0), c.FECHA_ULTIMO_CEF), c.Q_PDP
+        FROM Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'CONDICION_SISCOB', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.CONDICION_SISCOB_ACTUAL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MEJOR_GESTION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.MEJOR_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ULTIMA_GESTION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ULTIMA_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PDP_PENDIENTES', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.Q_PDP_PENDIENTES)),
+            (N'PROXIMO_VENCIMIENTO_PDP', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, c.PROXIMO_VENCIMIENTO_PDP), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONTO_PDP_PAGADO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.MONTO_PDP_PAGADO))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), a.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CONVERT(NVARCHAR(60), a.COD_CUENTA) COLLATE DATABASE_DEFAULT, v.Valor, v.ValorNum, @Fc
+        FROM Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA AS a WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), CASE WHEN a.ANIOS_CASTIGADO IS NULL THEN N'0. SIN INFORMACION' WHEN a.ANIOS_CASTIGADO <= 1 THEN N'1. [0 - 1 meses]' WHEN a.ANIOS_CASTIGADO <= 3 THEN N'2. [1 - 3 meses]' WHEN a.ANIOS_CASTIGADO <= 5 THEN N'3. [3 - 6 meses]' WHEN a.ANIOS_CASTIGADO <= 11 THEN N'4. [6 - 12 meses]' WHEN a.ANIOS_CASTIGADO <= 23 THEN N'5. [12 - 24 meses]' WHEN a.ANIOS_CASTIGADO <= 35 THEN N'6. [24 - 36 meses]' WHEN a.ANIOS_CASTIGADO <= 59 THEN N'7. [36 - 60 meses]' ELSE N'8. [60+ meses]' END))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SEGMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SEGMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SEGMENTACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SEGMENTACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SCORE_RIESGOS', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SCORE_RIESGOS))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), CONVERT(INT, a.FLG_PRIORIDAD)))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CONVENIO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.CONVENIO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_ENTIDADES', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_ENTIDADES))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_CAPITAL_CUENTA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_CAPITAL_CUENTA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE a.PERIODO = @Periodo
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 126 OR @IdCartera = 128)
+    BEGIN
+        -- 126, 128 · Compartamos vigente IND / CCM
+        SET @Fuente = N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy AND ID_CARTERA = @IdCartera;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_TOTAL), c.CANT_CUENTAS, TRY_CONVERT(DECIMAL(18, 2), c.META),
+               c.Q_GESTIONES_HUMANA, c.Q_GESTIONES_MAQUINA, CONVERT(INT, c.FLG_CONTACTO_DIRECTO), TRY_CONVERT(DATETIME2(0), c.FECHA_ULTIMO_CEF), c.Q_PDP_GENERADAS
+        FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc AND c.ID_CARTERA = @IdCartera;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_MADURACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MORA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_MORA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_DIAS_ATRASO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_DIAS_ATRASO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SEGMENTO_IMPULSO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.SEGMENTO_IMPULSO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_ETARIO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_ETARIO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ESTADO_CIVIL', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ESTADO_CIVIL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_ENTIDADES', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_ENTIDADES_REPORTANTES))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DEPARTAMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.DEPARTAMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PROVINCIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.PROVINCIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DISTRITO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.DISTRITO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CLUSTER_ML', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.CLUSTER_ML))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SCORE_RIESGO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.SCORE_RIESGO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'GRUPO_SCORE', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.GRUPO_SCORE))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'COMPORTAMIENTO_PAGO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.COMPORTAMIENTO_REFERENCIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TRAMO_REFERENCIA_PAGO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.TRAMO_REFERENCIA_PAGO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MEJOR_GESTION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.MEJOR_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ULTIMA_GESTION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ULTIMA_GESTION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PDP_VIGENTE', CASE WHEN CONVERT(INT, c.FLG_PDP_VIGENTE) = 1 THEN N'SI' WHEN CONVERT(INT, c.FLG_PDP_VIGENTE) = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PAGO_ACUMULADO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PAGO_ACUMULADO))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc AND c.ID_CARTERA = @IdCartera
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 132)
+    BEGIN
+        -- 132 · SIP
+        SET @Fuente = N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        SELECT @FcMl = MAX(FECHA_CORTE) FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_PRIORIDAD_HISTORICO WITH (NOLOCK) WHERE FECHA_CORTE <= @Fc;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.SLD_CAPITAL_ASIG), NULL, TRY_CONVERT(DECIMAL(18, 2), c.META),
+               c.Q_GESTIONES_HUMANAS, c.Q_GESTIONES_MAQUINA, CONVERT(INT, c.FLG_CEF), TRY_CONVERT(DATETIME2(0), c.FECHA_ULTIMO_CEF), c.Q_PDP_GENERADAS
+        FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'TIPO_CARTERA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.TIPO_CARTERA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SCORE_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.SCORE_FINAL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.RANGO_MADURACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ESTADO_SEGUIMIENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ESTADO_SEGUIMIENTO_ACTUAL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'EN_RESPETO', CASE WHEN CONVERT(INT, c.FLG_EN_RESPETO) = 1 THEN N'SI' WHEN CONVERT(INT, c.FLG_EN_RESPETO) = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'LIBRE_PARA_GESTION', CASE WHEN CONVERT(INT, c.FLG_LIBRE_PARA_GESTION) = 1 THEN N'SI' WHEN CONVERT(INT, c.FLG_LIBRE_PARA_GESTION) = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'NUEVO_MES', CASE WHEN CONVERT(INT, c.FLG_NUEVO_MES) = 1 THEN N'SI' WHEN CONVERT(INT, c.FLG_NUEVO_MES) = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PAGO_ACUMULADO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PAGO_ACUMULADO)),
+            (N'PAGO_OFICIAL_ACUMULADO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PAGO_OFICIAL_ACUMULADO))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), m.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_MEJOR_GESTION_HISTORICO AS m WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'MEJOR_CONTACTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), m.MEJOR_CONTACTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MEJOR_INDICADOR', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), m.MEJOR_INDICADOR))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE m.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), p.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @FcMl
+        FROM Financiera_OH_Cobranzas.dbo.TBL_SIP_PRIORIDAD_HISTORICO AS p WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRIORIDAD_ML', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), p.PRIORIDAD_ML))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TRAMO_PRIORIDAD_ML', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), p.TRAMO_PRIORIDAD_ML))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CLUSTER_ML', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), p.CLUSTER_ML))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE p.FECHA_CORTE = @FcMl
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 133)
+    BEGIN
+        -- 133 · Compartamos vigente grupal
+        SET @Fuente = N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_INTEGRANTE), NULL, TRY_CONVERT(DECIMAL(18, 2), NULL),
+               c.Q_GESTIONES_HUMANA, c.Q_GESTIONES_MAQUINA, c.FLG_CONTACTO_DIRECTO, TRY_CONVERT(DATETIME2(0), NULL), c.Q_PDP_REGISTROS_MES
+        FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'GRUPO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.GRUPO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'OFICINA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.OFICINA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ZONA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.ZONA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.PRIORIDAD_BANCO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CONDICION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.CONDICION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TRAMO_ACTUAL', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.TRAMO_ACTUAL))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TRAMO_PROYECTADO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), c.TRAMO_PROYECTADO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'CRITICO', CASE WHEN c.FLG_CRITICO = 1 THEN N'SI' WHEN c.FLG_CRITICO = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORITARIO_CONTENCION', CASE WHEN c.FLG_PRIORITARIO_CONTENCION = 1 THEN N'SI' WHEN c.FLG_PRIORITARIO_CONTENCION = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MIGRA_INTEGRANTE', CASE WHEN c.FLG_MIGRA_INTEGRANTE = 1 THEN N'SI' WHEN c.FLG_MIGRA_INTEGRANTE = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DIAS_ATRASO', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.DIAS_ATRASO_INTEGRANTE)),
+            (N'MONTO_PAGADO_ACUM', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.MONTO_PAGADO_ACUM))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 137)
+    BEGIN
+        -- 137 · Propia Interbank
+        SET @Fuente = N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_SOLES), c.CUENTAS, TRY_CONVERT(DECIMAL(18, 2), NULL),
+               c.GESTIONES_HUMANAS, c.GESTIONES_MAQUINA, NULL, TRY_CONVERT(DATETIME2(0), NULL), (SELECT COUNT(DISTINCT p.ID_COMPROMISO) FROM Interbank_Propia_Cobranzas.dbo.PROPIA_PDP_CORTE AS p WITH (NOLOCK) WHERE p.FECHA_CORTE = @Fc AND p.DNI = c.DNI AND p.FECHA_GENERO >= DATEFROMPARTS(YEAR(@Fc), MONTH(@Fc), 1) AND p.FECHA_GENERO < DATEADD(DAY, 1, CAST(@Fc AS DATETIME)))
+        FROM Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'MONTO_PAGADO_MES', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.MONTO_PAGADO_MES))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), a.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CONVERT(NVARCHAR(60), a.CUENTA) COLLATE DATABASE_DEFAULT, v.Valor, v.ValorNum, @Fc
+        FROM Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE AS a WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUB_PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUB_PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONEDA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.MONEDA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DEPARTAMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DEPARTAMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'REGION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.REGION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PROVINCIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PROVINCIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DISTRITO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DISTRITO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ZONA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.ZONA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_MADURACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRIORIDAD))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FECHA_CASTIGO', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, a.FECHA_CASTIGO), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE a.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 144)
+    BEGIN
+        -- 144 · Compartamos castigo grupal
+        SET @Fuente = N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL), c.CUENTAS, TRY_CONVERT(DECIMAL(18, 2), NULL),
+               c.GESTIONES_HUMANAS, c.GESTIONES_MAQUINA, CASE WHEN c.ES_CEF > 0 THEN 1 WHEN c.ES_CEF = 0 THEN 0 END, TRY_CONVERT(DATETIME2(0), NULL), c.COMPROMISOS
+        FROM Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'TIENE_GRU', CASE WHEN CASE WHEN c.TIENE_GRU > 0 THEN 1 WHEN c.TIENE_GRU = 0 THEN 0 END = 1 THEN N'SI' WHEN CASE WHEN c.TIENE_GRU > 0 THEN 1 WHEN c.TIENE_GRU = 0 THEN 0 END = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'TIENE_CCM', CASE WHEN CASE WHEN c.TIENE_CCM > 0 THEN 1 WHEN c.TIENE_CCM = 0 THEN 0 END = 1 THEN N'SI' WHEN CASE WHEN c.TIENE_CCM > 0 THEN 1 WHEN c.TIENE_CCM = 0 THEN 0 END = 0 THEN N'NO' END COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONTO_SISCOB', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.MONTO_SISCOB)),
+            (N'PDP_EXIGIBLES', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.PDP_EXIGIBLES))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE IF (@IdCartera = 148)
+    BEGIN
+        -- 148 · Propia SIP
+        SET @Fuente = N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE';
+
+        SELECT @Fc = MAX(FECHA_CORTE) FROM PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE WITH (NOLOCK) WHERE FECHA_CORTE <= @Hoy;
+        INSERT INTO #cli (DNI, Capital, Cuentas, Meta, GestionesHumanasMes, GestionesMaquinaMes,
+                          ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes)
+        SELECT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               TRY_CONVERT(DECIMAL(18, 2), c.CAPITAL_SOLES), c.CUENTAS, TRY_CONVERT(DECIMAL(18, 2), NULL),
+               c.GESTIONES_HUMANAS, c.GESTIONES_MAQUINA, NULL, TRY_CONVERT(DATETIME2(0), NULL), (SELECT COUNT(DISTINCT p.ID_COMPROMISO) FROM PROPIA_COBRANZAS.dbo.PROPIA_PDP_CORTE AS p WITH (NOLOCK) WHERE p.FECHA_CORTE = @Fc AND p.DNI = c.DNI AND p.FECHA_GENERO >= DATEFROMPARTS(YEAR(@Fc), MONTH(@Fc), 1) AND p.FECHA_GENERO < DATEADD(DAY, 1, CAST(@Fc AS DATETIME)))
+        FROM PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE AS c WITH (NOLOCK)
+        WHERE c.FECHA_CORTE = @Fc;
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), c.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CAST(NULL AS NVARCHAR(60)), v.Valor, v.ValorNum, @Fc
+        FROM PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE AS c WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'MONTO_PAGADO_MES', CAST(NULL AS NVARCHAR(200)), TRY_CONVERT(DECIMAL(18, 4), c.MONTO_PAGADO_MES))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE c.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+        INSERT INTO #dato (DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT DISTINCT LTRIM(RTRIM(CONVERT(VARCHAR(20), a.DNI))) COLLATE DATABASE_DEFAULT,
+               v.Campo, CONVERT(NVARCHAR(60), a.CUENTA) COLLATE DATABASE_DEFAULT, v.Valor, v.ValorNum, @Fc
+        FROM PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE AS a WITH (NOLOCK)
+        CROSS APPLY (VALUES
+            (N'PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'SUB_PRODUCTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.SUB_PRODUCTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'MONEDA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.MONEDA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DEPARTAMENTO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DEPARTAMENTO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'REGION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.REGION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PROVINCIA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PROVINCIA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'DISTRITO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.DISTRITO))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'ZONA', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.ZONA))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'RANGO_MADURACION', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.RANGO_MADURACION))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'PRIORIDAD_BANCO', NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), a.PRIORIDAD))), N'') COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4))),
+            (N'FECHA_CASTIGO', CONVERT(NVARCHAR(200), CONVERT(CHAR(10), TRY_CONVERT(DATE, a.FECHA_CASTIGO), 23)) COLLATE DATABASE_DEFAULT, CAST(NULL AS DECIMAL(18, 4)))
+        ) AS v (Campo, Valor, ValorNum)
+        WHERE a.FECHA_CORTE = @Fc
+          AND (v.Valor IS NOT NULL OR v.ValorNum IS NOT NULL);
+    END
+    ELSE
+        THROW 50451, 'La cartera no tiene fuente de cliente configurada en score.sp_ArmarBaseTrabajoCliente.', 1;
+
+    IF @Fc IS NULL
+        THROW 50453, 'La fuente de la cartera no tiene ningún corte hasta hoy.', 1;
+
+    DELETE FROM #cli WHERE DNI IS NULL OR DNI = '';
+    DELETE FROM #dato WHERE DNI IS NULL OR DNI = '';
+
+    /* 2. Controles */
+    DECLARE @Clientes INT = (SELECT COUNT(*) FROM #cli),
+            @Repetidos INT = (SELECT COUNT(*) FROM (SELECT DNI FROM #cli GROUP BY DNI HAVING COUNT(*) > 1) AS r),
+            @FilasDato INT = (SELECT COUNT(*) FROM #dato),
+            @CamposDato INT = (SELECT COUNT(DISTINCT Campo) FROM #dato),
+            @FechaDatoMin DATE = (SELECT MIN(FechaFuente) FROM #dato);
+
+    SELECT DISTINCT u.DNI COLLATE DATABASE_DEFAULT AS DNI
+    INTO #uni
+    FROM score.TelefonoUniverso AS u
+    WHERE u.IdCartera = @IdCartera AND u.ExcluidoListaNegra = 0;
+
+    DECLARE @Universo INT = (SELECT COUNT(*) FROM #uni),
+            @SinDato INT = (SELECT COUNT(*) FROM #uni AS u WHERE NOT EXISTS (SELECT 1 FROM #cli AS c WHERE c.DNI = u.DNI));
+
+    IF @Simular = 1
+    BEGIN
+        SELECT 'SIMULACION' AS Modo, @IdCartera AS IdCartera, @Fuente AS Fuente, @Fc AS FechaCorteFuente,
+               @Clientes AS ClientesFuente, @Repetidos AS DniRepetidos, @Universo AS ClientesUniverso,
+               @Universo - @SinDato AS UniversoConDato, @SinDato AS UniversoSinDato,
+               CAST(100.0 * (@Universo - @SinDato) / NULLIF(@Universo, 0) AS DECIMAL(6, 2)) AS PctUniversoConDato,
+               @FilasDato AS FilasDato, @CamposDato AS CamposDato, @FechaDatoMin AS FechaFuenteDatoMin;
+
+        IF @Detalle = 1
+        BEGIN
+            -- Cobertura por campo
+            SELECT d.Campo,
+                   CASE WHEN MAX(CASE WHEN d.Cuenta IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'CUENTA' ELSE 'CLIENTE' END AS Nivel,
+                   COUNT(DISTINCT d.DNI) AS Clientes,
+                   CAST(100.0 * COUNT(DISTINCT d.DNI) / NULLIF(@Clientes, 0) AS DECIMAL(6, 2)) AS PctClientes,
+                   COUNT(DISTINCT d.Valor) AS ValoresDistintos,
+                   MIN(d.Valor) AS ValorMinimo, MAX(d.Valor) AS ValorMaximo,
+                   MIN(d.ValorNum) AS NumMinimo, MAX(d.ValorNum) AS NumMaximo,
+                   MIN(d.FechaFuente) AS FechaFuente
+            FROM #dato AS d
+            GROUP BY d.Campo
+            ORDER BY d.Campo;
+
+            -- Campos comunes: cuántos clientes tienen dato
+            SELECT COUNT(*) AS Clientes,
+                   SUM(CASE WHEN Capital IS NOT NULL THEN 1 ELSE 0 END) AS ConCapital,
+                   SUM(CASE WHEN Cuentas IS NOT NULL THEN 1 ELSE 0 END) AS ConCuentas,
+                   SUM(CASE WHEN Meta IS NOT NULL THEN 1 ELSE 0 END) AS ConMeta,
+                   SUM(CASE WHEN GestionesHumanasMes IS NOT NULL THEN 1 ELSE 0 END) AS ConGestionesHumanas,
+                   SUM(CASE WHEN ContactoDirectoMes = 1 THEN 1 ELSE 0 END) AS ContactoDirectoMes,
+                   SUM(CASE WHEN FechaUltimoCef IS NOT NULL THEN 1 ELSE 0 END) AS ConFechaUltimoCef,
+                   SUM(CASE WHEN PdpGeneradasMes > 0 THEN 1 ELSE 0 END) AS ConPdpMes,
+                   CAST(SUM(Capital) AS DECIMAL(18, 2)) AS CapitalTotal
+            FROM #cli;
+
+            -- Formato de los DNI que no cruzan (sin mostrar DNI): largo y si son solo dígitos
+            SELECT 'UNIVERSO_SIN_DATO' AS Lado, LEN(u.DNI) AS Largo,
+                   CASE WHEN u.DNI LIKE '%[^0-9]%' THEN 'CON_LETRAS' ELSE 'SOLO_DIGITOS' END AS Tipo, COUNT(*) AS DNI
+            FROM #uni AS u WHERE NOT EXISTS (SELECT 1 FROM #cli AS c WHERE c.DNI = u.DNI)
+            GROUP BY LEN(u.DNI), CASE WHEN u.DNI LIKE '%[^0-9]%' THEN 'CON_LETRAS' ELSE 'SOLO_DIGITOS' END
+            UNION ALL
+            SELECT 'FUENTE', LEN(c.DNI), CASE WHEN c.DNI LIKE '%[^0-9]%' THEN 'CON_LETRAS' ELSE 'SOLO_DIGITOS' END, COUNT(*)
+            FROM #cli AS c
+            GROUP BY LEN(c.DNI), CASE WHEN c.DNI LIKE '%[^0-9]%' THEN 'CON_LETRAS' ELSE 'SOLO_DIGITOS' END
+            ORDER BY 1, 2, 3;
+        END;
+        RETURN;
+    END;
+
+    IF @Repetidos > 0
+    BEGIN
+        DECLARE @Msg NVARCHAR(400) = CONCAT(N'La fuente ', @Fuente, N' trae ', @Repetidos,
+            N' DNI repetidos para la cartera ', @IdCartera, N' en el corte ', CONVERT(CHAR(10), @Fc, 23),
+            N'. No se elige un valor: revisar la fuente.');
+        THROW 50452, @Msg, 1;
+    END;
+
+    /* 3. Guardado de la cartera en una transacción */
+    BEGIN TRAN;
+        DELETE FROM score.BaseTrabajoCliente WHERE IdCartera = @IdCartera;
+
+        INSERT INTO score.BaseTrabajoCliente (
+            IdCartera, DNI, FechaCorteFuente, Capital, RangoCapital, Cuentas, Meta,
+            GestionesHumanasMes, GestionesMaquinaMes, ContactoDirectoMes, FechaUltimoCef, PdpGeneradasMes, FechaArmado)
+        SELECT @IdCartera, c.DNI, @Fc, c.Capital,
+               CASE WHEN c.Capital IS NULL THEN N'0. SIN INFORMACION' WHEN c.Capital < 500 THEN N'1. [0 - 499.99]' WHEN c.Capital < 1000 THEN N'2. [500 - 999.99]' WHEN c.Capital < 2500 THEN N'3. [1,000 - 2,499.99]' WHEN c.Capital < 5000 THEN N'4. [2,500 - 4,999.99]' WHEN c.Capital < 10000 THEN N'5. [5,000 - 9,999.99]' WHEN c.Capital < 20000 THEN N'6. [10,000 - 19,999.99]' ELSE N'7. [20,000+]' END,
+               c.Cuentas, c.Meta, c.GestionesHumanasMes, c.GestionesMaquinaMes,
+               CAST(c.ContactoDirectoMes AS BIT), c.FechaUltimoCef, c.PdpGeneradasMes, SYSDATETIME()
+        FROM #cli AS c;
+
+        DELETE FROM score.BaseTrabajoDato WHERE IdCartera = @IdCartera;
+
+        INSERT INTO score.BaseTrabajoDato (IdCartera, DNI, Campo, Cuenta, Valor, ValorNum, FechaFuente)
+        SELECT @IdCartera, d.DNI, d.Campo, d.Cuenta, d.Valor, d.ValorNum, d.FechaFuente
+        FROM #dato AS d;
+
+        MERGE score.BaseTrabajoEstado AS t
+        USING (SELECT @IdCartera AS IdCartera) AS s ON t.IdCartera = s.IdCartera
+        WHEN MATCHED THEN UPDATE SET Fuente = @Fuente, FechaCorteFuente = @Fc, ClientesFuente = @Clientes,
+             ClientesUniverso = @Universo, UniversoSinDato = @SinDato, FilasDato = @FilasDato, FechaArmado = SYSDATETIME()
+        WHEN NOT MATCHED THEN INSERT (IdCartera, Fuente, FechaCorteFuente, ClientesFuente, ClientesUniverso,
+             UniversoSinDato, FilasDato, FechaArmado)
+             VALUES (@IdCartera, @Fuente, @Fc, @Clientes, @Universo, @SinDato, @FilasDato, SYSDATETIME());
+    COMMIT;
+
+    SELECT 'GUARDADO' AS Modo, @IdCartera AS IdCartera, @Fuente AS Fuente, @Fc AS FechaCorteFuente,
+           @Clientes AS ClientesFuente, @Repetidos AS DniRepetidos, @Universo AS ClientesUniverso,
+           @Universo - @SinDato AS UniversoConDato, @SinDato AS UniversoSinDato,
+           CAST(100.0 * (@Universo - @SinDato) / NULLIF(@Universo, 0) AS DECIMAL(6, 2)) AS PctUniversoConDato,
+           @FilasDato AS FilasDato, @CamposDato AS CamposDato, @FechaDatoMin AS FechaFuenteDatoMin;
+END;
+GO
+
+-- Lo que consulta la pantalla: teléfonos del último score de cada cartera, con atributos y cliente.
+-- Los campos propios de cada cartera se filtran con EXISTS sobre score.BaseTrabajoDato.
+CREATE OR ALTER VIEW score.vw_BaseTrabajo
+AS
+WITH ult AS (
+    SELECT IdCartera, MAX(FechaCorte) AS FechaCorte FROM score.TelefonoScore GROUP BY IdCartera
+)
+SELECT s.IdCartera, s.DNI, s.Telefono, s.FechaCorte AS FechaScore, s.Version,
+       s.Score, s.Tramo, s.OrdenCliente, s.Descartado, s.MotivoDescarte,
+       s.Razon1, s.Razon2, s.Razon3, s.Razon_Resta,
+       u.IdCliente, u.PrioridadColor, u.Osiptel, u.Whatsapp, u.Timbra, u.Operador, u.EsEmpresa,
+       u.N_DNI_Comparten, u.AnioMesDato, u.OrigenTexto, u.ObservacionTexto,
+       c.FechaCorteFuente, c.Capital, c.RangoCapital, c.Cuentas, c.Meta,
+       c.GestionesHumanasMes, c.GestionesMaquinaMes, c.ContactoDirectoMes, c.FechaUltimoCef, c.PdpGeneradasMes
+FROM score.TelefonoScore AS s
+INNER JOIN ult ON ult.IdCartera = s.IdCartera AND ult.FechaCorte = s.FechaCorte
+LEFT JOIN score.TelefonoUniverso AS u
+       ON u.IdCartera = s.IdCartera AND u.DNI = s.DNI AND u.Telefono = s.Telefono
+LEFT JOIN score.BaseTrabajoCliente AS c
+       ON c.IdCartera = s.IdCartera AND c.DNI = s.DNI;
+GO
+
+/* =====================================================================================
+   BLOQUE 3 · Catálogo de campos (se puede volver a ejecutar: actualiza textos, no toca "Activo")
+   ===================================================================================== */
+MERGE score.Campo AS t
+USING (VALUES
+    (N'SCORE', N'Score del teléfono', N'SC', N'SCORE', N'RANGO', N'TRABAJO', N'Score', NULL, N'Probabilidad relativa de contacto directo en la semana, en escala 0 a 100.', N'score.TelefonoScore (versión de pesos publicada)', N'Cada actualización de la cartera'),
+    (N'TRAMO', N'Tramo del score', N'T', N'SCORE', N'LISTA', N'TRABAJO', N'Tramo', N'A|B|C|D|E', N'A = mejor quintil del score, E = peor (cortes del entrenamiento).', N'score.TelefonoScore (versión de pesos publicada)', N'Cada actualización de la cartera'),
+    (N'ORDEN_CLIENTE', N'Orden del teléfono en el cliente', N'OR', N'SCORE', N'RANGO', N'TRABAJO', N'OrdenCliente', NULL, N'1 = primer teléfono a marcar del cliente según el score.', N'score.TelefonoScore (versión de pesos publicada)', N'Cada actualización de la cartera'),
+    (N'DESCARTADO', N'Teléfono descartado', N'DESC', N'SCORE', N'SINO', N'TRABAJO', N'Descartado', N'NO|SI', N'2 o más equivocados para el DNI después del último CEF. No entra a las bases.', N'score.TelefonoScore (versión de pesos publicada)', N'Cada actualización de la cartera'),
+    (N'WHATSAPP', N'WhatsApp', N'WSP', N'TELEFONO', N'LISTA', N'TRABAJO', N'Whatsapp', NULL, N'Validación de WhatsApp del número, como está en SISCOB.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'OSIPTEL', N'OSIPTEL', N'OSI', N'TELEFONO', N'LISTA', N'TRABAJO', N'Osiptel', NULL, N'Validación OSIPTEL del número, como está en SISCOB (LN = lista negra, se excluye).', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'TIMBRA', N'Timbrado', N'TIM', N'TELEFONO', N'LISTA', N'TRABAJO', N'Timbra', NULL, N'Resultado de la validación de timbrado, como está en SISCOB.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'COLOR', N'Semáforo', N'COL', N'TELEFONO', N'LISTA', N'TRABAJO', N'PrioridadColor', N'V|T|A|PQ|F|R', N'V verde CEF · T turquesa tercero · A amarillo no contesta · P/Q plomo sin gestión · F fucsia fallado · R rojo equivocado.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'OPERADOR', N'Operador', N'OPE', N'TELEFONO', N'LISTA', N'TRABAJO', N'Operador', NULL, N'Operador del número, tomado del origen del dato en SISCOB.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'TELEFONO_EMPRESA', N'Teléfono enviado por el banco', N'EMP', N'TELEFONO', N'SINO', N'TRABAJO', N'EsEmpresa', NULL, N'Origen EMPRESA u observación EMP: lo envió el banco.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'DNI_COMPARTEN', N'DNI que comparten el número', N'COMP', N'TELEFONO', N'RANGO', N'TRABAJO', N'N_DNI_Comparten', NULL, N'Cuántos clientes activos tienen este mismo número.', N'score.TelefonoUniverso ← siscob.dbo.telefonos (alineado con producción)', N'Cada actualización de la cartera'),
+    (N'CAPITAL', N'Capital del cliente (S/)', N'CAP', N'CLIENTE', N'RANGO', N'TRABAJO', N'Capital', NULL, N'Capital del cliente en el corte (suma de sus cuentas).', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_CAPITAL', N'Rango de capital', N'RC', N'CLIENTE', N'LISTA', N'TRABAJO', N'RangoCapital', N'7. [20,000+]|6. [10,000 - 19,999.99]|5. [5,000 - 9,999.99]|4. [2,500 - 4,999.99]|3. [1,000 - 2,499.99]|2. [500 - 999.99]|1. [0 - 499.99]|0. SIN INFORMACION', N'Escala estándar aprobada el 26/10/2026 (la misma del portal Analytics).', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CUENTAS', N'Cuentas o préstamos', N'CTA', N'CLIENTE', N'RANGO', N'TRABAJO', N'Cuentas', NULL, N'Cantidad de cuentas o préstamos del cliente en la asignación.', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'META', N'Meta del cliente (S/)', N'META', N'CLIENTE', N'RANGO', N'TRABAJO', N'Meta', NULL, N'Meta asignada al cliente en el corte (solo carteras que la tienen).', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GESTIONES_HUMANAS_MES', N'Gestiones humanas del mes', N'GH', N'GESTION_CLIENTE', N'RANGO', N'TRABAJO', N'GestionesHumanasMes', NULL, N'Gestiones de asesor al cliente en el mes, según el corte.', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GESTIONES_MAQUINA_MES', N'Gestiones de máquina del mes', N'GM', N'GESTION_CLIENTE', N'RANGO', N'TRABAJO', N'GestionesMaquinaMes', NULL, N'Llamadas del predictivo al cliente en el mes, según el corte.', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CONTACTO_DIRECTO_MES', N'Contacto directo en el mes', N'CD', N'GESTION_CLIENTE', N'SINO', N'TRABAJO', N'ContactoDirectoMes', NULL, N'El cliente tuvo contacto directo (CEF) en el mes, según el corte. Vacío en Propia.', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FECHA_ULTIMO_CEF', N'Fecha del último CEF del cliente', N'UCEF', N'GESTION_CLIENTE', N'FECHA', N'TRABAJO', N'FechaUltimoCef', NULL, N'Último contacto directo del cliente según el corte (124, 126, 128 y 132).', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PDP_GENERADAS_MES', N'PDP generadas en el mes', N'PDP', N'GESTION_CLIENTE', N'RANGO', N'TRABAJO', N'PdpGeneradasMes', NULL, N'Promesas de pago generadas en el mes del corte.', N'score.BaseTrabajoCliente ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PRIORIDAD_BANCO', N'Prioridad del banco', N'PRB', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Prioridad de gestión enviada por el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RIESGO_CASTIGO', N'Riesgo castigo', N'RCA', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CLUSTER_RFP', N'Cluster RFP', N'RFP', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FAMILIA', N'Familia de producto', N'FAM', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PRODUCTO', N'Producto', N'PROD', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Producto de la cuenta, como lo envía el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TIPO_PRODUCTO', N'Tipo de producto', N'TPRO', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SUB_PRODUCTO', N'Subproducto', N'SPRO', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GRUPO_PRODUCTO', N'Grupo de producto', N'GPRO', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MONEDA', N'Moneda', N'MON', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Moneda de la cuenta.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'DEPARTAMENTO', N'Departamento', N'DEP', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Ubicación según la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PROVINCIA', N'Provincia', N'PRV', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Ubicación según la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'DISTRITO', N'Distrito', N'DIS', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Ubicación según la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'REGION', N'Región', N'REG', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Ubicación según la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'ZONA', N'Zona', N'ZON', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Zona según la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TERRITORIAL', N'Territorial', N'TER', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SUPERVISOR_BANCO', N'Supervisor del banco', N'SUPB', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_UIT', N'Rango UIT', N'UIT', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TIPO_CARTERA', N'Tipo de cartera', N'TCAR', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SUB_TIPO_CARTERA', N'Subtipo de cartera', N'STC', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'REGLA_ASIG_TIPO', N'Regla de asignación', N'RAS', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Última parte de REGLA_ASIG (misma expresión del portal).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GRUPO_ASIG', N'Grupo de asignación', N'GAS', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'HIPOTECARIO', N'Hipotecario', N'HIP', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FOGAPI', N'FOGAPI', N'FOG', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MESES_CASTIGO', N'Meses de castigo', N'MCAS', N'CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Meses desde el castigo, según el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'DIAS_MORA', N'Días de mora', N'MORA', N'CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Días de mora de la cuenta, según el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'DIAS_ATRASO', N'Días de atraso', N'ATR', N'CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Días de atraso del integrante.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FECHA_ULT_PAGO_BANCO', N'Último pago según el banco', N'UPB', N'CLIENTE', N'FECHA', N'DATO', NULL, NULL, N'Fecha del último pago informada por el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FECHA_CASTIGO', N'Fecha de castigo', N'FCAS', N'CLIENTE', N'FECHA', N'DATO', NULL, NULL, N'Fecha de castigo de la cuenta.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_MADURACION', N'Rango de maduración', N'MAD', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Maduración del banco; en Compartamos castigo individual, en meses con la regla del 26/10.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_MORA', N'Rango de mora', N'RMO', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Rango de mora del corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_DIAS_ATRASO', N'Rango de días de atraso', N'RDA', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Rango de días de atraso del corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SEGMENTO', N'Segmento del banco', N'SEG', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SUB_SEGMENTO', N'Subsegmento del banco', N'SSEG', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SEGMENTACION', N'Segmentación (semáforo del banco)', N'SEGM', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Verde / Ámbar / Rojo de la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SEGMENTO_ESTRATEGIA', N'Segmento de estrategia', N'SEST', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SEGMENTO_IMPULSO', N'Segmento impulso', N'IMP', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Segmento impulso del corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CALIFICACION_SBS', N'Calificación SBS', N'SBS', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TIPO_CLIENTE', N'Tipo de cliente', N'TCLI', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'INHIBIR_GESTION', N'Inhibir gestión', N'INH', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Marca del banco para no gestionar.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'FERIA', N'En feria', N'FER', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'La cuenta está en feria de descuentos.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PCT_DSCTO_CANCELACION', N'% descuento de cancelación', N'DCAN', N'CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Descuento de cancelación ofrecido por el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PCT_DSCTO_FERIA', N'% descuento de feria', N'DFER', N'CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Descuento de feria ofrecido por el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SCORE_RIESGOS', N'Score de riesgos del banco', N'SRB', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SCORE_BANCO', N'Score del banco', N'SCB', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'SCORE_FINAL de la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CONVENIO', N'Convenio', N'CONV', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Como viene en la asignación del banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_ENTIDADES', N'Rango de entidades reportantes', N'ENT', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Entidades que reportan al cliente.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_CAPITAL_CUENTA', N'Rango de capital de la cuenta', N'RCC', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Rango de la cuenta enviado por el banco.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'RANGO_ETARIO', N'Rango etario', N'EDAD', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Desde los datos complementarios.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'ESTADO_CIVIL', N'Estado civil', N'ECIV', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Desde los datos complementarios.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CONDICION', N'Condición', N'COND', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Condición del integrante en la asignación.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CONDICION_SISCOB', N'Condición en SISCOB', N'CSIS', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Condición actual del cliente en SISCOB.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GRUPO', N'Grupo (banca grupal)', N'GRP', N'CLIENTE', N'TEXTO', N'DATO', NULL, NULL, N'Nombre del grupo del integrante.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'OFICINA', N'Oficina', N'OFI', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Oficina del grupo.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TRAMO_ACTUAL', N'Tramo actual', N'TRA', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Tramo de atraso actual del integrante.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TRAMO_PROYECTADO', N'Tramo proyectado', N'TRP', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Tramo de atraso proyectado del integrante.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CRITICO', N'Integrante crítico', N'CRI', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Marca de integrante crítico del corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PRIORITARIO_CONTENCION', N'Prioritario para contención', N'PCON', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Marca del corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MIGRA_INTEGRANTE', N'Migra de tramo', N'MIG', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'El integrante migra de tramo según la proyección.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TIENE_GRU', N'Tiene crédito grupal', N'GRU', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Del corte de castigo grupal.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TIENE_CCM', N'Tiene CCM', N'CCM', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Del corte de castigo grupal.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'CLUSTER_ML', N'Cluster ML (Biznescob)', N'CML', N'SEGMENTO_PROPIO', N'LISTA', N'DATO', NULL, NULL, N'Cluster del modelo propio de Biznescob.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'SCORE_RIESGO', N'Score de riesgo (Biznescob)', N'SRI', N'SEGMENTO_PROPIO', N'LISTA', N'DATO', NULL, NULL, N'Score de riesgo propio de Biznescob.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'GRUPO_SCORE', N'Grupo de score (Biznescob)', N'GSC', N'SEGMENTO_PROPIO', N'LISTA', N'DATO', NULL, NULL, N'Grupo del score de riesgo propio.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PRIORIDAD_ML', N'Prioridad ML (Biznescob)', N'PML', N'SEGMENTO_PROPIO', N'LISTA', N'DATO', NULL, NULL, N'Prioridad del modelo de pago de SIP; puede estar desactualizada (ver fecha).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TRAMO_PRIORIDAD_ML', N'Tramo de prioridad ML', N'TPML', N'SEGMENTO_PROPIO', N'LISTA', N'DATO', NULL, NULL, N'Tramo del modelo de pago de SIP.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'ULTIMO_CONTACTO', N'Último contacto del cliente', N'UCON', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Tipo de contacto de la última gestión, según el corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MEJOR_CONTACTO', N'Mejor contacto del cliente', N'MCON', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Mejor tipo de contacto del mes, según el corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MEJOR_INDICADOR', N'Mejor tipificación del cliente', N'MIND', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Tipificación de la mejor gestión del mes.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MEJOR_GESTION', N'Mejor gestión del cliente', N'MGES', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Mejor gestión del mes, según el corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'ULTIMA_GESTION', N'Última gestión del cliente', N'UGES', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Última gestión, según el corte.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'ESTADO_SEGUIMIENTO', N'Estado del seguimiento', N'ESEG', N'GESTION_CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Seguimiento vigente del cliente (SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'EN_RESPETO', N'En periodo de respeto', N'RESP', N'GESTION_CLIENTE', N'SINO', N'DATO', NULL, NULL, N'El cliente está en días de respeto tras un seguimiento (SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'LIBRE_PARA_GESTION', N'Libre para gestión', N'LIB', N'GESTION_CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Sin seguimiento que lo bloquee (SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'NUEVO_MES', N'Nuevo en el mes', N'NUEVO', N'CLIENTE', N'SINO', N'DATO', NULL, NULL, N'No estaba en la asignación del mes anterior (SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PDP_VIGENTE', N'PDP vigente', N'PDPV', N'GESTION_CLIENTE', N'SINO', N'DATO', NULL, NULL, N'Tiene promesa vigente al corte (Vigente IND/CCM).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PDP_VIGENTES', N'PDP vigentes', N'PDPVS', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Cantidad de promesas vigentes al corte (Interbank).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PDP_PENDIENTES', N'PDP pendientes', N'PDPP', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Promesas pendientes (Compartamos castigo individual).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PROXIMO_VENCIMIENTO_PDP', N'Próximo vencimiento de PDP', N'VPDP', N'GESTION_CLIENTE', N'FECHA', N'DATO', NULL, NULL, N'Fecha de la próxima promesa por vencer.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PDP_EXIGIBLES', N'PDP exigibles', N'PDPE', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Promesas exigibles del mes (castigo grupal).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'COMPORTAMIENTO_PAGO', N'Comportamiento de pago', N'CPAG', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Comportamiento frente a su fecha de pago de referencia.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'TRAMO_REFERENCIA_PAGO', N'Tramo de referencia de pago', N'TREF', N'CLIENTE', N'LISTA', N'DATO', NULL, NULL, N'Tramo respecto a la fecha de pago de referencia.', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PAGO_ACUMULADO', N'Pago acumulado del mes', N'PAG', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'PAGO_ACUMULADO del corte (Vigente IND/CCM, SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PAGO_OFICIAL_ACUMULADO', N'Pago oficial acumulado', N'PAGO', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Pago informado por el banco en el mes (Interbank, SIP).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'PAGO_REGISTRADO_SISCOB', N'Pago registrado en SISCOB', N'PAGS', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Pago registrado en SISCOB en el mes (Interbank).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MONTO_PDP_PAGADO', N'Monto pagado de PDP', N'PAGP', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Monto pagado de las promesas (Compartamos castigo individual).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MONTO_PAGADO_ACUM', N'Monto pagado acumulado', N'PAGA', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Pagado acumulado del integrante (Vigente grupal).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MONTO_PAGADO_MES', N'Monto pagado en el mes', N'PAGM', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Pagado en el mes (Propia).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera'),
+    (N'MONTO_SISCOB', N'Monto pagado en SISCOB', N'PAGSIS', N'GESTION_CLIENTE', N'RANGO', N'DATO', NULL, NULL, N'Pagos registrados en SISCOB (castigo grupal).', N'score.BaseTrabajoDato ← corte de Analytics de la cartera (ver score.CampoCartera)', N'Cada actualización de la cartera')
+) AS s (Codigo, Etiqueta, Abreviatura, Grupo, TipoFiltro, Origen, ColumnaOrigen, OrdenValores, Descripcion, Fuente, Actualizacion)
+ON t.Codigo = s.Codigo
+WHEN MATCHED THEN UPDATE SET Etiqueta = s.Etiqueta, Abreviatura = s.Abreviatura, Grupo = s.Grupo,
+     TipoFiltro = s.TipoFiltro, Origen = s.Origen, ColumnaOrigen = s.ColumnaOrigen, OrdenValores = s.OrdenValores,
+     Descripcion = s.Descripcion, Fuente = s.Fuente, Actualizacion = s.Actualizacion
+WHEN NOT MATCHED THEN INSERT (Codigo, Etiqueta, Abreviatura, Grupo, TipoFiltro, Origen, ColumnaOrigen, OrdenValores,
+     Descripcion, Fuente, Actualizacion)
+     VALUES (s.Codigo, s.Etiqueta, s.Abreviatura, s.Grupo, s.TipoFiltro, s.Origen, s.ColumnaOrigen, s.OrdenValores,
+             s.Descripcion, s.Fuente, s.Actualizacion);
+GO
+
+MERGE score.CampoCartera AS t
+USING (VALUES
+    (N'CAPITAL', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'CAPITAL_SOLES'),
+    (N'CLUSTER_RFP', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'CLUSTER_RFP'),
+    (N'CONTACTO_DIRECTO_MES', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'TIENE_CEF'),
+    (N'CUENTAS', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'PRESTAMOS'),
+    (N'DEPARTAMENTO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'DEPARTAMENTO'),
+    (N'DIAS_MORA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'DIAS_MORA'),
+    (N'DISTRITO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'DISTRITO'),
+    (N'FAMILIA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'FAMILIA'),
+    (N'FECHA_ULT_PAGO_BANCO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'FECHA_ULT_PAGO_BANCO'),
+    (N'FOGAPI', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'FOGAPI'),
+    (N'GESTIONES_HUMANAS_MES', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'GESTIONES_MAQUINA'),
+    (N'GRUPO_ASIG', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'GRUPO_ASIG'),
+    (N'HIPOTECARIO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'HIPOTECARIO'),
+    (N'MESES_CASTIGO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'MESES_CASTIGO'),
+    (N'META', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'META_SOLES'),
+    (N'MONEDA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'MONEDA'),
+    (N'PDP_GENERADAS_MES', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'PDP_GENERADAS_MES'),
+    (N'PRIORIDAD_BANCO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'PRIORIDAD'),
+    (N'PRODUCTO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'PRODUCTO'),
+    (N'PROVINCIA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'PROVINCIA'),
+    (N'RANGO_CAPITAL', 112, N'CLIENTE', N'MiBanco_Cobranzas.dbo.VW_MB_CASTIGO_CLIENTE_CORTE', N'escala estándar sobre CAPITAL_SOLES'),
+    (N'RANGO_UIT', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'RANGO_UIT'),
+    (N'REGLA_ASIG_TIPO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'REGLA_ASIG'),
+    (N'RIESGO_CASTIGO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'RIESGO_CASTIGO'),
+    (N'SUPERVISOR_BANCO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'SUPERVISOR'),
+    (N'TERRITORIAL', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'TERRITORIAL'),
+    (N'TIPO_CARTERA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'TIPO_CARTERA'),
+    (N'TIPO_PRODUCTO', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'TIPO_PRODUCTO'),
+    (N'ZONA', 112, N'CUENTA', N'MiBanco_Cobranzas.dbo.MB_CASTIGO_PRESTAMO_CORTE', N'ZONA'),
+    (N'CALIFICACION_SBS', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'CALIFICACION_SBS'),
+    (N'CAPITAL', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'CAPITAL_CLIENTE'),
+    (N'CONTACTO_DIRECTO_MES', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'FLG_CEF'),
+    (N'CUENTAS', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'Q_CUENTAS'),
+    (N'DEPARTAMENTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'DEPARTAMENTO_CLIENTE'),
+    (N'DISTRITO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'DISTRITO_CLIENTE'),
+    (N'FECHA_CASTIGO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'FECHA_CASTIGO'),
+    (N'FECHA_ULT_PAGO_BANCO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'FECHA_ULTIMO_PAGO_BANCO'),
+    (N'FERIA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'FLAG_FERIA'),
+    (N'GESTIONES_HUMANAS_MES', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'Q_GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'Q_GESTIONES_MAQUINA'),
+    (N'GRUPO_PRODUCTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'GRUPO_PRODUCTO'),
+    (N'INHIBIR_GESTION', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'INHIBIR_GESTION'),
+    (N'MEJOR_CONTACTO', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'MEJOR_CONTACTO'),
+    (N'MEJOR_INDICADOR', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'MEJOR_INDICADOR'),
+    (N'META', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'META_CLIENTE'),
+    (N'MONEDA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'MONEDA'),
+    (N'PAGO_OFICIAL_ACUMULADO', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'PAGO_OFICIAL_ACUMULADO'),
+    (N'PAGO_REGISTRADO_SISCOB', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'PAGO_REGISTRADO_SISCOB'),
+    (N'PCT_DSCTO_CANCELACION', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'PCT_DSCTO_CANCELACION'),
+    (N'PCT_DSCTO_FERIA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'PCT_DSCTO_FERIA'),
+    (N'PDP_GENERADAS_MES', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'Q_PDP_GENERADAS'),
+    (N'PDP_VIGENTES', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'Q_PDP_VIGENTES'),
+    (N'PRIORIDAD_BANCO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'PRIORIDAD_GESTION'),
+    (N'PRODUCTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'PRODUCTO'),
+    (N'PROVINCIA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'PROVINCIA_CLIENTE'),
+    (N'RANGO_CAPITAL', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'escala estándar sobre CAPITAL_CLIENTE'),
+    (N'RANGO_MADURACION', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'RANGO_MADURACION'),
+    (N'SEGMENTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'SEGMENTO'),
+    (N'SEGMENTO_ESTRATEGIA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'SEGMENTO_ESTRATEGIA'),
+    (N'SUB_PRODUCTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'SUB_PRODUCTO'),
+    (N'SUB_SEGMENTO', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'SUB_SEGMENTO'),
+    (N'SUB_TIPO_CARTERA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'SUB_TIPO_CARTERA'),
+    (N'TIPO_CARTERA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'TIPO_CARTERA'),
+    (N'TIPO_CLIENTE', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'TIPO_CLIENTE'),
+    (N'ULTIMO_CONTACTO', 117, N'CLIENTE', N'Interbank_Cobranzas.dbo.TBL_IBK_CLIENTE_HISTORICO', N'ULTIMO_CONTACTO'),
+    (N'ZONA', 117, N'CUENTA', N'Interbank_Cobranzas.dbo.TBL_IBK_CUENTA_HISTORICO', N'ZONA_CLIENTE'),
+    (N'CAPITAL', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'CAPITAL_TOTAL'),
+    (N'CONDICION_SISCOB', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'CONDICION_SISCOB_ACTUAL'),
+    (N'CONTACTO_DIRECTO_MES', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'FLG_CEF'),
+    (N'CONVENIO', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'CONVENIO'),
+    (N'CUENTAS', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'Q_OPERACIONES'),
+    (N'FECHA_ULTIMO_CEF', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'FECHA_ULTIMO_CEF'),
+    (N'GESTIONES_HUMANAS_MES', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'Q_GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'Q_GESTIONES_MAQUINA'),
+    (N'MEJOR_GESTION', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'MEJOR_GESTION'),
+    (N'MONTO_PDP_PAGADO', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'MONTO_PDP_PAGADO'),
+    (N'PDP_GENERADAS_MES', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'Q_PDP'),
+    (N'PDP_PENDIENTES', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'Q_PDP_PENDIENTES'),
+    (N'PRIORIDAD_BANCO', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'FLG_PRIORIDAD'),
+    (N'PROXIMO_VENCIMIENTO_PDP', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'PROXIMO_VENCIMIENTO_PDP'),
+    (N'RANGO_CAPITAL', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'escala estándar sobre CAPITAL_TOTAL'),
+    (N'RANGO_CAPITAL_CUENTA', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'RANGO_CAPITAL_CUENTA'),
+    (N'RANGO_ENTIDADES', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'RANGO_ENTIDADES'),
+    (N'RANGO_MADURACION', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'ANIOS_CASTIGADO'),
+    (N'SCORE_RIESGOS', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'SCORE_RIESGOS'),
+    (N'SEGMENTACION', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'SEGMENTACION'),
+    (N'SEGMENTO', 124, N'CUENTA', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_IND_ASIGNACION_BI_LIMPIA', N'SEGMENTO'),
+    (N'ULTIMA_GESTION', 124, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.CASTIGO_IND_CLIENTE_BI_HISTORICO', N'ULTIMA_GESTION'),
+    (N'CAPITAL', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CAPITAL_TOTAL'),
+    (N'CLUSTER_ML', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CLUSTER_ML'),
+    (N'COMPORTAMIENTO_PAGO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'COMPORTAMIENTO_REFERENCIA'),
+    (N'CONTACTO_DIRECTO_MES', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FLG_CONTACTO_DIRECTO'),
+    (N'CUENTAS', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CANT_CUENTAS'),
+    (N'DEPARTAMENTO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'DEPARTAMENTO'),
+    (N'DISTRITO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'DISTRITO'),
+    (N'ESTADO_CIVIL', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'ESTADO_CIVIL'),
+    (N'FECHA_ULTIMO_CEF', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FECHA_ULTIMO_CEF'),
+    (N'GESTIONES_HUMANAS_MES', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_GESTIONES_HUMANA'),
+    (N'GESTIONES_MAQUINA_MES', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_GESTIONES_MAQUINA'),
+    (N'GRUPO_SCORE', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'GRUPO_SCORE'),
+    (N'MEJOR_GESTION', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'MEJOR_GESTION'),
+    (N'META', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'META'),
+    (N'PAGO_ACUMULADO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PAGO_ACUMULADO'),
+    (N'PDP_GENERADAS_MES', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_PDP_GENERADAS'),
+    (N'PDP_VIGENTE', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FLG_PDP_VIGENTE'),
+    (N'PRODUCTO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PRODUCTO'),
+    (N'PROVINCIA', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PROVINCIA'),
+    (N'RANGO_CAPITAL', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'escala estándar sobre CAPITAL_TOTAL'),
+    (N'RANGO_DIAS_ATRASO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_DIAS_ATRASO'),
+    (N'RANGO_ENTIDADES', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_ENTIDADES_REPORTANTES'),
+    (N'RANGO_ETARIO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_ETARIO'),
+    (N'RANGO_MADURACION', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_MADURACION'),
+    (N'RANGO_MORA', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_MORA'),
+    (N'SCORE_RIESGO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'SCORE_RIESGO'),
+    (N'SEGMENTO_IMPULSO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'SEGMENTO_IMPULSO'),
+    (N'TRAMO_REFERENCIA_PAGO', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'TRAMO_REFERENCIA_PAGO'),
+    (N'ULTIMA_GESTION', 126, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'ULTIMA_GESTION'),
+    (N'CAPITAL', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CAPITAL_TOTAL'),
+    (N'CLUSTER_ML', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CLUSTER_ML'),
+    (N'COMPORTAMIENTO_PAGO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'COMPORTAMIENTO_REFERENCIA'),
+    (N'CONTACTO_DIRECTO_MES', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FLG_CONTACTO_DIRECTO'),
+    (N'CUENTAS', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'CANT_CUENTAS'),
+    (N'DEPARTAMENTO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'DEPARTAMENTO'),
+    (N'DISTRITO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'DISTRITO'),
+    (N'ESTADO_CIVIL', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'ESTADO_CIVIL'),
+    (N'FECHA_ULTIMO_CEF', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FECHA_ULTIMO_CEF'),
+    (N'GESTIONES_HUMANAS_MES', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_GESTIONES_HUMANA'),
+    (N'GESTIONES_MAQUINA_MES', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_GESTIONES_MAQUINA'),
+    (N'GRUPO_SCORE', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'GRUPO_SCORE'),
+    (N'MEJOR_GESTION', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'MEJOR_GESTION'),
+    (N'META', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'META'),
+    (N'PAGO_ACUMULADO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PAGO_ACUMULADO'),
+    (N'PDP_GENERADAS_MES', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'Q_PDP_GENERADAS'),
+    (N'PDP_VIGENTE', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'FLG_PDP_VIGENTE'),
+    (N'PRODUCTO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PRODUCTO'),
+    (N'PROVINCIA', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'PROVINCIA'),
+    (N'RANGO_CAPITAL', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'escala estándar sobre CAPITAL_TOTAL'),
+    (N'RANGO_DIAS_ATRASO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_DIAS_ATRASO'),
+    (N'RANGO_ENTIDADES', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_ENTIDADES_REPORTANTES'),
+    (N'RANGO_ETARIO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_ETARIO'),
+    (N'RANGO_MADURACION', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_MADURACION'),
+    (N'RANGO_MORA', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'RANGO_MORA'),
+    (N'SCORE_RIESGO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'SCORE_RIESGO'),
+    (N'SEGMENTO_IMPULSO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'SEGMENTO_IMPULSO'),
+    (N'TRAMO_REFERENCIA_PAGO', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'TRAMO_REFERENCIA_PAGO'),
+    (N'ULTIMA_GESTION', 128, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_VIGENTE_CLIENTE_BI_ANALITICO', N'ULTIMA_GESTION'),
+    (N'CAPITAL', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'SLD_CAPITAL_ASIG'),
+    (N'CLUSTER_ML', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_PRIORIDAD_HISTORICO', N'CLUSTER_ML'),
+    (N'CONTACTO_DIRECTO_MES', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'FLG_CEF'),
+    (N'EN_RESPETO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'FLG_EN_RESPETO'),
+    (N'ESTADO_SEGUIMIENTO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'ESTADO_SEGUIMIENTO_ACTUAL'),
+    (N'FECHA_ULTIMO_CEF', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'FECHA_ULTIMO_CEF'),
+    (N'GESTIONES_HUMANAS_MES', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'Q_GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'Q_GESTIONES_MAQUINA'),
+    (N'LIBRE_PARA_GESTION', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'FLG_LIBRE_PARA_GESTION'),
+    (N'MEJOR_CONTACTO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_MEJOR_GESTION_HISTORICO', N'MEJOR_CONTACTO'),
+    (N'MEJOR_INDICADOR', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_MEJOR_GESTION_HISTORICO', N'MEJOR_INDICADOR'),
+    (N'META', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'META'),
+    (N'NUEVO_MES', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'FLG_NUEVO_MES'),
+    (N'PAGO_ACUMULADO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'PAGO_ACUMULADO'),
+    (N'PAGO_OFICIAL_ACUMULADO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'PAGO_OFICIAL_ACUMULADO'),
+    (N'PDP_GENERADAS_MES', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'Q_PDP_GENERADAS'),
+    (N'PRIORIDAD_ML', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_PRIORIDAD_HISTORICO', N'PRIORIDAD_ML'),
+    (N'RANGO_CAPITAL', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'escala estándar sobre SLD_CAPITAL_ASIG'),
+    (N'RANGO_MADURACION', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'RANGO_MADURACION'),
+    (N'SCORE_BANCO', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'SCORE_FINAL'),
+    (N'TIPO_CARTERA', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_CLIENTE_BI_HISTORICO', N'TIPO_CARTERA'),
+    (N'TRAMO_PRIORIDAD_ML', 132, N'CLIENTE', N'Financiera_OH_Cobranzas.dbo.TBL_SIP_PRIORIDAD_HISTORICO', N'TRAMO_PRIORIDAD_ML'),
+    (N'CAPITAL', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'CAPITAL_INTEGRANTE'),
+    (N'CONDICION', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'CONDICION'),
+    (N'CONTACTO_DIRECTO_MES', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'FLG_CONTACTO_DIRECTO'),
+    (N'CRITICO', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'FLG_CRITICO'),
+    (N'DIAS_ATRASO', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'DIAS_ATRASO_INTEGRANTE'),
+    (N'GESTIONES_HUMANAS_MES', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'Q_GESTIONES_HUMANA'),
+    (N'GESTIONES_MAQUINA_MES', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'Q_GESTIONES_MAQUINA'),
+    (N'GRUPO', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'GRUPO'),
+    (N'MIGRA_INTEGRANTE', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'FLG_MIGRA_INTEGRANTE'),
+    (N'MONTO_PAGADO_ACUM', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'MONTO_PAGADO_ACUM'),
+    (N'OFICINA', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'OFICINA'),
+    (N'PDP_GENERADAS_MES', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'Q_PDP_REGISTROS_MES'),
+    (N'PRIORIDAD_BANCO', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'PRIORIDAD_BANCO'),
+    (N'PRIORITARIO_CONTENCION', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'FLG_PRIORITARIO_CONTENCION'),
+    (N'RANGO_CAPITAL', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'escala estándar sobre CAPITAL_INTEGRANTE'),
+    (N'TRAMO_ACTUAL', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'TRAMO_ACTUAL'),
+    (N'TRAMO_PROYECTADO', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'TRAMO_PROYECTADO'),
+    (N'ZONA', 133, N'CLIENTE', N'Compartamos_Vigente_Cobranzas.dbo.VW_COMPARTAMOS_GRUPAL_INTEGRANTE_BI_ACTUAL', N'ZONA'),
+    (N'CAPITAL', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'CAPITAL_SOLES'),
+    (N'CUENTAS', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'CUENTAS'),
+    (N'DEPARTAMENTO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'DEPARTAMENTO'),
+    (N'DISTRITO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'DISTRITO'),
+    (N'FECHA_CASTIGO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'FECHA_CASTIGO'),
+    (N'GESTIONES_HUMANAS_MES', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'GESTIONES_MAQUINA'),
+    (N'MONEDA', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'MONEDA'),
+    (N'MONTO_PAGADO_MES', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'MONTO_PAGADO_MES'),
+    (N'PDP_GENERADAS_MES', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'PROPIA_PDP_CORTE: ID_COMPROMISO distintos generados en el mes'),
+    (N'PRIORIDAD_BANCO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'PRIORIDAD'),
+    (N'PRODUCTO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'PRODUCTO'),
+    (N'PROVINCIA', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'PROVINCIA'),
+    (N'RANGO_CAPITAL', 137, N'CLIENTE', N'Interbank_Propia_Cobranzas.dbo.VW_PROPIA_CLIENTE_CORTE', N'escala estándar sobre CAPITAL_SOLES'),
+    (N'RANGO_MADURACION', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'RANGO_MADURACION'),
+    (N'REGION', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'REGION'),
+    (N'SUB_PRODUCTO', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'SUB_PRODUCTO'),
+    (N'ZONA', 137, N'CUENTA', N'Interbank_Propia_Cobranzas.dbo.PROPIA_CUENTA_CORTE', N'ZONA'),
+    (N'CAPITAL', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'CAPITAL'),
+    (N'CONTACTO_DIRECTO_MES', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'ES_CEF'),
+    (N'CUENTAS', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'CUENTAS'),
+    (N'GESTIONES_HUMANAS_MES', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'GESTIONES_MAQUINA'),
+    (N'MONTO_SISCOB', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'MONTO_SISCOB'),
+    (N'PDP_EXIGIBLES', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'PDP_EXIGIBLES'),
+    (N'PDP_GENERADAS_MES', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'COMPROMISOS'),
+    (N'RANGO_CAPITAL', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'escala estándar sobre CAPITAL'),
+    (N'TIENE_CCM', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'TIENE_CCM'),
+    (N'TIENE_GRU', 144, N'CLIENTE', N'Compartamos_Castigo_Cobranzas.dbo.VW_CASTIGO_GRUPAL_CLIENTE_DETALLE_CORTE', N'TIENE_GRU'),
+    (N'CAPITAL', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'CAPITAL_SOLES'),
+    (N'CUENTAS', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'CUENTAS'),
+    (N'DEPARTAMENTO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'DEPARTAMENTO'),
+    (N'DISTRITO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'DISTRITO'),
+    (N'FECHA_CASTIGO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'FECHA_CASTIGO'),
+    (N'GESTIONES_HUMANAS_MES', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'GESTIONES_HUMANAS'),
+    (N'GESTIONES_MAQUINA_MES', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'GESTIONES_MAQUINA'),
+    (N'MONEDA', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'MONEDA'),
+    (N'MONTO_PAGADO_MES', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'MONTO_PAGADO_MES'),
+    (N'PDP_GENERADAS_MES', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'PROPIA_PDP_CORTE: ID_COMPROMISO distintos generados en el mes'),
+    (N'PRIORIDAD_BANCO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'PRIORIDAD'),
+    (N'PRODUCTO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'PRODUCTO'),
+    (N'PROVINCIA', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'PROVINCIA'),
+    (N'RANGO_CAPITAL', 148, N'CLIENTE', N'PROPIA_COBRANZAS.dbo.VW_PROPIA_CLIENTE_CORTE', N'escala estándar sobre CAPITAL_SOLES'),
+    (N'RANGO_MADURACION', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'RANGO_MADURACION'),
+    (N'REGION', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'REGION'),
+    (N'SUB_PRODUCTO', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'SUB_PRODUCTO'),
+    (N'ZONA', 148, N'CUENTA', N'PROPIA_COBRANZAS.dbo.PROPIA_CUENTA_CORTE', N'ZONA')
+) AS s (Campo, IdCartera, Nivel, Tabla, Columna)
+ON t.Campo = s.Campo AND t.IdCartera = s.IdCartera
+WHEN MATCHED THEN UPDATE SET Nivel = s.Nivel, Tabla = s.Tabla, Columna = s.Columna
+WHEN NOT MATCHED THEN INSERT (Campo, IdCartera, Nivel, Tabla, Columna)
+     VALUES (s.Campo, s.IdCartera, s.Nivel, s.Tabla, s.Columna)
+WHEN NOT MATCHED BY SOURCE THEN DELETE;
+GO
+
+SELECT c.Grupo, c.Origen, COUNT(*) AS campos FROM score.Campo AS c GROUP BY c.Grupo, c.Origen ORDER BY c.Grupo, c.Origen;
+SELECT cc.IdCartera, COUNT(*) AS campos, SUM(CASE WHEN cc.Nivel = 'CUENTA' THEN 1 ELSE 0 END) AS de_cuenta
+FROM score.CampoCartera AS cc GROUP BY cc.IdCartera ORDER BY cc.IdCartera;
+GO
+
+/* =====================================================================================
+   BLOQUE 4 · Simulación de todas las carteras (no escribe)
+   Una fila por cartera. Lo importante: PctUniversoConDato (clientes con teléfonos en el score que
+   encuentran su fila en el corte) y DniRepetidos (debe ser 0).
+   ===================================================================================== */
+IF OBJECT_ID('tempdb..#sim') IS NOT NULL DROP TABLE #sim;
+CREATE TABLE #sim (
+    Modo VARCHAR(12), IdCartera INT, Fuente NVARCHAR(256), FechaCorteFuente DATE, ClientesFuente INT,
+    DniRepetidos INT, ClientesUniverso INT, UniversoConDato INT, UniversoSinDato INT, PctUniversoConDato DECIMAL(6, 2),
+    FilasDato INT, CamposDato INT, FechaFuenteDatoMin DATE, Error NVARCHAR(400) NULL);
+
+DECLARE @c INT;
+DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT DISTINCT IdCartera FROM CobAuto.score.TelefonoUniverso ORDER BY IdCartera;
+OPEN cur;
+FETCH NEXT FROM cur INTO @c;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    BEGIN TRY
+        INSERT INTO #sim (Modo, IdCartera, Fuente, FechaCorteFuente, ClientesFuente, DniRepetidos, ClientesUniverso,
+                          UniversoConDato, UniversoSinDato, PctUniversoConDato, FilasDato, CamposDato, FechaFuenteDatoMin)
+        EXEC CobAuto.score.sp_ArmarBaseTrabajoCliente @IdCartera = @c, @Simular = 1;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK;
+        INSERT INTO #sim (Modo, IdCartera, Error) VALUES ('ERROR', @c, LEFT(ERROR_MESSAGE(), 400));
+    END CATCH;
+    FETCH NEXT FROM cur INTO @c;
+END;
+CLOSE cur; DEALLOCATE cur;
+
+SELECT * FROM #sim ORDER BY IdCartera;
+GO
+
+-- Detalle de dos carteras: cobertura por campo y formato de los DNI que no cruzan
+EXEC CobAuto.score.sp_ArmarBaseTrabajoCliente @IdCartera = 112, @Simular = 1, @Detalle = 1;
+EXEC CobAuto.score.sp_ArmarBaseTrabajoCliente @IdCartera = 133, @Simular = 1, @Detalle = 1;
+GO
+
+/* =====================================================================================
+   BLOQUE 5 · Carga real (comentado; revisar antes la simulación)
+   ===================================================================================== */
+/*
+DECLARE @c INT;
+DECLARE cur CURSOR LOCAL FAST_FORWARD FOR SELECT DISTINCT IdCartera FROM CobAuto.score.TelefonoUniverso ORDER BY IdCartera;
+OPEN cur; FETCH NEXT FROM cur INTO @c;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    BEGIN TRY
+        EXEC CobAuto.score.sp_ArmarBaseTrabajoCliente @IdCartera = @c, @Simular = 0;
+    END TRY
+    BEGIN CATCH
+        PRINT CONCAT(N'Cartera ', @c, N': ', ERROR_MESSAGE());
+    END CATCH;
+    FETCH NEXT FROM cur INTO @c;
+END;
+CLOSE cur; DEALLOCATE cur;
+
+SELECT * FROM CobAuto.score.BaseTrabajoEstado ORDER BY IdCartera;
+SELECT TOP 20 * FROM CobAuto.score.vw_BaseTrabajo WHERE IdCartera = 112 ORDER BY DNI, OrdenCliente;
+*/
+GO

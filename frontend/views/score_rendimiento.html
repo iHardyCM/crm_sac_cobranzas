@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Rendimiento del score · Generador de bases</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Layout global del CRM -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+
+    <!-- CSS propio de la vista (usa las clases base del generador) -->
+    <link rel="stylesheet" href="../css/score_telefonico.css?v=c3040d86c7">
+    <link rel="stylesheet" href="../css/score_rendimiento.css?v=a900296d57">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
+</head>
+
+<body>
+
+<main class="st-page sr-page">
+
+    <!-- Cartera, universo y periodo -->
+    <section class="st-cartera sr-cabecera">
+        <label class="sr-campo">
+            <span class="st-label">Cartera</span>
+            <select id="selCartera" class="st-select sr-select-cartera"></select>
+        </label>
+        <div class="sr-tabs" role="tablist" aria-label="Universo">
+            <button class="sr-tab active" type="button" role="tab" data-universo="CARTERA" aria-selected="true"
+                    title="Todos los teléfonos con score de la cartera, se hayan marcado o no">Toda la cartera</button>
+            <button class="sr-tab" type="button" role="tab" data-universo="BASES" aria-selected="false"
+                    title="Solo los teléfonos que salieron ese día en una base del generador (predictivo, preview, IVR o SMS)">Bases generadas</button>
+        </div>
+        <div class="sr-periodo" role="group" aria-label="Periodo">
+            <span class="st-label">Últimos</span>
+            <button class="sr-dias active" type="button" data-dias="7">7 días</button>
+            <button class="sr-dias" type="button" data-dias="14">14 días</button>
+            <button class="sr-dias" type="button" data-dias="30">30 días</button>
+        </div>
+        <div id="rango" class="st-estado sr-rango" aria-live="polite">—</div>
+        <a id="lnkGenerador" class="st-btn sr-volver" href="score_telefonico.html">← Generador de bases</a>
+    </section>
+
+    <!-- Filtros por atributo del teléfono -->
+    <section class="st-card sr-filtros">
+        <div class="sr-filtros-cab">
+            <strong>Filtrar teléfonos</strong>
+            <small>Sin marcar = todos. Los valores salen del periodo elegido.</small>
+            <button id="btnLimpiarFiltros" class="st-link" type="button">Quitar filtros</button>
+        </div>
+        <div id="filtros" class="sr-filtros-grid"></div>
+    </section>
+
+    <div id="mensaje" class="st-mensaje hidden"></div>
+    <div id="avisos" class="sr-avisos hidden" aria-live="polite"></div>
+    <div id="lectura" class="sr-lectura hidden" aria-live="polite"></div>
+
+    <!-- Glosario -->
+    <details class="sr-glosario">
+        <summary>¿Qué significa cada columna y cada color?</summary>
+        <dl>
+            <dt>Teléfono-día</dt><dd>Un teléfono contado una vez por cada día del periodo. 1.000 teléfonos en 7 días = 7.000 teléfono-días.</dd>
+            <dt>Marcados</dt><dd>Teléfono-días con al menos una llamada ese día (asesor o máquina).</dd>
+            <dt>Intentos</dt><dd>Todas las llamadas. Un teléfono llamado 3 veces en el día suma 1 marcado y 3 intentos.</dd>
+            <dt>Intentos / marcado</dt><dd>Cuántas veces, en promedio, se llamó a un teléfono el día que se marcó. Mide la insistencia.</dd>
+            <dt>CEF / 100 int.</dt><dd>De cada 100 llamadas, cuántos contactos efectivos salieron. Mide la eficiencia del esfuerzo.</dd>
+            <dt>Índice</dt><dd>CEF / 100 del grupo dividido entre el del total de referencia. 2,0× rinde el doble del promedio; 0,2× la quinta parte.</dd>
+            <dt>Esfuerzo vs CEF</dt><dd>Barra azul: parte de todas las llamadas que se fue a ese grupo. Barra verde: parte de todos los CEF que dio.</dd>
+            <dt>% marcados con CEF</dt><dd>De los teléfonos marcados, cuántos terminaron el día con CEF.</dd>
+            <dt>% contestan</dt><dd>CEF + tercero + contesta sin identificar, sobre marcados.</dd>
+            <dt>% llamados en el periodo</dt><dd>Cobertura: de los teléfonos distintos que estuvieron en el tramo, cuántos recibieron al menos una llamada en todo el periodo. Un teléfono llamado 5 días cuenta una vez.</dd>
+            <dt>Días con llamada</dt><dd>De los teléfonos que sí se llamaron, en cuántos días distintos se les llamó, en promedio.</dd>
+            <dt>Solo máquina</dt><dd>La máquina llamó y la llamada no pasó a un asesor. Sin centralita no se sabe si fue buzón, apagado o no contesta.</dd>
+            <dt>Colores</dt><dd><span class="sr-s sr-v3">mucho mejor</span> <span class="sr-s sr-v2">mejor</span> <span class="sr-s sr-n">parecido</span> <span class="sr-s sr-r1">peor</span> <span class="sr-s sr-r2">mucho peor</span> que la referencia (la fila Total, o el total del tramo en el desglose). <span class="sr-s sr-calor-azul" style="--calor:.6">azul</span>: cobertura e insistencia (% marcados, intentos / marcado), más oscuro = más que la referencia. <span class="sr-s sr-poca">gris</span>: menos de 200 intentos, todavía no confiable.</dd>
+        </dl>
+    </details>
+
+    <!-- 1. Por tramo -->
+    <section class="st-card sr-card sr-c1">
+        <div class="st-card-title">
+            <h3>Por tramo del score</h3>
+            <small>Unidad: teléfono-día. Los colores comparan cada tramo con la fila Total.</small>
+        </div>
+        <div class="sr-tabla-wrap"><table id="tblTramo" class="sr-tabla"></table></div>
+    </section>
+
+    <!-- 1b. Cobertura del periodo -->
+    <section class="st-card sr-card sr-c5">
+        <div class="st-card-title">
+            <h3>Cobertura del periodo por tramo</h3>
+            <small>Teléfonos distintos: un teléfono llamado varios días cuenta una vez. Si pasó por dos tramos, cuenta en cada uno.</small>
+        </div>
+        <div class="sr-tabla-wrap"><table id="tblCobertura" class="sr-tabla"></table></div>
+        <h4 class="sr-subtitulo">¿Por qué no se llamó? Teléfonos sin ninguna llamada, según lo que pasó con su cliente</h4>
+        <div class="sr-tabla-wrap"><table id="tblMotivos" class="sr-tabla"></table></div>
+        <p class="sr-ayuda">Se clasifica en este orden: promesa vigente o pagada (estado de hoy) → CEF por otro teléfono → llamado por otro teléfono → cliente sin ninguna llamada.
+            La última columna en rojo es la oportunidad: teléfonos del tramo cuyo cliente nadie llamó en el periodo.</p>
+        <div class="sr-ejemplo">
+            <strong>Cómo leerla, con un ejemplo.</strong> Tramo A con 100 teléfonos y un periodo de 5 días.
+            Si cada día se llama a 28 teléfonos distintos, <em>% marcados por día</em> = 28 % y a un mismo teléfono le toca llamada <em>cada 3,6 días</em>.
+            Pero como cada día se eligen teléfonos distintos (o los mismos), al final del periodo pueden haber recibido al menos una llamada 60, 80 o 100 de los 100:
+            eso es la <em>cobertura del periodo</em>. Si la cobertura es 60 %, hay 40 teléfonos A que nadie llamó en 5 días.
+            La <em>meta</em> la pones tú por tramo: por ejemplo, "todo teléfono A recibe al menos una llamada en la semana" = 100 % con el periodo de 7 días.
+        </div>
+        <p class="sr-ayuda">OSIPTEL, timbrado, WhatsApp, origen, fuente y color se filtran con su valor del último corte; tramo, orden y canal con el de cada día.</p>
+    </section>
+
+    <!-- 2. Resultado del día -->
+    <section class="st-card sr-card sr-c2">
+        <div class="st-card-title">
+            <h3>Mejor resultado del día por tramo</h3>
+            <small>% de los teléfonos marcados ese día. Cada teléfono cuenta una vez, con su mejor resultado.</small>
+        </div>
+        <div class="sr-tabla-wrap"><table id="tblResultado" class="sr-tabla"></table></div>
+        <p id="notaResultado" class="sr-ayuda"></p>
+    </section>
+
+    <!-- 3. Franja horaria -->
+    <section class="st-card sr-card sr-c3">
+        <div class="st-card-title">
+            <h3>Por franja horaria</h3>
+            <small>Cada franja se colorea contra el promedio de su propio tramo. Mañana 6–11 · Medio día 12–14 · Tarde 15–17 · Noche 18+</small>
+        </div>
+        <div class="sr-tabla-wrap"><table id="tblFranja" class="sr-tabla"></table></div>
+    </section>
+
+    <!-- 4. Desglose -->
+    <section class="st-card sr-card sr-c4">
+        <div class="st-card-title sr-desglose-cab">
+            <h3>Desglose por</h3>
+            <select id="selDesglose" class="st-select">
+                <option value="Orden">Orden del teléfono en el cliente</option>
+                <option value="Osiptel">OSIPTEL</option>
+                <option value="Timbra">Timbrado</option>
+                <option value="Whatsapp">WhatsApp</option>
+                <option value="Origen">Origen</option>
+                <option value="Fuente">Fuente</option>
+                <option value="Color">Color</option>
+                <option value="Canal">Canal de la base</option>
+                <option value="Fecha">Día</option>
+            </select>
+            <div class="sr-tabs sr-tabs-sm" role="tablist" aria-label="Forma del desglose">
+                <button class="sr-tab sr-modo active" type="button" data-modo="matriz" title="Una medida, por tramo">Por tramo</button>
+                <button class="sr-tab sr-modo" type="button" data-modo="detalle" title="Todas las medidas, para un tramo o para todos">Todas las medidas</button>
+            </div>
+            <label class="sr-inline" id="lblMedida"><span class="st-label">Mostrar</span>
+                <select id="selMedida" class="st-select">
+                    <option value="cef100">CEF por 100 intentos</option>
+                    <option value="indice">Índice vs su tramo</option>
+                    <option value="pctMarcados">% marcados</option>
+                    <option value="intPorMarcado">Intentos por teléfono marcado</option>
+                    <option value="pctCefMarcados">% marcados con CEF</option>
+                    <option value="pctContestan">% contestan</option>
+                    <option value="intentos">Intentos</option>
+                    <option value="cef">CEF</option>
+                    <option value="telDia">Teléfonos por día</option>
+                </select>
+            </label>
+            <label class="sr-inline hidden" id="lblTramoDetalle"><span class="st-label">Tramo</span>
+                <select id="selTramoDetalle" class="st-select"></select>
+            </label>
+        </div>
+        <p id="ayudaDesglose" class="sr-ayuda"></p>
+        <div class="sr-tabla-wrap"><table id="tblDesglose" class="sr-tabla"></table></div>
+    </section>
+
+    <p class="sr-nota">
+        En gris: menos de <span id="minMuestra">200</span> intentos, la tasa todavía no es confiable.
+        CEF = eventos con contacto efectivo (titular, o tercero con acuerdo). SIN SCORE = marcados que no tenían score ese día.
+        En una cartera combinada se suman sus carteras; un teléfono presente en ambas cuenta en cada una.
+    </p>
+</main>
+
+<!-- Sesion (validacion con el backend y fetch autenticado) -->
+<script src="../js/session.js?v=887ddef4f1"></script>
+
+<!-- Layout global del CRM -->
+<script src="../js/app_layout.js?v=14c9204b45"></script>
+
+<!-- JS propio de la vista -->
+<script src="../js/score_rendimiento.js?v=d77bb6491d"></script>
+
+</body>
+</html>
