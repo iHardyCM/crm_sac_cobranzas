@@ -693,3 +693,36 @@ body.crm-shell.crm-focus-mode .ia-workspace { padding: 18px 24px 28px !important
 
 /* Primer montaje del menu: sin animar el desplazamiento del contenido. */
 body.crm-sin-transicion, body.crm-sin-transicion * { transition: none !important; }
+
+/* Alertas del CRM, también visibles en Inicio. */
+.crm-alertas[hidden], .crm-alertas-panel[hidden] { display: none !important; }
+.crm-alertas { position: fixed; right: 22px; bottom: 22px; z-index: 1200; font-family: inherit; }
+.crm-alertas-boton {
+    display: flex; align-items: center; gap: 9px; border: 0; border-radius: 999px;
+    padding: 12px 15px; background: #123353; color: #fff; font: inherit;
+    font-size: 13px; font-weight: 700; box-shadow: 0 8px 28px rgba(10, 31, 54, .28); cursor: pointer;
+}
+.crm-alertas-boton svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
+.crm-alertas-boton b { min-width: 22px; padding: 2px 5px; border-radius: 999px; background: #e5484d; text-align: center; }
+.crm-alertas-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px); width: min(370px, calc(100vw - 24px));
+    max-height: min(500px, calc(100vh - 105px)); overflow: hidden; display: flex; flex-direction: column;
+    border: 1px solid #dbe4ec; border-radius: 16px; background: #fff; color: #102033;
+    box-shadow: 0 18px 48px rgba(12, 32, 53, .24);
+}
+.crm-alertas-panel header { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid #e5ebf1; }
+.crm-alertas-panel h3, .crm-alerta h4 { margin: 0; font-size: 14px; }
+.crm-alertas-panel header button { border: 0; background: none; color: #52657a; font-size: 22px; cursor: pointer; }
+.crm-alertas-lista { overflow-y: auto; padding: 10px; }
+.crm-alerta { border-left: 4px solid #6b8da8; padding: 10px 12px; margin-bottom: 8px; border-radius: 9px; background: #f3f7fb; }
+.crm-alerta:last-child { margin-bottom: 0; }
+.crm-alerta-rojo { border-color: #d53b42; background: #fff1f1; }
+.crm-alerta-ambar { border-color: #dd941e; background: #fff7e9; }
+.crm-alerta-info { border-color: #4380b7; background: #eef6fd; }
+.crm-alerta.vista { opacity: .7; }
+.crm-alerta p { margin: 5px 0 9px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.crm-alerta-acciones { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+.crm-alerta-acciones a { color: #075fc8; font-weight: 700; text-decoration: none; }
+.crm-alerta-acciones button { border: 0; background: none; color: #24577f; font: inherit; cursor: pointer; }
+.crm-alerta-acciones button:disabled { color: #66788b; cursor: default; }
+@media (max-width: 500px) { .crm-alertas { right: 12px; bottom: 12px; } }

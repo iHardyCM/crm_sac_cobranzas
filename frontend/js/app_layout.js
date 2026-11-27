@@ -246,6 +246,9 @@
         const meta = MODULES[page];
         if (!meta) {
             document.documentElement.classList.remove("crm-boot");
+            if (page !== "login.html" && page !== "cambiar_clave.html"
+                    && typeof asegurarSesionBackend === "function"
+                    && await asegurarSesionBackend()) iniciarAlertas();
             return;
         }
 
@@ -267,6 +270,116 @@
         }
 
         refrescarCrmLayout(meta);
+        iniciarAlertas();
+    }
+
+    const ALERTAS_INTERVALO_MS = 5 * 60 * 1000;
+    let alertasActuales = [];
+    let consultandoAlertas = false;
+
+    function claveAlerta(alerta) {
+        return `crmAlertaVista:${localStorage.getItem("dni") || ""}:${alerta.id}`;
+    }
+
+    function firmaAlerta(alerta) {
+        return JSON.stringify([alerta.tipo, alerta.nivel, alerta.titulo, alerta.detalle, alerta.enlace]);
+    }
+
+    function alertaVista(alerta) {
+        try {
+            const guardado = JSON.parse(localStorage.getItem(claveAlerta(alerta)) || "null");
+            return guardado?.fecha === new Date().toDateString() && guardado.firma === firmaAlerta(alerta);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function marcarAlertaVista(alerta) {
+        try {
+            localStorage.setItem(claveAlerta(alerta), JSON.stringify({
+                fecha: new Date().toDateString(), firma: firmaAlerta(alerta)
+            }));
+        } catch (error) {
+            // La alerta sigue visible si el navegador no puede guardar la marca.
+        }
+        pintarAlertas();
+    }
+
+    function pintarAlertas() {
+        const contenedor = document.getElementById("crmAlertas");
+        if (!contenedor) return;
+        const boton = document.getElementById("crmAlertasBoton");
+        const panel = document.getElementById("crmAlertasPanel");
+        const pendientes = alertasActuales.filter(alerta => !alertaVista(alerta)).length;
+        contenedor.hidden = !alertasActuales.length;
+        boton.setAttribute("aria-label", `Alertas: ${pendientes} sin ver`);
+        document.getElementById("crmAlertasCuenta").textContent = String(pendientes);
+        if (!alertasActuales.length) {
+            panel.hidden = true;
+            boton.setAttribute("aria-expanded", "false");
+        }
+        document.getElementById("crmAlertasLista").innerHTML = alertasActuales.map(alerta => {
+            const vista = alertaVista(alerta);
+            return `<article class="crm-alerta crm-alerta-${escapeHtml(alerta.nivel)}${vista ? " vista" : ""}">
+                <h4>${escapeHtml(alerta.titulo)}</h4>
+                <p>${escapeHtml(alerta.detalle)}</p>
+                <div class="crm-alerta-acciones">
+                    <a href="${escapeHtml(alerta.enlace)}">Abrir pantalla</a>
+                    <button type="button" data-alerta-id="${escapeHtml(alerta.id)}" ${vista ? "disabled" : ""}>${vista ? "Vista" : "Marcar como vista"}</button>
+                </div>
+            </article>`;
+        }).join("");
+    }
+
+    async function cargarAlertas() {
+        if (consultandoAlertas) return;
+        consultandoAlertas = true;
+        try {
+            const respuesta = await fetchConSesion(`${SESION_API_BASE}/alertas/resumen`);
+            if (!respuesta.ok) throw new Error("No se pudieron consultar las alertas.");
+            const datos = await respuesta.json();
+            if (!Array.isArray(datos)) throw new Error("Respuesta de alertas no válida.");
+            alertasActuales = datos;
+            pintarAlertas();
+        } catch (error) {
+            const contenedor = document.getElementById("crmAlertas");
+            if (contenedor) contenedor.hidden = true;
+        } finally {
+            consultandoAlertas = false;
+        }
+    }
+
+    function iniciarAlertas() {
+        if (typeof fetchConSesion !== "function" || document.getElementById("crmAlertas")) return;
+        document.body.insertAdjacentHTML("beforeend", `
+            <div id="crmAlertas" class="crm-alertas" hidden>
+                <button id="crmAlertasBoton" class="crm-alertas-boton" type="button" aria-label="Alertas" aria-expanded="false" aria-controls="crmAlertasPanel">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 9h18c0-1-3-2-3-9M10 21h4"/></svg>
+                    <span>Alertas</span><b id="crmAlertasCuenta">0</b>
+                </button>
+                <section id="crmAlertasPanel" class="crm-alertas-panel" aria-label="Alertas del CRM" hidden>
+                    <header><h3>Alertas</h3><button id="crmAlertasCerrar" type="button" aria-label="Cerrar alertas">×</button></header>
+                    <div id="crmAlertasLista" class="crm-alertas-lista"></div>
+                </section>
+            </div>`);
+        const boton = document.getElementById("crmAlertasBoton");
+        const panel = document.getElementById("crmAlertasPanel");
+        boton.addEventListener("click", () => {
+            panel.hidden = !panel.hidden;
+            boton.setAttribute("aria-expanded", String(!panel.hidden));
+        });
+        document.getElementById("crmAlertasCerrar").addEventListener("click", () => {
+            panel.hidden = true;
+            boton.setAttribute("aria-expanded", "false");
+        });
+        document.getElementById("crmAlertasLista").addEventListener("click", event => {
+            const marcar = event.target.closest("[data-alerta-id]");
+            if (!marcar) return;
+            const alerta = alertasActuales.find(item => item.id === marcar.dataset.alertaId);
+            if (alerta) marcarAlertaVista(alerta);
+        });
+        cargarAlertas();
+        setInterval(cargarAlertas, ALERTAS_INTERVALO_MS);
     }
 
     function montarCrmLayout(meta) {
