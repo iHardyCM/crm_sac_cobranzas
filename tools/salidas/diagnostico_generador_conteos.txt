@@ -1,8 +1,0 @@
-﻿IdCartera   Telefonos   CamposTelefono CamposCliente Ms_copia_rowstore Ms_conteo_tel_rowstore Ms_conteo_cli_rowstore Ms_crear_columnstore Ms_conteo_tel_columnstore Ms_conteo_cli_columnstore
------------ ----------- -------------- ------------- ----------------- ---------------------- ---------------------- -------------------- ------------------------- -------------------------
-144         224934      29             23            17215             17480                  4170                   21309                15498                     12559
-112         65201       29             23            14106             4764                   1546                   5015                 5889                      3718
-126         27992       29             23            3670              2530                   983                    1171                 2359                      1640
-
-
-Hora de finalización: 2026-11-20T14:02:29.1190792-05:00

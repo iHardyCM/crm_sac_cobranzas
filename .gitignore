@@ -21,6 +21,13 @@ logs/
 
 # Archivos cargados / datos de clientes
 uploads/
+# Entradas, resultados y documentos locales con datos de clientes.
+tools/entradas/
+tools/salidas/
+output/
+Claude outputs/
+/tmp*/
+.pytest_cache/
 
 # Temporales de ejecución y QA
 tmp/
