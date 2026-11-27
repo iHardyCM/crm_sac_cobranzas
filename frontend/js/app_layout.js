@@ -288,7 +288,12 @@
     function alertaVista(alerta) {
         try {
             const guardado = JSON.parse(localStorage.getItem(claveAlerta(alerta)) || "null");
-            return guardado?.fecha === new Date().toDateString() && guardado.firma === firmaAlerta(alerta);
+            if (guardado?.fecha !== new Date().toDateString()) return false;
+            if (alerta.tipo === "sms_sin_atender") {
+                return Number.isFinite(guardado.cantidad_clientes)
+                    && alerta.cantidad_clientes <= guardado.cantidad_clientes;
+            }
+            return guardado.firma === firmaAlerta(alerta);
         } catch (error) {
             return false;
         }
@@ -297,7 +302,8 @@
     function marcarAlertaVista(alerta) {
         try {
             localStorage.setItem(claveAlerta(alerta), JSON.stringify({
-                fecha: new Date().toDateString(), firma: firmaAlerta(alerta)
+                fecha: new Date().toDateString(), firma: firmaAlerta(alerta),
+                cantidad_clientes: alerta.tipo === "sms_sin_atender" ? alerta.cantidad_clientes : null
             }));
         } catch (error) {
             // La alerta sigue visible si el navegador no puede guardar la marca.
@@ -324,7 +330,7 @@
                 <h4>${escapeHtml(alerta.titulo)}</h4>
                 <p>${escapeHtml(alerta.detalle)}</p>
                 <div class="crm-alerta-acciones">
-                    <a href="${escapeHtml(alerta.enlace)}">Abrir pantalla</a>
+                    ${alerta.enlace ? `<a href="${escapeHtml(alerta.enlace)}">Abrir pantalla</a>` : ""}
                     <button type="button" data-alerta-id="${escapeHtml(alerta.id)}" ${vista ? "disabled" : ""}>${vista ? "Vista" : "Marcar como vista"}</button>
                 </div>
             </article>`;

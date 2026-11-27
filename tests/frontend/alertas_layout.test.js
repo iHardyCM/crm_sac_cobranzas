@@ -90,6 +90,37 @@ async function probar() {
     await e.intervalo();
     assert.equal(e.elemento("crmAlertasCuenta").textContent, "1");
 
+    e.cambiarRespuesta([{ id: "zona:1", tipo: "zona_restringida", nivel: "rojo",
+        titulo: "Gestión detenida: Piura", detalle: "Banco cambió el motivo", enlace: null }]);
+    await e.intervalo();
+    assert.doesNotMatch(e.elemento("crmAlertasLista").innerHTML, /Abrir pantalla/);
+
+    const sms = cantidad => ({ id: "sms:sin-atender", tipo: "sms_sin_atender", nivel: "ambar",
+        titulo: "Respuestas SMS sin atender", detalle: `${cantidad} clientes pendientes`,
+        cantidad_clientes: cantidad, enlace: "respuestas_mowa.html" });
+    e.cambiarRespuesta([sms(3)]);
+    await e.intervalo();
+    e.elemento("crmAlertasLista").eventos.click({ target: {
+        closest: () => ({ dataset: { alertaId: "sms:sin-atender" } }),
+    } });
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "0");
+    const claveSms = "crmAlertaVista:12345678:sms:sin-atender";
+    assert.equal(JSON.parse(e.guardado.get(claveSms)).cantidad_clientes, 3);
+    e.cambiarRespuesta([sms(2)]);
+    await e.intervalo();
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "0");
+    e.cambiarRespuesta([sms(4)]);
+    await e.intervalo();
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "1");
+    e.elemento("crmAlertasLista").eventos.click({ target: {
+        closest: () => ({ dataset: { alertaId: "sms:sin-atender" } }),
+    } });
+    const vistoAyer = JSON.parse(e.guardado.get(claveSms));
+    vistoAyer.fecha = "otro día";
+    e.guardado.set(claveSms, JSON.stringify(vistoAyer));
+    await e.intervalo();
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "1");
+
     e.fallar();
     await e.intervalo();
     assert.equal(e.elemento("crmAlertas").hidden, true);

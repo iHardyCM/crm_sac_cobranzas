@@ -1,9 +1,12 @@
 """Alertas por perfil con sesión y fuentes simuladas."""
 import os
 import sys
+import time
 from contextlib import contextmanager
 from datetime import date
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 os.environ.setdefault("CRM_JWT_SECRET", "secreto-solo-para-tests-no-productivo-0123456789")
 
@@ -31,6 +34,13 @@ ZONAS = [
     {"IdZona": 3, "Activo": True, "Estado": "VENCIDA"},
     {"IdZona": 4, "Activo": False, "Estado": "LEVANTADA"},
 ]
+
+
+@pytest.fixture(autouse=True)
+def limpiar_cache_sms():
+    rutas._sms_cache.clear()
+    yield
+    rutas._sms_cache.clear()
 
 
 @contextmanager
@@ -66,11 +76,16 @@ def test_jefe_recibe_zonas_y_sms_con_forma_y_niveles():
         alertas = respuesta.json()
         assert [a["id"] for a in alertas] == ["zona:1", "zona:2", "sms:sin-atender"]
         assert [a["nivel"] for a in alertas] == ["rojo", "info", "ambar"]
-        assert all(set(a) == {"id", "tipo", "nivel", "titulo", "detalle", "enlace"} for a in alertas)
+        campos = {"id", "tipo", "nivel", "titulo", "detalle", "enlace"}
+        assert all(set(a) == campos for a in alertas[:2])
+        assert set(alertas[2]) == campos | {"cantidad_clientes"}
         assert alertas[0]["enlace"] == "zonas.html"
         assert "Interbank detuvo la gestión" in alertas[0]["detalle"]
+        assert "27/11/2026" in alertas[0]["detalle"]
         assert alertas[1]["enlace"] == "zonas.html"
+        assert "01/12/2026 hasta 05/12/2026" in alertas[1]["detalle"]
         assert alertas[2]["enlace"] == "respuestas_mowa.html"
+        assert alertas[2]["cantidad_clientes"] == 3
         assert "3 clientes" in alertas[2]["detalle"]
         conectar.assert_called_once()
         leer_zonas.assert_called_once()
@@ -91,6 +106,7 @@ def test_agente_y_monitor_ven_zonas_sin_consultar_sms():
             respuesta = cliente.get("/alertas/resumen", headers=headers)
             assert respuesta.status_code == 200
             assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+            assert all(a["enlace"] is None for a in respuesta.json())
             leer_zonas.assert_called_once()
             contar_sms.assert_not_called()
 
@@ -110,3 +126,34 @@ def test_sms_parcial_no_presenta_conteo_como_completo():
         assert respuesta.status_code == 200
         assert "Al menos 2" in respuesta.json()[-1]["detalle"]
         assert "parcial" in respuesta.json()[-1]["detalle"]
+
+
+def test_error_sms_conserva_zonas_y_registra_error(caplog):
+    with sesion("SUPERVISOR") as (cliente, headers, _, leer_zonas, contar_sms):
+        contar_sms.side_effect = RuntimeError("Error simulado")
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert respuesta.status_code == 200
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+        leer_zonas.assert_called_once()
+        assert "Error consultando alertas SMS" in caplog.text
+        assert not rutas._sms_cache
+
+
+def test_cache_sms_usa_carteras_y_vence_a_los_tres_minutos():
+    with sesion("SUPERVISOR", (117, 124)) as (cliente, headers, conectar, leer_zonas, contar_sms):
+        for _ in range(2):
+            respuesta = cliente.get("/alertas/resumen", headers=headers)
+            assert respuesta.status_code == 200
+        contar_sms.assert_called_once_with({117, 124})
+        assert conectar.call_count == 2
+        assert leer_zonas.call_count == 2  # Las zonas no se cachean.
+        assert rutas._resumen_sms({124, 117})["clientes"] == 3
+        contar_sms.assert_called_once()
+        clave = (117, 124)
+        rutas._sms_cache[clave] = (time.monotonic() - 181, rutas._sms_cache[clave][1])
+        assert cliente.get("/alertas/resumen", headers=headers).status_code == 200
+        assert contar_sms.call_count == 2
+
+    with sesion("SUPERVISOR", (128,)) as (cliente, headers, _, _, contar_otra_cartera):
+        assert cliente.get("/alertas/resumen", headers=headers).status_code == 200
+        contar_otra_cartera.assert_called_once_with({128})
