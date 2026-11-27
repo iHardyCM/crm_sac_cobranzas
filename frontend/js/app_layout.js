@@ -289,7 +289,7 @@
         try {
             const guardado = JSON.parse(localStorage.getItem(claveAlerta(alerta)) || "null");
             if (guardado?.fecha !== new Date().toDateString()) return false;
-            if (alerta.tipo === "sms_sin_atender") {
+            if (alerta.tipo === "sms_sin_atender" || alerta.tipo === "sms_mis_asignaciones") {
                 return Number.isFinite(guardado.cantidad_clientes)
                     && alerta.cantidad_clientes <= guardado.cantidad_clientes;
             }
@@ -303,7 +303,8 @@
         try {
             localStorage.setItem(claveAlerta(alerta), JSON.stringify({
                 fecha: new Date().toDateString(), firma: firmaAlerta(alerta),
-                cantidad_clientes: alerta.tipo === "sms_sin_atender" ? alerta.cantidad_clientes : null
+                cantidad_clientes: alerta.tipo === "sms_sin_atender" || alerta.tipo === "sms_mis_asignaciones"
+                    ? alerta.cantidad_clientes : null
             }));
         } catch (error) {
             // La alerta sigue visible si el navegador no puede guardar la marca.

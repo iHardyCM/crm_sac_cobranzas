@@ -121,6 +121,23 @@ async function probar() {
     await e.intervalo();
     assert.equal(e.elemento("crmAlertasCuenta").textContent, "1");
 
+    const asignadas = cantidad => ({ id: "sms:mis-asignaciones", tipo: "sms_mis_asignaciones",
+        nivel: "ambar", titulo: "Tienes respuestas SMS por atender",
+        detalle: `${cantidad} clientes asignados · 6 respuestas pendientes`,
+        cantidad_clientes: cantidad, enlace: "respuestas_mowa.html" });
+    e.cambiarRespuesta([asignadas(5)]);
+    await e.intervalo();
+    e.elemento("crmAlertasLista").eventos.click({ target: {
+        closest: () => ({ dataset: { alertaId: "sms:mis-asignaciones" } }),
+    } });
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "0");
+    e.cambiarRespuesta([asignadas(4)]);
+    await e.intervalo();
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "0");
+    e.cambiarRespuesta([asignadas(6)]);
+    await e.intervalo();
+    assert.equal(e.elemento("crmAlertasCuenta").textContent, "1");
+
     e.fallar();
     await e.intervalo();
     assert.equal(e.elemento("crmAlertas").hidden, true);

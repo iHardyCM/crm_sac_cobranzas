@@ -39,8 +39,10 @@ ZONAS = [
 @pytest.fixture(autouse=True)
 def limpiar_cache_sms():
     rutas._sms_cache.clear()
+    rutas._bandeja_cache.clear()
     yield
     rutas._sms_cache.clear()
+    rutas._bandeja_cache.clear()
 
 
 @contextmanager
@@ -55,7 +57,9 @@ def sesion(tipo, carteras=(117,), vista_sms=True):
          patch.object(permisos_vistas, "permisos_efectivos", return_value={"respuestas_mowa": vista_sms}), \
          patch.object(rutas.engine_siscob, "connect") as conectar, \
          patch.object(rutas.zonas, "zonas", return_value=ZONAS) as leer_zonas, \
-         patch.object(rutas.sms, "sin_atender", return_value=sms_resumen) as contar_sms:
+         patch.object(rutas.sms, "sin_atender", return_value=sms_resumen) as contar_sms, \
+         patch.object(rutas.sms, "bandeja_asignada", return_value={"clientes": 0, "respuestas": 0,
+                                                                  "completo": True}):
         with TestClient(app, raise_server_exceptions=False) as cliente:
             yield cliente, headers, conectar, leer_zonas, contar_sms
 
@@ -157,3 +161,100 @@ def test_cache_sms_usa_carteras_y_vence_a_los_tres_minutos():
     with sesion("SUPERVISOR", (128,)) as (cliente, headers, _, _, contar_otra_cartera):
         assert cliente.get("/alertas/resumen", headers=headers).status_code == 200
         contar_otra_cartera.assert_called_once_with({128})
+
+
+def test_zonas_iguales_se_agrupan_con_ids_ordenados():
+    iguales = [{**ZONAS[0], "IdZona": 5, "Departamento": "LAMBAYEQUE"},
+               {**ZONAS[0], "IdZona": 2, "Departamento": "TUMBES"}, ZONAS[0]]
+    with sesion("GESTOR") as (cliente, headers, _, leer_zonas, _):
+        leer_zonas.return_value = iguales
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert respuesta.status_code == 200
+        assert respuesta.json() == [{
+            "id": "zona:1-2-5", "tipo": "zona_restringida", "nivel": "rojo",
+            "titulo": "Gestión detenida: Piura, Tumbes y Lambayeque",
+            "detalle": "Banco · todas las carteras · desde 27/11/2026. Interbank detuvo la gestión",
+            "enlace": None,
+        }]
+
+
+def test_zonas_con_motivo_distinto_quedan_separadas():
+    filas = [ZONAS[0], {**ZONAS[0], "IdZona": 2, "Departamento": "TUMBES",
+                        "Motivo": "Otra orden del banco"}]
+    with sesion("GESTOR") as (cliente, headers, _, leer_zonas, _):
+        leer_zonas.return_value = filas
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+
+
+def test_agente_con_asignaciones_recibe_alerta_de_su_bandeja():
+    with sesion("GESTOR", (124,)) as (cliente, headers, conectar, leer_zonas, contar_sms), \
+         patch.object(rutas.sms, "bandeja_asignada", return_value={
+             "clientes": 5, "respuestas": 6, "completo": True}) as bandeja:
+        primera = cliente.get("/alertas/resumen", headers=headers)
+        segunda = cliente.get("/alertas/resumen", headers=headers)
+        for respuesta in (primera, segunda):
+            assert respuesta.status_code == 200
+            alerta = respuesta.json()[-1]
+            assert alerta == {
+                "id": "sms:mis-asignaciones", "tipo": "sms_mis_asignaciones", "nivel": "ambar",
+                "titulo": "Tienes respuestas SMS por atender",
+                "detalle": "5 clientes asignados · 6 respuestas pendientes",
+                "cantidad_clientes": 5, "enlace": "respuestas_mowa.html",
+            }
+        bandeja.assert_called_once_with({124}, "12345678")
+        contar_sms.assert_not_called()
+        assert conectar.call_count == 2
+        assert leer_zonas.call_count == 2
+
+
+def test_agente_sin_asignaciones_no_recibe_alerta_sms():
+    with sesion("GESTOR") as (cliente, headers, _, _, contar_sms), \
+         patch.object(rutas.sms, "bandeja_asignada", return_value={
+             "clientes": 0, "respuestas": 0, "completo": True}) as bandeja:
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+        bandeja.assert_called_once_with({117}, "12345678")
+        contar_sms.assert_not_called()
+
+
+def test_agente_sin_permiso_de_vista_no_consulta_bandeja():
+    with sesion("GESTOR", vista_sms=False) as (cliente, headers, _, _, _), \
+         patch.object(rutas.sms, "bandeja_asignada") as bandeja:
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+        bandeja.assert_not_called()
+
+
+def test_jefe_no_recibe_alerta_de_bandeja_personal():
+    with sesion("JEFE DE CARTERA") as (cliente, headers, _, _, contar_sms), \
+         patch.object(rutas.sms, "bandeja_asignada") as bandeja:
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2", "sms:sin-atender"]
+        contar_sms.assert_called_once_with(None)
+        bandeja.assert_not_called()
+
+
+def test_cache_bandeja_aisla_usuarios_y_vence_a_los_tres_minutos():
+    with patch.object(rutas.sms, "bandeja_asignada", return_value={
+        "clientes": 2, "respuestas": 3, "completo": True}) as bandeja:
+        assert rutas._resumen_bandeja("12345678", {117})["clientes"] == 2
+        assert rutas._resumen_bandeja("12345678", {117})["clientes"] == 2
+        bandeja.assert_called_once_with({117}, "12345678")
+        assert rutas._resumen_bandeja("87654321", {117})["clientes"] == 2
+        assert rutas._resumen_bandeja("12345678", {124})["clientes"] == 2
+        assert bandeja.call_count == 3
+        clave = ("12345678", (117,))
+        rutas._bandeja_cache[clave] = (time.monotonic() - 181, rutas._bandeja_cache[clave][1])
+        assert rutas._resumen_bandeja("12345678", {117})["clientes"] == 2
+        assert bandeja.call_count == 4
+
+
+def test_error_bandeja_no_oculta_zonas(caplog):
+    with sesion("GESTOR") as (cliente, headers, _, _, _), \
+         patch.object(rutas.sms, "bandeja_asignada", side_effect=RuntimeError("Error simulado")):
+        respuesta = cliente.get("/alertas/resumen", headers=headers)
+        assert respuesta.status_code == 200
+        assert [a["id"] for a in respuesta.json()] == ["zona:1", "zona:2"]
+        assert "Error consultando asignaciones SMS" in caplog.text
+        assert not rutas._bandeja_cache

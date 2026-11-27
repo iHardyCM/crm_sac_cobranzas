@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import text
 
 from app.core.db_siscob import engine_siscob
+from app.services import asignaciones_cliente_service as asignaciones
 from app.services import respuestas_mowa_service as mowa
 from app.services.respuestas_sms_sync import FECHA_CORTE_RESPUESTAS, ahora_lima
 
@@ -190,3 +191,20 @@ def sin_atender(carteras_permitidas: set[int] | None, cuenta: str | None = None,
             "desde": FECHA_CORTE_RESPUESTAS.isoformat(), "advertencias": advertencias,
             "completo": not advertencias, "grupos": grupos,
             "sincronizacion": ultima_sincronizacion()}
+
+
+def bandeja_asignada(carteras: set[int], usuario: str) -> dict:
+    """La misma bandeja pendiente del gestor, limitada a sus asignaciones actuales."""
+    responsables = asignaciones.listar(asignaciones.TIPO_RESPUESTA_SMS, carteras, usuario)
+    claves = {(r["idcartera"], r["idcliente"]) for r in responsables}
+    if not claves:
+        return {"clientes": 0, "respuestas": 0, "grupos": [], "completo": True,
+                "advertencias": [], "sincronizacion": None}
+    resultado = dict(sin_atender(carteras))
+    resultado["grupos"] = [g for g in resultado["grupos"] if
+                            (g["filas"][0]["idcartera"], g["filas"][0]["idcliente"]) in claves]
+    resultado["clientes"] = len(resultado["grupos"])
+    resultado["respuestas"] = sum(len(g["filas"]) for g in resultado["grupos"])
+    resultado.pop("por_cartera", None)
+    resultado.pop("clientes_ayer_hoy", None)
+    return resultado

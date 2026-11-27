@@ -293,20 +293,7 @@ async def bandeja_sms(usuario: Dict = Depends(requiere_clave_definitiva)):
     if not carteras:
         raise autorizacion.prohibido()
     try:
-        responsables = await run_in_threadpool(asignaciones.listar,
-            asignaciones.TIPO_RESPUESTA_SMS, carteras, str(usuario.get("dni") or ""))
-        claves = {(r["idcartera"], r["idcliente"]) for r in responsables}
-        if not claves:
-            return {"clientes": 0, "respuestas": 0, "grupos": [], "completo": True,
-                    "advertencias": [], "sincronizacion": None}
-        resultado = await run_in_threadpool(tabla.sin_atender, carteras)
-        resultado["grupos"] = [g for g in resultado["grupos"] if
-            (g["filas"][0]["idcartera"], g["filas"][0]["idcliente"]) in claves]
-        resultado["clientes"] = len(resultado["grupos"])
-        resultado["respuestas"] = sum(len(g["filas"]) for g in resultado["grupos"])
-        resultado.pop("por_cartera", None)
-        resultado.pop("clientes_ayer_hoy", None)
-        return resultado
+        return await run_in_threadpool(tabla.bandeja_asignada, carteras, str(usuario.get("dni") or ""))
     except Exception:
         logger.exception("Error cargando bandeja SMS usuario=%s", usuario.get("dni"))
         raise HTTPException(status_code=503, detail="No se pudo cargar tu bandeja SMS.")
