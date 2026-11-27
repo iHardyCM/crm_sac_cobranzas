@@ -29,6 +29,10 @@ COLUMNAS_VISTA = frozenset({
     "MgTelMes", "UgTelMes", "MgTel6m", "UgTel6m", "UltGestionTelTramo", "GestionesTelMes", "GestionesTel6m",
     "EquivocadosTel6m", "OrigenDato", "FuenteDato", "AntiguedadDato", "TipoLinea", "Relacion", "TramoUltCefTel",
     "TramoTasaCef90", "TramoIntentos30", "TramoUltIntento", "TramoNoConecta90",
+    # fase 16 · recupero: PDP de meses anteriores y antigüedad del último seguimiento
+    "EstadoPdpAnterior", "PdpAnteriorMes", "SeguimientoMes",
+    # fase 17 · SAC del día (Compartamos vigente)
+    "CapitalSac", "RangoCapitalSac", "EnSac",
 })
 # Columnas BIT de la vista (filtro SI/NO)
 COLUMNAS_BIT = frozenset({"Descartado", "EsEmpresa", "ContactoDirectoMes", "Cobertura"})
@@ -192,6 +196,7 @@ TRAMOS_RANGO: Dict[str, List[Tuple[str, Optional[float]]]] = {
     "DNI_COMPARTE": _enteros(1, 2, 5),
     "CUENTAS": _enteros(1, 2, 3, 4, 6),
     "CAPITAL": _SOLES,
+    "CAPITAL_SAC": _SOLES,
     "META": _SOLES,
     "GESTIONES_HUMANAS_MES": _enteros(0, 1, 4, 11, 31),
     "GESTIONES_MAQUINA_MES": _enteros(0, 1, 4, 11, 31),
@@ -420,16 +425,29 @@ def _existe_condicion(codigo: str) -> str:
     return f"EXISTS (SELECT 1 FROM c_{codigo} AS x WHERE x.DNI = t.DNI)"
 
 
+# Zonas restringidas (Hardy 27/11/2026: Interbank ordenó detener toda gestión en Piura). Paso forzado, como los
+# descartados: no depende de la receta y se ve en el embudo. La vista cruza score.ZonaRestringida (vigente, con sus
+# carteras) con la ubicación del cliente en score.vw_DatoCliente (campos DEPARTAMENTO / PROVINCIA / DISTRITO).
+VISTA_ZONAS = "score.vw_ClienteZonaRestringida"
+PASO_ZONAS = ("Sin zona restringida",
+              f"NOT EXISTS (SELECT 1 FROM {VISTA_ZONAS} AS z WHERE z.IdCartera = t.IdCartera AND z.DNI = t.DNI)")
+
+
 def construir_consulta(idcartera: int, receta: Dict, catalogo: Dict[str, CampoMeta],
-                       hoy: Optional[date] = None, carteras: Optional[List[int]] = None) -> ConsultaSql:
+                       hoy: Optional[date] = None, carteras: Optional[List[int]] = None,
+                       zonas: bool = False) -> ConsultaSql:
     """Traduce la receta a pasos SQL (uno por filtro y por condición) sobre score.vw_BaseTrabajo AS t.
-    carteras: las carteras reales que se leen (por defecto, solo idcartera)."""
+    carteras: las carteras reales que se leen (por defecto, solo idcartera).
+    zonas: hay zonas restringidas vigentes para estas carteras → paso forzado «Sin zona restringida»."""
     hoy = hoy or date.today()
     carteras = [int(c) for c in (carteras or [idcartera])]
     en_carteras = lista_carteras(carteras)
     p = _Params()
     pasos: List[Tuple[str, str]] = [("Sin descartados", "t.Descartado = 0")]
     campos_paso: List[Optional[str]] = [None]
+    if zonas:
+        pasos.append(PASO_ZONAS)
+        campos_paso.append(None)
     for i, filtro in enumerate(receta.get("filtros") or []):
         if not isinstance(filtro, dict):
             raise RecetaInvalida("Cada filtro debe ser un objeto.")
@@ -911,6 +929,11 @@ DOMINIO_NOMBRE = {
     "OSIPTEL": ["SI", "SV", "NO", SIN_DATO],
     "TIMBRA": ["0", "1", "2", "3", "4", SIN_DATO],
     "COLOR": ["V", "T", "A", "PQ", "F", "R", SIN_DATO],
+    "ESTADO_PDP": ["VIGENTE", "CAÍDA", "PAGADA", "SIN FECHA", "SIN PDP"],
+    "SEGUIMIENTO_ACTUAL": ["VIGENTE", "HOY", "CAÍDO", "PDP VIGENTE", "PDP CAÍDA", "PDP PAGADA", "PDP SIN FECHA",
+                           "SIN SEG"],
+    "PDP_ANTERIOR": ["CAÍDA", "PAGADA", "VIGENTE", "SIN FECHA", "SIN PDP ANT"],
+    "SEGUIMIENTO_MES": ["Este mes", "Mes anterior", "Hace 2-3 meses", "Hace 4-6 meses", "Más de 6 meses", "SIN SEG"],
     "MG_TEL_6M": ["TITULAR", "TERCERO_ACUERDO", "TERCERO", "FALLECIDO", "CONTESTA_SIN_ID", "NO_CONTESTA", "BUZON",
                   "APAGADO", "SIN_INFORMACION", "EQUIVOCADO", "NO_EXISTE", "NO_APLICA", "SIN_CLASIFICAR", "SIN_GESTION"],
 }
@@ -954,7 +977,9 @@ def _tramos_capital() -> List[Tuple[float, Optional[float], str]]:
 
 def _pieza_capital(filtros: Dict[str, Dict]) -> Optional[str]:
     """'Rango de capital' (escala estándar 1–7): K MAYOR 1K · K MENOR 20K · K 1K-5K · K MIX."""
-    f = filtros.get("RANGO_CAPITAL") or filtros.get("CAPITAL")
+    # Vigentes de Compartamos (fase 17): manda el capital del SAC del día si se filtró
+    f = (filtros.get("RANGO_CAPITAL_SAC") or filtros.get("CAPITAL_SAC")
+         or filtros.get("RANGO_CAPITAL") or filtros.get("CAPITAL"))
     if not f:
         return None
     escala = _tramos_capital()
@@ -990,7 +1015,23 @@ def _pieza_capital(filtros: Dict[str, Dict]) -> Optional[str]:
 
 def _pieza_contacto(filtros: Dict[str, Dict]) -> str:
     """Mejor contacto del mes: CEF MES (solo CEF) · NOC (sin CEF) · CEF HIST (sin CEF del mes pero teléfonos con CEF
-    en los últimos 6 meses) · MIX CONTACTO (todo o una mezcla con CEF)."""
+    en los últimos 6 meses) · MIX CONTACTO (todo o una mezcla con CEF).
+    Las bases de recupero (25/11) se nombran por lo que las define: PDP CAIDA MES / HIST, SEG CAIDO MES / HIST."""
+    pdp = _seleccion(filtros.get("ESTADO_PDP"), DOMINIO_NOMBRE["ESTADO_PDP"])
+    if pdp is not None and {_limpio(v) for v in pdp} == {"CAIDA"}:
+        return "PDP CAIDA MES"
+    anterior = _seleccion(filtros.get("PDP_ANTERIOR"), DOMINIO_NOMBRE["PDP_ANTERIOR"])
+    if anterior is not None and {_limpio(v) for v in anterior} == {"CAIDA"}:
+        return "PDP CAIDA HIST"
+    seg = _seleccion(filtros.get("SEGUIMIENTO_ACTUAL"), DOMINIO_NOMBRE["SEGUIMIENTO_ACTUAL"])
+    if seg is not None and {_limpio(v) for v in seg} == {"CAIDO"}:
+        cuando = _seleccion(filtros.get("SEGUIMIENTO_MES"), DOMINIO_NOMBRE["SEGUIMIENTO_MES"])
+        if cuando is None:
+            return "SEG CAIDO"
+        meses = {_limpio(v) for v in cuando}
+        if meses == {"ESTE MES"}:
+            return "SEG CAIDO MES"
+        return "SEG CAIDO HIST" if "ESTE MES" not in meses else "SEG CAIDO"
     quedan = _seleccion(filtros.get("MG_CONTACTO_MES"), DOMINIO_NOMBRE["MG_CONTACTO_MES"])
     if quedan is None:
         return "MIX CONTACTO"

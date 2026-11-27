@@ -18,6 +18,17 @@ async function probarConsultaConCuenta() {
         'mowaVerCarteras', 'mowaCardPendientesTitulo', 'mowaCarterasModal',
         'mowaDona', 'mowaCarterasLista', 'mowaCarterasSubtitulo', 'mowaCarterasNota', 'mowaCarterasCerrar',
         'mowaDetalle', 'mowaSyncAcciones', 'mowaSyncDias', 'mowaSyncBoton', 'mowaSyncEstado',
+        'mowaBandejaBar', 'mowaBandejaActualizar', 'mowaBandejaResumen',
+        'mowaAsignacionControl', 'mowaAsignacionFiltro', 'mowaAsignarCerrar',
+        'mowaAsignarModal', 'mowaAsignarForm', 'mowaAsignarAgente', 'mowaAsignarAviso',
+        'mowaAsignarGuardar', 'mowaAsignarBuscar', 'mowaAsignarLista',
+        'mowaAsignarSeleccionado', 'mowaSeleccionCol', 'mowaSeleccionPagina',
+        'mowaSeleccionBar', 'mowaSeleccionFiltrados', 'mowaSeleccionLimpiar',
+        'mowaAsignarSeleccion', 'mowaSeleccionConteo',
+        'mowaControlAbrir', 'mowaControlModal', 'mowaControlCerrar',
+        'mowaControlActualizar', 'mowaControlCartera', 'mowaControlAviso',
+        'mowaControlTotal', 'mowaControlSinAsignar', 'mowaControlAsignados',
+        'mowaControlAntiguos', 'mowaControlAlcance', 'mowaControlAgentes', 'mowaControlSync',
     ].map(id => [id, {value: '', textContent: '', innerHTML: '', disabled: false}]));
     elementos.mowaExportar.removeAttribute = () => {};
     elementos.mowaCuenta.selectedOptions = [{textContent: 'MiBanco castigo'}];
@@ -232,7 +243,7 @@ async function probarConsultaConCuenta() {
     assert.match(rutaExcel, /\/sin-atender\/excel\?cartera=124$/);
 }
 
-async function probarCargaAutomatica(alcance) {
+async function probarCargaAutomatica(alcance, agente = false) {
     const ids = [
         'mowaDesde', 'mowaHasta', 'mowaCuenta', 'mowaConsultar', 'mowaEstado',
         'mowaBuscar', 'mowaTabla', 'mowaPendientes', 'mowaAtendidas',
@@ -248,6 +259,17 @@ async function probarCargaAutomatica(alcance) {
         'mowaVerCarteras', 'mowaCardPendientesTitulo', 'mowaCarterasModal',
         'mowaDona', 'mowaCarterasLista', 'mowaCarterasSubtitulo', 'mowaCarterasNota', 'mowaCarterasCerrar',
         'mowaDetalle', 'mowaSyncAcciones', 'mowaSyncDias', 'mowaSyncBoton', 'mowaSyncEstado',
+        'mowaBandejaBar', 'mowaBandejaActualizar', 'mowaBandejaResumen',
+        'mowaAsignacionControl', 'mowaAsignacionFiltro', 'mowaAsignarCerrar',
+        'mowaAsignarModal', 'mowaAsignarForm', 'mowaAsignarAgente', 'mowaAsignarAviso',
+        'mowaAsignarGuardar', 'mowaAsignarBuscar', 'mowaAsignarLista',
+        'mowaAsignarSeleccionado', 'mowaSeleccionCol', 'mowaSeleccionPagina',
+        'mowaSeleccionBar', 'mowaSeleccionFiltrados', 'mowaSeleccionLimpiar',
+        'mowaAsignarSeleccion', 'mowaSeleccionConteo',
+        'mowaControlAbrir', 'mowaControlModal', 'mowaControlCerrar',
+        'mowaControlActualizar', 'mowaControlCartera', 'mowaControlAviso',
+        'mowaControlTotal', 'mowaControlSinAsignar', 'mowaControlAsignados',
+        'mowaControlAntiguos', 'mowaControlAlcance', 'mowaControlAgentes', 'mowaControlSync',
     ];
     const elementos = Object.fromEntries(ids.map(id => [id, {
         value: '', textContent: '', innerHTML: '', disabled: false, addEventListener() {},
@@ -260,6 +282,8 @@ async function probarCargaAutomatica(alcance) {
     elementos.mowaTamano.value = '20';
     elementos.mowaSyncEstado.dataset = {};
     elementos.mowaCuenta.appendChild = () => {};
+    elementos.mowaEstado.closest = () => ({hidden: false});
+    elementos.mowaDetalle.scrollIntoView = () => {};
     let iniciar;
     const consultas = [];
     class FechaFija extends Date {
@@ -271,14 +295,26 @@ async function probarCargaAutomatica(alcance) {
         document: {
             addEventListener(tipo, callback) { if (tipo === 'DOMContentLoaded') iniciar = callback; },
             getElementById(id) { return elementos[id]; },
+            querySelector() { return {hidden: false, textContent: ''}; },
             createElement() { return {value: '', textContent: ''}; },
         },
         asegurarSesionBackend: async () => true,
         fetchConSesion: async ruta => {
             if (ruta.endsWith('/opciones')) return {ok: true, json: async () => ({
                 alcance_carteras: alcance,
+                modo: agente ? 'BANDEJA' : 'GENERAL',
                 cuentas: [{id: 'COMPARCARTIGO', nombre: 'Compartamos castigo'}],
             })};
+            if (ruta.endsWith('/bandeja')) {
+                consultas.push(ruta);
+                return {ok: true, json: async () => ({clientes: 1, respuestas: 1,
+                    completo: true, grupos: [{filas: [{
+                        cuenta: 'COMPARCARTIGO', campana_id: 1, id: '1', idcliente: 11,
+                        idcartera: 124, dni: '12345678', cliente: 'Cliente asignado',
+                        telefono: '999999999', texto: 'Sí', estado: 'PENDIENTE',
+                        recibido: '2026-11-03T10:00:00',
+                    }]}]})};
+            }
             if (ruta.includes('/sin-atender')) return {ok: true, json: async () => ({
                 clientes: 1, respuestas: 1, clientes_ayer_hoy: 1, desde: '2026-11-01', completo: true})};
             consultas.push(ruta);
@@ -299,6 +335,12 @@ async function probarCargaAutomatica(alcance) {
     assert.equal(elementos.mowaEstado.value, 'PENDIENTE');
     assert.equal(elementos.mowaOrden.value, 'antiguo');
     assert.equal(consultas.length, 1);
+    if (agente) {
+        assert.match(consultas[0], /\/bandeja$/);
+        assert.equal(elementos.mowaExportar.hidden, true);
+        assert.match(elementos.mowaTabla.innerHTML, /Cliente asignado/);
+        return;
+    }
     assert.match(consultas[0], /\/recibidas\?desde=2026-11-02&hasta=2026-11-03$/); // Todas las cuentas autorizadas.
     assert.equal(elementos.mowaSinAtenderTotal.textContent, '1');
     assert.equal(elementos.mowaPendientes.textContent, '1');
@@ -344,6 +386,7 @@ async function probarActualizacionManual() {
     assert.match(elementos.mowaSyncEstado.textContent, /6 respuestas nuevas.*4 respuestas con origen completado.*2 avisos/);
 }
 
-Promise.all([probarConsultaConCuenta(), probarCargaAutomatica([124]), probarCargaAutomatica(null), probarActualizacionManual()])
+Promise.all([probarConsultaConCuenta(), probarCargaAutomatica([124]), probarCargaAutomatica(null),
+    probarCargaAutomatica([124], true), probarActualizacionManual()])
     .then(() => console.log('Consulta SMS con cuenta y carga automática: OK'))
     .catch(error => { console.error(error); process.exitCode = 1; });

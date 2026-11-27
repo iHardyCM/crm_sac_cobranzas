@@ -580,13 +580,15 @@ def _verificar_ancla(cuenta: str, campana_id: int, respuesta_id: int, mensaje_id
 
 def enviar_respuesta(cuenta: str, campana_id: int, respuesta_id: int, mensaje_id: int,
                     fecha_campana: date, texto_sms: str,
-                    carteras_permitidas: set[int] | None) -> dict:
+                    carteras_permitidas: set[int] | None, autorizar_cliente=None) -> dict:
     """Revalida la respuesta y su destinatario en Mowa y SISCOB antes del envío."""
     texto_sms = texto_sms.strip()
     if not texto_sms or len(texto_sms) > 160 or any(ord(c) < 32 for c in texto_sms):
         raise ValueError("Escribe un SMS de 1 a 160 caracteres, en una sola línea.")
     key, fila, numero = _verificar_ancla(
         cuenta, campana_id, respuesta_id, mensaje_id, fecha_campana, carteras_permitidas)
+    if autorizar_cliente is not None:
+        autorizar_cliente(fila["idcartera"], fila["idcliente"])
     try:
         enviado = _get_json("POST", MOWA_SIMPLE, key,
                             json={"msisdn": numero, "text": texto_sms, "type": 1,
@@ -612,10 +614,12 @@ def _fecha_evento_mowa(valor: Any) -> str | None:
 
 def consultar_historial(cuenta: str, campana_id: int, respuesta_id: int, mensaje_id: int,
                        fecha_campana: date, desde: date, hasta: date,
-                       carteras_permitidas: set[int] | None) -> dict:
+                       carteras_permitidas: set[int] | None, autorizar_cliente=None) -> dict:
     """Historial de la cuenta y el celular verificados, limitado al rango de campañas."""
     key, fila, numero = _verificar_ancla(
         cuenta, campana_id, respuesta_id, mensaje_id, fecha_campana, carteras_permitidas)
+    if autorizar_cliente is not None:
+        autorizar_cliente(fila["idcartera"], fila["idcliente"])
     try:
         campanas = _campanas(cuenta, key, desde, hasta, telefono=numero)
     except MowaError as exc:

@@ -314,6 +314,9 @@ Object.assign(casos, {
         return e.porId.homeTitulo.innerText === "Hola, GINO GESTOR"
             && e.porId.homeUsuario.innerText === "22222222 - GINO GESTOR"
             && e.porId.modulosHome.innerHTML.includes("Mis compromisos")
+            && e.porId.modulosHome.innerHTML.includes('href="respuestas_mowa.html"')
+            && e.porId.modulosHome.innerHTML.includes("Mis asignaciones")
+            && !e.porId.modulosHome.innerHTML.includes("Respuestas SMS</h4>")
             && !e.clasesBody.has("home-validando-sesion")
             && e.redirecciones.length === 0;
     },
@@ -323,12 +326,13 @@ Object.assign(casos, {
             storage: STORAGE_VIEJO,
             rutas: { "/auth/me": respuesta(200, { ...USUARIO_ME, requiere_cambio_clave: false,
                 permisos_vistas: { clientes: true, compromisos: false, gestiones: true,
-                    telefonos: false, ia_feedback: false } }) },
+                    telefonos: false, respuestas_mowa: false, ia_feedback: false } }) },
         });
         await iniciarPagina(e);
         const html = e.porId.modulosHome.innerHTML;
         return html.includes("Compromisos del equipo")
             && !html.includes("Mis compromisos")
+            && !html.includes("Mis asignaciones")
             && !html.includes("Validación de Teléfonos")
             && e.porId.homeModulos.innerText === "2";
     },

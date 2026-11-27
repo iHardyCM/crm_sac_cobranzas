@@ -90,6 +90,7 @@ function pintarModulos(usuario) {
         "compromisos.html": "compromisos",
         "supervisor.html": "gestiones",
         "telefonos.html": "telefonos",
+        "respuestas_mowa.html": "respuestas_mowa",
         "ia_feedback.html": "ia_feedback"
     };
     const modulos = obtenerModulosPorPerfil(tipo).filter(modulo => {
@@ -153,6 +154,7 @@ const GRUPO_POR_PAGINA = {
     "canales.html": "datos",
     "documentos.html": "datos",
     "segmentos.html": "datos",
+    "zonas.html": "datos",
     "admin_supervisores.html": "admin",
     "admin_accesos.html": "admin"
 };
@@ -162,6 +164,7 @@ const ICONOS_HOME = {
     "corporativo.html": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     "metas.html": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>',
     "compromisos.html": '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 14l2 2 4-4"/>',
+    "respuestas_mowa.html": '<path d="M3 11v3l12 5V6L3 11zM15 9a4 4 0 010 6M6 14l1.5 6"/>',
     "supervisor.html": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 5.2a3.5 3.5 0 010 5.6M18 14.4c2.2.7 3.5 2.6 3.5 5.6"/>',
     "corporativo_pdp_hoy.html": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
     "control_horario.html": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -177,7 +180,8 @@ const ICONOS_HOME = {
     "admin_supervisores.html": '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
     "admin_accesos.html": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
     "score_telefonico.html": '<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',
-    "segmentos.html": '<path d="M4 6h16M4 12h10M4 18h6M17 14v7M14 18l3 3 3-3"/>'
+    "segmentos.html": '<path d="M4 6h16M4 12h10M4 18h6M17 14v7M14 18l3 3 3-3"/>',
+    "zonas.html": '<path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>'
 };
 
 function paginaDeRuta(ruta) {
@@ -275,6 +279,16 @@ function obtenerModulosPorPerfil(tipo) {
             ruta: "compromisos.html",
             destacado: true
         });
+
+        if (tipo === "GESTOR") {
+            modulos.push({
+                sigla: "MA",
+                titulo: "Mis asignaciones",
+                descripcion: "Clientes asignados con respuestas SMS pendientes de gestión.",
+                ruta: "respuestas_mowa.html",
+                destacado: true
+            });
+        }
 
         modulos.push({
             sigla: "TF",
@@ -437,6 +451,13 @@ function obtenerModulosPorPerfil(tipo) {
                 titulo: "Segmentos del banco",
                 descripcion: "Carga de segmentos por cliente (MiBanco, Compartamos…) para el generador de bases.",
                 ruta: "segmentos.html",
+                destacado: false
+            },
+            {
+                sigla: "ZR",
+                titulo: "Zonas restringidas",
+                descripcion: "Mapa del Perú para dejar de gestionar departamentos por orden del banco o clima.",
+                ruta: "zonas.html",
                 destacado: false
             },
             {

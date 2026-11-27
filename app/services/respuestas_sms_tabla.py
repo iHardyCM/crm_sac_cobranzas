@@ -100,11 +100,12 @@ def ultima_sincronizacion(engine=None) -> dict:
             WHERE Fin IS NOT NULL AND Resultado IN ('OK', 'CON_AVISOS')
             ORDER BY IdSincronizacion DESC""")).mappings().first()
         intento = conn.execute(text("""
-            SELECT TOP (1) Inicio, Fin, Resultado
+            SELECT TOP (1) Inicio, Fin, Resultado, Avisos
             FROM CobAuto.dbo.CRM_SMS_SINCRONIZACION WITH (NOLOCK)
             ORDER BY IdSincronizacion DESC""")).mappings().first()
     ultimo_intento = ({"inicio": _iso(intento["Inicio"]), "fin": _iso(intento["Fin"]),
-                       "resultado": intento["Resultado"]} if intento else None)
+                       "resultado": intento["Resultado"], "avisos": intento.get("Avisos")}
+                      if intento else None)
     if not fila:
         return {"fin": None, "resultado": None, "desactualizada": True,
                 "ultimo_intento": ultimo_intento}

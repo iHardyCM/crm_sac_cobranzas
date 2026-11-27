@@ -1,0 +1,205 @@
+﻿IdCartera   FechaCorteFuente Clientes    CapitalTotal                            SinCapital
+----------- ---------------- ----------- --------------------------------------- -----------
+126         2026-11-25       5801        29353521.27                             0
+128         2026-11-24       1817        2490998.64                              0
+133         2026-11-24       33156       28580579.01                             0
+
+(3 filas afectadas)
+
+Tabla              column_id   Columna                                                                                                                          Tipo
+------------------ ----------- -------------------------------------------------------------------------------------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------
+SAC_CAR_BIZNESCOB  1           Mes_Asignacion                                                                                                                   varchar
+SAC_CAR_BIZNESCOB  2           codcliente                                                                                                                       nvarchar
+SAC_CAR_BIZNESCOB  3           Cod Operación                                                                                                                    nvarchar
+SAC_CAR_BIZNESCOB  4           TipoDocCivil                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  5           DNI                                                                                                                              nvarchar
+SAC_CAR_BIZNESCOB  6           NomCliente                                                                                                                       nvarchar
+SAC_CAR_BIZNESCOB  7           FecNacimiento                                                                                                                    varchar
+SAC_CAR_BIZNESCOB  8           Edad                                                                                                                             varchar
+SAC_CAR_BIZNESCOB  9           SexoCliente                                                                                                                      nvarchar
+SAC_CAR_BIZNESCOB  10          Direccion_Principal                                                                                                              nvarchar
+SAC_CAR_BIZNESCOB  11          Distrito_Principal                                                                                                               nvarchar
+SAC_CAR_BIZNESCOB  12          Direccion_Negocio                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  13          Distrito_Negocio                                                                                                                 nvarchar
+SAC_CAR_BIZNESCOB  14          Direccion_Vivienda                                                                                                               nvarchar
+SAC_CAR_BIZNESCOB  15          Distrito_Vivienda                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  16          Telef_01                                                                                                                         varchar
+SAC_CAR_BIZNESCOB  17          Telef_02                                                                                                                         varchar
+SAC_CAR_BIZNESCOB  18          Telef_03                                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  19          Telef_04                                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  20          Conyugue titular                                                                                                                 nvarchar
+SAC_CAR_BIZNESCOB  21          Documento conyugue                                                                                                               nvarchar
+SAC_CAR_BIZNESCOB  22          telefono conyugue                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  23          Aval 1                                                                                                                           nvarchar
+SAC_CAR_BIZNESCOB  24          Documento Aval                                                                                                                   nvarchar
+SAC_CAR_BIZNESCOB  25          Direccion Aval                                                                                                                   nvarchar
+SAC_CAR_BIZNESCOB  26          Distrito Aval 1                                                                                                                  nvarchar
+SAC_CAR_BIZNESCOB  27          Telef_Aval 1                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  28          Aval 2                                                                                                                           nvarchar
+SAC_CAR_BIZNESCOB  29          Telef_Aval 2                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  30          Cony_Aval                                                                                                                        nvarchar
+SAC_CAR_BIZNESCOB  31          Telf_Cony_Aval                                                                                                                   nvarchar
+SAC_CAR_BIZNESCOB  32          MtoCapDesembolso                                                                                                                 float
+SAC_CAR_BIZNESCOB  33          FecDesemb                                                                                                                        float
+SAC_CAR_BIZNESCOB  34          NroCuotas_Aprobadas                                                                                                              float
+SAC_CAR_BIZNESCOB  35          Nro_CuotasAtrasadas                                                                                                              float
+SAC_CAR_BIZNESCOB  36          Nro_CuotasVencidas                                                                                                               float
+SAC_CAR_BIZNESCOB  37          Ult_CuotaAtrasada                                                                                                                float
+SAC_CAR_BIZNESCOB  38          MtoCuota                                                                                                                         float
+SAC_CAR_BIZNESCOB  39          Monto Cap Ven# Cuot                                                                                                              float
+SAC_CAR_BIZNESCOB  40          CT 1                                                                                                                             float
+SAC_CAR_BIZNESCOB  41          CT 11                                                                                                                            float
+SAC_CAR_BIZNESCOB  42          CT 12                                                                                                                            float
+SAC_CAR_BIZNESCOB  43          CT 13                                                                                                                            float
+SAC_CAR_BIZNESCOB  44          CT 14                                                                                                                            float
+SAC_CAR_BIZNESCOB  45          CT 15                                                                                                                            float
+SAC_CAR_BIZNESCOB  46          CT 2                                                                                                                             float
+SAC_CAR_BIZNESCOB  47          CT 21                                                                                                                            float
+SAC_CAR_BIZNESCOB  48          CT 22                                                                                                                            float
+SAC_CAR_BIZNESCOB  49          CT 23                                                                                                                            float
+SAC_CAR_BIZNESCOB  50          CT 24                                                                                                                            float
+SAC_CAR_BIZNESCOB  51          CT 25                                                                                                                            float
+SAC_CAR_BIZNESCOB  52          CT 3                                                                                                                             float
+SAC_CAR_BIZNESCOB  53          CT 31                                                                                                                            float
+SAC_CAR_BIZNESCOB  54          CT 32                                                                                                                            float
+SAC_CAR_BIZNESCOB  55          CT 33                                                                                                                            float
+SAC_CAR_BIZNESCOB  56          CT 34                                                                                                                            float
+SAC_CAR_BIZNESCOB  57          CT 35                                                                                                                            float
+SAC_CAR_BIZNESCOB  58          SdoCapitalVencido                                                                                                                float
+SAC_CAR_BIZNESCOB  59          Interes_AlDia                                                                                                                    float
+SAC_CAR_BIZNESCOB  60          Interes_Pactado                                                                                                                  float
+SAC_CAR_BIZNESCOB  61          MtoPenalidad_Dia                                                                                                                 float
+SAC_CAR_BIZNESCOB  62          Gasto                                                                                                                            float
+SAC_CAR_BIZNESCOB  63          CodMoneda                                                                                                                        nvarchar
+SAC_CAR_BIZNESCOB  64          SdoCapital                                                                                                                       float
+SAC_CAR_BIZNESCOB  65          Deuda_Total                                                                                                                      float
+SAC_CAR_BIZNESCOB  66          DiasAtraso                                                                                                                       float
+SAC_CAR_BIZNESCOB  67          FecUltPago                                                                                                                       float
+SAC_CAR_BIZNESCOB  68          NomOficina                                                                                                                       nvarchar
+SAC_CAR_BIZNESCOB  69          UltFecVen                                                                                                                        float
+SAC_CAR_BIZNESCOB  70          Condicion                                                                                                                        nvarchar
+SAC_CAR_BIZNESCOB  71          Convenio_Vigente                                                                                                                 nvarchar
+SAC_CAR_BIZNESCOB  72          NombreGrupo                                                                                                                      nvarchar
+SAC_CAR_BIZNESCOB  73          CodigoGrupo                                                                                                                      float
+SAC_CAR_BIZNESCOB  74          CodCreGrupal                                                                                                                     float
+SAC_CAR_BIZNESCOB  75          NOMBRE APELLIDO_Comite 1                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  76          CARGO _Comite 1                                                                                                                  nvarchar
+SAC_CAR_BIZNESCOB  77          TELEFONO_Comite_1                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  78          NOMBRE APELLIDO_Comite 2                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  79          CARGO _Comite 2                                                                                                                  nvarchar
+SAC_CAR_BIZNESCOB  80          TELEFONO_Comite_2                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  81          NOMBRE APELLIDO_Comite 3                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  82          CARGO _Comite 3                                                                                                                  nvarchar
+SAC_CAR_BIZNESCOB  83          TELEFONO_Comite_3                                                                                                                nvarchar
+SAC_CAR_BIZNESCOB  84          Producto                                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  85          Linea_Negocio                                                                                                                    nvarchar
+SAC_CAR_BIZNESCOB  86          FecCastigo                                                                                                                       float
+SAC_CAR_BIZNESCOB  87          Territorio                                                                                                                       nvarchar
+SAC_CAR_BIZNESCOB  88          Empresa                                                                                                                          nvarchar
+SAC_CAR_BIZNESCOB  89          SCORE                                                                                                                            varchar
+SAC_CAR_BIZNESCOB  90          SEGMENTO                                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  91          Tramo                                                                                                                            nvarchar
+SAC_CAR_BIZNESCOB  92          Calificacion                                                                                                                     varchar
+SAC_CAR_BIZNESCOB  93          Rubro                                                                                                                            nvarchar
+SAC_CAR_BIZNESCOB  94          Actividad_Economica                                                                                                              nvarchar
+SAC_CAR_BIZNESCOB  95          CreEstado                                                                                                                        nvarchar
+SAC_CAR_BIZNESCOB  96          Tip_User                                                                                                                         nvarchar
+SAC_CAR_BIZNESCOB  97          Porcent_Camp                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  98          Monto_Pagar                                                                                                                      nvarchar
+SAC_CAR_BIZNESCOB  99          Camp 1 cuota                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  100         Camp 2 cuota                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  101         Camp 3 cuota                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  102         Cancelación                                                                                                                     nvarchar
+SAC_CAR_BIZNESCOB  103         Camp_ Canc_Integrantes                                                                                                           nvarchar
+SAC_CAR_BIZNESCOB  104         Camp_Canc_Grupo                                                                                                                  nvarchar
+SAC_CAR_BIZNESCOB  105         Nro_Entidades_Micro_Pyme                                                                                                         float
+SAC_CAR_BIZNESCOB  106         MtoSaldo_RCC                                                                                                                     float
+SAC_CAR_BIZNESCOB  107         CreEstado_Hoy                                                                                                                    nvarchar
+SAC_CAR_BIZNESCOB  108         Categ_CuarentenaFeb21                                                                                                            nvarchar
+SAC_CAR_BIZNESCOB  109         FechaCarga                                                                                                                       datetime
+
+(109 filas afectadas)
+
+Dia        Primera                 Ultima                  Filas       DNIs        Operaciones
+---------- ----------------------- ----------------------- ----------- ----------- -----------
+2026-11-25 2026-11-25 09:47:34.510 2026-11-25 09:48:28.537 93348       89940       93348
+
+(1 fila afectada)
+
+
+(89940 filas afectadas)
+IdCartera   SacDel     ClientesGenerador EnSac       NoEstanEnSac CapitalDeLosQueNoEstan
+----------- ---------- ----------------- ----------- ------------ ---------------------------------------
+126         2026-11-25 5801              5661        140          177954.49
+128         2026-11-25 1817              1785        32           18037.60
+133         2026-11-25 33156             32344       812          363143.40
+
+(3 filas afectadas)
+
+IdCartera   Condicion                                                                                            MgContacto EstadoPdp  Clientes
+----------- ---------------------------------------------------------------------------------------------------- ---------- ---------- -----------
+126         NUEVO                                                                                                SG         SIN PDP    50
+126         CANCELADO                                                                                            CEF        PAGADA     35
+126         CANCELADO                                                                                            CEF        SIN PDP    12
+126         NO CONTESTA                                                                                          NOC        SIN PDP    8
+126         NUEVO                                                                                                NOC        SIN PDP    6
+126         CONTACTO CON TITULAR                                                                                 CEF        SIN PDP    4
+126         CONTACTO TERCEROS                                                                                    CNE        SIN PDP    4
+126         PAGO NOVIEMBRE26                                                                                     CEF        PAGADA     3
+126         NO CONTESTA                                                                                          SG         SIN PDP    3
+126         SEGUIMIENTO                                                                                          CEF        SIN PDP    2
+126         PAGO NOVIEMBRE26                                                                                     CEF        SIN PDP    2
+126         CONTACTO CON TITULAR                                                                                 SG         SIN PDP    2
+126         NULL                                                                                                 NULL       NULL       1
+126         NO CONTESTA                                                                                          CNE        SIN PDP    1
+126         CONTACTO CON TITULAR                                                                                 CNE        SIN PDP    1
+126         PAGO OCTUBRE 2026                                                                                    CEF        SIN PDP    1
+126         PAGO OCTUBRE 2026                                                                                    SG         SIN PDP    1
+126         PAGO SETIEMBRE26                                                                                     SG         SIN PDP    1
+126         PROMESA DE PAGO.                                                                                     CEF        PAGADA     1
+126         PROMESA DE PAGO.                                                                                     NOC        SIN PDP    1
+126         NUEVO                                                                                                CNE        SIN PDP    1
+128         NUEVO                                                                                                SG         SIN PDP    14
+128         CANCELADO                                                                                            CEF        PAGADA     10
+128         NO CONTESTA                                                                                          SG         SIN PDP    2
+128         NUEVO                                                                                                NOC        SIN PDP    1
+128         CONTACTO CON TITULAR                                                                                 SG         SIN PDP    1
+128         CONTACTO TERCEROS                                                                                    NOC        SIN PDP    1
+128         NO CONTESTA                                                                                          NOC        SIN PDP    1
+128         PAGO OCTUBRE 2026                                                                                    SG         SIN PDP    1
+128         SEGUIMIENTO                                                                                          CEF        SIN PDP    1
+133         NULL                                                                                                 NULL       NULL       331
+133         CANCELADO                                                                                            CEF        PAGADA     211
+133         NUEVO                                                                                                SG         SIN PDP    147
+133         CONTACTO CON TITULAR                                                                                 CEF        SIN PDP    18
+133         SEGUIMIENTO GRUPAL                                                                                   SG         SIN PDP    17
+133         SEGUIMIENTO GRUPAL                                                                                   CEF        SIN PDP    13
+133         NUEVO                                                                                                NOC        SIN PDP    12
+133         NO CONTESTA                                                                                          NOC        SIN PDP    11
+133         CANCELADO                                                                                            CEF        SIN PDP    10
+133         PAGO NOVIEMBRE26                                                                                     CEF        PAGADA     6
+133         CONTACTO CON TITULAR                                                                                 SG         SIN PDP    4
+133         NUEVO                                                                                                CEF        SIN PDP    3
+133         PROMESA DE PAGO.                                                                                     CEF        CAÍDA      3
+133         PROMESA DE PAGO.                                                                                     CEF        PAGADA     3
+133         PROMESA INCUMPLIDA                                                                                   CEF        CAÍDA      2
+133         SEGUIMIENTO                                                                                          CEF        PAGADA     2
+133         SEGUIMIENTO                                                                                          CEF        SIN PDP    2
+133         CONTACTO TERCEROS                                                                                    NOC        SIN PDP    2
+133         CTE. RENUENTE                                                                                        CEF        SIN PDP    2
+133         NO CONTESTA                                                                                          SG         SIN PDP    2
+133         CANCELADO                                                                                            SG         SIN PDP    2
+133         NUEVO                                                                                                CEF        PAGADA     1
+133         NO CONTESTA                                                                                          CEF        SIN PDP    1
+133         SEGUIMIENTO GRUPAL                                                                                   CEF        CAÍDA      1
+133         SEGUIMIENTO GRUPAL                                                                                   CEF        PAGADA     1
+133         PAGO OCTUBRE 2026                                                                                    SG         SIN PDP    1
+133         SEGUIMIENTO GRUPAL                                                                                   CNE        SIN PDP    1
+133         SEGUIMIENTO GRUPAL                                                                                   NOC        SIN PDP    1
+133         CANCELADO                                                                                            CNE        SIN PDP    1
+133         CANCELADO                                                                                            NOC        SIN PDP    1
+
+(60 filas afectadas)
+
+
+Hora de finalización: 2026-11-25T15:08:55.2627694-05:00

@@ -28,6 +28,7 @@ from app.api.routes_importacion import router as importacion_router
 from app.api.routes_score_telefonico import router as score_telefonico_router
 from app.api.routes_generador_bases import router as generador_bases_router
 from app.api.routes_segmentos import router as segmentos_router
+from app.api.routes_zonas_restringidas import router as zonas_router
 from app.api.routes_ia_feedback import router as ia_feedback_router
 from app.api.routes_susurro_ia import router as susurro_ia_router
 from app.api.routes_telefonos import router as telefonos_router
@@ -113,6 +114,8 @@ app.include_router(respuestas_mowa_router, prefix="/respuestas-mowa", tags=["Res
 app.include_router(generador_bases_router, prefix="/generador-bases", tags=["Generador de bases"])
 # Segmentos del banco para el generador: sesión + visión global en cada endpoint
 app.include_router(segmentos_router, prefix="/segmentos-banco", tags=["Segmentos del banco"])
+# Zonas restringidas (mapa): sesión en cada endpoint; ver = jefes y supervisores, registrar = jefes
+app.include_router(zonas_router, prefix="/zonas-restringidas", tags=["Zonas restringidas"])
 
 @app.get("/")
 def healthcheck():

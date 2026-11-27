@@ -373,3 +373,29 @@ a.st-btn { display: inline-flex; align-items: center; text-decoration: none; box
 .st-nombre-base { display: flex; gap: 8px; align-items: center; }
 .st-nombre-base .st-input { flex: 1; min-width: 0; font-weight: 600; letter-spacing: .01em; }
 .st-sufijo-codigo { padding: 0 8px; height: 32px; display: inline-flex; align-items: center; border-radius: 8px; background: #e8f1fd; color: #0a66d8; font-weight: 700; white-space: nowrap; }
+
+/* Bases usuales (25/11/2026) */
+.st-plantillas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 0 8px; margin-bottom: 8px; border-bottom: 1px solid rgba(148, 163, 184, .25); }
+.st-plantillas-titulo { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #52677f; margin-right: 4px; }
+.st-plantilla { height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid #b9cde6; background: #f3f7fc; color: #12406e; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.st-plantilla:hover { border-color: #0a66d8; }
+.st-plantilla.active { background: #0a66d8; border-color: #0a66d8; color: #fff; }
+.st-plantilla.modificada { background: #fff; border-color: #0a66d8; color: #0a66d8; border-style: dashed; }
+.st-plantilla.modificada::after { content: " · ajustada"; font-weight: 400; font-size: 11px; }
+.st-plantillas-nota { color: #7d8ca0; font-size: 11.5px; margin-left: 6px; }
+.st-plantillas-sep { width: 1px; height: 22px; background: rgba(148, 163, 184, .45); margin: 0 4px; }
+.st-plantillas-nota { flex-basis: 100%; margin-left: 0; }
+
+/* Rendimiento de las bases (25/11/2026) */
+.st-rb-cab { justify-content: flex-start; gap: 12px; flex-wrap: wrap; }
+.st-rb-periodo { display: inline-flex; gap: 4px; }
+.st-rb-periodo .st-btn.active { background: #e8f1fd; border-color: #0a66d8; color: #0a66d8; }
+.st-rb-tabla td small { display: block; font-size: 10.5px; color: #7d8ca0; font-weight: 400; }
+.st-rb-tabla td.st-rb-nombre { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-rb-tabla td.st-rb-v { background: #e3f5ea; color: #146c3d; }
+.st-rb-tabla td.st-rb-n { background: #fdf6dc; color: #6b5300; }
+.st-rb-tabla td.st-rb-r { background: #fde6dc; color: #94401c; }
+.st-rb-tabla td.st-rb-poca { color: #a3afbd; }
+.st-rb-tabla tr.st-rb-total td { border-top: 2px solid #24466b; background: #f1f5fa; font-weight: 700; }
+.st-rb-curso { display: inline-block; padding: 0 6px; border-radius: 999px; background: #e8f1fd; color: #0a66d8; font-size: 10.5px; font-weight: 600; }
+.st-rb-alerta { display: inline-block; padding: 0 6px; border-radius: 999px; background: #fff1dc; color: #8a4b00; font-size: 10.5px; font-weight: 600; }

@@ -145,3 +145,75 @@ body{margin:0;background:#eef3f8;color:#10243b;font-family:"Segoe UI",Arial,sans
 .mowa-carteras-nota{margin:0;padding:0 20px 18px;color:#61758c;font-size:11px;line-height:1.45}
 @media(max-width:560px){.mowa-carteras-contenido{grid-template-columns:1fr;gap:4px}.mowa-dona{min-height:200px}.mowa-dona svg{width:200px}.mowa-carteras-lista{max-height:40vh}}
 @media(prefers-reduced-motion:reduce){.mowa-dona circle[data-cartera]{transition:none}}
+
+/* Responsable del cliente y bandeja personal. */
+.mowa-main [hidden]{display:none!important}
+.mowa-bandeja-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:13px 16px;background:#fff;border:1px solid #d9e3ec;border-radius:12px}
+.mowa-bandeja-bar strong,.mowa-bandeja-bar span{display:block}
+.mowa-bandeja-bar strong{font-size:14px}
+.mowa-bandeja-bar span{margin-top:3px;color:#61758c;font-size:11px}
+.mowa-bandeja-bar button,.mowa-asignacion button{border:1px solid #bdd3ec;border-radius:8px;background:#eef5ff;color:#174875;padding:7px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.mowa-bandeja-bar button:disabled{opacity:.55;cursor:wait}
+.mowa-asignacion{margin-top:9px;padding-top:7px;border-top:1px solid #e4ebf3}
+.mowa-asignacion small{font-weight:700;color:#40566c}
+.mowa-asignacion button{margin-top:5px}
+.mowa-asignar-modal{width:min(560px,calc(100vw - 24px));max-height:min(780px,calc(100vh - 24px));padding:0;border:1px solid #cbd7e3;border-radius:16px;box-shadow:0 28px 80px #10243b55;color:#10243b;font-family:inherit}
+.mowa-asignar-modal::backdrop{background:#10243b77}
+.mowa-asignar-cuerpo{display:grid;gap:9px;padding:16px 20px 20px;overflow:auto;max-height:calc(100vh - 150px)}
+.mowa-asignar-cuerpo label{color:#40566c;font-size:12px;font-weight:700}
+.mowa-asignar-cuerpo input[type=search]{width:100%;padding:11px 12px;border:1px solid #b8cee5;border-radius:9px;background:#fff;color:#10243b;font:13px "Segoe UI",Arial,sans-serif}
+.mowa-agentes-lista{display:grid;gap:5px;max-height:min(340px,42vh);overflow:auto;padding:5px;border:1px solid #dce5ee;border-radius:11px;background:#f7f9fc}
+.mowa-agentes-lista button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;border:1px solid transparent;border-radius:8px;background:#fff;text-align:left;color:#10243b;cursor:pointer;font:12px "Segoe UI",Arial,sans-serif}
+.mowa-agentes-lista button:hover,.mowa-agentes-lista button:focus-visible{border-color:#9fc4ed;background:#f0f7ff}
+.mowa-agentes-lista button[aria-selected=true]{border-color:#1356a3;background:#eaf3ff;box-shadow:inset 3px 0 #1356a3}
+.mowa-agentes-lista button strong{font-size:12px;overflow-wrap:anywhere}
+.mowa-agentes-lista button small{flex:0 0 auto;color:#61758c;font-size:11px}
+.mowa-agentes-vacio{padding:16px;text-align:center;color:#61758c;font-size:12px}
+.mowa-asignar-cuerpo p{margin:0;min-height:16px;color:#61758c;font-size:11px}
+.mowa-asignar-cuerpo .mowa-agente-elegido{color:#1356a3;font-weight:700}
+.mowa-asignar-cuerpo #mowaAsignarGuardar{border:0;border-radius:8px;background:#1356a3;color:#fff;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.mowa-asignar-cuerpo #mowaAsignarGuardar:disabled{opacity:.55;cursor:wait}
+.mowa-seleccion-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:9px 11px;border:1px solid #b8d3ed;border-radius:10px;background:#eff6ff;color:#174875;font-size:11px}
+.mowa-seleccion-bar strong{margin-right:auto;font-size:12px}
+.mowa-seleccion-ayuda{color:#55718b;font-size:10px}
+.mowa-seleccion-bar button{padding:7px 10px;border:1px solid #bdd3ec;border-radius:8px;background:#fff;color:#174875;font-size:11px;font-weight:700;cursor:pointer}
+.mowa-seleccion-bar .mowa-seleccion-primario{background:#1356a3;border-color:#1356a3;color:#fff}
+.mowa-seleccion-bar button:disabled{opacity:.5;cursor:wait}
+.mowa-table-scroll th:first-child:has(input[type=checkbox]),.mowa-table-scroll td.mowa-seleccion-celda{width:32px;min-width:32px;text-align:center;padding:10px 5px}
+.mowa-table-scroll input[type=checkbox]{width:17px;height:17px;accent-color:#1356a3;cursor:pointer}
+.mowa-table-scroll tr.mowa-seleccionada{background:#f1f7ff}
+@media(max-width:560px){.mowa-asignar-cuerpo{padding:14px}.mowa-agentes-lista button{align-items:flex-start;flex-direction:column;gap:3px}.mowa-seleccion-bar strong{flex:1 1 100%}}
+
+/* Control del supervisor, abierto desde la vista de respuestas. */
+.mowa-filtros .mowa-control-abrir{background:#f0efff;border:1px solid #c9c4ec;color:#453a85}
+.mowa-control-modal{width:min(900px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:0;border:1px solid #cbd7e3;border-radius:16px;box-shadow:0 28px 80px #10243b55;color:#10243b;font-family:inherit}
+.mowa-control-modal::backdrop{background:#10243b77}
+.mowa-control-cuerpo{padding:16px 20px 20px;overflow:auto;max-height:calc(100vh - 110px)}
+.mowa-control-toolbar{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mowa-control-toolbar label{display:grid;gap:5px;color:#40566c;font-size:11px;font-weight:700}
+.mowa-control-toolbar select{min-width:180px;min-height:36px;padding:8px 10px;border:1px solid #cbd7e3;border-radius:8px;background:#fff;color:#10243b;font:12px "Segoe UI",Arial,sans-serif}
+.mowa-control-toolbar button,.mowa-control-agentes button{border:1px solid #bdd3ec;border-radius:8px;background:#eef5ff;color:#174875;padding:8px 11px;font-size:11px;font-weight:700;cursor:pointer}
+.mowa-control-toolbar button:disabled{opacity:.55;cursor:wait}
+.mowa-control-aviso{margin:12px 0;color:#597089;font-size:11px;line-height:1.4}
+.mowa-control-aviso.error{color:#9d302d;font-weight:700}
+.mowa-control-metricas{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0 20px}
+.mowa-control-metricas>div,.mowa-control-metricas>button{display:flex;flex-direction:column;gap:3px;min-width:0;padding:12px;border:1px solid #dce5ee;border-radius:11px;background:#f7f9fc;color:#10243b;text-align:left;font-family:inherit}
+.mowa-control-metricas>button{cursor:pointer}
+.mowa-control-metricas>button:hover,.mowa-control-metricas>button:focus-visible{border-color:#9fc4ed;background:#f0f7ff}
+.mowa-control-metricas span{font-size:11px;font-weight:700;color:#536c83}
+.mowa-control-metricas strong{font-size:25px;line-height:1.1}
+.mowa-control-metricas small{font-size:10px;color:#65788d}
+.mowa-control-metricas>button:nth-child(2){background:#fff7f1;border-color:#f0d0ad}
+.mowa-control-lista-cabecera{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.mowa-control-lista-cabecera h4{margin:0 0 9px;font-size:14px}
+.mowa-control-lista-cabecera span{font-size:10px;color:#65788d}
+.mowa-control-agentes{display:grid;gap:7px;max-height:38vh;overflow:auto}
+.mowa-control-agente{display:grid;grid-template-columns:minmax(0,1fr) 85px 85px 100px auto;align-items:center;gap:8px;padding:10px 12px;border:1px solid #dce5ee;border-radius:10px;background:#fff;font-size:11px}
+.mowa-control-agente strong{display:block;font-size:12px;overflow-wrap:anywhere}
+.mowa-control-agente small{display:block;margin-top:2px;color:#65788d;font-size:10px}
+.mowa-control-agente b{display:block;font-size:15px}
+.mowa-control-agente button:disabled{opacity:.5;cursor:default}
+.mowa-control-sync{margin-top:15px;padding:10px 12px;border:1px solid #dce5ee;border-radius:9px;background:#f7f9fc;color:#536c83;font-size:11px;line-height:1.45}
+.mowa-control-sync.alerta{background:#fff5ed;border-color:#edcba4;color:#805511}
+@media(max-width:700px){.mowa-control-metricas{grid-template-columns:repeat(2,minmax(0,1fr))}.mowa-control-agente{grid-template-columns:minmax(0,1fr) 65px 65px auto}.mowa-control-agente .mowa-control-antiguo{display:none}}
+@media(max-width:470px){.mowa-control-cuerpo{padding:12px}.mowa-control-agente{grid-template-columns:minmax(0,1fr) 60px auto}.mowa-control-agente .mowa-control-respuestas{display:none}}

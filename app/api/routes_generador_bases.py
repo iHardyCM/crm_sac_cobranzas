@@ -19,6 +19,7 @@ from app.core import autorizacion_carteras as autorizacion
 from app.core.auth_dependencies import requiere_clave_definitiva
 from app.services import generador_bases_service as servicio
 from app.services import generador_rendimiento_service as rendimiento_servicio
+from app.services import generador_sac_service as sac_servicio
 from app.services.generador_bases_reglas import RecetaInvalida
 
 router = APIRouter()
@@ -148,6 +149,21 @@ async def bases(idcartera: Optional[int] = Query(None), dias: int = Query(30), u
         raise _error("bases", usuario)
 
 
+@router.get("/sac/fuera")
+async def fuera_del_sac(idcartera: int = Query(..., gt=0), usuario: Dict = Usuario):
+    """Excel de los clientes de la cartera que ya no están en el SAC del día (Compartamos vigente, fase 17)."""
+    await _exigir_cartera(usuario, idcartera)
+    try:
+        contenido, nombre = await run_in_threadpool(sac_servicio.exportar_fuera_del_sac, idcartera)
+    except sac_servicio.ExportacionInvalida as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception:
+        raise _error("clientes fuera del SAC", usuario)
+    return Response(content=contenido,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
 @router.get("/bases/{id_base}/archivo")
 async def archivo_base(id_base: int, formato: str = Query("xlsx", pattern="^(xlsx|csv)$"), usuario: Dict = Usuario):
     """Archivo de la base: Excel (xlsx) o CSV delimitado por comas (csv), con IdCliente de SISCOB."""
@@ -184,6 +200,19 @@ async def rendimiento(cuerpo: Dict[str, Any] = Body(...), usuario: Dict = Usuari
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception:
         raise _error("rendimiento del score", usuario)
+
+
+@router.get("/rendimiento/bases")
+async def rendimiento_bases(idcartera: int = Query(..., gt=0), dias: int = Query(3), usuario: Dict = Usuario):
+    """Rendimiento de las bases generadas (ventana del día; las de la noche, hasta el día siguiente): teléfonos
+    marcados, intentos, CEF y PDP atribuidos a cada base."""
+    await _exigir_cartera(usuario, idcartera)
+    try:
+        return await run_in_threadpool(rendimiento_servicio.rendimiento_bases, idcartera, dias)
+    except rendimiento_servicio.ConsultaInvalida as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception:
+        raise _error("rendimiento de las bases", usuario)
 
 
 @router.post("/rendimiento/cobertura")

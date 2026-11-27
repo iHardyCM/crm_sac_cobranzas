@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
 
     <!-- CSS propio de la vista -->
-    <link rel="stylesheet" href="../css/score_telefonico.css?v=c3040d86c7">
+    <link rel="stylesheet" href="../css/score_telefonico.css?v=6c1c6e0945">
     <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
 </head>
 
@@ -34,11 +34,13 @@
         </div>
         <div id="estadoCartera" class="st-estado" aria-live="polite">—</div>
         <a id="lnkRendimiento" class="st-btn" href="score_rendimiento.html" title="Intentos y CEF por tramo, orden, horario y OSIPTEL de esta cartera">Rendimiento del score</a>
+        <button id="btnFueraSac" class="st-btn hidden" type="button" title="Excel de los clientes de la cartera que ya no están en el SAC del día (pagaron, cancelaron o salieron): DNI, operación, capital, calificación, condición SISCOB…">Clientes fuera del SAC</button>
         <button id="btnActualizar" class="st-btn" type="button" title="Recalcula historial, score y datos del cliente de esta cartera">Actualizar cartera</button>
     </section>
 
     <!-- Barra fija: filtros, canal y generar -->
     <section id="barra" class="st-barra">
+        <div id="plantillas" class="st-plantillas" role="group" aria-label="Bases usuales"></div>
         <div class="st-barra-fila">
             <button id="btnFiltros" class="st-btn st-btn-filtros" type="button">
                 <svg class="st-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"/></svg>
@@ -155,6 +157,24 @@
                 <tbody id="tbodyFilas"></tbody>
             </table>
         </div>
+    </section>
+
+    <!-- Rendimiento de las bases generadas (25/11/2026) -->
+    <section class="st-card st-rb">
+        <div class="st-card-title st-rb-cab">
+            <h3>Rendimiento de las bases</h3>
+            <div class="st-rb-periodo" role="group" aria-label="Periodo">
+                <button type="button" class="st-btn sm" data-rb-dias="1">Hoy</button>
+                <button type="button" class="st-btn sm active" data-rb-dias="3">3 días</button>
+                <button type="button" class="st-btn sm" data-rb-dias="7">7 días</button>
+            </div>
+            <button id="btnRendimientoBases" class="st-btn sm" type="button">Calcular</button>
+        </div>
+        <p class="st-ayuda">Cada llamada (asesor o máquina) cuenta para la base más reciente generada antes de ella que tenga ese teléfono. Ventana: hasta el fin del día; las bases generadas desde las 18:00, hasta el fin del día siguiente. Contacto = clientes con CEF ÷ clientes marcados. Los colores comparan con el total de las bases listadas.</p>
+        <div id="rbAviso" class="st-mensaje hidden"></div>
+        <div class="st-tabla-wrap"><table class="st-tabla st-rb-tabla" id="tblRendimientoBases">
+            <tbody><tr><td class="st-vacio">Pulsa "Calcular" para ver cómo rinden las bases generadas.</td></tr></tbody>
+        </table></div>
     </section>
 
     <!-- Histórico -->
@@ -276,10 +296,10 @@
 <script src="../js/session.js?v=887ddef4f1"></script>
 
 <!-- Layout global del CRM -->
-<script src="../js/app_layout.js?v=14c9204b45"></script>
+<script src="../js/app_layout.js?v=57154c8936"></script>
 
 <!-- JS propio de la vista -->
-<script src="../js/score_telefonico.js?v=865c107823"></script>
+<script src="../js/score_telefonico.js?v=1b7d5182fb"></script>
 
 </body>
 </html>

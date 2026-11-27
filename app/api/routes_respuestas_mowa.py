@@ -24,6 +24,7 @@ from app.services.respuestas_mowa_service import (
 from app.services.respuestas_mowa_export import generar_excel_respuestas
 from app.services import respuestas_sms_tabla as tabla
 from app.services import respuestas_sms_sync as sync_sms
+from app.services import asignaciones_cliente_service as asignaciones
 from app.services.respuestas_sms_sync import ahora_lima
 
 
@@ -56,6 +57,45 @@ class ActualizacionSms(BaseModel):
     dias: int = Field(default=7, ge=1, le=60)
 
 
+class AsignacionCliente(BaseModel):
+    idcartera: int = Field(gt=0)
+    idcliente: int = Field(gt=0)
+    agente_usuario: str = Field(min_length=1, max_length=50)
+
+
+class ClienteAsignable(BaseModel):
+    idcartera: int = Field(gt=0)
+    idcliente: int = Field(gt=0)
+
+
+class AsignacionLote(BaseModel):
+    clientes: list[ClienteAsignable] = Field(min_length=1, max_length=500)
+    agente_usuario: str = Field(min_length=1, max_length=50)
+
+
+def _es_agente(usuario: Dict) -> bool:
+    return autorizacion.perfil(usuario) == "GESTOR"
+
+
+def _puede_asignar(usuario: Dict) -> bool:
+    return autorizacion.es_supervisor(usuario) or autorizacion.tiene_vision_global(usuario)
+
+
+def _exigir_consulta_general(usuario: Dict) -> None:
+    if _es_agente(usuario):
+        raise autorizacion.prohibido("Tu perfil solo puede consultar su bandeja asignada.")
+
+
+def _autorizar_cliente_agente(usuario: Dict):
+    if not _es_agente(usuario):
+        return None
+    def validar(idcartera: int, idcliente: int):
+        if not asignaciones.pertenece(asignaciones.TIPO_RESPUESTA_SMS,
+                                      idcartera, idcliente, str(usuario.get("dni") or "")):
+            raise PermissionError("Este cliente ya no está asignado a tu bandeja.")
+    return validar
+
+
 def _exigir_actualizacion_sms(usuario: Dict) -> None:
     exigir_vista(usuario, "respuestas_mowa")
     if not autorizacion.tiene_vision_global(usuario):
@@ -85,6 +125,8 @@ def opciones_respuestas_mowa(usuario: Dict = Depends(requiere_clave_definitiva))
     return {
         "alcance_carteras": None if carteras is None else sorted(carteras),
         "puede_actualizar": autorizacion.tiene_vision_global(usuario),
+        "modo": "BANDEJA" if _es_agente(usuario) else "GENERAL",
+        "puede_asignar": _puede_asignar(usuario),
         "cuentas": [
             {"id": nombre, "nombre": NOMBRES_CUENTAS[nombre],
              "carteras": sorted(candidatas if carteras is None else set(candidatas) & carteras)}
@@ -138,6 +180,7 @@ async def respuestas_mowa(
 ):
     exigir_vista(usuario, "respuestas_mowa")
     autorizacion.exigir_no_monitor_calidad(usuario)
+    _exigir_consulta_general(usuario)
     if hasta < desde or hasta - desde > timedelta(days=6) or hasta > datetime.now(ZoneInfo("America/Lima")).date():
         raise HTTPException(status_code=400, detail="Selecciona un rango de hasta 7 días, sin fechas futuras.")
     carteras = autorizacion.carteras_permitidas(usuario)
@@ -183,6 +226,7 @@ def nombre_excel_sms(base: str, carteras, parcial: bool, rango: str = "",
 def _carteras_y_cuenta(usuario: Dict, cuenta: str | None):
     exigir_vista(usuario, "respuestas_mowa")
     autorizacion.exigir_no_monitor_calidad(usuario)
+    _exigir_consulta_general(usuario)
     carteras = autorizacion.carteras_permitidas(usuario)
     if carteras is not None and not carteras:
         raise autorizacion.prohibido()
@@ -239,6 +283,230 @@ async def detalle_sin_atender(cartera: int = Query(..., gt=0),
         raise HTTPException(status_code=503, detail="No se pudo consultar los pendientes de la cartera.")
 
 
+@router.get("/bandeja")
+async def bandeja_sms(usuario: Dict = Depends(requiere_clave_definitiva)):
+    """El gestor recibe únicamente clientes pendientes asignados a su usuario."""
+    exigir_vista(usuario, "respuestas_mowa")
+    if not _es_agente(usuario):
+        raise autorizacion.prohibido("La bandeja personal corresponde a los agentes.")
+    carteras = autorizacion.carteras_permitidas(usuario)
+    if not carteras:
+        raise autorizacion.prohibido()
+    try:
+        responsables = await run_in_threadpool(asignaciones.listar,
+            asignaciones.TIPO_RESPUESTA_SMS, carteras, str(usuario.get("dni") or ""))
+        claves = {(r["idcartera"], r["idcliente"]) for r in responsables}
+        if not claves:
+            return {"clientes": 0, "respuestas": 0, "grupos": [], "completo": True,
+                    "advertencias": [], "sincronizacion": None}
+        resultado = await run_in_threadpool(tabla.sin_atender, carteras)
+        resultado["grupos"] = [g for g in resultado["grupos"] if
+            (g["filas"][0]["idcartera"], g["filas"][0]["idcliente"]) in claves]
+        resultado["clientes"] = len(resultado["grupos"])
+        resultado["respuestas"] = sum(len(g["filas"]) for g in resultado["grupos"])
+        resultado.pop("por_cartera", None)
+        resultado.pop("clientes_ayer_hoy", None)
+        return resultado
+    except Exception:
+        logger.exception("Error cargando bandeja SMS usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=503, detail="No se pudo cargar tu bandeja SMS.")
+
+
+@router.get("/asignaciones")
+async def asignaciones_sms(usuario: Dict = Depends(requiere_clave_definitiva)):
+    exigir_vista(usuario, "respuestas_mowa")
+    if not _puede_asignar(usuario):
+        raise autorizacion.prohibido("Solo supervisores y jefes pueden asignar clientes.")
+    carteras = autorizacion.carteras_permitidas(usuario)
+    try:
+        agentes = await run_in_threadpool(asignaciones.listar_agentes, carteras)
+        actuales = await run_in_threadpool(asignaciones.listar,
+                                            asignaciones.TIPO_RESPUESTA_SMS, carteras)
+        return {"agentes": agentes, "asignaciones": actuales}
+    except Exception:
+        logger.exception("Error listando asignaciones SMS usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=503, detail="No se pudo cargar la asignación de clientes.")
+
+
+def _control_asignaciones(pendientes: dict, actuales: list[dict], agentes: list[dict],
+                          idcartera: int | None, agente: str | None) -> dict:
+    """Resume clientes únicos pendientes; no interpreta la asignación como gestión."""
+    grupos = [g for g in pendientes["grupos"] if idcartera is None or
+              g["filas"][0]["idcartera"] == idcartera]
+    responsables = {(a["idcartera"], a["idcliente"]): a for a in actuales}
+    por_agente: dict[str, dict] = {}
+    for a in agentes:
+        usuario = a["usuario"]
+        if idcartera is not None and a["idcartera"] != idcartera:
+            continue
+        por_agente.setdefault(usuario, {"usuario": usuario, "nombre": a["nombre"] or usuario,
+                                        "clientes": 0, "respuestas": 0, "antiguos": 0,
+                                        "primera_recepcion": None})
+    sin_asignar = asignados = antiguos = respuestas = 0
+    limite = (ahora_lima().date() - timedelta(days=2)).isoformat()
+    seleccionados = []
+    for grupo in grupos:
+        filas = grupo["filas"]
+        primero = filas[0]
+        actual = responsables.get((primero["idcartera"], primero["idcliente"]))
+        responsable = actual["agente_usuario"] if actual else None
+        fecha = min((f.get("recibido") or "") for f in filas)
+        viejo = bool(fecha and fecha[:10] <= limite)
+        respuestas += len(filas)
+        antiguos += int(viejo)
+        if responsable:
+            asignados += 1
+            fila = por_agente.setdefault(responsable, {"usuario": responsable,
+                "nombre": actual.get("agente_nombre") or responsable,
+                "clientes": 0, "respuestas": 0, "antiguos": 0,
+                "primera_recepcion": None})
+            fila["clientes"] += 1
+            fila["respuestas"] += len(filas)
+            fila["antiguos"] += int(viejo)
+            if fecha and (fila["primera_recepcion"] is None or fecha < fila["primera_recepcion"]):
+                fila["primera_recepcion"] = fecha
+        else:
+            sin_asignar += 1
+        if agente is not None and (agente == "TODOS" or
+            (agente == "SIN_ASIGNAR" and not responsable) or responsable == agente):
+            seleccionados.append(grupo)
+    resultado = {"clientes": len(grupos), "respuestas": respuestas,
+                 "sin_asignar": sin_asignar, "asignados": asignados,
+                 "antiguos": antiguos, "agentes": sorted(por_agente.values(),
+                    key=lambda a: (-a["clientes"], a["nombre"].casefold())),
+                 "desde": pendientes["desde"], "completo": pendientes["completo"],
+                 "advertencias": pendientes["advertencias"],
+                 "sincronizacion": pendientes["sincronizacion"]}
+    if agente is not None:
+        resultado["grupos"] = seleccionados
+        resultado["clientes_detalle"] = len(seleccionados)
+        resultado["respuestas_detalle"] = sum(len(g["filas"]) for g in seleccionados)
+        claves = {(g["filas"][0]["idcartera"], g["filas"][0]["idcliente"])
+                  for g in seleccionados}
+        resultado["asignaciones"] = [a for a in actuales if
+                                     (a["idcartera"], a["idcliente"]) in claves]
+    return resultado
+
+
+@router.get("/control-asignaciones")
+async def control_asignaciones_sms(
+    cartera: int | None = Query(default=None, gt=0),
+    agente: str | None = Query(default=None, max_length=50),
+    usuario: Dict = Depends(requiere_clave_definitiva),
+):
+    exigir_vista(usuario, "respuestas_mowa")
+    if not _puede_asignar(usuario):
+        raise autorizacion.prohibido("Solo supervisores y jefes pueden ver el control de asignaciones.")
+    carteras = autorizacion.carteras_permitidas(usuario)
+    if cartera is not None and not autorizacion.cartera_permitida(usuario, cartera):
+        raise autorizacion.prohibido()
+    if agente is not None and not agente.strip():
+        raise HTTPException(status_code=400, detail="Selecciona un agente válido.")
+    try:
+        pendientes = await run_in_threadpool(tabla.sin_atender, carteras)
+        actuales = await run_in_threadpool(asignaciones.listar,
+                                           asignaciones.TIPO_RESPUESTA_SMS, carteras)
+        agentes = await run_in_threadpool(asignaciones.listar_agentes, carteras)
+        return _control_asignaciones(pendientes, actuales, agentes, cartera, agente)
+    except Exception:
+        logger.exception("Error en control de asignaciones SMS usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=503, detail="No se pudo cargar el control de asignaciones.")
+
+
+@router.get("/control-asignaciones/excel")
+async def excel_control_asignaciones_sms(
+    cartera: int | None = Query(default=None, gt=0),
+    agente: str = Query(..., min_length=1, max_length=50),
+    usuario: Dict = Depends(requiere_clave_definitiva),
+):
+    resultado = await control_asignaciones_sms(cartera, agente, usuario)
+    hoy = ahora_lima().date().isoformat()
+    datos = {"desde": resultado["desde"], "hasta": hoy, "cuenta": None,
+             "estado_filtro": "PENDIENTE", "completo": resultado["completo"],
+             "advertencias": resultado["advertencias"],
+             "conversaciones": resultado["grupos"],
+             "etiqueta_rango": "Pendientes acumulados del control de asignaciones",
+             "origen": "Clientes activos con respuestas SMS sin gestión SISCOB posterior"}
+    archivo = await run_in_threadpool(generar_excel_respuestas, datos,
+                                      autorizacion.carteras_permitidas(usuario))
+    nombre = nombre_excel_sms("Asignaciones_SMS",
+        (f.get("idcartera") for g in resultado["grupos"] for f in g["filas"]),
+        not resultado["completo"], hoy)
+    return Response(content=archivo,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@router.put("/asignaciones")
+async def asignar_cliente_sms(payload: AsignacionCliente,
+                              usuario: Dict = Depends(requiere_clave_definitiva)):
+    exigir_vista(usuario, "respuestas_mowa")
+    if not _puede_asignar(usuario):
+        raise autorizacion.prohibido("Solo supervisores y jefes pueden asignar clientes.")
+    if not autorizacion.cartera_permitida(usuario, payload.idcartera):
+        raise autorizacion.prohibido()
+    try:
+        pendientes = await run_in_threadpool(tabla.sin_atender,
+            {payload.idcartera}, None, payload.idcartera)
+        encontrado = any(g["filas"][0]["idcliente"] == payload.idcliente
+                        for g in pendientes["grupos"])
+        if not encontrado and not pendientes["completo"]:
+            raise HTTPException(status_code=503, detail="No se pudo verificar este pendiente; reintenta la consulta.")
+        if not encontrado:
+            raise HTTPException(status_code=409, detail="El cliente ya no tiene respuestas SMS pendientes en esta cartera.")
+        resultado = await run_in_threadpool(asignaciones.asignar,
+            asignaciones.TIPO_RESPUESTA_SMS, payload.idcartera, payload.idcliente,
+            payload.agente_usuario, str(usuario.get("dni") or ""))
+        logger.info("Asignación SMS usuario=%s cartera=%s cliente=%s agente=%s cambio=%s",
+                    usuario.get("dni"), payload.idcartera, payload.idcliente,
+                    payload.agente_usuario, resultado["cambio"])
+        return resultado
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Error asignando cliente SMS usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=503, detail="No se pudo guardar la asignación.")
+
+
+@router.put("/asignaciones/lote")
+async def asignar_clientes_sms(payload: AsignacionLote,
+                               usuario: Dict = Depends(requiere_clave_definitiva)):
+    exigir_vista(usuario, "respuestas_mowa")
+    if not _puede_asignar(usuario):
+        raise autorizacion.prohibido("Solo supervisores y jefes pueden asignar clientes.")
+    claves = [(c.idcartera, c.idcliente) for c in payload.clientes]
+    if len(claves) != len(set(claves)):
+        raise HTTPException(status_code=400, detail="Hay clientes repetidos en la selección.")
+    carteras = {cartera for cartera, _ in claves}
+    if not all(autorizacion.cartera_permitida(usuario, cartera) for cartera in carteras):
+        raise autorizacion.prohibido()
+    try:
+        pendientes = await run_in_threadpool(tabla.sin_atender, carteras)
+        disponibles = {(g["filas"][0]["idcartera"], g["filas"][0]["idcliente"])
+                       for g in pendientes["grupos"]}
+        faltantes = set(claves) - disponibles
+        if faltantes:
+            if not pendientes["completo"]:
+                raise HTTPException(status_code=503, detail="No se pudo verificar todo el lote pendiente; actualiza la consulta.")
+            raise HTTPException(status_code=409, detail=f"{len(faltantes)} clientes ya no tienen respuestas SMS pendientes. Actualiza la consulta.")
+        guardadas = await run_in_threadpool(asignaciones.asignar_lote,
+            asignaciones.TIPO_RESPUESTA_SMS, claves, payload.agente_usuario,
+            str(usuario.get("dni") or ""))
+        cambios = sum(1 for item in guardadas if item["cambio"])
+        logger.info("Asignación SMS en lote usuario=%s total=%s cambios=%s carteras=%s",
+                    usuario.get("dni"), len(guardadas), cambios, sorted(carteras))
+        return {"total": len(guardadas), "cambios": cambios, "asignaciones": guardadas}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Error asignando lote SMS usuario=%s", usuario.get("dni"))
+        raise HTTPException(status_code=503, detail="No se pudo guardar el lote de asignaciones.")
+
+
 @router.get("/sin-atender/excel")
 async def excel_sin_atender(cuenta: str | None = Query(default=None),
                             cartera: int | None = Query(default=None, gt=0),
@@ -281,10 +549,11 @@ async def enviar_sms_mowa(payload: EnvioSms, usuario: Dict = Depends(requiere_cl
     if payload.fecha_campana > datetime.now(ZoneInfo("America/Lima")).date():
         raise HTTPException(status_code=400, detail="La fecha de la campaña no puede ser futura.")
     try:
+        autorizar_cliente = _autorizar_cliente_agente(usuario)
         resultado = await run_in_threadpool(
             enviar_respuesta, payload.cuenta, payload.campana_id,
             payload.respuesta_id, payload.mensaje_id, payload.fecha_campana,
-            payload.texto, carteras,
+            payload.texto, carteras, *([autorizar_cliente] if autorizar_cliente else []),
         )
         logger.info("SMS Mowa aceptado usuario=%s cuenta=%s cartera=%s cliente=%s mensaje=%s",
                     usuario.get("dni"), payload.cuenta, resultado["idcartera"],
@@ -292,6 +561,8 @@ async def enviar_sms_mowa(payload: EnvioSms, usuario: Dict = Depends(requiere_cl
         return resultado
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise autorizacion.prohibido(str(exc)) from exc
     except MowaError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception:
@@ -319,11 +590,15 @@ async def historial_sms_mowa(
     if cuenta not in CUENTAS or (carteras is not None and not set(CUENTAS[cuenta]) & carteras):
         raise autorizacion.prohibido()
     try:
+        autorizar_cliente = _autorizar_cliente_agente(usuario)
         return await run_in_threadpool(consultar_historial, cuenta, campana_id,
                                        respuesta_id, mensaje_id, fecha_campana,
-                                       desde, hasta, carteras)
+                                       desde, hasta, carteras,
+                                       *([autorizar_cliente] if autorizar_cliente else []))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise autorizacion.prohibido(str(exc)) from exc
     except MowaError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception:
@@ -336,6 +611,7 @@ async def exportar_sms_mowa(payload: ExportacionSms,
                            usuario: Dict = Depends(requiere_clave_definitiva)):
     exigir_vista(usuario, "respuestas_mowa")
     autorizacion.exigir_no_monitor_calidad(usuario)
+    _exigir_consulta_general(usuario)
     carteras = autorizacion.carteras_permitidas(usuario)
     if carteras is not None and not carteras:
         raise autorizacion.prohibido()

@@ -9,6 +9,7 @@ import csv
 import io
 import json
 import logging
+import threading
 import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -169,7 +170,45 @@ def _leer_catalogo(conn, carteras: List[int]) -> Dict[str, CampoMeta]:
                                    f["Origen"], f["ColumnaOrigen"], bool(f["Disponible"])) for f in filas}
 
 
+# ---------------------------------------------------------------- SAC del día (fase 17, 25/11/2026)
+# Compartamos vigente: la foto del SAC (score.SacClienteDia) se toma sola cuando el SAC tiene una carga nueva.
+# Como máximo una revisión por minuto en este proceso; si falla, la vista marca SAC DESACTUALIZADO al pasar el día.
+_SAC_REVISADO = 0.0
+_SAC_CANDADO = threading.Lock()
+
+
+def asegurar_sac() -> None:
+    global _SAC_REVISADO
+    if time.monotonic() - _SAC_REVISADO < 60:
+        return
+    with _SAC_CANDADO:
+        if time.monotonic() - _SAC_REVISADO < 60:
+            return
+        _SAC_REVISADO = time.monotonic()
+        try:
+            with engine_siscob.begin() as conn:
+                if conn.execute(text("SELECT OBJECT_ID('score.sp_CargarSac')")).scalar() is not None:
+                    conn.execute(text("EXEC score.sp_CargarSac @Simular = 0"))
+        except Exception:
+            logger.exception("No se pudo tomar la foto del SAC del día")
+
+
+def hay_zonas(conn, carteras: List[int]) -> bool:
+    """¿Hay zonas restringidas vigentes para estas carteras? (fase 19; sin la fase instalada, no)."""
+    if conn.execute(text("SELECT CASE WHEN OBJECT_ID('score.vw_ClienteZonaRestringida') IS NULL "
+                         "OR COL_LENGTH('score.ZonaRestringida', 'AplicaTodas') IS NULL THEN 0 ELSE 1 END")).scalar() == 0:
+        return False
+    en = reglas.lista_carteras(carteras)
+    return bool(conn.execute(text(f"""
+        SELECT COUNT(*) FROM score.ZonaRestringida AS z
+        WHERE z.Activo = 1 AND z.Desde <= CAST(GETDATE() AS DATE)
+          AND (z.Hasta IS NULL OR z.Hasta >= CAST(GETDATE() AS DATE))
+          AND (z.AplicaTodas = 1 OR EXISTS (SELECT 1 FROM score.ZonaRestringidaCartera AS zc
+                                            WHERE zc.IdZona = z.IdZona AND zc.IdCartera IN ({en})))""")).scalar())
+
+
 def obtener_catalogo(idcartera: int) -> Dict[str, Any]:
+    asegurar_sac()
     with engine_siscob.connect() as conn:
         carteras = carteras_de(conn, idcartera)
         en = _en(carteras)
@@ -353,12 +392,14 @@ def consultar(idcartera: int, receta: Dict, pagina: int = 1, tamano: int = 50) -
         tiempos[nombre] = int((ahora - reloj) * 1000)
         reloj = ahora
 
+    asegurar_sac()
     with engine_siscob.connect() as conn:
         dbapi = getattr(conn.connection, "dbapi_connection", None)
         timeout_previo = getattr(dbapi, "timeout", 0) if dbapi is not None else 0
         carteras = carteras_de(conn, idcartera)
         catalogo = _leer_catalogo(conn, carteras)
-        consulta = reglas.construir_consulta(idcartera, receta, catalogo, carteras=carteras)
+        consulta = reglas.construir_consulta(idcartera, receta, catalogo, carteras=carteras,
+                                               zonas=hay_zonas(conn, carteras))
         por_cliente = reglas.telefonos_por_cliente(receta)
         marca("catalogo")
         try:
@@ -533,12 +574,14 @@ def generar_base(idcartera: int, receta: Dict, usuario_dni: str) -> Dict[str, An
         raise RecetaInvalida("Elige el canal de la base: predictivo, preview, IVR/TTS, SMS u otro.")
     descripcion = str(receta.get("descripcion") or "").strip()[:200] or None
     momento = datetime.now().replace(microsecond=0)
+    asegurar_sac()
 
     with engine_siscob.begin() as conn:
         combinada = _combinadas(conn).get(int(idcartera))
         carteras = list(combinada["miembros"]) if combinada else [int(idcartera)]
         catalogo = _leer_catalogo(conn, carteras)
-        consulta = reglas.construir_consulta(idcartera, receta, catalogo, carteras=carteras)
+        consulta = reglas.construir_consulta(idcartera, receta, catalogo, carteras=carteras,
+                                               zonas=hay_zonas(conn, carteras))
         por_cliente = reglas.telefonos_por_cliente(receta)
         base = reglas.sql_seleccion(consulta, por_cliente)
 

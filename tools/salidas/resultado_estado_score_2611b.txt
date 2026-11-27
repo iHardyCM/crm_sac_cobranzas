@@ -1,0 +1,58 @@
+﻿=== A. SAC en origen (Desarrollo.dbo.SAC_CAR_BIZNESCOB) ===
+DiaCarga   Filas                Primera                 Ultima
+---------- -------------------- ----------------------- -----------------------
+2026-11-25 93348                2026-11-25 09:47:34.510 2026-11-25 09:48:28.537
+
+=== B.1 Llamadas por día (copia local de SISCOB) ===
+Dia        DiaSemana                      Maquina              Humana               UltimaHoraMaquina UltimaHoraHumana
+---------- ------------------------------ -------------------- -------------------- ----------------- ----------------
+2026-11-26 Thursday                       0                    4656                 NULL              16:11:25
+2026-11-25 Wednesday                      71015                20852                18:22:11          19:12:27
+2026-11-24 Tuesday                        104518               12718                18:05:55          18:34:06
+2026-11-23 Monday                         0                    6971                 NULL              19:01:39
+2026-11-21 Saturday                       32574                1992                 12:37:44          13:12:07
+2026-11-20 Friday                         84193                20358                19:00:30          18:58:05
+2026-11-19 Thursday                       71812                15069                18:03:32          19:00:34
+2026-11-18 Wednesday                      169320               4860                 19:00:54          19:01:49
+2026-11-17 Tuesday                        166804               13354                19:01:05          21:01:00
+2026-11-16 Monday                         53632                4733                 18:05:52          19:14:08
+
+=== B.2 23/11 por cartera: humana, máquina (pgestion) y centralita ===
+IdCartera   Humana               Maquina              Centralita
+----------- -------------------- -------------------- --------------------
+112         2113                 0                    7170
+117         482                  0                    9562
+124         823                  0                    8383
+126         841                  0                    11974
+128         71                   0                    623
+132         1150                 0                    16861
+133         738                  0                    3533
+137         94                   0                    1437
+144         569                  0                    9571
+148         90                   0                    2013
+
+=== C. Predictivo que llega al asesor: ¿la misma llamada está en pgestion y en gestion? ===
+    (gestión humana con una llamada de máquina al mismo teléfono y cartera 0-180 s antes; último día completo con máquina)
+Dia        idCartera   GestionesHumanas ConMaquinaAntes PctConMaquinaAntes
+---------- ----------- ---------------- --------------- ---------------------------------------
+2026-11-25 112         6230             12              0.2
+2026-11-25 117         676              9               1.3
+2026-11-25 124         770              2               0.3
+2026-11-25 126         4868             3               0.1
+2026-11-25 128         51               0               0.0
+2026-11-25 132         1094             7               0.6
+2026-11-25 133         5861             2               0.0
+2026-11-25 137         53               0               0.0
+2026-11-25 144         1104             6               0.5
+2026-11-25 148         144              0               0.0
+2026-11-25 NULL        20851            41              0.2
+
+Dia        LlamadasMaquina GestionesHumanas
+---------- --------------- ----------------
+2026-11-25 71015           20851
+
+=== D. ¿La centralita repite pgestion? (último día con ambas fuentes, mismo teléfono y cartera ±90 s) ===
+Mens. 208, Nivel 16, Estado 1, Línea 79
+Invalid object name 'score.TelefonoDiaControl'.
+
+Hora de finalización: 2026-11-26T16:14:45.5625499-05:00

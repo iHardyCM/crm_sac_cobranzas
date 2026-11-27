@@ -100,6 +100,7 @@ const estado = {
     modalAbierto: false,
     pestana: "SEGMENTO_CLIENTE",
     scoreVersion: null,       // caché de /score/version por cartera
+    plantilla: null,          // {id, clave}: base usual cargada y la receta con que quedó (para marcar si se modificó)
 };
 
 const $ = id => document.getElementById(id);
@@ -327,7 +328,168 @@ function actualizarBotonGenerar() {
 }
 
 // Cada cambio recalcula (con una pequeña espera para juntar varios clics).
+// ------------------------------------------------------------------ clientes fuera del SAC (fase 17, 25/11/2026)
+// Solo en las carteras que se cruzan con el SAC del día (Compartamos vigente): las que tienen el campo EN_SAC.
+function pintarBotonFueraSac() {
+    $("btnFueraSac").classList.toggle("hidden", !estado.campos?.has("EN_SAC"));
+    // al cambiar de cartera, el rendimiento de bases de la anterior ya no aplica
+    $("tblRendimientoBases").innerHTML = `<tbody><tr><td class="st-vacio">Pulsa "Calcular" para ver cómo rinden las bases generadas.</td></tr></tbody>`;
+    $("rbAviso").classList.add("hidden");
+}
+
+async function descargarFueraSac() {
+    if (!estado.idcartera) return;
+    const boton = $("btnFueraSac");
+    boton.disabled = true;
+    try {
+        await descargarArchivoConSesion(`${API}/sac/fuera?idcartera=${encodeURIComponent(estado.idcartera)}`,
+                                        `${estado.idcartera}_fuera_del_SAC.xlsx`);
+    } catch (error) {
+        manejarError(error);
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+// ------------------------------------------------------------------ bases usuales (25/11/2026, Hardy)
+// Botones que cargan los filtros de las bases de todos los días. Después se puede seguir filtrando como siempre.
+// "solo": quedan marcados únicamente esos valores. "quitar": se desmarcan esos valores.
+const CONDICIONES_USUALES = { CEF_HOY: "QUITAR", PDP_VIGENTE: "QUITAR", PDP_CREADA_HOY: "QUITAR", PAGO_HOY: "QUITAR" };
+// Lo que se quita en todas (25/11/2026, Hardy)
+// Condición SISCOB: por parecido, porque cada cartera escribe distinto (CANCELADO, FALLECIDO, RECLAMO…)
+const QUITAR_CONDICION = { campo: "SISCOB_CONDICION", quitarContiene: ["CANCEL", "FALLEC", "RECLAM"] };
+const QUITAR_PDP = { campo: "ESTADO_PDP", quitar: ["PAGADA", "VIGENTE"] };
+const QUITAR_SEGUIMIENTO = { campo: "SEGUIMIENTO_ACTUAL", quitar: ["VIGENTE", "HOY", "PDP PAGADA"] };
+// Compartamos vigente (fase 17): solo clientes que siguen en el SAC del día. En las demás carteras no existe y se omite.
+const EN_SAC = { campo: "EN_SAC", solo: ["SI"], opcional: true };
+const QUITAR_USUALES = [QUITAR_CONDICION, QUITAR_PDP, QUITAR_SEGUIMIENTO, EN_SAC];
+const CEF_TELEFONO = ["TITULAR", "TERCERO_ACUERDO"];   // = CEF del banco (titular o tercero con acuerdo)
+const PLANTILLAS = [
+    {
+        id: "CEF_MES", nombre: "Contactos del mes",
+        ayuda: "Clientes con CEF este mes, por los teléfonos donde fueron contacto este mes.",
+        filtros: [
+            { campo: "MG_CONTACTO_MES", solo: ["CEF"] },
+            { campo: "MG_TEL_MES", solo: CEF_TELEFONO },
+            ...QUITAR_USUALES,
+        ],
+    },
+    {
+        id: "CEF_HIST", nombre: "CEF histórico",
+        ayuda: "Clientes sin CEF este mes que tuvieron CEF en los 6 meses anteriores, por los teléfonos que fueron contacto en ese periodo.",
+        filtros: [
+            { campo: "MG_CONTACTO_MES", quitar: ["CEF"] },
+            { campo: "ULTIMO_CEF", solo: ["Mes anterior", "Hace 2-3 meses", "Hace 4-6 meses"] },
+            { campo: "MG_TEL_6M", solo: CEF_TELEFONO },
+            ...QUITAR_USUALES,
+        ],
+    },
+    {
+        id: "NUNCA_CEF", nombre: "Nunca CEF",
+        ayuda: "Clientes sin CEF en los últimos 6 meses (el historial empieza en mayo de 2026), por teléfonos que nunca fueron contacto.",
+        filtros: [
+            { campo: "MG_CONTACTO_MES", quitar: ["CEF"] },
+            { campo: "ULTIMO_CEF", solo: ["Sin CEF en 6 meses"] },
+            { campo: "MG_TEL_6M", quitar: CEF_TELEFONO },
+            ...QUITAR_USUALES,
+        ],
+    },
+    {
+        id: "PDP_CAIDA_MES", nombre: "PDP caídas del mes",
+        ayuda: "Clientes cuya última PDP de este mes venció sin pagar, por los teléfonos que fueron contacto en 6 meses. Quita a los que tienen un seguimiento vigente o de hoy.",
+        filtros: [
+            { campo: "ESTADO_PDP", solo: ["CAÍDA"] },
+            { campo: "MG_TEL_6M", solo: CEF_TELEFONO },
+            QUITAR_CONDICION, QUITAR_SEGUIMIENTO, EN_SAC,
+        ],
+    },
+    {
+        id: "PDP_CAIDA_HIST", nombre: "PDP caídas históricas",
+        ayuda: "Clientes sin PDP este mes cuya última PDP de los 6 meses anteriores venció sin pagar, por los teléfonos que fueron contacto en 6 meses.",
+        filtros: [
+            { campo: "ESTADO_PDP", solo: ["SIN PDP"] },
+            { campo: "PDP_ANTERIOR", solo: ["CAÍDA"] },
+            { campo: "MG_TEL_6M", solo: CEF_TELEFONO },
+            QUITAR_CONDICION, QUITAR_SEGUIMIENTO, EN_SAC,
+        ],
+    },
+    {
+        id: "SEG_CAIDO_MES", nombre: "Seg. caídos del mes",
+        ayuda: "Clientes con un seguimiento de este mes que pasó su plazo sin PDP ni pago, por los teléfonos que fueron contacto en 6 meses.",
+        filtros: [
+            { campo: "SEGUIMIENTO_ACTUAL", solo: ["CAÍDO"] },
+            { campo: "SEGUIMIENTO_MES", solo: ["Este mes"] },
+            { campo: "MG_TEL_6M", solo: CEF_TELEFONO },
+            QUITAR_CONDICION, QUITAR_PDP, EN_SAC,
+        ],
+    },
+    {
+        id: "SEG_CAIDO_HIST", nombre: "Seg. caídos históricos",
+        ayuda: "Clientes cuyo último seguimiento es de meses anteriores (sin seguimiento este mes) y cayó sin PDP ni pago, por los teléfonos que fueron contacto en 6 meses.",
+        filtros: [
+            { campo: "SEGUIMIENTO_ACTUAL", solo: ["CAÍDO"] },
+            { campo: "SEGUIMIENTO_MES", quitar: ["Este mes"] },
+            { campo: "MG_TEL_6M", solo: CEF_TELEFONO },
+            QUITAR_CONDICION, QUITAR_PDP, EN_SAC,
+        ],
+    },
+];
+
+function aplicarPlantilla(id) {
+    const plantilla = PLANTILLAS.find(p => p.id === id);
+    if (!plantilla || !estado.catalogo) return;
+    estado.desmarcados.clear();
+    estado.condiciones = {};
+    const faltan = [];
+    for (const f of plantilla.filtros) {
+        const campo = estado.campos.get(f.campo);
+        if (!campo || !esFiltrable(campo) || campo.Disponible === false) {
+            if (!f.opcional) faltan.push(campo?.Etiqueta || f.campo);
+            continue;
+        }
+        if (f.solo && f.solo.length === 1 && !valoresConocidos(campo).includes(f.solo[0]) && !(campo.OrdenValores || "").split("|").includes(f.solo[0])) {
+            faltan.push(`${campo.Etiqueta} = ${f.solo[0]}`);
+        }
+        if (f.quitarContiene) {
+            const norm = v => String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+            const quitar = valoresConocidos(campo).filter(v => f.quitarContiene.some(t => norm(v).includes(t)));
+            if (quitar.length) estado.desmarcados.set(campo.Codigo, new Set(quitar));
+        } else if (f.quitar) {
+            estado.desmarcados.set(campo.Codigo, new Set(f.quitar));
+        } else {
+            const dominio = new Set([...valoresConocidos(campo), ...(campo.OrdenValores || "").split("|").filter(Boolean)]);
+            const quedan = new Set(f.solo);
+            estado.desmarcados.set(campo.Codigo, new Set([...dominio].filter(v => !quedan.has(v))));
+        }
+    }
+    for (const [codigo, modo] of Object.entries(CONDICIONES_USUALES)) {
+        if ((estado.catalogo.condiciones || []).some(c => c.Codigo === codigo)) estado.condiciones[codigo] = modo;
+    }
+    document.querySelectorAll("[data-buscar-valor]").forEach(i => { i.value = ""; });
+    estado.plantilla = { id, clave: null };
+    if (estado.modalAbierto) construirMuro();
+    mostrarMensaje(`Se cargó "${plantilla.nombre}". Puedes seguir ajustando los filtros.`
+        + (faltan.length ? ` Esta cartera no tiene: ${faltan.join(", ")}.` : ""), faltan.length ? "aviso" : "");
+    recetaCambio({ inmediato: true });
+    estado.plantilla.clave = recetaClave();
+    renderPlantillas();
+}
+
+function renderPlantillas() {
+    const caja = $("plantillas");
+    if (!caja) return;
+    const actual = estado.plantilla;
+    const modificada = actual && actual.clave && actual.clave !== recetaClave();
+    caja.querySelectorAll("[data-plantilla]").forEach(b => {
+        const activa = actual?.id === b.dataset.plantilla;
+        b.classList.toggle("active", activa && !modificada);
+        b.classList.toggle("modificada", activa && !!modificada);
+        b.setAttribute("aria-pressed", String(activa && !modificada));
+    });
+}
+
 function recetaCambio({ inmediato = false } = {}) {
+    renderPlantillas();
     renderChips();
     marcarTiles();
     actualizarBotonGenerar();
@@ -702,6 +864,7 @@ function desmarcarTodo() {
 function limpiarTodo() {
     estado.desmarcados.clear();
     estado.condiciones = {};
+    estado.plantilla = null;
     $("selPorCliente").value = "";
     document.querySelectorAll("[data-buscar-valor]").forEach(i => { i.value = ""; });
     if (estado.modalAbierto) construirMuro();
@@ -1174,6 +1337,7 @@ async function elegirCartera(idcartera) {
     localStorage.setItem("gb_idcartera", String(idcartera));
     estado.desmarcados.clear();
     estado.condiciones = {};
+    estado.plantilla = null;
     estado.segmentadores = null;
     estado.segmentadoresClave = null;
     estado.ultima = null;
@@ -1192,6 +1356,7 @@ async function elegirCartera(idcartera) {
         cargaFin("cartera");
     }
     estado.campos = new Map((estado.catalogo.campos || []).map(c => [c.Codigo, c]));
+    pintarBotonFueraSac();
 
     const canalPrevio = $("selCanal").value;
     $("selCanal").innerHTML = `<option value="">Elegir…</option>` + Object.entries(estado.catalogo.canales || {})
@@ -1232,6 +1397,7 @@ async function actualizarCartera() {
             renderEstadoCartera();
             estado.catalogo = await pedir(`${API}/catalogo?idcartera=${estado.idcartera}`);
             estado.campos = new Map((estado.catalogo.campos || []).map(x => [x.Codigo, x]));
+            pintarBotonFueraSac();
             estado.scoreVersion = null;
             if (estado.modalAbierto) construirMuro();
             recetaCambio({ inmediato: true });
@@ -1354,8 +1520,87 @@ async function cargarHistorico() {
     }
 }
 
+// ------------------------------------------------------------------ rendimiento de las bases (25/11/2026)
+let diasRendimientoBases = 3;
+function claseVs(valor, referencia, muestra) {
+    if (muestra < 20 || valor == null || !referencia) return "st-rb-poca";
+    const r = valor / referencia;
+    return r >= 1.25 ? "st-rb-v" : r <= 0.75 ? "st-rb-r" : "st-rb-n";
+}
+async function calcularRendimientoBases() {
+    if (!estado.idcartera) return;
+    const tabla = $("tblRendimientoBases");
+    const aviso = $("rbAviso");
+    const boton = $("btnRendimientoBases");
+    boton.disabled = true;
+    tabla.innerHTML = `<tbody><tr><td class="st-vacio">Calculando con las gestiones de SISCOB…</td></tr></tbody>`;
+    aviso.classList.add("hidden");
+    try {
+        const r = await pedir(`${API}/rendimiento/bases?idcartera=${encodeURIComponent(estado.idcartera)}&dias=${diasRendimientoBases}`);
+        const bases = r.bases || [];
+        if (!bases.length) {
+            tabla.innerHTML = `<tbody><tr><td class="st-vacio">No hay bases generadas en el periodo.</td></tr></tbody>`;
+            return;
+        }
+        // Las bases de SMS no se llevan llamadas (muestran lo que pasó después del envío): no van al total
+        const exclusivas = bases.filter(b => b.Exclusiva !== false);
+        const t = exclusivas.reduce((a, b) => {
+            for (const k of ["Telefonos", "Clientes", "TelMarcados", "CliMarcados", "Intentos", "IntentosHumano", "IntentosMaquina", "TelCef", "CliCef", "Pdp", "CliPdp", "MontoPdp"]) a[k] = (a[k] || 0) + (b[k] || 0);
+            return a;
+        }, {});
+        const p = (a, b) => b ? a / b : null;
+        const pc = x => x == null ? "—" : `${(x * 100).toLocaleString("es-PE", { maximumFractionDigits: 1 })} %`;
+        const refCob = p(t.TelMarcados, t.Telefonos), refCon = p(t.CliCef, t.CliMarcados), refTel = p(t.TelCef, t.TelMarcados),
+              refAlc = p(t.CliCef, t.Clientes);
+        const canales = estado.catalogo?.canales || {};
+        const fila = (b, total = false) => {
+            const cob = p(b.TelMarcados, b.Telefonos), con = p(b.CliCef, b.CliMarcados), tel = p(b.TelCef, b.TelMarcados),
+                  alc = p(b.CliCef, b.Clientes);
+            const sms = !total && b.Exclusiva === false;
+            return `<tr class="${total ? "st-rb-total" : ""}">
+                <td>${total ? "<strong>Total</strong>" : `<strong>${esc(b.Codigo)}</strong>${b.EnCurso ? ` <span class="st-rb-curso" title="La ventana de la base sigue abierta">en curso</span>` : ""}`}</td>
+                <td class="st-rb-nombre" title="${esc(b.NombreArchivo || "")}">${total ? `${exclusivas.length} bases de llamada` : esc(b.NombreArchivo || "")}</td>
+                <td>${total ? "" : esc(canales[b.Canal] || b.Canal)}${sms ? ` <span class="st-rb-curso" title="Llamadas a los teléfonos de esta base después del envío. No se le quitan a las bases de predictivo, preview o IVR, por eso no suma en el total.">después del envío</span>` : ""}${!total && b.SinMaquina ? ` <span class="st-rb-alerta" title="SISCOB no tiene llamadas de máquina en la ventana de esta base">sin máquina</span>` : ""}</td>
+                <td>${total ? "" : fechaHora(b.FechaGeneracion)}</td>
+                <td class="num">${num(b.Telefonos)}<small>${num(b.Clientes)} cli.</small></td>
+                <td class="num ${total ? "" : claseVs(alc, refAlc, b.Clientes)}"><strong>${pc(alc)}</strong><small>${num(b.CliCef)} de ${num(b.Clientes)}</small></td>
+                <td class="num ${total ? "" : claseVs(cob, refCob, b.Telefonos)}">${pc(cob)}<small>${num(b.TelMarcados)} tel.</small></td>
+                <td class="num">${num(b.Intentos)}<small>${num(b.IntentosHumano)} asesor · ${num(b.IntentosMaquina)} máq.</small></td>
+                <td class="num">${num(b.CliMarcados)}</td>
+                <td class="num ${total ? "" : claseVs(con, refCon, b.CliMarcados)}"><strong>${pc(con)}</strong><small>${num(b.CliCef)} cli. CEF</small></td>
+                <td class="num ${total ? "" : claseVs(tel, refTel, b.TelMarcados)}">${pc(tel)}<small>${num(b.TelCef)} tel. CEF</small></td>
+                <td class="num">${num(b.Pdp)}<small>S/ ${num(b.MontoPdp)}</small></td>
+            </tr>`;
+        };
+        tabla.innerHTML = `<thead><tr><th>Código</th><th>Archivo</th><th>Canal</th><th>Generada</th>
+                <th class="num">Teléfonos</th>
+                <th class="num" title="Clientes con CEF ÷ clientes de la base. Es la medida para comparar bases: no depende de que hayan llegado las llamadas de máquina.">CEF sobre la base</th>
+                <th class="num" title="Teléfonos con al menos una llamada atribuida ÷ teléfonos de la base">Cobertura</th>
+                <th class="num">Intentos</th><th class="num">Clientes marcados</th>
+                <th class="num" title="Clientes con CEF ÷ clientes marcados. Sube mucho si aún no llegan las llamadas de máquina (solo cuenta las del asesor).">Contacto</th>
+                <th class="num" title="Teléfonos con CEF ÷ teléfonos marcados">CEF por teléfono</th>
+                <th class="num" title="Compromisos de pago registrados en las gestiones CEF atribuidas">PDP</th></tr></thead>
+            <tbody>${bases.map(b => fila(b)).join("")}${exclusivas.length ? fila(t, true) : ""}</tbody>`;
+        if (bases.some(b => b.SinMaquina)) {
+            aviso.className = "st-mensaje aviso";
+            aviso.textContent = "Algunas bases de predictivo o IVR no tienen llamadas de máquina en SISCOB en su ventana: su cobertura sale corta hasta que lleguen esas llamadas.";
+        }
+    } catch (error) {
+        manejarError(error);
+        tabla.innerHTML = `<tbody><tr><td class="st-vacio">${esc(error.message || "No se pudo calcular.")}</td></tr></tbody>`;
+    } finally {
+        boton.disabled = false;
+    }
+}
+
 // ------------------------------------------------------------------ eventos
 function enlazarEventos() {
+    $("btnRendimientoBases").addEventListener("click", calcularRendimientoBases);
+    document.querySelectorAll("[data-rb-dias]").forEach(b => b.addEventListener("click", () => {
+        document.querySelectorAll("[data-rb-dias]").forEach(x => x.classList.toggle("active", x === b));
+        diasRendimientoBases = Number(b.dataset.rbDias);
+        calcularRendimientoBases();
+    }));
     $("btnCartera").addEventListener("click", () => abrirMenuCarteras($("menuCartera").classList.contains("hidden")));
     $("txtBuscarCartera").addEventListener("input", renderMenuCarteras);
     $("txtBuscarCartera").addEventListener("keydown", e => {
@@ -1378,6 +1623,15 @@ function enlazarEventos() {
     $("btnGenerar").addEventListener("click", abrirGenerar);
     $("btnConfirmarGenerar").addEventListener("click", generar);
     $("btnProponerNombre").addEventListener("click", proponerNombre);
+    $("btnFueraSac").addEventListener("click", descargarFueraSac);
+    $("plantillas").innerHTML = `<span class="st-plantillas-titulo">Bases usuales</span>` + PLANTILLAS.map(p =>
+        (p.id === "PDP_CAIDA_MES" ? `<span class="st-plantillas-sep" aria-hidden="true"></span><span class="st-plantillas-titulo">Recupero</span>` : "")
+        + `<button type="button" class="st-plantilla" data-plantilla="${p.id}" title="${esc(p.ayuda)}" aria-pressed="false">${esc(p.nombre)}</button>`).join("")
+        + `<small class="st-plantillas-nota" title="Condición SISCOB: cancelado, fallecido y reclamo. PDP: creada hoy, vigente y pagada. Seguimiento: vigente, hoy y PDP pagada. Condiciones del día: CEF de hoy y pago de hoy.">Quitan cancelados, fallecidos, reclamos, PDP (hoy, vigente, pagada), seguimiento (vigente, hoy, PDP pagada), CEF y pago de hoy; en Compartamos vigente, solo clientes en el SAC del día. Luego puedes ajustar.</small>`;
+    $("plantillas").addEventListener("click", e => {
+        const b = e.target.closest("[data-plantilla]");
+        if (b) aplicarPlantilla(b.dataset.plantilla);
+    });
     $("txtNombreBase").addEventListener("input", e => {
         const limpio = e.target.value.replace(NO_PERMITIDOS_NOMBRE, " ");
         if (limpio !== e.target.value) e.target.value = limpio;   // sin puntos, comas, | ni /

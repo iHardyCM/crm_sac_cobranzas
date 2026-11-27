@@ -46,3 +46,21 @@ def test_cobertura_clasifica_por_que_no_se_llamo():
     sql, _ = r.sql_cobertura([112], "CARTERA", {})
     assert "gc.EstadoPdp IN (N'VIGENTE', N'PAGADA')" in sql
     assert "SinLlamadaCliente" in sql and "ClientesSinLlamada" in sql
+
+
+def test_rendimiento_bases_ventana_y_atribucion():
+    sql = "\n".join(r.sql_rendimiento_bases())
+    assert "'18:00'" in sql and "DATEADD(DAY, 2" in sql            # bases de la noche: hasta el fin del día siguiente
+    assert "ORDER BY d.FechaGeneracion DESC" in sql                  # la base más reciente antes de la llamada
+    assert "d.FechaGeneracion <= e.Momento AND e.Momento < d.VentanaFin" in sql
+    assert "siscob.dbo.COMPROMISO" in sql and "cp.Monto > 0" in sql
+    with pytest.raises(r.ConsultaInvalida):
+        r.rendimiento_bases(126, 30)
+
+
+def test_bases_sms_no_se_llevan_llamadas():
+    sql = "\n".join(r.sql_rendimiento_bases())
+    assert "CASE WHEN b.Canal IN ('SMS') THEN 0 ELSE 1 END AS Exclusiva" in sql
+    exclusiva, sms = sql.split("INSERT INTO #ra")
+    assert "d.Exclusiva = 1" in exclusiva and "TOP (1)" in exclusiva   # una llamada, una sola base de llamada
+    assert "d.Exclusiva = 0" in sms and "GROUP BY d.IdBase" in sms       # el SMS ve lo que pasó después, sin quitarle nada a nadie

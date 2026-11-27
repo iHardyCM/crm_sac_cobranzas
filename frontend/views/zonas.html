@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Zonas restringidas · CRM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Layout global del CRM -->
+    <style>html.crm-boot body{visibility:hidden}</style>
+    <script>document.documentElement.classList.add("crm-boot");setTimeout(function(){document.documentElement.classList.remove("crm-boot")},3000);</script>
+    <link rel="stylesheet" href="../css/app_layout.css?v=3e473ac5f7">
+
+    <!-- CSS propio de la vista -->
+    <link rel="stylesheet" href="../css/zonas.css?v=dbaccee3ef">
+    <link rel="stylesheet" href="../css/apple_theme.css?v=ee60dca9e6">
+</head>
+
+<body>
+
+<main class="zr-page">
+
+    <div id="mensaje" class="zr-mensaje hidden" role="status"></div>
+
+    <section class="zr-kpis" aria-label="Resumen">
+        <div class="zr-kpi rojo"><small>Departamentos restringidos</small><strong id="kpiDeps">—</strong><span id="kpiDepsNota"></span></div>
+        <div class="zr-kpi"><small>Clientes fuera de las bases hoy</small><strong id="kpiClientes">—</strong><span id="kpiClientesNota">calculando…</span></div>
+        <div class="zr-kpi morado"><small>Con PDP vigente en zona</small><strong id="kpiPdp">—</strong><span id="kpiPdpNota">calculando…</span></div>
+        <div class="zr-kpi"><small>Carteras alcanzadas</small><strong id="kpiCarteras">—</strong><span id="kpiCarterasNota"></span></div>
+        <div class="zr-kpi ambar"><small>Ubicación por revisar</small><strong id="kpiSinDep">—</strong><span id="kpiSinDepNota">calculando…</span></div>
+    </section>
+
+    <div id="alertaCobertura" class="zr-alerta hidden" role="alert"></div>
+
+    <section class="zr-grid">
+        <div class="zr-card zr-mapa-card">
+            <div class="zr-card-title">
+                <h3>Mapa del Perú</h3>
+                <small>Clic en un departamento para elegirlo · clic en una zona para elegirla completa y luego quita los que no van</small>
+            </div>
+            <div id="chipsZonas" class="zr-chips" role="group" aria-label="Seleccionar por zona"></div>
+            <div class="zr-mapa-wrap" id="mapaWrap">
+                <svg id="mapa" class="zr-mapa" role="group" aria-label="Departamentos del Perú"></svg>
+                <div id="tooltip" class="zr-tooltip hidden" role="tooltip"></div>
+            </div>
+            <div class="zr-leyenda" aria-label="Leyenda">
+                <span><i class="sw restringido"></i>Restringido hoy</span>
+                <span><i class="sw programado"></i>Programado</span>
+                <span><i class="sw seleccionado"></i>Seleccionado</span>
+                <span><i class="sw libre"></i>Se gestiona (color de su zona)</span>
+            </div>
+        </div>
+
+        <aside class="zr-card zr-panel">
+            <div class="zr-card-title">
+                <h3>Selección <span id="cuentaSel" class="zr-cuenta">0</span></h3>
+                <button id="btnLimpiar" class="zr-btn sm" type="button" disabled>Limpiar</button>
+            </div>
+            <div id="seleccion" class="zr-seleccion"><p class="zr-vacio-sel">Elige departamentos en el mapa.</p></div>
+
+            <div id="modoAccion" class="zr-modo" role="radiogroup" aria-label="Qué quieres hacer">
+                <label class="restringir"><input type="radio" name="modo" value="restringir" checked><span>Restringir gestión</span></label>
+                <label class="levantar"><input type="radio" name="modo" value="levantar"><span>Levantar restricción</span></label>
+            </div>
+
+            <div class="zr-panel-cuerpo">
+            <!-- Restringir -->
+            <div id="bloqueRestringir" class="zr-bloque">
+                <div class="zr-campo">
+                    <span class="zr-label">Carteras</span>
+                    <div class="zr-segmentado" role="radiogroup">
+                        <label><input type="radio" name="alcance" value="todas" checked> Todas las carteras</label>
+                        <label><input type="radio" name="alcance" value="elegir"> Elegir carteras</label>
+                    </div>
+                    <small class="zr-nota">«Todas» incluye a las carteras que reciban su departamento más adelante.</small>
+                    <div id="listaCarteras" class="zr-carteras hidden"></div>
+                </div>
+                <div class="zr-fila">
+                    <div class="zr-campo">
+                        <label class="zr-label" for="selOrigen">Origen</label>
+                        <select id="selOrigen" class="zr-input">
+                            <option value="BANCO">Orden del banco</option>
+                            <option value="INTERNO">Decisión interna</option>
+                        </select>
+                    </div>
+                    <div class="zr-campo">
+                        <label class="zr-label" for="txtDesde">Desde</label>
+                        <input id="txtDesde" type="date" class="zr-input">
+                    </div>
+                    <div class="zr-campo">
+                        <label class="zr-label" for="txtHasta">Hasta <em>(opcional)</em></label>
+                        <input id="txtHasta" type="date" class="zr-input">
+                    </div>
+                </div>
+                <div class="zr-campo">
+                    <label class="zr-label" for="txtMotivo">Motivo</label>
+                    <textarea id="txtMotivo" class="zr-input zr-textarea" maxlength="400" rows="2"
+                              placeholder="Ej.: Interbank 27/11: detener gestión por lluvias en la zona."></textarea>
+                </div>
+                <div class="zr-acciones">
+                    <button id="btnSimular" class="zr-btn" type="button" disabled>Simular impacto</button>
+                    <button id="btnRestringir" class="zr-btn danger" type="button" disabled>Restringir</button>
+                </div>
+                <div id="simulacion" class="zr-simulacion hidden"></div>
+            </div>
+
+            <!-- Levantar -->
+            <div id="bloqueLevantar" class="zr-bloque verde hidden">
+                <p id="textoLevantar" class="zr-nota"></p>
+                <button id="btnElegirRestringidos" class="zr-btn sm" type="button">Elegir todos los restringidos</button>
+                <div class="zr-campo">
+                    <label class="zr-label" for="txtMotivoBaja">Motivo</label>
+                    <textarea id="txtMotivoBaja" class="zr-input zr-textarea" maxlength="400" rows="2"
+                              placeholder="Ej.: Interbank autorizó retomar la gestión el 05/12."></textarea>
+                </div>
+                <div class="zr-acciones">
+                    <button id="btnLevantar" class="zr-btn success" type="button" disabled>Levantar</button>
+                </div>
+            </div>
+            </div>
+
+            <p id="soloLectura" class="zr-mensaje aviso hidden">Puedes ver el mapa y simular. Registrar o levantar restricciones es de administración y jefes de cartera.</p>
+        </aside>
+    </section>
+
+    <section class="zr-card" id="cardCarteras">
+        <div class="zr-card-title">
+            <h3>Carteras: impacto y calidad del departamento</h3>
+            <div class="zr-titulo-acciones">
+                <small>Base de trabajo del score · el % es de clientes con un departamento reconocido</small>
+                <small id="horaCobertura"></small>
+                <button id="btnRecalcularCobertura" class="zr-btn sm" type="button">Recalcular</button>
+                <button id="btnExcel" class="zr-btn sm" type="button">Descargar Excel</button>
+            </div>
+        </div>
+        <div class="zr-tabla-wrap sin-tope">
+            <table class="zr-tabla">
+                <thead>
+                    <tr><th>Cartera</th><th>Departamento</th><th class="num">Clientes base</th><th>Con departamento</th>
+                        <th class="num">Sin valor</th><th class="num">No reconocido</th><th class="num">Fuera hoy</th>
+                        <th class="num">Fuera con PDP</th><th class="num">Monto PDP</th><th></th></tr>
+                </thead>
+                <tbody id="tbodyCarteras"><tr><td colspan="10" class="zr-vacio">Calculando…</td></tr></tbody>
+            </table>
+        </div>
+        <details id="detNoReconocidos" class="zr-historial hidden">
+            <summary>Valores de departamento que no se reconocen <span id="cuentaNoRec"></span></summary>
+            <p class="zr-nota">Estos clientes no salen aunque su departamento esté restringido. Hay que corregir el valor en la carga o pedir una equivalencia.</p>
+            <div class="zr-tabla-wrap"><table class="zr-tabla"><thead><tr><th>Cartera</th><th>Valor en la asignación</th><th class="num">Clientes</th></tr></thead>
+                <tbody id="tbodyNoRec"></tbody></table></div>
+        </details>
+    </section>
+
+    <section class="zr-card">
+        <div class="zr-card-title">
+            <h3>Restricciones activas</h3>
+            <button id="btnRefrescar" class="zr-btn sm" type="button">Actualizar</button>
+        </div>
+        <div class="zr-tabla-wrap">
+            <table class="zr-tabla">
+                <thead>
+                    <tr><th>Departamento</th><th>Zona</th><th>Estado</th><th>Carteras</th><th>Origen</th><th>Motivo</th>
+                        <th>Desde</th><th>Hasta</th><th class="num">Clientes fuera</th><th class="num">Con PDP vigente</th><th>Registró</th><th></th></tr>
+                </thead>
+                <tbody id="tbodyActivas"><tr><td colspan="12" class="zr-vacio">Cargando…</td></tr></tbody>
+            </table>
+        </div>
+        <details class="zr-historial">
+            <summary>Levantadas en los últimos 120 días <span id="cuentaHist"></span></summary>
+            <div class="zr-tabla-wrap">
+                <table class="zr-tabla">
+                    <thead>
+                        <tr><th>Departamento</th><th>Carteras</th><th>Origen</th><th>Motivo</th><th>Desde</th>
+                            <th>Levantada</th><th>Por</th><th>Motivo de baja</th></tr>
+                    </thead>
+                    <tbody id="tbodyHistorial"></tbody>
+                </table>
+            </div>
+        </details>
+    </section>
+</main>
+
+<!-- Sesion (validacion con el backend y fetch autenticado) -->
+<script src="../js/session.js?v=887ddef4f1"></script>
+
+<!-- Layout global del CRM -->
+<script src="../js/app_layout.js?v=57154c8936"></script>
+
+<!-- Contornos de los departamentos + JS propio de la vista -->
+<script src="../js/zonas_mapa_peru.js?v=679fc45cd0"></script>
+<script src="../js/zonas.js?v=938b0f6066"></script>
+
+</body>
+</html>

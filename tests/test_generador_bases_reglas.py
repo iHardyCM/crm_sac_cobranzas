@@ -315,6 +315,11 @@ def test_nombre_capital():
     assert " K " not in _n([])
 
 
+def test_nombre_capital_sac():
+    sac = [{"campo": "RANGO_CAPITAL_SAC", "valores": ["1. [0 - 499.99]", "NO ESTÁ EN SAC", "0. SIN INFORMACION"], "excluir": True}]
+    assert _n(sac).startswith("112 2411 1249 K MAYOR 500 ")
+
+
 def test_nombre_contacto_y_score():
     assert _n([]) == "112 2411 1249 MIX CONTACTO MIX SCORE"
     assert "CEF MES" in _n([{"campo": "MG_CONTACTO_MES", "valores": ["CEF"]}])
@@ -324,6 +329,18 @@ def test_nombre_contacto_y_score():
     assert "CEF HIST" in _n(hist)
     assert "SCORE ABC" in _n([{"campo": "TRAMO", "valores": ["D", "E"], "excluir": True}])
     assert "MIX SCORE" in _n([{"campo": "TRAMO", "valores": ["A", "B", "C", "D", "E"]}])
+
+
+def test_nombre_pdp_y_seguimiento_caidos():
+    assert _n([{"campo": "ESTADO_PDP", "valores": ["CAÍDA"]}, {"campo": "TRAMO", "valores": ["A"]}]) == "112 2411 1249 PDP CAIDA MES SCORE A"
+    hist = [{"campo": "ESTADO_PDP", "valores": ["SIN PDP"]}, {"campo": "PDP_ANTERIOR", "valores": ["CAÍDA"]}]
+    assert "PDP CAIDA HIST" in _n(hist)
+    caido = {"campo": "SEGUIMIENTO_ACTUAL", "valores": ["CAÍDO"]}
+    assert "SEG CAIDO MES" in _n([caido, {"campo": "SEGUIMIENTO_MES", "valores": ["Este mes"]}])
+    assert "SEG CAIDO HIST" in _n([caido, {"campo": "SEGUIMIENTO_MES", "valores": ["Este mes"], "excluir": True}])
+    assert _n([caido]).endswith("SEG CAIDO MIX SCORE")
+    # quitar PAGADA y VIGENTE no es "PDP caída": sigue el contacto
+    assert "MIX CONTACTO" in _n([{"campo": "ESTADO_PDP", "valores": ["PAGADA", "VIGENTE"], "excluir": True}])
 
 
 def test_nombre_osiptel_timbrado_semaforo():
@@ -353,3 +370,14 @@ def test_nombre_final_fecha_de_generacion_y_codigo():
 def test_enviado_hoy_agrupa_predictivo_y_preview():
     assert "b.Canal IN ('PRED', 'PREVIEW')" in r._SQL_CONDICION["ENVIADO_HOY"]
     assert "PREVIEW" in r.CANALES and r.CANALES_MARCADOR == ("PRED", "PREVIEW")
+
+
+def test_zonas_restringidas_paso_forzado():
+    """Zonas (27/11/2026): con zonas vigentes, «Sin zona restringida» va justo después de los descartados."""
+    catalogo = {}
+    sin = r.construir_consulta(117, {"filtros": []}, catalogo)
+    con = r.construir_consulta(117, {"filtros": []}, catalogo, zonas=True)
+    assert [p[0] for p in sin.pasos] == ["Sin descartados"]
+    assert [p[0] for p in con.pasos] == ["Sin descartados", "Sin zona restringida"]
+    assert "score.vw_ClienteZonaRestringida" in r.sql_donde(con)
+    assert len(con.campos_paso) == len(con.pasos)

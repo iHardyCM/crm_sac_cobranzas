@@ -23,6 +23,19 @@ let mowaSyncEsperadoId = null;
 let mowaSyncInicio = 0;
 const mowaChatEnvios = new Map();
 const mowaChatHistorico = new Map();
+let mowaModoBandeja = false;
+let mowaPuedeAsignar = false;
+let mowaAsignaciones = new Map();
+let mowaAgentes = [];
+let mowaSeleccionados = new Map();
+let mowaClientesAsignando = [];
+let mowaAgentesModal = [];
+let mowaModoControl = false;
+let mowaControlFiltro = null;
+let mowaControlCartera = null;
+let mowaControlSolicitud = 0;
+let mowaControlCargado = false;
+const MOWA_MAX_LOTE = 500;
 
 document.addEventListener("DOMContentLoaded", async () => {
     if (typeof asegurarSesionBackend !== "function" || !(await asegurarSesionBackend())) return;
@@ -31,14 +44,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("mowaDesde").value = fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1));
     document.getElementById("mowaHasta").value = fechaLocal(hoy);
     document.getElementById("mowaFiltros").addEventListener("submit", consultarMowa);
+    document.getElementById("mowaBandejaActualizar").addEventListener("click", cargarBandejaMowa);
+    document.getElementById("mowaAsignacionFiltro").addEventListener("change", () => { mowaPagina = 1; pintarMowa(); });
+    document.getElementById("mowaAsignarCerrar").addEventListener("click", () => document.getElementById("mowaAsignarModal").close());
+    document.getElementById("mowaAsignarModal").addEventListener("click", event => {
+        const modal = event.currentTarget;
+        if (event.target !== modal) return;
+        const r = modal.getBoundingClientRect();
+        if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) modal.close();
+    });
+    document.getElementById("mowaAsignarForm").addEventListener("submit", guardarAsignacionMowa);
+    document.getElementById("mowaAsignarBuscar").addEventListener("input", pintarAgentesAsignacionMowa);
+    document.getElementById("mowaAsignarLista").addEventListener("click", event => {
+        const opcion = event.target.closest("[data-agente]");
+        if (!opcion) return;
+        document.getElementById("mowaAsignarAgente").value = opcion.dataset.agente;
+        pintarAgentesAsignacionMowa();
+    });
+    document.getElementById("mowaSeleccionPagina").addEventListener("change", event => seleccionarPaginaMowa(event.target.checked));
+    document.getElementById("mowaSeleccionFiltrados").addEventListener("click", seleccionarFiltradosMowa);
+    document.getElementById("mowaSeleccionLimpiar").addEventListener("click", limpiarSeleccionMowa);
+    document.getElementById("mowaAsignarSeleccion").addEventListener("click", abrirAsignacionMultipleMowa);
     document.getElementById("mowaSyncBoton").addEventListener("click", iniciarActualizacionMowa);
     document.getElementById("mowaCuenta").addEventListener("change", () => {
         ++mowaResumenSolicitud;
         mowaSinAtenderResumen = null;
         mowaModoAcumulado = false;
         mowaCarteraAcumulada = null;
+        mowaModoControl = false;
+        mowaControlFiltro = null;
         mowaFilas = [];
         mowaGruposCache = null;
+        limpiarSeleccionMowa();
         mowaConsultaCompleta = false;
         document.getElementById("mowaSinAtenderTotal").textContent = "—";
         document.getElementById("mowaSinAtenderDetalle").textContent = "Pulsa Consultar para actualizar esta cuenta.";
@@ -66,6 +103,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("mowaExportar").addEventListener("click", exportarMowa);
     document.getElementById("mowaSinAtender").addEventListener("click", () => descargarSinAtenderMowa());
     document.getElementById("mowaVerCarteras").addEventListener("click", abrirCarterasMowa);
+    document.getElementById("mowaControlAbrir").addEventListener("click", abrirControlMowa);
+    document.getElementById("mowaControlCerrar").addEventListener("click", () => document.getElementById("mowaControlModal").close());
+    document.getElementById("mowaControlActualizar").addEventListener("click", cargarControlMowa);
+    document.getElementById("mowaControlCartera").addEventListener("change", cargarControlMowa);
+    document.getElementById("mowaControlModal").addEventListener("click", clickControlMowa);
     document.getElementById("mowaCarterasCerrar").addEventListener("click", () => document.getElementById("mowaCarterasModal").close());
     document.getElementById("mowaCarterasModal").addEventListener("click", clickCarterasMowa);
     document.getElementById("mowaCarterasModal").addEventListener("keydown", teclaCarterasMowa);
@@ -83,6 +125,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("mowaDetalle").scrollIntoView({behavior: "smooth", block: "start"});
     });
     document.getElementById("mowaTabla").addEventListener("click", async event => {
+        const asignar = event.target.closest("[data-asignar]");
+        if (asignar) { abrirAsignacionMowa(mowaConversacionesVisibles[Number(asignar.dataset.asignar)]); return; }
         const abrir = event.target.closest("[data-chat]");
         if (abrir) { abrirChatMowa(mowaConversacionesVisibles[Number(abrir.dataset.chat)]); return; }
         const boton = event.target.closest("[data-copiar]");
@@ -95,6 +139,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             avisoMowa("No se pudo copiar el DNI. Puedes seleccionarlo en la tabla.", true);
         }
     });
+    document.getElementById("mowaTabla").addEventListener("change", event => {
+        const check = event.target.closest("[data-seleccionar]");
+        if (!check) return;
+        const grupo = mowaConversacionesVisibles[Number(check.dataset.seleccionar)];
+        if (!grupo) return;
+        seleccionarGrupoMowa(grupo, check.checked);
+    });
     document.getElementById("mowaChatCerrar").addEventListener("click", () => document.getElementById("mowaChat").close());
     document.getElementById("mowaChat").addEventListener("click", cerrarChatFueraMowa);
     document.getElementById("mowaChatTexto").addEventListener("input", () => {
@@ -105,7 +156,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("mowaOrden").value = "antiguo";
     if (await cargarOpcionesMowa()) {
         document.getElementById("mowaCuenta").value = "";
-        await consultarMowa();
+        if (mowaModoBandeja) await cargarBandejaMowa();
+        else await consultarMowa();
         if (!document.getElementById("mowaSyncAcciones").hidden) consultarEstadoActualizacionMowa();
     }
 });
@@ -120,6 +172,22 @@ async function cargarOpcionesMowa() {
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "No se pudieron cargar las cuentas autorizadas.");
         mowaAlcanceCarteras = result.alcance_carteras;
+        mowaModoBandeja = result.modo === "BANDEJA";
+        mowaPuedeAsignar = result.puede_asignar === true;
+        document.getElementById("mowaBandejaBar").hidden = !mowaModoBandeja;
+        document.querySelector(".mowa-top").hidden = mowaModoBandeja;
+        document.querySelector(".mowa-resumen").hidden = mowaModoBandeja;
+        document.querySelector(".mowa-nota").hidden = mowaModoBandeja;
+        document.getElementById("mowaAsignacionControl").hidden = !mowaPuedeAsignar;
+        document.getElementById("mowaControlAbrir").hidden = !mowaPuedeAsignar;
+        document.getElementById("mowaSeleccionCol").hidden = !mowaPuedeAsignar;
+        if (mowaModoBandeja) {
+            document.title = "Mis asignaciones | CRM Cobranzas";
+            document.querySelector(".mowa-heading h2").textContent = "Mis asignaciones";
+            document.querySelector(".mowa-heading p").textContent = "Clientes que te asignaron y aún tienen respuestas sin gestión posterior.";
+            document.getElementById("mowaExportar").hidden = true;
+            document.getElementById("mowaEstado").closest("label").hidden = true;
+        }
         document.getElementById("mowaSyncAcciones").hidden = !result.puede_actualizar;
         const select = document.getElementById("mowaCuenta");
         select.innerHTML = `<option value="">${mowaAlcanceCarteras === null ? "Todas las cuentas" : "Todas mis cuentas"}</option>`;
@@ -129,6 +197,9 @@ async function cargarOpcionesMowa() {
             option.textContent = cuenta.nombre;
             select.appendChild(option);
         }
+        const carteras = [...new Set((result.cuentas || []).flatMap(c => c.carteras || []))].sort((a, b) => a - b);
+        document.getElementById("mowaControlCartera").innerHTML = '<option value="">Todas mis carteras</option>' +
+            carteras.map(id => `<option value="${id}">Cartera ${id}</option>`).join("");
         document.getElementById("mowaCardAlcance").textContent = textoAlcanceMowa();
         return true;
     } catch (error) {
@@ -136,6 +207,323 @@ async function cargarOpcionesMowa() {
         return false;
     }
 }
+
+function claveAsignacionMowa(cartera, cliente) {
+    return `${cartera}:${cliente}`;
+}
+
+async function cargarAsignacionesMowa() {
+    if (!mowaPuedeAsignar) return;
+    try {
+        const response = await fetchConSesion(`${MOWA_RAIZ}/asignaciones`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "No se pudieron cargar las asignaciones.");
+        mowaAgentes = result.agentes || [];
+        mowaAsignaciones = new Map((result.asignaciones || []).map(a =>
+            [claveAsignacionMowa(a.idcartera, a.idcliente), a]));
+        pintarMowa();
+    } catch (error) {
+        avisoMowa(error.message || "No se pudieron cargar las asignaciones.", true);
+    }
+}
+
+async function cargarBandejaMowa() {
+    if (!mowaModoBandeja) return;
+    const boton = document.getElementById("mowaBandejaActualizar");
+    boton.disabled = true;
+    document.getElementById("mowaBandejaResumen").textContent = "Actualizando clientes asignados…";
+    document.getElementById("mowaTabla").innerHTML = '<tr><td colspan="6" class="mowa-vacio">Cargando tu bandeja…</td></tr>';
+    try {
+        const response = await fetchConSesion(`${MOWA_RAIZ}/bandeja`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "No se pudo cargar tu bandeja.");
+        mowaFilas = (result.grupos || []).flatMap(g => g.filas || []);
+        mowaGruposCache = null;
+        mowaPagina = 1;
+        mowaConsultaCompleta = result.completo !== false;
+        mowaAdvertenciasConsulta = result.advertencias || [];
+        document.getElementById("mowaEstado").value = "PENDIENTE";
+        actualizarCarterasMowa();
+        pintarMowa();
+        pintarSincronizacionMowa(result.sincronizacion);
+        const alcance = `${result.clientes} ${result.clientes === 1 ? "cliente" : "clientes"} · ${result.respuestas} respuestas pendientes${result.completo === false ? " · datos parciales" : ""}`;
+        document.getElementById("mowaBandejaResumen").textContent = alcance;
+        document.getElementById("mowaAlcance").textContent = alcance;
+        avisoMowa(resumirAdvertenciasMowa(mowaAdvertenciasConsulta));
+    } catch (error) {
+        document.getElementById("mowaBandejaResumen").textContent = "No se pudo actualizar";
+        avisoMowa(error.message || "No se pudo cargar tu bandeja.", true);
+    } finally { boton.disabled = false; }
+}
+
+function clienteAsignableMowa(grupo) {
+    const r = grupo?.ultimo;
+    return r && grupo.estado === "PENDIENTE" && r.idcartera && r.idcliente
+        ? {idcartera: Number(r.idcartera), idcliente: Number(r.idcliente),
+            nombre: r.cliente || r.dni || `Cliente ${r.idcliente}`}
+        : null;
+}
+
+function seleccionarGrupoMowa(grupo, seleccionado) {
+    if (!mowaPuedeAsignar) return;
+    const cliente = clienteAsignableMowa(grupo);
+    if (!cliente) return;
+    const clave = claveAsignacionMowa(cliente.idcartera, cliente.idcliente);
+    if (seleccionado && !mowaSeleccionados.has(clave) && mowaSeleccionados.size >= MOWA_MAX_LOTE) {
+        avisoMowa(`Selecciona hasta ${MOWA_MAX_LOTE} clientes por lote.`, true);
+        pintarMowa();
+        return;
+    }
+    if (seleccionado) mowaSeleccionados.set(clave, cliente);
+    else mowaSeleccionados.delete(clave);
+    pintarMowa();
+}
+
+function seleccionarPaginaMowa(seleccionado) {
+    const elegibles = mowaConversacionesVisibles.map(clienteAsignableMowa).filter(Boolean);
+    if (seleccionado && new Set([...mowaSeleccionados.keys(), ...elegibles.map(c => claveAsignacionMowa(c.idcartera, c.idcliente))]).size > MOWA_MAX_LOTE) {
+        avisoMowa(`El lote admite hasta ${MOWA_MAX_LOTE} clientes. Filtra la tabla para dividirlo.`, true);
+        pintarMowa();
+        return;
+    }
+    for (const cliente of elegibles) {
+        const clave = claveAsignacionMowa(cliente.idcartera, cliente.idcliente);
+        if (seleccionado) mowaSeleccionados.set(clave, cliente);
+        else mowaSeleccionados.delete(clave);
+    }
+    pintarMowa();
+}
+
+function seleccionarFiltradosMowa() {
+    const elegibles = filtrarOrdenarMowa().map(clienteAsignableMowa).filter(Boolean);
+    if (new Set([...mowaSeleccionados.keys(), ...elegibles.map(c => claveAsignacionMowa(c.idcartera, c.idcliente))]).size > MOWA_MAX_LOTE) {
+        avisoMowa(`Hay más de ${MOWA_MAX_LOTE} clientes. Filtra por cartera o fecha y vuelve a seleccionar.`, true);
+        return;
+    }
+    for (const cliente of elegibles) mowaSeleccionados.set(
+        claveAsignacionMowa(cliente.idcartera, cliente.idcliente), cliente);
+    pintarMowa();
+}
+
+function limpiarSeleccionMowa() {
+    mowaSeleccionados.clear();
+    const barra = document.getElementById("mowaSeleccionBar");
+    if (barra) barra.hidden = true;
+    const check = document.getElementById("mowaSeleccionPagina");
+    if (check) { check.checked = false; check.indeterminate = false; }
+    if (mowaPuedeAsignar) pintarMowa();
+}
+
+function agentesComunesMowa(carteras) {
+    const porUsuario = new Map();
+    for (const agente of mowaAgentes) {
+        if (!carteras.includes(Number(agente.idcartera))) continue;
+        const actual = porUsuario.get(agente.usuario) || {usuario: agente.usuario,
+            nombre: agente.nombre, carteras: new Set()};
+        actual.carteras.add(Number(agente.idcartera));
+        porUsuario.set(agente.usuario, actual);
+    }
+    return [...porUsuario.values()].filter(a => carteras.every(c => a.carteras.has(c)))
+        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+}
+
+function abrirAsignacionMowa(grupo) {
+    if (!mowaPuedeAsignar) return;
+    const cliente = clienteAsignableMowa(grupo);
+    if (cliente) abrirModalAsignacionMowa([cliente]);
+}
+
+function abrirAsignacionMultipleMowa() {
+    if (!mowaPuedeAsignar || !mowaSeleccionados.size) return;
+    abrirModalAsignacionMowa([...mowaSeleccionados.values()]);
+}
+
+function abrirModalAsignacionMowa(clientes) {
+    mowaClientesAsignando = clientes;
+    const carteras = [...new Set(clientes.map(c => c.idcartera))].sort((a, b) => a - b);
+    mowaAgentesModal = agentesComunesMowa(carteras);
+    const individual = clientes.length === 1;
+    const actual = individual ? mowaAsignaciones.get(claveAsignacionMowa(clientes[0].idcartera, clientes[0].idcliente)) : null;
+    document.getElementById("mowaAsignarTitulo").textContent = individual
+        ? (actual ? "Cambiar agente" : "Asignar cliente") : `Asignar ${clientes.length} clientes`;
+    document.getElementById("mowaAsignarCliente").textContent = individual
+        ? `${clientes[0].nombre} · cartera ${clientes[0].idcartera}`
+        : `${carteras.length === 1 ? "Cartera" : "Carteras"} ${carteras.join(", ")} · el agente debe tener acceso a todas`;
+    document.getElementById("mowaAsignarBuscar").value = "";
+    document.getElementById("mowaAsignarAgente").value = actual?.agente_usuario || "";
+    document.getElementById("mowaAsignarAviso").textContent = mowaAgentesModal.length
+        ? (actual ? `Responsable actual: ${actual.agente_nombre || actual.agente_usuario}` : "")
+        : "No hay agentes con acceso a todas estas carteras. Filtra y selecciona una cartera por vez.";
+    document.getElementById("mowaAsignarGuardar").textContent = individual ? "Guardar asignación" : `Asignar ${clientes.length} clientes`;
+    document.getElementById("mowaAsignarGuardar").disabled = !mowaAgentesModal.length;
+    pintarAgentesAsignacionMowa();
+    document.getElementById("mowaAsignarModal").showModal();
+    document.getElementById("mowaAsignarBuscar").focus();
+}
+
+function pintarAgentesAsignacionMowa() {
+    const termino = document.getElementById("mowaAsignarBuscar").value.trim()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const elegido = document.getElementById("mowaAsignarAgente").value;
+    const visibles = mowaAgentesModal.filter(a => `${a.nombre} ${a.usuario}`
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(termino));
+    document.getElementById("mowaAsignarLista").innerHTML = visibles.length
+        ? visibles.map(a => `<button type="button" role="option" data-agente="${escMowa(a.usuario)}" aria-selected="${a.usuario === elegido}"><strong>${escMowa(a.nombre || a.usuario)}</strong><small>${escMowa(a.usuario)}</small></button>`).join("")
+        : `<div class="mowa-agentes-vacio">${mowaAgentesModal.length ? "No hay agentes con ese nombre o DNI." : "No hay agentes disponibles para esta selección."}</div>`;
+    const agente = mowaAgentesModal.find(a => a.usuario === elegido);
+    document.getElementById("mowaAsignarSeleccionado").textContent = agente
+        ? `Seleccionado: ${agente.nombre} · ${agente.usuario}` : "Selecciona un agente";
+}
+
+async function guardarAsignacionMowa(event) {
+    event.preventDefault();
+    const clientes = mowaClientesAsignando;
+    const agente = document.getElementById("mowaAsignarAgente").value;
+    if (!clientes.length || !agente || !mowaAgentesModal.some(a => a.usuario === agente)) return;
+    const boton = document.getElementById("mowaAsignarGuardar");
+    const aviso = document.getElementById("mowaAsignarAviso");
+    boton.disabled = true;
+    aviso.textContent = "Guardando asignación…";
+    try {
+        const individual = clientes.length === 1;
+        const ruta = `${MOWA_RAIZ}/asignaciones${individual ? "" : "/lote"}`;
+        const payload = individual
+            ? {idcartera: clientes[0].idcartera, idcliente: clientes[0].idcliente,
+                agente_usuario: agente}
+            : {clientes: clientes.map(c => ({idcartera: c.idcartera, idcliente: c.idcliente})), agente_usuario: agente};
+        const response = await fetchConSesion(ruta, {
+            method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "No se pudo guardar la asignación.");
+        const guardadas = individual ? [result] : result.asignaciones;
+        const nombre = mowaAgentesModal.find(a => a.usuario === agente)?.nombre || agente;
+        for (const item of guardadas) mowaAsignaciones.set(
+            claveAsignacionMowa(item.idcartera, item.idcliente), {...item, agente_nombre: nombre});
+        mowaSeleccionados.clear();
+        document.getElementById("mowaAsignarModal").close();
+        pintarMowa();
+        if (mowaModoControl && mowaControlFiltro) await abrirDetalleControlMowa(mowaControlFiltro, false);
+        const cambios = individual ? Number(result.cambio) : result.cambios;
+        avisoMowa(cambios ? `${cambios} ${cambios === 1 ? "cliente asignado" : "clientes asignados"} a ${nombre}.` : "Estos clientes ya estaban asignados a ese agente.");
+    } catch (error) {
+        aviso.textContent = error.message || "No se pudo guardar la asignación.";
+    } finally { boton.disabled = false; }
+}
+
+function abrirControlMowa() {
+    if (!mowaPuedeAsignar) return;
+    document.getElementById("mowaControlModal").showModal();
+    cargarControlMowa();
+}
+
+async function cargarControlMowa() {
+    if (!mowaPuedeAsignar) return;
+    const solicitud = ++mowaControlSolicitud;
+    mowaControlCargado = false;
+    const boton = document.getElementById("mowaControlActualizar");
+    const aviso = document.getElementById("mowaControlAviso");
+    const cartera = document.getElementById("mowaControlCartera").value;
+    const params = new URLSearchParams();
+    if (cartera) params.set("cartera", cartera);
+    boton.disabled = true;
+    aviso.textContent = "Calculando clientes pendientes y responsables…";
+    aviso.className = "mowa-control-aviso";
+    for (const id of ["mowaControlTotal", "mowaControlSinAsignar", "mowaControlAsignados", "mowaControlAntiguos"])
+        document.getElementById(id).textContent = "…";
+    document.getElementById("mowaControlAgentes").innerHTML = "";
+    try {
+        const response = await fetchConSesion(`${MOWA_RAIZ}/control-asignaciones${params.size ? `?${params}` : ""}`);
+        const result = await response.json();
+        if (solicitud !== mowaControlSolicitud) return;
+        if (!response.ok) throw new Error(result.detail || "No se pudo cargar el control.");
+        mowaControlCargado = true;
+        document.getElementById("mowaControlTotal").textContent = result.completo ? String(result.clientes) : `${result.clientes}+`;
+        document.getElementById("mowaControlSinAsignar").textContent = result.completo ? String(result.sin_asignar) : `${result.sin_asignar}+`;
+        document.getElementById("mowaControlAsignados").textContent = result.completo ? String(result.asignados) : `${result.asignados}+`;
+        document.getElementById("mowaControlAntiguos").textContent = result.completo ? String(result.antiguos) : `${result.antiguos}+`;
+        document.getElementById("mowaControlAlcance").textContent = `${result.respuestas} respuestas · desde ${formatoFechaSoloMowa(result.desde)}`;
+        document.getElementById("mowaControlAgentes").innerHTML = (result.agentes || []).length
+            ? result.agentes.map(a => `<div class="mowa-control-agente"><div><strong>${escMowa(a.nombre)}</strong><small>${escMowa(a.usuario)}${a.primera_recepcion ? ` · primera espera ${escMowa(formatoFechaSoloMowa(a.primera_recepcion))}` : ""}</small></div><div><b>${a.clientes}</b><small>clientes</small></div><div class="mowa-control-respuestas"><b>${a.respuestas}</b><small>respuestas</small></div><div class="mowa-control-antiguo"><b>${a.antiguos}</b><small>antiguos</small></div><button type="button" data-control-agente="${escMowa(a.usuario)}" ${a.clientes ? "" : "disabled"}>Ver pendientes</button></div>`).join("")
+            : '<p class="mowa-small">No hay agentes en las carteras seleccionadas.</p>';
+        const sync = result.sincronizacion;
+        const ultimo = sync?.ultimo_intento;
+        const atrasada = !sync?.fin || sync.desactualizada || sync.resultado === "CON_AVISOS" || ultimo?.resultado === "ERROR";
+        const texto = !sync?.fin ? "Aún no hay una sincronización completada."
+            : `Última carga ${formatoFechaMowa(sync.fin)}${sync.resultado === "CON_AVISOS" ? ` · ${ultimo?.fin === sync.fin && ultimo.avisos != null ? `${ultimo.avisos} avisos` : "con avisos"}` : ""}${sync.desactualizada ? " · sin actualización reciente" : ""}.`;
+        const intento = ultimo?.resultado === "ERROR" ? ` Último intento fallido: ${formatoFechaMowa(ultimo.fin || ultimo.inicio)}.` : "";
+        document.getElementById("mowaControlSync").textContent = `${texto}${intento}${atrasada ? " Los conteos pueden omitir respuestas recientes. Revisa la actualización SMS en la parte superior." : ""}`;
+        document.getElementById("mowaControlSync").classList.toggle("alerta", atrasada);
+        aviso.textContent = result.completo === false
+            ? `Conteo parcial: ${resumirAdvertenciasMowa(result.advertencias) || "no se verificaron todas las gestiones."}`
+            : "Selecciona un número o un agente para abrir sus clientes pendientes acumulados.";
+        aviso.classList.toggle("error", result.completo === false);
+    } catch (error) {
+        if (solicitud !== mowaControlSolicitud) return;
+        aviso.textContent = error.message || "No se pudo cargar el control de asignaciones.";
+        aviso.classList.add("error");
+    } finally { if (solicitud === mowaControlSolicitud) boton.disabled = false; }
+}
+
+function clickControlMowa(event) {
+    const dialogo = document.getElementById("mowaControlModal");
+    const accion = event.target.closest?.("[data-control-agente]");
+    if (accion) { if (mowaControlCargado) abrirDetalleControlMowa(accion.dataset.controlAgente); return; }
+    if (event.target !== dialogo) return;
+    const r = dialogo.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialogo.close();
+}
+
+async function abrirDetalleControlMowa(agente, desplazar = true) {
+    if (!mowaPuedeAsignar) return;
+    const cartera = document.getElementById("mowaControlCartera").value;
+    const params = new URLSearchParams({agente});
+    if (cartera) params.set("cartera", cartera);
+    const cargando = document.getElementById("mowaCargando");
+    cargando.hidden = false;
+    document.getElementById("mowaProgreso").textContent = "Abriendo clientes pendientes del control de asignaciones.";
+    try {
+        const response = await fetchConSesion(`${MOWA_RAIZ}/control-asignaciones?${params}`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "No se pudieron abrir los pendientes.");
+        mowaModoControl = true;
+        mowaControlFiltro = agente;
+        mowaControlCartera = cartera || null;
+        mowaModoAcumulado = false;
+        mowaCarteraAcumulada = null;
+        mowaFilas = (result.grupos || []).flatMap(g => g.filas || []);
+        mowaAsignaciones = new Map((result.asignaciones || []).map(a =>
+            [claveAsignacionMowa(a.idcartera, a.idcliente), a]));
+        mowaGruposCache = null;
+        mowaSeleccionados.clear();
+        mowaPagina = 1;
+        mowaConsultaCompleta = result.completo !== false;
+        mowaAdvertenciasConsulta = result.advertencias || [];
+        mowaExcluidasInactivas = 0;
+        document.getElementById("mowaEstado").value = "PENDIENTE";
+        document.getElementById("mowaAsignacionFiltro").value = "";
+        document.getElementById("mowaOrden").value = "antiguo";
+        document.getElementById("mowaBuscar").value = "";
+        document.getElementById("mowaCardPendientesTitulo").textContent = "Sin gestión posterior (acumulado)";
+        document.getElementById("mowaExportar").textContent = "Excel de asignaciones";
+        document.getElementById("mowaExportar").title = "Incluye todos los pendientes del grupo abierto, aunque uses Buscar o cambies de página.";
+        actualizarCarterasMowa();
+        if (cartera) document.getElementById("mowaCartera").value = cartera;
+        pintarSincronizacionMowa(result.sincronizacion);
+        actualizarResumenMowa(mowaConsultaCompleta, true);
+        pintarMowa();
+        const agenteNombre = agente === "TODOS" ? "todos" : agente === "SIN_ASIGNAR" ? "sin asignar"
+            : result.agentes.find(a => a.usuario === agente)?.nombre || agente;
+        document.getElementById("mowaAlcance").textContent = `${result.clientes_detalle} clientes · ${result.respuestas_detalle} respuestas pendientes · ${agenteNombre}${cartera ? ` · cartera ${cartera}` : ""} · acumuladas desde ${formatoFechaSoloMowa(result.desde)}${result.completo === false ? " · parcial" : ""}`;
+        avisoMowa(resumirAdvertenciasMowa(mowaAdvertenciasConsulta));
+        if (dialogoAbiertoMowa("mowaControlModal")) document.getElementById("mowaControlModal").close();
+        if (desplazar) document.getElementById("mowaDetalle").scrollIntoView({behavior: "smooth", block: "start"});
+    } catch (error) {
+        avisoMowa(error.message || "No se pudieron abrir los clientes.", true);
+    } finally { cargando.hidden = true; }
+}
+
+function dialogoAbiertoMowa(id) { return document.getElementById(id).open === true; }
 
 function mostrarEstadoActualizacionMowa(texto, resultado = "") {
     const el = document.getElementById("mowaSyncEstado");
@@ -237,11 +625,14 @@ async function consultarMowa(event) {
     mowaDetener = false;
     mowaModoAcumulado = false;
     mowaCarteraAcumulada = null;
+    mowaModoControl = false;
+    mowaControlFiltro = null;
     document.getElementById("mowaCardPendientesTitulo").textContent = "Sin gestión posterior (rango)";
     document.getElementById("mowaExportar").textContent = "Exportar Excel";
     document.getElementById("mowaExportar").removeAttribute("title");
     mowaFilas = [];
     mowaGruposCache = null;
+    mowaSeleccionados.clear();
     mowaExcluidasInactivas = 0;
     mowaPagina = 1;
     mowaConsultaCompleta = false;
@@ -257,7 +648,7 @@ async function consultarMowa(event) {
     document.getElementById("mowaVerCarteras").disabled = true;
     document.getElementById("mowaPaginacion").textContent = "Cargando…";
     document.getElementById("mowaCartera").innerHTML = '<option value="">Todas</option>';
-    document.getElementById("mowaTabla").innerHTML = '<tr><td colspan="6" class="mowa-vacio">Consultando respuestas y verificando gestiones…</td></tr>';
+    document.getElementById("mowaTabla").innerHTML = `<tr><td colspan="${mowaPuedeAsignar ? 7 : 6}" class="mowa-vacio">Consultando respuestas y verificando gestiones…</td></tr>`;
     document.getElementById("mowaAlcance").textContent = "Consulta en curso";
     actualizarResumenMowa(false, false);
     const tarjeta = cargarSinAtenderMowa(cuenta);
@@ -305,6 +696,7 @@ async function consultarMowa(event) {
         controles.forEach(control => { control.disabled = false; });
     }
     await tarjeta;
+    if (mowaPuedeAsignar) await cargarAsignacionesMowa();
 }
 
 async function cargarSinAtenderMowa(cuenta) {
@@ -403,7 +795,10 @@ async function verPendientesCarteraMowa(cartera) {
         if (!response.ok) throw new Error(result.detail || "No se pudieron abrir los pendientes.");
         mowaModoAcumulado = true;
         mowaCarteraAcumulada = cartera;
+        mowaModoControl = false;
+        mowaControlFiltro = null;
         mowaFilas = (result.grupos || []).flatMap(g => g.filas || []);
+        mowaSeleccionados.clear();
         mowaGruposCache = null;
         mowaPagina = 1;
         mowaConsultaCompleta = result.completo !== false;
@@ -422,6 +817,7 @@ async function verPendientesCarteraMowa(cartera) {
         pintarMowa();
         document.getElementById("mowaAlcance").textContent = `${result.clientes} clientes · ${result.respuestas} respuestas pendientes · cartera ${cartera} · acumuladas desde ${formatoFechaSoloMowa(result.desde)}${result.sincronizacion?.desactualizada ? " · carga desactualizada" : ""}`;
         avisoMowa(resumirAdvertenciasMowa(mowaAdvertenciasConsulta));
+        if (mowaPuedeAsignar) await cargarAsignacionesMowa();
         document.getElementById("mowaDetalle").scrollIntoView({behavior: "smooth", block: "start"});
     } catch (error) {
         if (error?.constructor?.name !== "SesionInvalidaError") avisoMowa(error.name === "AbortError" ? "La consulta de pendientes superó 65 segundos." : (error.message || "No se pudieron abrir los pendientes."), true);
@@ -460,7 +856,7 @@ async function descargarSinAtenderMowa(cartera = null, desdeTabla = false) {
     } catch (error) {
         avisoMowa(error.message || "No se pudo generar el Excel.", true);
     } finally {
-        accion.textContent = "Descargar Excel para repartir";
+        accion.textContent = "Descargar Excel de pendientes";
         tarjeta.disabled = document.getElementById("mowaSinAtenderTotal").textContent === "0";
         if (desdeTabla) {
             botonTabla.textContent = "Excel de cartera";
@@ -551,7 +947,9 @@ function actualizarResumenMowa(completo, hayDatos) {
     card.classList?.toggle("mowa-pulsante", contar("PENDIENTE") > 0);
     const cuenta = document.getElementById("mowaCuenta").value;
     document.getElementById("mowaCardAlcance").textContent =
-        mowaModoAcumulado
+        mowaModoControl
+            ? `${mowaControlCartera ? `Cartera ${mowaControlCartera}` : textoAlcanceMowa()} · control de asignaciones${completo ? "" : " · conteo parcial"}`
+            : mowaModoAcumulado
             ? `Cartera ${mowaCarteraAcumulada} · pendientes acumulados${completo ? "" : " · conteo parcial"}`
             : `${textoAlcanceMowa()}${cuenta ? ` · ${cuenta}` : ""}${completo ? " · recibidas en el rango" : " · conteo parcial"}`;
 }
@@ -577,6 +975,9 @@ function filtrarOrdenarMowa() {
     const buscar = document.getElementById("mowaBuscar").value.trim().toLowerCase();
     const grupos = agruparMowa().filter(g => (!estado || g.estado === estado) &&
         (!cartera || String(g.ultimo.idcartera) === cartera) &&
+        (!mowaPuedeAsignar || !document.getElementById("mowaAsignacionFiltro").value ||
+            (document.getElementById("mowaAsignacionFiltro").value === "ASIGNADAS") ===
+            mowaAsignaciones.has(claveAsignacionMowa(g.ultimo.idcartera, g.ultimo.idcliente))) &&
         g.filas.some(r => `${r.dni} ${r.cliente} ${r.telefono} ${r.texto} ${r.mensaje_enviado} ${r.gestion_posterior_texto} ${r.campana} ${r.cuenta}`.toLowerCase().includes(buscar)));
     grupos.sort((a, b) => {
         if (orden === "cliente") return String(a.ultimo.cliente || "").localeCompare(String(b.ultimo.cliente || ""), "es");
@@ -599,6 +1000,19 @@ function pintarMowa() {
     const inicio = (mowaPagina - 1) * tamano;
     const visibles = grupos.slice(inicio, inicio + tamano);
     mowaConversacionesVisibles = visibles;
+    if (mowaPuedeAsignar) {
+        const seleccionables = visibles.map(clienteAsignableMowa).filter(Boolean);
+        const seleccionadasPagina = seleccionables.filter(c => mowaSeleccionados.has(claveAsignacionMowa(c.idcartera, c.idcliente))).length;
+        const checkPagina = document.getElementById("mowaSeleccionPagina");
+        checkPagina.disabled = !seleccionables.length;
+        checkPagina.checked = seleccionables.length > 0 && seleccionadasPagina === seleccionables.length;
+        checkPagina.indeterminate = seleccionadasPagina > 0 && seleccionadasPagina < seleccionables.length;
+        document.getElementById("mowaSeleccionBar").hidden = false;
+        document.getElementById("mowaSeleccionConteo").textContent = `${mowaSeleccionados.size} ${mowaSeleccionados.size === 1 ? "cliente seleccionado" : "clientes seleccionados"} · máximo ${MOWA_MAX_LOTE}`;
+        document.getElementById("mowaSeleccionLimpiar").disabled = !mowaSeleccionados.size;
+        document.getElementById("mowaAsignarSeleccion").disabled = !mowaSeleccionados.size;
+        document.getElementById("mowaSeleccionFiltrados").disabled = !grupos.some(clienteAsignableMowa);
+    }
     document.getElementById("mowaAnterior").disabled = mowaPagina <= 1;
     document.getElementById("mowaMas").disabled = mowaPagina >= paginas;
     document.getElementById("mowaExportar").disabled = grupos.length === 0;
@@ -608,16 +1022,24 @@ function pintarMowa() {
     document.getElementById("mowaTabla").innerHTML = grupos.length ? visibles.map((g, indice) => {
         const r = g.ultimo;
         const pendientes = g.filas.filter(f => f.estado === "PENDIENTE").length;
+        const asignacion = mowaAsignaciones.get(claveAsignacionMowa(r.idcartera, r.idcliente));
+        const asignable = clienteAsignableMowa(g);
+        const seleccionada = asignable && mowaSeleccionados.has(claveAsignacionMowa(asignable.idcartera, asignable.idcliente));
+        const celdaSeleccion = mowaPuedeAsignar ? `<td class="mowa-seleccion-celda">${asignable
+            ? `<input type="checkbox" data-seleccionar="${indice}" aria-label="Seleccionar ${escMowa(asignable.nombre)}" ${seleccionada ? "checked" : ""}>` : ""}</td>` : "";
+        const controlAsignacion = mowaPuedeAsignar && g.estado === "PENDIENTE" && r.idcliente
+            ? `<div class="mowa-asignacion"><small>${asignacion ? `Asignado a ${escMowa(asignacion.agente_nombre || asignacion.agente_usuario)}` : "Sin asignar"}</small><button type="button" data-asignar="${indice}">${asignacion ? "Cambiar agente" : "Asignar agente"}</button></div>` : "";
         return `
-        <tr>
+        <tr${seleccionada ? ' class="mowa-seleccionada"' : ""}>
+            ${celdaSeleccion}
             <td><strong>${escMowa(formatoFechaMowa(r.recibido))}</strong><small>${g.filas.length} ${g.filas.length === 1 ? "respuesta" : "respuestas"} de esta conversación</small></td>
             <td><span class="mowa-badge ${escMowa(g.estado)}">${escMowa(rotuloMowa(g.estado))}</span>${pendientes ? `<small>${pendientes} ${pendientes === 1 ? "SMS pendiente" : "SMS pendientes"}</small>` : ""}${r.motivo ? `<small class="mowa-motivo" title="${escMowa(r.motivo)}">${escMowa(r.motivo)}</small>` : ""}<small class="mowa-proveedor">Mowa (último SMS): ${escMowa(r.estado_mowa_etiqueta || "No informado")}${r.estado_mowa_codigo != null ? ` · ${escMowa(r.estado_mowa_codigo)}` : ""}</small></td>
-            <td><strong>${escMowa(r.cliente || "—")}</strong><small>DNI: ${escMowa(r.dni || "—")} · ID: ${escMowa(r.idcliente || "—")} · Cartera: ${escMowa(r.idcartera || r.cartera_mowa || "—")}</small><small>Tel: ${escMowa(g.telefonos.join(", ") || "—")}</small>${r.dni ? `<button class="mowa-copiar" type="button" data-copiar="${escMowa(r.dni)}">Copiar DNI</button>` : ""}</td>
+            <td><strong>${escMowa(r.cliente || "—")}</strong><small>DNI: ${escMowa(r.dni || "—")} · ID: ${escMowa(r.idcliente || "—")} · Cartera: ${escMowa(r.idcartera || r.cartera_mowa || "—")}</small><small>Tel: ${escMowa(g.telefonos.join(", ") || "—")}</small>${r.dni ? `<button class="mowa-copiar" type="button" data-copiar="${escMowa(r.dni)}">Copiar DNI</button>` : ""}${controlAsignacion}</td>
             <td><div class="mowa-conversacion"><div class="mowa-recibido"><span>Última respuesta</span><p>${escMowa(r.texto || "—")}</p></div><button class="mowa-abrir" type="button" data-chat="${indice}">Ver conversación (${g.filas.length})</button></div></td>
             <td>${escMowa(g.cuentas.join(", "))}<small>${escMowa(r.campana || "Campaña sin nombre")} #${escMowa(r.campana_id)}</small></td>
             <td>${renderGestionMowa(g.estado === "ATENDIDA" ? (g.gestion || r) : {...r, estado: g.estado, gestion_posterior: null})}</td>
         </tr>`;
-    }).join("") : `<tr><td colspan="6" class="mowa-vacio">Sin conversaciones para estos filtros.</td></tr>`;
+    }).join("") : `<tr><td colspan="${mowaPuedeAsignar ? 7 : 6}" class="mowa-vacio">Sin conversaciones para estos filtros.</td></tr>`;
 }
 
 function datosExportMowa() {
@@ -642,6 +1064,7 @@ function datosExportMowa() {
 
 async function exportarMowa() {
     if (mowaModoAcumulado) return descargarSinAtenderMowa(mowaCarteraAcumulada, true);
+    if (mowaModoControl) return exportarControlMowa();
     const datos = datosExportMowa();
     if (!datos.conversaciones.length) return;
     const boton = document.getElementById("mowaExportar");
@@ -671,6 +1094,35 @@ async function exportarMowa() {
     } finally {
         boton.textContent = "Exportar Excel";
         boton.disabled = filtrarOrdenarMowa().length === 0;
+    }
+}
+
+async function exportarControlMowa() {
+    if (!mowaControlFiltro) return;
+    const boton = document.getElementById("mowaExportar");
+    const params = new URLSearchParams({agente: mowaControlFiltro});
+    if (mowaControlCartera) params.set("cartera", mowaControlCartera);
+    boton.disabled = true;
+    boton.textContent = "Generando Excel…";
+    try {
+        const response = await fetchConSesion(`${MOWA_RAIZ}/control-asignaciones/excel?${params}`);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "No se pudo generar el Excel.");
+        }
+        const objeto = URL.createObjectURL(await response.blob());
+        const enlace = document.createElement("a");
+        enlace.href = objeto;
+        enlace.download = nombreDescargaMowa(response, `Asignaciones_SMS_${fechaLocal(new Date())}.xlsx`);
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        setTimeout(() => URL.revokeObjectURL(objeto), 1000);
+    } catch (error) {
+        avisoMowa(error.message || "No se pudo generar el Excel.", true);
+    } finally {
+        boton.textContent = "Excel de asignaciones";
+        boton.disabled = !filtrarOrdenarMowa().length;
     }
 }
 

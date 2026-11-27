@@ -106,6 +106,11 @@
             title: "Validación de Teléfonos",
             subtitle: "Consulta operativa de teléfonos activos por cliente"
         },
+        "zonas.html": {
+            key: "zonas",
+            title: "Zonas restringidas",
+            subtitle: "Departamentos donde no se gestiona: el generador de bases quita a sus clientes"
+        },
         "segmentos.html": {
             key: "segmentos",
             title: "Segmentos del banco",
@@ -156,6 +161,7 @@
                 { key: "telefonos", label: "Validación de Teléfonos", href: "telefonos.html", icon: iconPhone() },
                 { key: "respuestas_mowa", label: "Respuestas SMS", href: "respuestas_mowa.html", icon: iconMegaphone() },
                 { key: "generador_bases", label: "Generador de bases", href: "score_telefonico.html", icon: iconMegaphone() },
+                { key: "zonas", label: "Zonas restringidas", href: "zonas.html", icon: iconMapa() },
                 { key: "documentos", label: "Documentos", href: "documentos.html", icon: iconDocumento() },
             ]
         },
@@ -433,23 +439,28 @@
     // Color del icono por area (igual criterio que las areas del Home). Sin entrada = azul.
     const TONO_NAV = {
         ia_feedback: "calidad", susurro_ia: "calidad", consumo_ia_admin: "calidad",
-        documentos: "datos", generador_bases: "datos", segmentos: "datos", importacion: "datos", pagos: "datos", canales: "datos",
+        documentos: "datos", generador_bases: "datos", zonas: "datos", segmentos: "datos", importacion: "datos", pagos: "datos", canales: "datos",
         supervisores_admin: "admin", metas_agentes_admin: "admin", accesos_admin: "admin",
         pautas_evaluacion_admin: "admin", admin: "admin"
     };
 
     function renderNavItem(item, activeKey) {
         const tono = `tono-${TONO_NAV[item.key] || "operacion"}`;
+        const label = item.key === "respuestas_mowa" && tipoUsuario() === "GESTOR"
+            ? "Mis asignaciones" : item.label;
         if (item.disabled) {
-            return `<span class="crm-nav-disabled ${tono}" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span><small>Próx.</small></span>`;
+            return `<span class="crm-nav-disabled ${tono}" title="${escapeHtml(label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${escapeHtml(label)}</span><small>Próx.</small></span>`;
         }
         const active = item.key === activeKey ? " active" : "";
-        return `<a class="crm-nav-link ${tono}${active}" href="${item.href}" title="${escapeHtml(item.label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${item.label}</span></a>`;
+        return `<a class="crm-nav-link ${tono}${active}" href="${item.href}" title="${escapeHtml(label)}"><span class="crm-nav-icon">${item.icon}</span><span class="crm-nav-text">${escapeHtml(label)}</span></a>`;
     }
 
     function renderTopbar(meta) {
         const agente = localStorage.getItem("agente") || localStorage.getItem("dni") || "Usuario";
         const tipo = localStorage.getItem("tipo") || "CRM";
+        const esBandeja = meta.key === "respuestas_mowa" && tipoUsuario() === "GESTOR";
+        const titulo = esBandeja ? "Mis asignaciones" : meta.title;
+        const subtitulo = esBandeja ? "Clientes asignados con respuestas SMS pendientes" : meta.subtitle;
 
         return `
             <header class="crm-topbar">
@@ -458,8 +469,8 @@
                     ${FOCUS_MODULES.has(meta.key) ? `<button id="crmFocusButton" class="crm-focus-button" type="button" onclick="crmToggleFocus()" title="Enfocar área de trabajo" aria-pressed="false">${iconFocus()}<span>Enfocar</span></button>` : ""}
                     <img class="crm-topbar-logo" src="logo_i_biznescob.png" alt="Biznescob">
                     <div>
-                        <h1>${escapeHtml(meta.title)}</h1>
-                        <p>${escapeHtml(meta.subtitle)}</p>
+                        <h1>${escapeHtml(titulo)}</h1>
+                        <p>${escapeHtml(subtitulo)}</p>
                     </div>
                 </div>
                 <div class="crm-topbar-user">
@@ -570,6 +581,7 @@
                 "telefonos",
                 "respuestas_mowa",
                 "generador_bases",
+                "zonas",
                 "documentos",
                 ...(compartamos ? ["clientes"] : [])
             ].includes(key);
@@ -653,6 +665,10 @@
 
     function svg(path) {
         return `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+    }
+
+    function iconMapa() {
+        return svg('<path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>');
     }
 
     function iconMenu() {
